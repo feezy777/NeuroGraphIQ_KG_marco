@@ -7,8 +7,9 @@ import {
   updateMirrorConnection, deleteMirrorConnection,
   updateMirrorFunction, deleteMirrorFunction,
   updateMirrorCircuit, deleteMirrorCircuit,
-  submitMirrorReviewAction,
+  submitMirrorReviewAction, listMirrorReviewQueue,
 } from '../../../api/endpoints'
+import type { MirrorReviewQueueItem } from '../../../api/endpoints'
 import { FormalObjectTableSection } from '../../data-center/FormalObjectTableSection'
 import { FormalObjectDetailDrawer } from '../../data-center/FormalObjectDetailDrawer'
 import { getFormalFieldMapping, type FormalObjectType } from '../../data-center/formalFieldMappings'
