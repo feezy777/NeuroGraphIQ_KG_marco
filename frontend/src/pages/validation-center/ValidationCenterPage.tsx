@@ -7,7 +7,6 @@ import { ValidationCenterTabBar } from './ValidationCenterTabBar'
 import { ValidationMirrorPanel } from './panels/ValidationMirrorPanel'
 import { MacroClinicalDataPanel } from '../data-center/MacroClinicalDataPanel'
 import { FinalKgDataPanel } from '../data-center/FinalKgDataPanel'
-import { ValidationReviewPanel } from './panels/ValidationReviewPanel'
 import { ValidationPromotionPanel } from './panels/ValidationPromotionPanel'
 import type {
   ValidationCenterNavState,
@@ -18,7 +17,7 @@ import type {
 } from './validationCenterTypes'
 import { VALIDATION_CENTER_TABS, DEFAULT_NAV } from './validationCenterTypes'
 
-const MIRROR_TABS = ['connections', 'functions', 'circuits', 'triples', 'evidence', 'validation']
+const MIRROR_TABS = ['rule_check', 'review', 'dual_model', 'connections', 'functions', 'circuits', 'triples', 'evidence']
 
 function parseNavFromUrl(): ValidationCenterNavState {
   const q = readHashQueryParams()
@@ -90,8 +89,6 @@ export function ValidationCenterPage() {
             })}
           />
         )
-      case 'human-review':
-        return <ValidationReviewPanel granularityLevel={granularity} />
       case 'promotion':
         return <ValidationPromotionPanel granularityLevel={granularity} />
       case 'macro':

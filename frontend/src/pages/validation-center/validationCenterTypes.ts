@@ -1,11 +1,10 @@
 export type ValidationCenterTabId =
   | 'mirror'
-  | 'human-review'
   | 'promotion'
   | 'macro'
   | 'final'
 
-export type MirrorKgSubTab = 'connections' | 'functions' | 'circuits' | 'triples' | 'evidence' | 'validation'
+export type MirrorKgSubTab = 'rule_check' | 'review' | 'dual_model' | 'connections' | 'functions' | 'circuits' | 'triples' | 'evidence'
 export type MacroClinicalSubTab =
   | 'circuit_steps'
   | 'projection_functions'
@@ -59,7 +58,6 @@ export interface ValidationCenterNavState {
 
 export const VALIDATION_CENTER_TABS: ValidationCenterTabId[] = [
   'mirror',
-  'human-review',
   'promotion',
   'macro',
   'final',
@@ -67,7 +65,7 @@ export const VALIDATION_CENTER_TABS: ValidationCenterTabId[] = [
 
 export const DEFAULT_NAV: ValidationCenterNavState = {
   tab: 'mirror',
-  mirrorTab: 'connections',
+  mirrorTab: 'rule_check',
   macroTab: 'circuit_steps',
   finalTab: 'circuit',
   batchId: '',

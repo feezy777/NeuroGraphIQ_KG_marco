@@ -3,7 +3,6 @@ import type { ValidationCenterTabId } from './validationCenterTypes'
 
 const TAB_KEYS: Record<ValidationCenterTabId, string> = {
   mirror: 'validationCenter.mirror',
-  'human-review': 'validationCenter.humanReview',
   promotion: 'validationCenter.promotion',
   macro: 'validationCenter.macro',
   final: 'validationCenter.final',
