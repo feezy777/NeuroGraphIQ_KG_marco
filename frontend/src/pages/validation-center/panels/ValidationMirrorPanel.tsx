@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useState } from 'react'
+import { MirrorKgPanel } from '../../data-center/MirrorKgPanel'
 import { StatusBadge } from '../../../components/StatusBadge'
 import { Eye, RefreshCw, CheckCircle2 } from 'lucide-react'
 import { listMirrorReviewQueue, getMirrorReviewDetail, submitMirrorReviewAction } from '../../../api/endpoints'
 import type { MirrorReviewQueueItem, MirrorReviewDetail } from '../../../api/endpoints'
+import type { MirrorKgSubTab } from '../validationCenterTypes'
 
 const PAGE_SIZE = 25
 const TYPE_CN: Record<string, string> = {
@@ -12,10 +14,30 @@ const TYPE_CN: Record<string, string> = {
   triple: '三元组', circuit_projection_membership: '投射成员',
 }
 
-const TARGET_TYPES = ['', 'projection', 'projection_function', 'circuit', 'circuit_function', 'circuit_step', 'connection', 'function', 'region_function', 'triple']
+interface Props {
+  mirrorTab: MirrorKgSubTab
+  onMirrorTabChange: (tab: MirrorKgSubTab) => void
+  batchId: string
+  resourceId: string
+  sourceAtlas: string
+  granularityLevel: string
+  onFilterChange: (patch: Record<string, string>) => void
+}
 
-interface Props { granularityLevel?: string }
-export function ValidationRulePanel({ granularityLevel }: Props) {
+export function ValidationMirrorPanel(props: Props) {
+  const { mirrorTab, onMirrorTabChange } = props
+
+  // If not on validation sub-tab, delegate to MirrorKgPanel
+  if (mirrorTab !== 'validation') {
+    return <MirrorKgPanel {...props} mirrorTab={mirrorTab} onMirrorTabChange={onMirrorTabChange} />
+  }
+
+  // ── Validation sub-tab ──────────────────────────────────────────────────
+  return <ValidationSubTab granularityLevel={props.granularityLevel} />
+}
+
+// ── Validation sub-tab implementation ─────────────────────────────────────
+function ValidationSubTab({ granularityLevel }: { granularityLevel: string }) {
   const [items, setItems] = useState<MirrorReviewQueueItem[]>([])
   const [total, setTotal] = useState(0)
   const [page, setPage] = useState(1)
@@ -47,7 +69,6 @@ export function ValidationRulePanel({ granularityLevel }: Props) {
     catch { setModal(m => ({ ...m, loading: false, detail: null })) }
   }
   const closeModal = () => setModal({ open: false, loading: false, item: null, detail: null })
-
   const toggleRow = (id: string) => setSelectedIds(p => { const n = new Set(p); n.has(id) ? n.delete(id) : n.add(id); return n })
   const toggleAll = () => setSelectedIds(items.every(i => selectedIds.has(i.target_id)) ? new Set() : new Set(items.map(i => i.target_id)))
 
@@ -64,7 +85,8 @@ export function ValidationRulePanel({ granularityLevel }: Props) {
       <div className="vr-header">
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           <select className="input" value={targetType} onChange={e => { setTargetType(e.target.value); setPage(1) }} style={{ width: 'auto', minWidth: 110 }}>
-            {TARGET_TYPES.map(t => <option key={t} value={t}>{t ? (TYPE_CN[t] || t) : '全部类型'}</option>)}
+            <option value="">全部类型</option>
+            {Object.entries(TYPE_CN).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
           </select>
           <span className="vr-total">共 {total} 条</span>
         </div>
@@ -129,23 +151,15 @@ export function ValidationRulePanel({ granularityLevel }: Props) {
       {modal.open && (
         <div className="vr-modal-overlay" onClick={closeModal}>
           <div className="vr-modal" onClick={e => e.stopPropagation()}>
-            <div className="vr-modal-hd">
-              <h3>{modal.item?.display_label || '对象详情'}</h3>
-              <span className="vr-modal-meta">{TYPE_CN[modal.item?.target_type || '']} · {modal.item?.target_id?.slice(0, 8)}…</span>
-              <button className="vr-modal-close" onClick={closeModal}>✕</button>
-            </div>
+            <div className="vr-modal-hd"><h3>{modal.item?.display_label || '对象详情'}</h3><span className="vr-modal-meta">{TYPE_CN[modal.item?.target_type || '']} · {modal.item?.target_id?.slice(0, 8)}…</span><button className="vr-modal-close" onClick={closeModal}>✕</button></div>
             <div className="vr-modal-body">
               {modal.loading ? <div className="vr-modal-loading">加载中…</div> :
                modal.detail ? <>
                 <section className="vr-section"><h4>对象数据</h4><pre className="vr-json">{JSON.stringify(modal.detail.object_json, null, 2)}</pre></section>
+                {modal.detail.evidence_records?.length > 0 && <section className="vr-section"><h4>证据记录 ({modal.detail.evidence_records.length})</h4>
+                  <div className="vr-evidence-list">{modal.detail.evidence_records.map((ev: any, i: number) => <div key={i} className="vr-evidence-item"><span className="vr-evidence-type">{ev.evidence_type || ev.type || '—'}</span><span className="vr-evidence-text">{(ev.evidence_text || ev.text || '').slice(0, 200)}</span></div>)}</div></section>}
                 {modal.detail.validation_results?.length > 0 && <section className="vr-section"><h4>校验结果 ({modal.detail.validation_results.length})</h4>
-                  {modal.detail.validation_results.map((r: any, i: number) => (
-                    <div key={i} className="vr-result-row"><span className={`vr-result-badge vr-result-${r.severity || r.status || 'info'}`}>{r.severity || r.status || '—'}</span><span>{r.message || r.rule_name || ''}</span></div>
-                  ))}</section>}
-                {modal.detail.review_records?.length > 0 && <section className="vr-section"><h4>审核历史 ({modal.detail.review_records.length})</h4>
-                  {modal.detail.review_records.map((r: any, i: number) => (
-                    <div key={i} className="vr-history-row"><span className={`vr-history-action vr-action-${r.action || 'unknown'}`}>{r.action || '—'}</span><span className="vr-history-reviewer">{r.reviewer || '—'}</span><span className="vr-history-note">{(r.reviewer_note || '').slice(0, 100)}</span></div>
-                  ))}</section>}
+                  {modal.detail.validation_results.map((r: any, i: number) => <div key={i} className="vr-result-row"><span className={`vr-result-badge vr-result-${r.severity || r.status || 'info'}`}>{r.severity || r.status || '—'}</span><span>{r.message || r.rule_name || ''}</span></div>)}</section>}
                </> : <div className="vr-modal-error">无法加载详情</div>}
             </div>
           </div>

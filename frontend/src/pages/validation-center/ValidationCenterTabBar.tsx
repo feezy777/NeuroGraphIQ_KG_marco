@@ -2,11 +2,9 @@ import { useI18n } from '../../i18n-context'
 import type { ValidationCenterTabId } from './validationCenterTypes'
 
 const TAB_KEYS: Record<ValidationCenterTabId, string> = {
-  overview: 'validationCenter.overview',
-  'rule-validation': 'validationCenter.ruleValidation',
+  mirror: 'validationCenter.mirror',
   'human-review': 'validationCenter.humanReview',
   promotion: 'validationCenter.promotion',
-  mirror: 'validationCenter.mirror',
   macro: 'validationCenter.macro',
   final: 'validationCenter.final',
 }

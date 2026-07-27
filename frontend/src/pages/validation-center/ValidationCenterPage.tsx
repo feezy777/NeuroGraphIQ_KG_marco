@@ -4,11 +4,9 @@ import { useI18n } from '../../i18n-context'
 import { readHashQueryParams, buildHashUrl } from '../../utils/pipelineNavigation'
 import { useGlobalGranularity } from '../../hooks/useGlobalGranularity'
 import { ValidationCenterTabBar } from './ValidationCenterTabBar'
-import { ValidationCenterOverview } from './ValidationCenterOverview'
-import { MirrorKgPanel } from '../data-center/MirrorKgPanel'
+import { ValidationMirrorPanel } from './panels/ValidationMirrorPanel'
 import { MacroClinicalDataPanel } from '../data-center/MacroClinicalDataPanel'
 import { FinalKgDataPanel } from '../data-center/FinalKgDataPanel'
-import { ValidationRulePanel } from './panels/ValidationRulePanel'
 import { ValidationReviewPanel } from './panels/ValidationReviewPanel'
 import { ValidationPromotionPanel } from './panels/ValidationPromotionPanel'
 import type {
@@ -20,14 +18,15 @@ import type {
 } from './validationCenterTypes'
 import { VALIDATION_CENTER_TABS, DEFAULT_NAV } from './validationCenterTypes'
 
+const MIRROR_TABS = ['connections', 'functions', 'circuits', 'triples', 'evidence', 'validation']
+
 function parseNavFromUrl(): ValidationCenterNavState {
   const q = readHashQueryParams()
   const tab = VALIDATION_CENTER_TABS.includes(q.tab as ValidationCenterTabId)
     ? (q.tab as ValidationCenterTabId) : DEFAULT_NAV.tab
   return {
     tab,
-    mirrorTab: (['connections', 'functions', 'circuits', 'triples', 'evidence'].includes(q.mirrorTab)
-      ? q.mirrorTab : DEFAULT_NAV.mirrorTab) as MirrorKgSubTab,
+    mirrorTab: (MIRROR_TABS.includes(q.mirrorTab) ? q.mirrorTab : DEFAULT_NAV.mirrorTab) as MirrorKgSubTab,
     macroTab: (['circuit_steps', 'projection_functions', 'memberships', 'circuit_functions', 'cross_validation', 'dual_model'].includes(q.macroTab)
       ? q.macroTab : DEFAULT_NAV.macroTab) as MacroClinicalSubTab,
     finalTab: (['circuit', 'circuit_step', 'projection', 'projection_function', 'membership', 'region_function', 'circuit_function', 'triple', 'evidence'].includes(q.finalTab)
@@ -41,7 +40,7 @@ function parseNavFromUrl(): ValidationCenterNavState {
 
 function navToQuery(nav: ValidationCenterNavState): Record<string, string | undefined> {
   return {
-    tab: nav.tab === 'overview' ? undefined : nav.tab,
+    tab: nav.tab === 'mirror' ? undefined : nav.tab,
     mirrorTab: nav.tab === 'mirror' ? nav.mirrorTab : undefined,
     macroTab: nav.tab === 'macro' ? nav.macroTab : undefined,
     finalTab: nav.tab === 'final' ? nav.finalTab : undefined,
@@ -75,17 +74,9 @@ export function ValidationCenterPage() {
 
   const workspace = useMemo(() => {
     switch (nav.tab) {
-      case 'overview':
-        return <ValidationCenterOverview onNavigate={setTab} />
-      case 'rule-validation':
-        return <ValidationRulePanel granularityLevel={granularity} />
-      case 'human-review':
-        return <ValidationReviewPanel granularityLevel={granularity} />
-      case 'promotion':
-        return <ValidationPromotionPanel granularityLevel={granularity} />
       case 'mirror':
         return (
-          <MirrorKgPanel
+          <ValidationMirrorPanel
             mirrorTab={nav.mirrorTab}
             onMirrorTabChange={(mirrorTab: MirrorKgSubTab) => updateNav({ tab: 'mirror', mirrorTab })}
             batchId={nav.batchId}
@@ -99,6 +90,10 @@ export function ValidationCenterPage() {
             })}
           />
         )
+      case 'human-review':
+        return <ValidationReviewPanel granularityLevel={granularity} />
+      case 'promotion':
+        return <ValidationPromotionPanel granularityLevel={granularity} />
       case 'macro':
         return (
           <MacroClinicalDataPanel
@@ -124,7 +119,19 @@ export function ValidationCenterPage() {
           />
         )
       default:
-        return <ValidationCenterOverview onNavigate={setTab} />
+        return <ValidationMirrorPanel
+          mirrorTab={DEFAULT_NAV.mirrorTab}
+          onMirrorTabChange={(mirrorTab: MirrorKgSubTab) => updateNav({ tab: 'mirror', mirrorTab })}
+          batchId={nav.batchId}
+          resourceId={nav.resourceId}
+          sourceAtlas={nav.sourceAtlas}
+          granularityLevel={granularity}
+          onFilterChange={patch => updateNav({
+            batchId: patch.batchId ?? nav.batchId,
+            resourceId: patch.resourceId ?? nav.resourceId,
+            sourceAtlas: patch.sourceAtlas ?? nav.sourceAtlas,
+          })}
+        />
     }
   }, [nav, granularity, setTab, updateNav])
 
