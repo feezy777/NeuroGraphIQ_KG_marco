@@ -64,7 +64,8 @@ function getItemKey(item: MirrorReviewQueueItem): string {
   return `${item.target_type}:${item.target_id}`
 }
 
-export function ValidationReviewPanel() {
+interface Props { granularityLevel?: string }
+export function ValidationReviewPanel({ granularityLevel }: Props) {
   const { t } = useI18n()
 
   // ── Data ──────────────────────────────────────────────────────────────────────

@@ -8,9 +8,9 @@ import { ValidationCenterOverview } from './ValidationCenterOverview'
 import { MirrorKgPanel } from '../data-center/MirrorKgPanel'
 import { MacroClinicalDataPanel } from '../data-center/MacroClinicalDataPanel'
 import { FinalKgDataPanel } from '../data-center/FinalKgDataPanel'
-import { RuleValidationPage } from '../RuleValidationPage'
-import { HumanReviewPage } from '../HumanReviewPage'
-import { PromotionsPage } from '../PromotionsPage'
+import { ValidationRulePanel } from './panels/ValidationRulePanel'
+import { ValidationReviewPanel } from './panels/ValidationReviewPanel'
+import { ValidationPromotionPanel } from './panels/ValidationPromotionPanel'
 import type {
   ValidationCenterNavState,
   ValidationCenterTabId,
@@ -78,11 +78,11 @@ export function ValidationCenterPage() {
       case 'overview':
         return <ValidationCenterOverview onNavigate={setTab} />
       case 'rule-validation':
-        return <RuleValidationPage />
+        return <ValidationRulePanel granularityLevel={granularity} />
       case 'human-review':
-        return <HumanReviewPage />
+        return <ValidationReviewPanel granularityLevel={granularity} />
       case 'promotion':
-        return <PromotionsPage />
+        return <ValidationPromotionPanel granularityLevel={granularity} />
       case 'mirror':
         return (
           <MirrorKgPanel
