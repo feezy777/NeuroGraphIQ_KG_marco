@@ -1,505 +1,351 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useI18n } from '../../../i18n-context'
-import { DataTable } from '../../../components/DataTable'
-import type { Column } from '../../../components/DataTable'
 import { StatusBadge } from '../../../components/StatusBadge'
-import { ValidationActionBar } from '../shared/ValidationActionBar'
-import type { ValidationAction } from '../shared/ValidationActionBar'
-import { ValidationObjectDrawer } from '../shared/ValidationObjectDrawer'
 import {
   listMirrorReviewQueue,
   getMirrorReviewDetail,
   submitMirrorReviewAction,
 } from '../../../api/endpoints'
-import type {
-  MirrorReviewQueueItem,
-  MirrorReviewDetail,
-  MirrorReviewActionRequest,
-} from '../../../api/endpoints'
+import type { MirrorReviewQueueItem, MirrorReviewDetail } from '../../../api/endpoints'
+import { Check, X, Eye, RefreshCw } from 'lucide-react'
 
-const PAGE_SIZE = 30
+const PAGE_SIZE = 25
 
-const TARGET_TYPE_COLOR: Record<string, string> = {
-  connection: 'blue',
-  function: 'green',
-  region_function: 'teal',
-  circuit: 'purple',
-  circuit_step: 'indigo',
-  projection: 'amber',
-  projection_function: 'amber',
-  triple: 'gray',
-  circuit_projection_membership: 'teal',
-  circuit_projection_cross_validation_result: 'purple',
-  dual_model_verification_result: 'indigo',
+// ── Group definitions ──────────────────────────────────────────────────────
+const GROUPS = [
+  {
+    key: 'connections',
+    label: '连接与功能',
+    targetTypes: ['projection', 'projection_function'],
+  },
+  {
+    key: 'circuits',
+    label: '回路与步骤',
+    targetTypes: ['circuit', 'circuit_function', 'circuit_step'],
+  },
+] as const
+
+const TYPE_CN: Record<string, string> = {
+  projection: '连接', projection_function: '连接功能',
+  circuit: '回路', circuit_function: '回路功能', circuit_step: '回路步骤',
 }
 
-const TARGET_TYPE_LABEL: Record<string, string> = {
-  connection: '连接',
-  function: '功能',
-  region_function: '脑区功能',
-  circuit: '回路',
-  circuit_step: '回路步骤',
-  projection: '投射',
-  projection_function: '投射功能',
-  triple: '三元组',
-  circuit_projection_membership: '回路投射成员',
-  circuit_projection_cross_validation_result: '交叉验证',
-  dual_model_verification_result: '双模型验证',
-}
-
-const TARGET_TYPE_OPTIONS = [
-  { value: '', label: '全部类型' },
-  ...Object.entries(TARGET_TYPE_LABEL).map(([value, label]) => ({ value, label })),
-]
-
-const REVIEW_STATUS_OPTIONS = [
-  { value: '', label: '全部状态' },
-  { value: 'manual_review_pending', label: '待审核' },
-  { value: 'manual_approved', label: '已通过' },
-  { value: 'manual_rejected', label: '已驳回' },
-  { value: 'pending', label: '排队中' },
-]
-
-function getItemKey(item: MirrorReviewQueueItem): string {
-  return `${item.target_type}:${item.target_id}`
-}
-
+// ── Component ──────────────────────────────────────────────────────────────
 interface Props { granularityLevel?: string }
 export function ValidationReviewPanel({ granularityLevel }: Props) {
   const { t } = useI18n()
-
-  // ── Data ──────────────────────────────────────────────────────────────────────
+  const [groupKey, setGroupKey] = useState('connections')
   const [items, setItems] = useState<MirrorReviewQueueItem[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
   const [total, setTotal] = useState(0)
-  const [page, setPage] = useState(0)
+  const [page, setPage] = useState(1)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
-  // ── Filters ───────────────────────────────────────────────────────────────────
-  const [targetTypeFilter, setTargetTypeFilter] = useState('')
-  const [reviewStatusFilter, setReviewStatusFilter] = useState('')
+  // Selection
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [actionLoading, setActionLoading] = useState(false)
 
-  // ── Selection ─────────────────────────────────────────────────────────────────
-  const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set())
-  const selectAllRef = useRef<HTMLInputElement>(null)
+  // Modal
+  const [modal, setModal] = useState<{ open: boolean; loading: boolean; item: MirrorReviewQueueItem | null; detail: MirrorReviewDetail | null }>({
+    open: false, loading: false, item: null, detail: null,
+  })
 
-  // ── Drawer ────────────────────────────────────────────────────────────────────
-  const [drawerOpen, setDrawerOpen] = useState(false)
-  const [drawerTargetType, setDrawerTargetType] = useState('')
-  const [drawerTargetId, setDrawerTargetId] = useState<string | null>(null)
-  const [drawerTitle, setDrawerTitle] = useState('')
-  const [drawerDetail, setDrawerDetail] = useState<MirrorReviewDetail | null>(null)
-  const [drawerLoading, setDrawerLoading] = useState(false)
+  const group = GROUPS.find(g => g.key === groupKey)!
 
-  // ── Fetch queue items ─────────────────────────────────────────────────────────
-  const fetchQueue = useCallback(async () => {
-    setLoading(true)
-    setError(null)
+  // ── Load queue ──────────────────────────────────────────────────────────
+  const load = useCallback(async (pg?: number) => {
+    const p = pg ?? page
+    setLoading(true); setError(null)
     try {
-      const params: Record<string, unknown> = {
+      const res = await listMirrorReviewQueue({
         limit: PAGE_SIZE,
-        offset: page * PAGE_SIZE,
-      }
-      if (targetTypeFilter) params.target_types = [targetTypeFilter]
-      if (reviewStatusFilter) params.review_status = [reviewStatusFilter]
-      const result = await listMirrorReviewQueue(params as any)
-      setItems(result.items)
-      setTotal(result.total)
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : '加载审核队列失败')
-      setItems([])
-    } finally {
-      setLoading(false)
-    }
-  }, [page, targetTypeFilter, reviewStatusFilter])
+        offset: (p - 1) * PAGE_SIZE,
+        target_types: group.targetTypes as any,
+        review_status: ['pending', 'manual_review_pending'],
+        granularity_level: granularityLevel || undefined,
+      })
+      setItems(res.items as MirrorReviewQueueItem[])
+      setTotal(res.total)
+      setPage(p)
+      setSelectedIds(new Set())
+    } catch (e: any) { setError(e?.message || '加载失败') }
+    finally { setLoading(false) }
+  }, [page, groupKey, granularityLevel])
 
-  useEffect(() => {
-    fetchQueue()
-  }, [fetchQueue])
+  useEffect(() => { load(1) }, [groupKey])
 
-  // ── Selection handlers ────────────────────────────────────────────────────────
-  const toggleSelect = useCallback((key: string) => {
-    setSelectedKeys(prev => {
-      const next = new Set(prev)
-      if (next.has(key)) next.delete(key)
-      else next.add(key)
-      return next
-    })
-  }, [])
-
-  const toggleSelectAll = useCallback(() => {
-    setSelectedKeys(prev => {
-      const allSelected = items.every(item => prev.has(getItemKey(item)))
-      if (allSelected) {
-        const next = new Set(prev)
-        items.forEach(item => next.delete(getItemKey(item)))
-        return next
-      } else {
-        const next = new Set(prev)
-        items.forEach(item => next.add(getItemKey(item)))
-        return next
-      }
-    })
-  }, [items])
-
-  const clearSelection = useCallback(() => setSelectedKeys(new Set()), [])
-
-  const isAllSelected = items.length > 0 && items.every(item => selectedKeys.has(getItemKey(item)))
-  const someSelected = items.some(item => selectedKeys.has(getItemKey(item)))
-
-  useEffect(() => {
-    if (selectAllRef.current) {
-      selectAllRef.current.indeterminate = someSelected && !isAllSelected
-    }
-  }, [someSelected, isAllSelected])
-
-  // ── Detail drawer ─────────────────────────────────────────────────────────────
-  const handleRowClick = useCallback(async (item: MirrorReviewQueueItem) => {
-    setDrawerTitle(item.display_label)
-    setDrawerTargetType(item.target_type)
-    setDrawerTargetId(item.target_id)
-    setDrawerOpen(true)
-    setDrawerLoading(true)
-    setDrawerDetail(null)
+  // ── Open detail modal ───────────────────────────────────────────────────
+  const openDetail = useCallback(async (item: MirrorReviewQueueItem) => {
+    setModal({ open: true, loading: true, item, detail: null })
     try {
       const detail = await getMirrorReviewDetail(item.target_type, item.target_id)
-      setDrawerDetail(detail)
-    } catch (err: unknown) {
-      console.error('Failed to load review detail:', err)
-    } finally {
-      setDrawerLoading(false)
+      setModal(d => ({ ...d, loading: false, detail }))
+    } catch {
+      setModal(d => ({ ...d, loading: false, detail: null }))
     }
   }, [])
 
-  const handleDrawerAction = useCallback(async (action: string, note?: string) => {
-    if (!drawerTargetType || !drawerTargetId) return
-    const payload: MirrorReviewActionRequest = {
-      target_type: drawerTargetType,
-      target_id: drawerTargetId,
-      action: action as MirrorReviewActionRequest['action'],
-      reviewer: '审核员',
-      reviewer_note: note,
-    }
-    await submitMirrorReviewAction(payload)
-    setDrawerOpen(false)
-    setDrawerDetail(null)
-    fetchQueue()
-  }, [drawerTargetType, drawerTargetId, fetchQueue])
+  const closeModal = () => setModal({ open: false, loading: false, item: null, detail: null })
 
-  // ── Batch actions ─────────────────────────────────────────────────────────────
-  const executeBatchAction = useCallback(async (action: string) => {
-    const selectedItems = items.filter(item => selectedKeys.has(getItemKey(item)))
-    for (const item of selectedItems) {
+  // ── Submit action (single & batch) ──────────────────────────────────────
+  const doAction = useCallback(async (action: 'approve' | 'reject', ids: string[]) => {
+    setActionLoading(true)
+    for (const id of ids) {
+      const item = items.find(i => i.target_id === id)
+      if (!item) continue
       try {
-        await submitMirrorReviewAction({
-          target_type: item.target_type,
-          target_id: item.target_id,
-          action: action as MirrorReviewActionRequest['action'],
-          reviewer: '审核员',
-        })
-      } catch {
-        // Continue processing remaining items
-      }
+        await submitMirrorReviewAction({ target_type: item.target_type, target_id: id, action, reviewer: 'admin' })
+      } catch { /* continue */ }
     }
-    clearSelection()
-    fetchQueue()
-  }, [items, selectedKeys, fetchQueue, clearSelection])
+    setSelectedIds(new Set())
+    closeModal()
+    await load(page)
+    setActionLoading(false)
+  }, [items, load, page])
 
-  const handleBatchApprove = useCallback(() => {
-    if (window.confirm(`确定批准选中的 ${selectedKeys.size} 项？\n${t('mirror.review.approveMeaning')}`)) {
-      executeBatchAction('approve')
+  // ── Selection ───────────────────────────────────────────────────────────
+  const toggleRow = (id: string) => setSelectedIds(prev => {
+    const next = new Set(prev); next.has(id) ? next.delete(id) : next.add(id); return next
+  })
+  const toggleAll = () => {
+    if (items.every(i => selectedIds.has(i.target_id))) {
+      setSelectedIds(new Set())
+    } else {
+      setSelectedIds(new Set(items.map(i => i.target_id)))
     }
-  }, [selectedKeys.size, executeBatchAction, t])
+  }
+  const clearSelection = () => setSelectedIds(new Set())
 
-  const handleBatchReject = useCallback(() => {
-    if (window.confirm(`确定拒绝选中的 ${selectedKeys.size} 项？`)) {
-      executeBatchAction('reject')
-    }
-  }, [selectedKeys.size, executeBatchAction])
-
-  // ── Columns ───────────────────────────────────────────────────────────────────
-  const columns: Column<MirrorReviewQueueItem>[] = useMemo(() => [
-    {
-      key: 'checkbox',
-      header: '',
-      width: 40,
-      render: (item) => (
-        <input
-          type="checkbox"
-          checked={selectedKeys.has(getItemKey(item))}
-          onChange={() => toggleSelect(getItemKey(item))}
-          onClick={e => e.stopPropagation()}
-        />
-      ),
-    },
-    {
-      key: 'target_type',
-      header: t('mirror.review.targetTypes'),
-      width: 100,
-      render: (item) => (
-        <span className={`badge badge-${TARGET_TYPE_COLOR[item.target_type] ?? 'gray'}`}>
-          {TARGET_TYPE_LABEL[item.target_type] ?? item.target_type}
-        </span>
-      ),
-    },
-    {
-      key: 'display_label',
-      header: t('mirror.review.displayLabel'),
-      render: (item) => (
-        <span className="validation-cell-label" title={item.display_label}>
-          {item.display_label}
-        </span>
-      ),
-    },
-    {
-      key: 'review_status',
-      header: t('mirror.reviewStatus'),
-      width: 90,
-      render: (item) => <StatusBadge status={item.review_status} />,
-    },
-    {
-      key: 'confidence',
-      header: '置信度',
-      width: 70,
-      render: (item) => (
-        <span>
-          {item.confidence != null ? `${(item.confidence * 100).toFixed(0)}%` : '—'}
-        </span>
-      ),
-    },
-    {
-      key: 'blockers',
-      header: '阻塞/警告',
-      width: 100,
-      render: (item) => (
-        <span className="validation-row-actions">
-          {item.blocker_count != null && item.blocker_count > 0 && (
-            <span className="text-red" title={`${item.blocker_count} blocker`}>
-              {item.blocker_count}B
-            </span>
-          )}
-          {item.warning_count != null && item.warning_count > 0 && (
-            <span className="text-yellow" title={`${item.warning_count} warning`}>
-              {item.warning_count}W
-            </span>
-          )}
-          {item.error_count != null && item.error_count > 0 && (
-            <span className="text-red" title={`${item.error_count} error`}>
-              {item.error_count}E
-            </span>
-          )}
-          {(!item.blocker_count || item.blocker_count === 0) &&
-           (!item.warning_count || item.warning_count === 0) &&
-           (!item.error_count || item.error_count === 0) && (
-            <span className="text-muted">—</span>
-          )}
-        </span>
-      ),
-    },
-    {
-      key: 'actions',
-      header: '',
-      width: 50,
-      render: (item) => (
-        <button
-          type="button"
-          className="btn btn-ghost btn-sm"
-          title={t('mirror.review.detail')}
-          onClick={e => {
-            e.stopPropagation()
-            handleRowClick(item)
-          }}
-        >
-          👁
-        </button>
-      ),
-    },
-  ], [t, selectedKeys, toggleSelect, handleRowClick])
-
-  // ── Action bar ────────────────────────────────────────────────────────────────
-  const actions: ValidationAction[] = useMemo(() => [
-    {
-      key: 'approve',
-      label: t('mirror.review.approve'),
-      variant: 'primary',
-      icon: <span>✓ </span>,
-      disabled: false,
-      onClick: handleBatchApprove,
-    },
-    {
-      key: 'reject',
-      label: t('mirror.review.reject'),
-      variant: 'danger',
-      icon: <span>✕ </span>,
-      disabled: false,
-      onClick: handleBatchReject,
-    },
-  ], [t, handleBatchApprove, handleBatchReject])
-
-  // ── Pagination ────────────────────────────────────────────────────────────────
-  const totalPages = Math.ceil(total / PAGE_SIZE)
-  const canPrev = page > 0
-  const canNext = page < totalPages - 1
-
-  const pageNumbers = useMemo(() => {
-    if (totalPages <= 7) {
-      return Array.from({ length: totalPages }, (_, i) => i)
-    }
-    const pages: (number | 'ellipsis')[] = [0]
-    if (page > 3) pages.push('ellipsis')
-    const start = Math.max(1, page - 1)
-    const end = Math.min(totalPages - 2, page + 1)
-    for (let i = start; i <= end; i++) pages.push(i)
-    if (page < totalPages - 4) pages.push('ellipsis')
-    pages.push(totalPages - 1)
-    return pages
-  }, [totalPages, page])
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE))
 
   return (
-    <div className="validation-panel">
-      {/* ── Filter bar ──────────────────────────────────────────────────────── */}
-      <div className="validation-filter-bar">
-        <select
-          className="input"
-          value={targetTypeFilter}
-          onChange={e => {
-            setTargetTypeFilter(e.target.value)
-            setPage(0)
-            clearSelection()
-          }}
-        >
-          {TARGET_TYPE_OPTIONS.map(opt => (
-            <option key={opt.value} value={opt.value}>{opt.label}</option>
+    <div className="vr-panel">
+      {/* Header */}
+      <div className="vr-header">
+        <div className="vr-tabs">
+          {GROUPS.map(g => (
+            <button key={g.key} type="button"
+              className={`vr-tab${groupKey === g.key ? ' active' : ''}`}
+              onClick={() => { setGroupKey(g.key); setPage(1) }}
+            >
+              {g.label}
+            </button>
           ))}
-        </select>
-        <select
-          className="input"
-          value={reviewStatusFilter}
-          onChange={e => {
-            setReviewStatusFilter(e.target.value)
-            setPage(0)
-            clearSelection()
-          }}
-        >
-          {REVIEW_STATUS_OPTIONS.map(opt => (
-            <option key={opt.value} value={opt.value}>{opt.label}</option>
-          ))}
-        </select>
-        <button
-          type="button"
-          className="btn btn-sm btn-default"
-          onClick={() => { fetchQueue(); clearSelection() }}
-        >
-          ⟳ 刷新
-        </button>
-        <span className="text-muted" style={{ marginLeft: 'auto', fontSize: 13 }}>
-          共 {total} 项
-        </span>
+        </div>
+        <div className="vr-header-right">
+          <span className="vr-total">共 {total} 条</span>
+          <button type="button" className="btn btn-sm btn-ghost" onClick={() => load(page)} disabled={loading}>
+            <RefreshCw size={14} className={loading ? 'spin' : ''} />
+          </button>
+        </div>
       </div>
 
-      {/* ── Select-all row ──────────────────────────────────────────────────── */}
-      {items.length > 0 && (
-        <div
-          style={{
-            padding: '6px 16px',
-            display: 'flex',
-            alignItems: 'center',
-            gap: 8,
-            fontSize: 12,
-            borderBottom: '1px solid #e5e7ef',
-          }}
-        >
-          <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer' }}>
-            <input
-              type="checkbox"
-              ref={selectAllRef}
-              checked={isAllSelected}
-              onChange={toggleSelectAll}
-            />
-            全选本页
-          </label>
-          {selectedKeys.size > 0 && (
-            <span className="text-muted">（已选 {selectedKeys.size} 项）</span>
-          )}
+      {/* Error */}
+      {error && <div className="vr-error">{error} <button className="btn btn-xs" onClick={() => load(page)}>重试</button></div>}
+
+      {/* Table */}
+      <div className="vr-table-wrap">
+        <table className="vr-table">
+          <thead>
+            <tr>
+              <th className="vr-th-check">
+                <input type="checkbox" checked={items.length > 0 && items.every(i => selectedIds.has(i.target_id))}
+                  onChange={toggleAll} />
+              </th>
+              <th className="vr-th-type">类型</th>
+              <th className="vr-th-label">名称</th>
+              <th className="vr-th-status">审核状态</th>
+              <th className="vr-th-conf">置信度</th>
+              <th className="vr-th-issues">问题</th>
+              <th className="vr-th-act"></th>
+            </tr>
+          </thead>
+          <tbody>
+            {loading && items.length === 0 && (
+              <tr><td colSpan={7} className="vr-empty">加载中…</td></tr>
+            )}
+            {!loading && items.length === 0 && !error && (
+              <tr><td colSpan={7} className="vr-empty">暂无待审核数据</td></tr>
+            )}
+            {items.map((item, idx) => {
+              const sel = selectedIds.has(item.target_id)
+              return (
+                <tr key={`${item.target_type}:${item.target_id}`}
+                  className={`vr-row${sel ? ' selected' : ''}${idx % 2 === 0 ? ' even' : ''}`}
+                  onClick={() => toggleRow(item.target_id)}
+                >
+                  <td className="vr-td-check" onClick={e => e.stopPropagation()}>
+                    <input type="checkbox" checked={sel} onChange={() => toggleRow(item.target_id)} />
+                  </td>
+                  <td className="vr-td-type">
+                    <span className="vr-badge">{TYPE_CN[item.target_type] || item.target_type}</span>
+                  </td>
+                  <td className="vr-td-label" title={item.display_label || item.target_id}>
+                    {item.display_label || item.target_label || item.target_id.slice(0, 16)}
+                  </td>
+                  <td className="vr-td-status">
+                    <StatusBadge status={item.review_status} />
+                  </td>
+                  <td className="vr-td-conf">
+                    {item.confidence != null ? item.confidence.toFixed(2) : '—'}
+                  </td>
+                  <td className="vr-td-issues">
+                    {item.blocker_count ? <span className="vr-issue b">B:{item.blocker_count}</span> : null}
+                    {item.error_count ? <span className="vr-issue e">E:{item.error_count}</span> : null}
+                    {item.warning_count ? <span className="vr-issue w">W:{item.warning_count}</span> : null}
+                    {!item.blocker_count && !item.error_count && !item.warning_count && (
+                      <span className="vr-clean">✓</span>
+                    )}
+                  </td>
+                  <td className="vr-td-act">
+                    <button type="button" className="btn btn-xs btn-ghost"
+                      onClick={e => { e.stopPropagation(); openDetail(item) }}
+                      title="查看详情"
+                    >
+                      <Eye size={14} />
+                    </button>
+                  </td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Pagination */}
+      <div className="vr-pagination">
+        <button disabled={page <= 1} onClick={() => load(page - 1)}>上一页</button>
+        <span>第 {page}/{totalPages} 页</span>
+        <button disabled={page >= totalPages} onClick={() => load(page + 1)}>下一页</button>
+      </div>
+
+      {/* Action Bar */}
+      {selectedIds.size > 0 && (
+        <div className="vr-action-bar">
+          <span>已选 <strong>{selectedIds.size}</strong> 项</span>
+          <button type="button" className="btn btn-xs btn-ghost" onClick={clearSelection}>清空</button>
+          <div className="vr-action-sep" />
+          <button type="button" className="btn btn-sm btn-primary"
+            disabled={actionLoading}
+            onClick={() => doAction('approve', [...selectedIds])}
+          >
+            <Check size={14} /> 批量批准
+          </button>
+          <button type="button" className="btn btn-sm btn-danger"
+            disabled={actionLoading}
+            onClick={() => doAction('reject', [...selectedIds])}
+          >
+            <X size={14} /> 批量拒绝
+          </button>
         </div>
       )}
 
-      {/* ── Data table ──────────────────────────────────────────────────────── */}
-      <div style={{ flex: 1, overflow: 'auto' }}>
-        <DataTable
-          columns={columns}
-          rows={items}
-          loading={loading}
-          error={error}
-          emptyText="暂无待审核对象"
-          total={total}
-          getKey={getItemKey}
-          onRowClick={handleRowClick}
-        />
-      </div>
+      {/* ── Detail Modal ─────────────────────────────────────────────────── */}
+      {modal.open && (
+        <div className="vr-modal-overlay" onClick={closeModal}>
+          <div className="vr-modal" onClick={e => e.stopPropagation()}>
+            <div className="vr-modal-hd">
+              <h3>{modal.item?.display_label || modal.item?.target_label || '对象详情'}</h3>
+              <span className="vr-modal-meta">
+                {TYPE_CN[modal.item?.target_type || ''] || modal.item?.target_type}
+                {' · '}{modal.item?.target_id?.slice(0, 8)}…
+              </span>
+              <button className="vr-modal-close" onClick={closeModal}>✕</button>
+            </div>
 
-      {/* ── Pagination ──────────────────────────────────────────────────────── */}
-      {totalPages > 1 && (
-        <div className="validation-pagination">
-          <button
-            type="button"
-            className="btn btn-ghost btn-sm"
-            disabled={!canPrev}
-            onClick={() => setPage(p => p - 1)}
-          >
-            ‹ 上一页
-          </button>
-          {pageNumbers.map((p, i) =>
-            p === 'ellipsis' ? (
-              <span key={`e${i}`} className="text-muted" style={{ padding: '0 4px' }}>…</span>
-            ) : (
-              <button
-                key={p}
-                type="button"
-                className={`btn btn-ghost btn-sm${p === page ? ' active' : ''}`}
-                onClick={() => setPage(p)}
-                style={p === page ? { background: '#e6f4ff', fontWeight: 600 } : undefined}
-              >
-                {p + 1}
-              </button>
-            )
-          )}
-          <button
-            type="button"
-            className="btn btn-ghost btn-sm"
-            disabled={!canNext}
-            onClick={() => setPage(p => p + 1)}
-          >
-            下一页 ›
-          </button>
+            <div className="vr-modal-body">
+              {modal.loading ? (
+                <div className="vr-modal-loading">加载中…</div>
+              ) : modal.detail ? (
+                <>
+                  {/* Object data */}
+                  <section className="vr-section">
+                    <h4>对象数据</h4>
+                    <pre className="vr-json">{JSON.stringify(modal.detail.object_json, null, 2)}</pre>
+                  </section>
+
+                  {/* Evidence */}
+                  {modal.detail.evidence_records?.length > 0 && (
+                    <section className="vr-section">
+                      <h4>证据记录 ({modal.detail.evidence_records.length})</h4>
+                      <div className="vr-evidence-list">
+                        {modal.detail.evidence_records.map((ev: any, i: number) => (
+                          <div key={i} className="vr-evidence-item">
+                            <span className="vr-evidence-type">{ev.evidence_type || ev.type || '—'}</span>
+                            <span className="vr-evidence-text">{(ev.evidence_text || ev.text || '').slice(0, 200)}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </section>
+                  )}
+
+                  {/* Validation */}
+                  {modal.detail.validation_results?.length > 0 && (
+                    <section className="vr-section">
+                      <h4>校验结果 ({modal.detail.validation_results.length})</h4>
+                      {modal.detail.validation_results.map((r: any, i: number) => (
+                        <div key={i} className="vr-result-row">
+                          <span className={`vr-result-badge vr-result-${r.severity || r.status || 'info'}`}>
+                            {r.severity || r.status || '—'}
+                          </span>
+                          <span>{r.message || r.rule_name || ''}</span>
+                        </div>
+                      ))}
+                    </section>
+                  )}
+
+                  {/* Review history */}
+                  {modal.detail.review_records?.length > 0 && (
+                    <section className="vr-section">
+                      <h4>审核历史 ({modal.detail.review_records.length})</h4>
+                      {modal.detail.review_records.map((r: any, i: number) => (
+                        <div key={i} className="vr-history-row">
+                          <span className={`vr-history-action vr-action-${r.action || 'unknown'}`}>{r.action || '—'}</span>
+                          <span className="vr-history-reviewer">{r.reviewer || '—'}</span>
+                          <span className="vr-history-note">{(r.reviewer_note || r.note || '').slice(0, 100)}</span>
+                          {r.created_at && <span className="vr-history-time">{r.created_at.slice(0, 16)}</span>}
+                        </div>
+                      ))}
+                    </section>
+                  )}
+
+                  {/* Related objects */}
+                  {modal.detail.related_objects && Object.keys(modal.detail.related_objects).length > 0 && (
+                    <section className="vr-section">
+                      <h4>关联对象</h4>
+                      <pre className="vr-json">{JSON.stringify(modal.detail.related_objects, null, 2)}</pre>
+                    </section>
+                  )}
+                </>
+              ) : (
+                <div className="vr-modal-error">无法加载详情</div>
+              )}
+            </div>
+
+            {/* Modal footer actions */}
+            {modal.detail && (
+              <div className="vr-modal-ft">
+                {modal.detail.allowed_actions.includes('approve') && (
+                  <button type="button" className="btn btn-primary"
+                    disabled={actionLoading}
+                    onClick={() => doAction('approve', [modal.item!.target_id])}
+                  >
+                    <Check size={14} /> 批准
+                  </button>
+                )}
+                {modal.detail.allowed_actions.includes('reject') && (
+                  <button type="button" className="btn btn-danger"
+                    disabled={actionLoading}
+                    onClick={() => doAction('reject', [modal.item!.target_id])}
+                  >
+                    <X size={14} /> 拒绝
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
         </div>
       )}
-
-      {/* ── Batch action bar ────────────────────────────────────────────────── */}
-      <ValidationActionBar
-        selectedCount={selectedKeys.size}
-        selectedIds={Array.from(selectedKeys)}
-        actions={actions}
-        onClearSelection={clearSelection}
-      />
-
-      {/* ── Detail drawer ───────────────────────────────────────────────────── */}
-      <ValidationObjectDrawer
-        open={drawerOpen}
-        title={drawerTitle || '审核详情'}
-        targetType={drawerTargetType}
-        targetId={drawerTargetId}
-        loading={drawerLoading}
-        objectJson={drawerDetail?.object_json ?? null}
-        evidenceRecords={drawerDetail?.evidence_records ?? []}
-        validationResults={drawerDetail?.validation_results}
-        reviewRecords={drawerDetail?.review_records}
-        relatedObjects={drawerDetail?.related_objects}
-        allowedActions={drawerDetail?.allowed_actions ?? []}
-        gatingReasons={drawerDetail?.gating?.gating_reasons}
-        onClose={() => { setDrawerOpen(false); setDrawerDetail(null) }}
-        onAction={handleDrawerAction}
-      />
     </div>
   )
 }
