@@ -193,13 +193,20 @@ export function ValidationMirrorPanel({ actionType, mirrorTab, onMirrorTabChange
   const handleValidate = useCallback(async (selectedIds: string[]) => {
     if (selectedIds.length === 0) return
 
-    // Fetch all items to get labels + target_type
+    // Fetch all rows and review queue to get labels + correct target_type
     const allRows = await handleFetchAll()
     const idToRow: Record<string, any> = {}
     for (const row of allRows) { idToRow[row.id] = row }
 
-    // Determine target_type from the mapping
-    const targetType = mapping?.targetType || 'unknown'
+    // Get review queue items for correct target_type mapping
+    let rqItems: MirrorReviewQueueItem[] = []
+    try {
+      const res = await listMirrorReviewQueue({ limit: 5000, offset: 0, granularity_level: granularityLevel || undefined })
+      rqItems = (res.items || []) as MirrorReviewQueueItem[]
+    } catch {}
+
+    const rqById: Record<string, MirrorReviewQueueItem> = {}
+    for (const item of rqItems) { rqById[item.target_id] = item }
 
     const initialItems: ValidationItem[] = selectedIds.map(id => ({
       id, batchId: '',
@@ -213,6 +220,9 @@ export function ValidationMirrorPanel({ actionType, mirrorTab, onMirrorTabChange
     let done = 0
 
     for (const item of initialItems) {
+      const rqItem = rqById[item.id]
+      const targetType = rqItem?.target_type || 'circuit'
+
       try {
         await submitMirrorReviewAction({
           target_type: targetType,
@@ -226,8 +236,7 @@ export function ValidationMirrorPanel({ actionType, mirrorTab, onMirrorTabChange
         results.push({ ...item, status: 'error', message: e?.message || '校验失败' })
       }
       done++
-      // Update modal every 5 items
-      if (done % 5 === 0 || done === initialItems.length) {
+      if (done % 10 === 0 || done === initialItems.length) {
         setVModal(prev => ({
           ...prev,
           items: [...results, ...initialItems.slice(done).map(i => ({ ...i, status: 'running' as const }))],
@@ -237,7 +246,7 @@ export function ValidationMirrorPanel({ actionType, mirrorTab, onMirrorTabChange
 
     setVModal(prev => ({ ...prev, running: false, items: results }))
     refresh()
-  }, [handleFetchAll, mapping])
+  }, [handleFetchAll, granularityLevel])
 
   const offset = (page - 1) * pageSize
   const baseParams = useMemo(() => ({ limit: pageSize, offset, granularity_level: granularityLevel || undefined }), [pageSize, offset, granularityLevel])
