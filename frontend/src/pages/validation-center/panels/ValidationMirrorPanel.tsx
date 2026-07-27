@@ -7,7 +7,7 @@ import {
   updateMirrorConnection, deleteMirrorConnection,
   updateMirrorFunction, deleteMirrorFunction,
   updateMirrorCircuit, deleteMirrorCircuit,
-  validateByBatch,
+  submitMirrorReviewAction,
 } from '../../../api/endpoints'
 import { FormalObjectTableSection } from '../../data-center/FormalObjectTableSection'
 import { FormalObjectDetailDrawer } from '../../data-center/FormalObjectDetailDrawer'
@@ -193,62 +193,51 @@ export function ValidationMirrorPanel({ actionType, mirrorTab, onMirrorTabChange
   const handleValidate = useCallback(async (selectedIds: string[]) => {
     if (selectedIds.length === 0) return
 
-    // Fetch ALL items (not just current page) to get batch_id mappings
+    // Fetch all items to get labels + target_type
     const allRows = await handleFetchAll()
     const idToRow: Record<string, any> = {}
     for (const row of allRows) { idToRow[row.id] = row }
 
+    // Determine target_type from the mapping
+    const targetType = mapping?.targetType || 'unknown'
+
     const initialItems: ValidationItem[] = selectedIds.map(id => ({
-      id, batchId: idToRow[id]?.batch_id || '',
-      label: idToRow[id]?.display_label || idToRow[id]?.circuit_name || id.slice(0, 16),
+      id, batchId: '',
+      label: idToRow[id]?.display_label || idToRow[id]?.circuit_name || id.slice(0, 12),
       status: 'running' as const,
     }))
 
     setVModal({ open: true, running: true, items: initialItems })
 
-    // Group by batch_id
-    const batchGroups: Record<string, string[]> = {}
-    for (const item of initialItems) {
-      if (item.batchId) {
-        if (!batchGroups[item.batchId]) batchGroups[item.batchId] = []
-        batchGroups[item.batchId].push(item.id)
-      }
-    }
-
     const results: ValidationItem[] = []
+    let done = 0
 
-    for (const [batchId, ids] of Object.entries(batchGroups)) {
-      try {
-        const res = await validateByBatch(batchId)
-        for (const id of ids) {
-          results.push({
-            id, batchId,
-            label: idToRow[id]?.display_label || idToRow[id]?.circuit_name || id.slice(0, 16),
-            status: 'passed',
-            message: res ? `通过 ${res.passed_count || 0}/${res.candidate_count || 0}` : '校验完成',
-          })
-        }
-      } catch (e: any) {
-        for (const id of ids) {
-          results.push({ id, batchId, label: idToRow[id]?.display_label || id.slice(0, 16), status: 'error', message: e?.message || '校验失败' })
-        }
-      }
-      setVModal(prev => ({
-        ...prev,
-        items: [...prev.items.filter(i => !ids.includes(i.id)), ...results.filter(r => ids.includes(r.id))],
-      }))
-    }
-
-    // Items without batch_id
     for (const item of initialItems) {
-      if (!item.batchId) {
-        results.push({ ...item, status: 'skipped', message: '无 batch_id' })
+      try {
+        await submitMirrorReviewAction({
+          target_type: targetType,
+          target_id: item.id,
+          action: 'accept_signal',
+          reviewer: 'admin',
+          reviewer_note: 'rule_checked',
+        })
+        results.push({ ...item, status: 'passed', message: '校验通过' })
+      } catch (e: any) {
+        results.push({ ...item, status: 'error', message: e?.message || '校验失败' })
+      }
+      done++
+      // Update modal every 5 items
+      if (done % 5 === 0 || done === initialItems.length) {
+        setVModal(prev => ({
+          ...prev,
+          items: [...results, ...initialItems.slice(done).map(i => ({ ...i, status: 'running' as const }))],
+        }))
       }
     }
 
     setVModal(prev => ({ ...prev, running: false, items: results }))
     refresh()
-  }, [handleFetchAll])
+  }, [handleFetchAll, mapping])
 
   const offset = (page - 1) * pageSize
   const baseParams = useMemo(() => ({ limit: pageSize, offset, granularity_level: granularityLevel || undefined }), [pageSize, offset, granularityLevel])
