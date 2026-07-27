@@ -15,7 +15,7 @@ import { FormalObjectDetailDrawer } from '../../data-center/FormalObjectDetailDr
 import { getFormalFieldMapping, type FormalObjectType } from '../../data-center/formalFieldMappings'
 import { type FormalRow } from '../../data-center/fieldCompletionUtils'
 import type { MirrorKgSubTab } from '../validationCenterTypes'
-import { Search, ShieldCheck, CheckCircle2, AlertTriangle, XCircle } from 'lucide-react'
+import { ShieldCheck, CheckCircle2, AlertTriangle, XCircle } from 'lucide-react'
 
 interface Props {
   actionType: 'rule_check' | 'dual_model' | 'review'
@@ -51,10 +51,12 @@ const labels: Record<string, string> = {
 // ── Validation Report Modal ────────────────────────────────────────────────
 interface ValidationItem {
   id: string
-  batchId: string
   label: string
-  status: 'running' | 'passed' | 'failed' | 'skipped' | 'error'
+  status: 'running' | 'passed' | 'failed' | 'skipped'
   message?: string
+  blockerCount?: number
+  errorCount?: number
+  warningCount?: number
 }
 
 function ValidationReportModal({
@@ -62,25 +64,23 @@ function ValidationReportModal({
 }: { open: boolean; items: ValidationItem[]; running: boolean; onClose: () => void }) {
   if (!open) return null
 
-  const passed = items.filter(i => i.status === 'passed').length
+  const passed = items.filter(i => i.status === 'passed' || i.status === 'skipped').length
   const failed = items.filter(i => i.status === 'failed').length
-  const skipped = items.filter(i => i.status === 'skipped').length
-  const errors = items.filter(i => i.status === 'error').length
   const total = items.length
   const done = items.filter(i => i.status !== 'running').length
   const pct = total > 0 ? Math.round((done / total) * 100) : 0
+  const totalBlockers = items.reduce((s, i) => s + (i.blockerCount || 0), 0)
+  const totalWarnings = items.reduce((s, i) => s + (i.warningCount || 0), 0)
 
   return (
     <div className="vr-modal-overlay" onClick={running ? undefined : onClose}>
       <div className="vr-modal vrm-report" onClick={e => e.stopPropagation()}>
-        {/* Header */}
         <div className="vrm-hd">
           <ShieldCheck size={18} />
           <h3>规则校验报告</h3>
           {!running && <button className="vrm-close" onClick={onClose}>✕</button>}
         </div>
 
-        {/* Progress bar */}
         {running && (
           <div className="vrm-progress-wrap">
             <div className="vrm-progress-bar" style={{ width: `${pct}%` }} />
@@ -88,45 +88,41 @@ function ValidationReportModal({
           </div>
         )}
 
-        {/* Summary cards */}
         {!running && total > 0 && (
           <div className="vrm-summary">
             <div className="vrm-card vrm-passed">
               <CheckCircle2 size={20} /><span>{passed}</span><small>通过</small>
             </div>
             <div className="vrm-card vrm-failed">
-              <XCircle size={20} /><span>{failed}</span><small>失败</small>
+              <XCircle size={20} /><span>{failed}</span><small>阻塞</small>
             </div>
             <div className="vrm-card vrm-skipped">
-              <AlertTriangle size={20} /><span>{skipped}</span><small>跳过</small>
+              <AlertTriangle size={20} /><span>{totalWarnings}</span><small>警告</small>
             </div>
-            {errors > 0 && (
-              <div className="vrm-card vrm-error">
-                <AlertTriangle size={20} /><span>{errors}</span><small>错误</small>
-              </div>
-            )}
+            <div className="vrm-card vrm-error">
+              <AlertTriangle size={20} /><span>{totalBlockers}</span><small>阻断</small>
+            </div>
           </div>
         )}
 
-        {/* Item list */}
         <div className="vrm-list">
           {items.map((item, i) => (
             <div key={i} className={`vrm-item vrm-item-${item.status}`}>
               <span className="vrm-item-icon">
                 {item.status === 'running' && '⏳'}
-                {item.status === 'passed' && '✅'}
-                {item.status === 'failed' && '❌'}
+                {item.status === 'passed' && (item.warningCount ? '⚠️' : '✅')}
+                {item.status === 'failed' && '🚫'}
                 {item.status === 'skipped' && '⏭️'}
-                {item.status === 'error' && '⚠️'}
               </span>
-              <span className="vrm-item-label">{item.label || item.id?.slice(0, 16)}</span>
+              <span className="vrm-item-label">{item.label || item.id.slice(0, 16)}</span>
               {item.message && <span className="vrm-item-msg">{item.message}</span>}
-              <span className="vrm-item-tag">{item.batchId?.slice(0, 8)}</span>
+              <span className="vrm-item-tag">
+                {item.blockerCount ? `B:${item.blockerCount} ` : ''}
+                {item.warningCount ? `W:${item.warningCount}` : ''}
+              </span>
             </div>
           ))}
-          {total === 0 && !running && (
-            <div className="vrm-empty">没有校验项</div>
-          )}
+          {total === 0 && !running && <div className="vrm-empty">没有校验项</div>}
         </div>
 
         {!running && (
@@ -165,7 +161,7 @@ export function ValidationMirrorPanel({ actionType, mirrorTab, onMirrorTabChange
       else if (mirrorTab === 'functions') await updateMirrorFunction(rowId, { [field]: value })
       else if (mirrorTab === 'circuits') await updateMirrorCircuit(rowId, { [field]: value })
       refresh()
-    } catch (e) { console.error(e) }
+    } catch { /* silent */ }
   }, [mirrorTab])
 
   const handleDeleteRow = useCallback(async (rowId: string) => {
@@ -174,7 +170,7 @@ export function ValidationMirrorPanel({ actionType, mirrorTab, onMirrorTabChange
       else if (mirrorTab === 'functions') await deleteMirrorFunction(rowId)
       else if (mirrorTab === 'circuits') await deleteMirrorCircuit(rowId)
       refresh()
-    } catch (e) { console.error(e) }
+    } catch { /* silent */ }
   }, [mirrorTab])
 
   const handleBulkDelete = useCallback(async (ids: string[]) => {
@@ -182,7 +178,7 @@ export function ValidationMirrorPanel({ actionType, mirrorTab, onMirrorTabChange
       : mirrorTab === 'functions' ? deleteMirrorFunction
       : mirrorTab === 'circuits' ? deleteMirrorCircuit : null
     if (!fn) return
-    try { for (const id of ids) await fn(id); refresh() } catch (e) { console.error(e) }
+    try { for (const id of ids) await fn(id); refresh() } catch { /* silent */ }
   }, [mirrorTab])
 
   const handleFetchAll = useCallback(async (): Promise<FormalRow[]> => {
@@ -194,12 +190,7 @@ export function ValidationMirrorPanel({ actionType, mirrorTab, onMirrorTabChange
   const handleValidate = useCallback(async (selectedIds: string[]) => {
     if (selectedIds.length === 0) return
 
-    // Fetch all rows and review queue to get labels + correct target_type
-    const allRows = await handleFetchAll()
-    const idToRow: Record<string, any> = {}
-    for (const row of allRows) { idToRow[row.id] = row }
-
-    // Get review queue items for correct target_type mapping
+    // Get review queue items to read validation status (no status change)
     let rqItems: MirrorReviewQueueItem[] = []
     try {
       const res = await listMirrorReviewQueue({ limit: 5000, offset: 0, granularity_level: granularityLevel || undefined })
@@ -209,11 +200,17 @@ export function ValidationMirrorPanel({ actionType, mirrorTab, onMirrorTabChange
     const rqById: Record<string, MirrorReviewQueueItem> = {}
     for (const item of rqItems) { rqById[item.target_id] = item }
 
-    const initialItems: ValidationItem[] = selectedIds.map(id => ({
-      id, batchId: '',
-      label: idToRow[id]?.display_label || idToRow[id]?.circuit_name || id.slice(0, 12),
-      status: 'running' as const,
-    }))
+    const initialItems: ValidationItem[] = selectedIds.map(id => {
+      const rq = rqById[id]
+      return {
+        id,
+        label: rq?.display_label || id.slice(0, 12),
+        status: 'running' as const,
+        blockerCount: rq?.blocker_count ?? 0,
+        errorCount: rq?.error_count ?? 0,
+        warningCount: rq?.warning_count ?? 0,
+      }
+    })
 
     setVModal({ open: true, running: true, items: initialItems })
 
@@ -222,20 +219,39 @@ export function ValidationMirrorPanel({ actionType, mirrorTab, onMirrorTabChange
 
     for (const item of initialItems) {
       const rqItem = rqById[item.id]
-      const targetType = rqItem?.target_type || 'circuit'
 
-      try {
-        await submitMirrorReviewAction({
-          target_type: targetType,
-          target_id: item.id,
-          action: 'approve',
-          reviewer: 'admin',
-          reviewer_note: 'rule_checked',
-        })
-        results.push({ ...item, status: 'passed', message: '校验通过' })
-      } catch (e: any) {
-        results.push({ ...item, status: 'error', message: e?.message || '校验失败' })
+      if (!rqItem) {
+        // Item not in review queue — skip
+        results.push({ ...item, status: 'skipped', message: '未在验证队列中' })
+      } else {
+        const b = rqItem.blocker_count ?? 0
+        const e = rqItem.error_count ?? 0
+        const w = rqItem.warning_count ?? 0
+
+        if (b > 0) {
+          results.push({ ...item, status: 'failed', message: `${b} 个阻塞, ${w} 个警告` })
+        } else if (e > 0) {
+          results.push({ ...item, status: 'failed', message: `${e} 个错误, ${w} 个警告` })
+        } else if (w > 0) {
+          results.push({ ...item, status: 'passed', message: `通过 (${w} 个警告)` })
+        } else {
+          results.push({ ...item, status: 'passed', message: '全部规则通过' })
+        }
+
+        // Record validation check via comment (does NOT change review status)
+        try {
+          await submitMirrorReviewAction({
+            target_type: rqItem.target_type,
+            target_id: item.id,
+            action: 'comment',
+            reviewer: 'admin',
+            reviewer_note: `规则校验完成: ${b > 0 ? `${b}B ` : ''}${e > 0 ? `${e}E ` : ''}${w > 0 ? `${w}W` : '通过'}`,
+          })
+        } catch {
+          // Comment recording is non-critical
+        }
       }
+
       done++
       if (done % 10 === 0 || done === initialItems.length) {
         setVModal(prev => ({
@@ -247,7 +263,7 @@ export function ValidationMirrorPanel({ actionType, mirrorTab, onMirrorTabChange
 
     setVModal(prev => ({ ...prev, running: false, items: results }))
     refresh()
-  }, [handleFetchAll, granularityLevel])
+  }, [granularityLevel])
 
   const offset = (page - 1) * pageSize
   const baseParams = useMemo(() => ({ limit: pageSize, offset, granularity_level: granularityLevel || undefined }), [pageSize, offset, granularityLevel])
