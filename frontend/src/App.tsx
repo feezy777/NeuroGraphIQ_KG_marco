@@ -15,6 +15,7 @@ import { LlmExtractionPage } from './pages/LlmExtractionPage'
 import { RuleValidationPage } from './pages/RuleValidationPage'
 import { HumanReviewPage } from './pages/HumanReviewPage'
 import { PromotionsPage } from './pages/PromotionsPage'
+import { ValidationCenterPage } from './pages/validation-center/ValidationCenterPage'
 import { SettingsPage } from './pages/SettingsPage'
 import { MirrorKgPage } from './pages/MirrorKgPage'
 import { BackgroundTaskCenterPage } from './pages/BackgroundTaskCenter'
@@ -37,6 +38,7 @@ const ROUTES: Record<string, ComponentType> = {
   '/graph-explorer': GraphExplorerPage,
   '/brain-3d': Brain3DPage,
   '/symptom-query': SymptomQueryPage,
+  '/validation-center': ValidationCenterPage,
   '/rule-validation': RuleValidationPage,
   '/human-review': HumanReviewPage,
   '/promotions': PromotionsPage,

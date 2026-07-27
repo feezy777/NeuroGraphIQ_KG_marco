@@ -74,6 +74,7 @@ export const messages: Record<Language, Record<string, string>> = {
     'nav.graphExplorer': '图谱探索',
     'nav.brain3D': '3D脑图',
     'nav.symptomQuery': '症状查询',
+    'nav.validationCenter': '验证中心',
     'nav.ruleValidation': '规则校验',
     'nav.humanReview': '人工审核',
     'nav.promotions': '晋升记录',
@@ -2084,6 +2085,24 @@ export const messages: Record<Language, Record<string, string>> = {
     'llm.governance.openReviewWorkspace': '打开 Review 工作区',
 
     // data center
+    // Validation Center
+    'validationCenter.title': '验证中心',
+    'validationCenter.subtitle': '规则校验、人工审核、晋升管理、数据质量验证',
+    'validationCenter.governanceFlow': '治理工作流',
+    'validationCenter.overview': '总览',
+    'validationCenter.ruleValidation': '规则校验',
+    'validationCenter.ruleValidationDesc': '对 Mirror KG 对象执行确定性规则校验',
+    'validationCenter.humanReview': '人工审核',
+    'validationCenter.humanReviewDesc': '对 rule_checked 对象执行人工审核',
+    'validationCenter.promotion': '晋升管理',
+    'validationCenter.promotionDesc': '将 human_approved 对象晋升至 Final KG',
+    'validationCenter.mirror': 'Mirror KG',
+    'validationCenter.mirrorDesc': '浏览 Mirror KG 候选数据',
+    'validationCenter.macro': 'Macro Clinical',
+    'validationCenter.macroDesc': '浏览 Macro Clinical 结构化数据与交叉验证',
+    'validationCenter.final': 'Final KG',
+    'validationCenter.finalDesc': '浏览已晋升的 Final KG 正式数据',
+
     'dataCenter.title': '数据中心',
     'dataCenter.subtitle': '统一管理 Raw、Candidate、Mirror KG、Final KG 与 Export 数据对象',
     'dataCenter.boundary': '数据中心用于统一查看和管理 Raw、Candidate、Mirror KG、Final KG 与 Export 数据对象。LLM 抽取、规则校验、人工审核、Promotion 和 Export 执行仍在对应工作流页面中完成。',
