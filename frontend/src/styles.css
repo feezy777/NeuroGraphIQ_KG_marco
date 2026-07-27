@@ -10918,3 +10918,24 @@ input[type="range"]::-webkit-slider-thumb {
 }
 .validation-drawer-footer textarea { resize: vertical; min-height: 48px; }
 .validation-drawer-actions { display: flex; gap: 8px; justify-content: flex-end; }
+
+/* Validation Panel shared styles */
+.validation-panel {
+  display: flex; flex-direction: column; height: 100%; overflow: hidden;
+}
+.validation-filter-bar {
+  display: flex; align-items: center; gap: 8px; padding: 8px 16px;
+  border-bottom: 1px solid #e5e7ef; flex-shrink: 0; flex-wrap: wrap;
+}
+.validation-filter-bar select.input { width: auto; min-width: 100px; }
+.validation-cell-label { font-size: 13px; max-width: 300px; display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.validation-row-actions { display: flex; gap: 4px; }
+.validation-pagination {
+  display: flex; align-items: center; justify-content: center; gap: 12px;
+  padding: 8px 16px; border-top: 1px solid #e5e7ef; flex-shrink: 0; font-size: 13px;
+}
+.text-red { color: #dc2626; font-weight: 600; }
+.text-yellow { color: #d97706; }
+.text-green { color: #16a34a; }
+.text-muted { color: #9ca3af; font-size: 12px; }
+.text-xs { font-size: 11px; color: #9ca3af; }
