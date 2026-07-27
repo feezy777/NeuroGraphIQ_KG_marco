@@ -193,63 +193,62 @@ export function ValidationMirrorPanel({ actionType, mirrorTab, onMirrorTabChange
   const handleValidate = useCallback(async (selectedIds: string[]) => {
     if (selectedIds.length === 0) return
 
-    // Build initial item list from selected IDs (we only have IDs at this point)
+    // Fetch ALL items (not just current page) to get batch_id mappings
+    const allRows = await handleFetchAll()
+    const idToRow: Record<string, any> = {}
+    for (const row of allRows) { idToRow[row.id] = row }
+
     const initialItems: ValidationItem[] = selectedIds.map(id => ({
-      id, batchId: '', label: id.slice(0, 16), status: 'running' as const,
+      id, batchId: idToRow[id]?.batch_id || '',
+      label: idToRow[id]?.display_label || idToRow[id]?.circuit_name || id.slice(0, 16),
+      status: 'running' as const,
     }))
 
     setVModal({ open: true, running: true, items: initialItems })
 
-    // Collect unique batch_ids from the table data
-    // We need to get batch_id for each selected item
-    const allRows = ((tableData?.items ?? []) as any[])
-    const idToBatch: Record<string, string> = {}
-    for (const row of allRows) {
-      if (row.id && selectedIds.includes(row.id) && row.batch_id) {
-        idToBatch[row.id] = row.batch_id
+    // Group by batch_id
+    const batchGroups: Record<string, string[]> = {}
+    for (const item of initialItems) {
+      if (item.batchId) {
+        if (!batchGroups[item.batchId]) batchGroups[item.batchId] = []
+        batchGroups[item.batchId].push(item.id)
       }
     }
 
-    const uniqueBatches = [...new Set(Object.values(idToBatch))]
     const results: ValidationItem[] = []
 
-    for (const batchId of uniqueBatches) {
-      const batchItems = selectedIds.filter(id => idToBatch[id] === batchId)
+    for (const [batchId, ids] of Object.entries(batchGroups)) {
       try {
         const res = await validateByBatch(batchId)
-        for (const id of batchItems) {
+        for (const id of ids) {
           results.push({
             id, batchId,
-            label: allRows.find((r: any) => r.id === id)?.display_label || allRows.find((r: any) => r.id === id)?.circuit_name || id.slice(0, 16),
+            label: idToRow[id]?.display_label || idToRow[id]?.circuit_name || id.slice(0, 16),
             status: 'passed',
-            message: res ? `通过 (${res.passed_count || 0}/${res.candidate_count || 0})` : '校验完成',
+            message: res ? `通过 ${res.passed_count || 0}/${res.candidate_count || 0}` : '校验完成',
           })
         }
       } catch (e: any) {
-        for (const id of batchItems) {
-          results.push({ id, batchId, label: id.slice(0, 16), status: 'error', message: e?.message || '校验失败' })
+        for (const id of ids) {
+          results.push({ id, batchId, label: idToRow[id]?.display_label || id.slice(0, 16), status: 'error', message: e?.message || '校验失败' })
         }
       }
-      // Update modal in real-time
       setVModal(prev => ({
         ...prev,
-        items: [...prev.items.filter(i => !batchItems.includes(i.id)), ...results.filter(r => batchItems.includes(r.id))],
+        items: [...prev.items.filter(i => !ids.includes(i.id)), ...results.filter(r => ids.includes(r.id))],
       }))
     }
 
-    // Any items without batch_id
-    const noBatchIds = selectedIds.filter(id => !idToBatch[id])
-    for (const id of noBatchIds) {
-      results.push({ id, batchId: '', label: id.slice(0, 16), status: 'skipped', message: '无关联 batch_id' })
+    // Items without batch_id
+    for (const item of initialItems) {
+      if (!item.batchId) {
+        results.push({ ...item, status: 'skipped', message: '无 batch_id' })
+      }
     }
 
-    setVModal(prev => ({
-      ...prev, running: false,
-      items: results.length > 0 ? results : prev.items.map(i => ({ ...i, status: 'skipped' as const, message: '无数据' })),
-    }))
-
+    setVModal(prev => ({ ...prev, running: false, items: results }))
     refresh()
-  }, [])
+  }, [handleFetchAll])
 
   const offset = (page - 1) * pageSize
   const baseParams = useMemo(() => ({ limit: pageSize, offset, granularity_level: granularityLevel || undefined }), [pageSize, offset, granularityLevel])
