@@ -11015,6 +11015,11 @@ input[type="range"]::-webkit-slider-thumb {
 .vw-stat-ok .vw-stat-num { color: var(--success); }
 .vw-stat-pending .vw-stat-num { color: var(--warning); }
 .vw-stat-done .vw-stat-num { color: var(--primary); }
+.vw-c-red { color: var(--danger); }
+.vw-c-yellow { color: var(--warning); }
+.vw-c-green { color: var(--success); }
+.vw-c-blue { color: #1677ff; }
+.vw-c-primary { color: var(--primary); }
 
 /* Stage columns */
 .vw-th-stage { width: 90px; }
