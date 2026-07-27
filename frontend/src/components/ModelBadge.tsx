@@ -40,7 +40,7 @@ interface ModelBadgeProps {
 }
 
 export function ModelBadge({ provider, modelName }: ModelBadgeProps) {
-  const info = resolveModelInfo(provider, modelName)
+  const info = resolveModelInfo(provider ?? undefined, modelName ?? undefined)
   if (!info) return null
   return (
     <span

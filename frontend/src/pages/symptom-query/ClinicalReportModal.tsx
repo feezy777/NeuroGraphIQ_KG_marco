@@ -54,7 +54,7 @@ export function ClinicalReportModal({ open, summary, circuits, graphNodes, graph
   const [done, setDone] = useState(false)
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const reportRef = useRef<HTMLDivElement>(null)
-  const graphCaptureRef = useRef<HTMLDivElement>(null)
+  const graphCaptureRef = useRef<HTMLDivElement | null>(null)
 
   // Simulate animated progress during the API call
   const startProgress = useCallback(() => {

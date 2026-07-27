@@ -13,6 +13,8 @@ export interface PipelineIds {
   candidate_id?: string
   final_region_id?: string
   source_atlas?: string
+  source_version?: string
+  granularity_level?: string
   granularity_family?: string
 }
 
