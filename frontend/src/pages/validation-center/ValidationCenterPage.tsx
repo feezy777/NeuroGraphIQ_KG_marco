@@ -8,16 +8,11 @@ import { ValidationMirrorPanel } from './panels/ValidationMirrorPanel'
 import { MacroClinicalDataPanel } from '../data-center/MacroClinicalDataPanel'
 import { FinalKgDataPanel } from '../data-center/FinalKgDataPanel'
 import { ValidationPromotionPanel } from './panels/ValidationPromotionPanel'
-import type {
-  ValidationCenterNavState,
-  ValidationCenterTabId,
-  MirrorKgSubTab,
-  MacroClinicalSubTab,
-  FinalKgSubTab,
-} from './validationCenterTypes'
+import type { ValidationCenterNavState, ValidationCenterTabId, MirrorKgSubTab, MacroClinicalSubTab, FinalKgSubTab } from './validationCenterTypes'
 import { VALIDATION_CENTER_TABS, DEFAULT_NAV } from './validationCenterTypes'
 
-const MIRROR_TABS = ['rule_check', 'review', 'dual_model', 'connections', 'functions', 'circuits', 'triples', 'evidence']
+const MIRROR_TABS = ['connections', 'functions', 'circuits', 'triples', 'evidence']
+const MIRROR_TOP_TABS: ValidationCenterTabId[] = ['rule_check', 'dual_model', 'review']
 
 function parseNavFromUrl(): ValidationCenterNavState {
   const q = readHashQueryParams()
@@ -39,8 +34,8 @@ function parseNavFromUrl(): ValidationCenterNavState {
 
 function navToQuery(nav: ValidationCenterNavState): Record<string, string | undefined> {
   return {
-    tab: nav.tab === 'mirror' ? undefined : nav.tab,
-    mirrorTab: nav.tab === 'mirror' ? nav.mirrorTab : undefined,
+    tab: nav.tab === 'rule_check' ? undefined : nav.tab,
+    mirrorTab: MIRROR_TOP_TABS.includes(nav.tab) ? nav.mirrorTab : undefined,
     macroTab: nav.tab === 'macro' ? nav.macroTab : undefined,
     finalTab: nav.tab === 'final' ? nav.finalTab : undefined,
     batch_id: nav.batchId || undefined,
@@ -71,64 +66,43 @@ export function ValidationCenterPage() {
 
   const setTab = useCallback((tab: ValidationCenterTabId) => updateNav({ tab }), [updateNav])
 
+  // Shared mirror panel for all 3 action tabs
+  const renderMirrorPanel = (actionType: 'rule_check' | 'dual_model' | 'review') => (
+    <ValidationMirrorPanel
+      actionType={actionType}
+      mirrorTab={nav.mirrorTab}
+      onMirrorTabChange={(mirrorTab: MirrorKgSubTab) => updateNav({ tab: nav.tab, mirrorTab })}
+      batchId={nav.batchId}
+      resourceId={nav.resourceId}
+      sourceAtlas={nav.sourceAtlas}
+      granularityLevel={granularity}
+      onFilterChange={patch => updateNav({
+        batchId: patch.batchId ?? nav.batchId,
+        resourceId: patch.resourceId ?? nav.resourceId,
+        sourceAtlas: patch.sourceAtlas ?? nav.sourceAtlas,
+      })}
+    />
+  )
+
   const workspace = useMemo(() => {
     switch (nav.tab) {
-      case 'mirror':
-        return (
-          <ValidationMirrorPanel
-            mirrorTab={nav.mirrorTab}
-            onMirrorTabChange={(mirrorTab: MirrorKgSubTab) => updateNav({ tab: 'mirror', mirrorTab })}
-            batchId={nav.batchId}
-            resourceId={nav.resourceId}
-            sourceAtlas={nav.sourceAtlas}
-            granularityLevel={granularity}
-            onFilterChange={patch => updateNav({
-              batchId: patch.batchId ?? nav.batchId,
-              resourceId: patch.resourceId ?? nav.resourceId,
-              sourceAtlas: patch.sourceAtlas ?? nav.sourceAtlas,
-            })}
-          />
-        )
-      case 'promotion':
-        return <ValidationPromotionPanel granularityLevel={granularity} />
+      case 'rule_check': return renderMirrorPanel('rule_check')
+      case 'dual_model': return renderMirrorPanel('dual_model')
+      case 'review': return renderMirrorPanel('review')
+      case 'promotion': return <ValidationPromotionPanel granularityLevel={granularity} />
       case 'macro':
         return (
           <MacroClinicalDataPanel
             macroTab={nav.macroTab}
             onMacroTabChange={(macroTab: MacroClinicalSubTab) => updateNav({ tab: 'macro', macroTab })}
-            batchId={nav.batchId}
-            resourceId={nav.resourceId}
-            sourceAtlas={nav.sourceAtlas}
+            batchId={nav.batchId} resourceId={nav.resourceId} sourceAtlas={nav.sourceAtlas}
             granularityLevel={granularity}
-            onFilterChange={patch => updateNav({
-              batchId: patch.batchId ?? nav.batchId,
-              resourceId: patch.resourceId ?? nav.resourceId,
-              sourceAtlas: patch.sourceAtlas ?? nav.sourceAtlas,
-            })}
+            onFilterChange={patch => updateNav({ batchId: patch.batchId ?? nav.batchId, resourceId: patch.resourceId ?? nav.resourceId, sourceAtlas: patch.sourceAtlas ?? nav.sourceAtlas })}
           />
         )
       case 'final':
-        return (
-          <FinalKgDataPanel
-            finalTab={nav.finalTab}
-            granularityLevel={granularity}
-            onFinalTabChange={(finalTab: FinalKgSubTab) => updateNav({ tab: 'final', finalTab })}
-          />
-        )
-      default:
-        return <ValidationMirrorPanel
-          mirrorTab={DEFAULT_NAV.mirrorTab}
-          onMirrorTabChange={(mirrorTab: MirrorKgSubTab) => updateNav({ tab: 'mirror', mirrorTab })}
-          batchId={nav.batchId}
-          resourceId={nav.resourceId}
-          sourceAtlas={nav.sourceAtlas}
-          granularityLevel={granularity}
-          onFilterChange={patch => updateNav({
-            batchId: patch.batchId ?? nav.batchId,
-            resourceId: patch.resourceId ?? nav.resourceId,
-            sourceAtlas: patch.sourceAtlas ?? nav.sourceAtlas,
-          })}
-        />
+        return <FinalKgDataPanel finalTab={nav.finalTab} granularityLevel={granularity} onFinalTabChange={(finalTab: FinalKgSubTab) => updateNav({ tab: 'final', finalTab })} />
+      default: return renderMirrorPanel('rule_check')
     }
   }, [nav, granularity, setTab, updateNav])
 
