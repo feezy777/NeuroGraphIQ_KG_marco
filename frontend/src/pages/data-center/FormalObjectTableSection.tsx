@@ -32,6 +32,7 @@ interface Props {
   onFetchAll?: () => Promise<FormalRow[]>
   extraToolbarButtons?: React.ReactNode
   hideFieldCompletion?: boolean
+  onValidateSelected?: (ids: string[]) => void
   /** Current granularity level for schema display in FormalAlignmentCard */
   granularityLevel?: string
 }
@@ -49,6 +50,7 @@ export function FormalObjectTableSection({
   onServerPageChange,
   extraToolbarButtons,
   hideFieldCompletion,
+  onValidateSelected,
   onOpenDetail,
   onRefresh,
   onDeleteSelected,
@@ -289,6 +291,11 @@ export function FormalObjectTableSection({
           <button className="fab-btn" onClick={openBulkCompletion}>
             ✨ AI 补全
           </button>
+          )}
+          {onValidateSelected && (
+            <button className="fab-btn fab-btn-validate" onClick={() => onValidateSelected([...effectiveSelected])}>
+              🔍 校验
+            </button>
           )}
           {onDeleteSelected && (
             <button className="fab-btn fab-btn-danger" onClick={() => setDeleteConfirmOpen(true)}>
