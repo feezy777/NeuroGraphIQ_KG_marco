@@ -180,6 +180,7 @@ export function ValidationMirrorPanel({ actionType, mirrorTab, onMirrorTabChange
           onOpenDetail={setSelected} onRefresh={refresh}
           onDeleteSelected={handleBulkDelete} onFetchAll={handleFetchAll}
           granularityLevel={granularityLevel}
+          hideFieldCompletion
         />
       )}
 

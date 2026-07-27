@@ -31,6 +31,7 @@ interface Props {
   onDeleteSelected?: (ids: string[]) => void
   onFetchAll?: () => Promise<FormalRow[]>
   extraToolbarButtons?: React.ReactNode
+  hideFieldCompletion?: boolean
   /** Current granularity level for schema display in FormalAlignmentCard */
   granularityLevel?: string
 }
@@ -47,6 +48,7 @@ export function FormalObjectTableSection({
   serverPage,
   onServerPageChange,
   extraToolbarButtons,
+  hideFieldCompletion,
   onOpenDetail,
   onRefresh,
   onDeleteSelected,
@@ -191,6 +193,7 @@ export function FormalObjectTableSection({
       <FormalAlignmentCard mapping={mapping} items={items} total={total} granularityLevel={granularityLevel} />
 
       <div className="data-center-formal-toolbar">
+        {!hideFieldCompletion && (
         <button
           type="button"
           className="btn btn-primary"
@@ -200,6 +203,7 @@ export function FormalObjectTableSection({
         >
           {isCircuitBundle ? t('dataCenter.circuitBundleCompletion') : t('dataCenter.fieldCompletion')}
         </button>
+        )}
         <button type="button" className="btn" onClick={togglePage}>
           {t('dataCenter.selectPage')}
         </button>
@@ -281,9 +285,11 @@ export function FormalObjectTableSection({
         <div className="floating-action-bar">
           <span className="fab-count">{selectedCount} 项已选</span>
           <span className="fab-divider" />
+          {!hideFieldCompletion && (
           <button className="fab-btn" onClick={openBulkCompletion}>
             ✨ AI 补全
           </button>
+          )}
           {onDeleteSelected && (
             <button className="fab-btn fab-btn-danger" onClick={() => setDeleteConfirmOpen(true)}>
               🗑 删除
