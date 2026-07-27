@@ -10457,6 +10457,58 @@ input[type="range"]::-webkit-slider-thumb {
 .data-center-overview-grid { display: none; }
 .data-center-quick-actions { display: none; }
 
+/* ── Validation Center ────────────────────────────────────────────────────── */
+.validation-overview {
+  padding: 20px 24px;
+  height: 100%;
+  overflow-y: auto;
+}
+.validation-overview-flow {
+  max-width: 960px;
+}
+.validation-flow-label {
+  font-size: 14px;
+  font-weight: 600;
+  color: #1e293b;
+  margin-bottom: 16px;
+  padding-bottom: 8px;
+  border-bottom: 2px solid #e2e8f0;
+}
+.validation-flow-cards {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+}
+.validation-flow-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 16px;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-top: 3px solid #3b82f6;
+  border-radius: 8px;
+  cursor: pointer;
+  text-align: left;
+  transition: box-shadow 0.15s, transform 0.15s;
+}
+.validation-flow-card:hover {
+  box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+  transform: translateY(-1px);
+}
+.validation-flow-card-title {
+  font-size: 14px;
+  font-weight: 600;
+}
+.validation-flow-card-desc {
+  font-size: 12px;
+  color: #64748b;
+  line-height: 1.5;
+}
+@media (max-width: 700px) {
+  .validation-flow-cards { grid-template-columns: 1fr; }
+}
+
 /* ── Model Selector ───────────────────────────────────────────────────────── */
 .model-selector {
   background: var(--white);
@@ -10803,4 +10855,29 @@ input[type="range"]::-webkit-slider-thumb {
 .llm-quick-card-features li {
   margin-bottom: 2px;
   line-height: 1.5;
+}
+/* Validation Action Bar */
+.validation-action-bar {
+  position: sticky;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: #f0f9ff;
+  border-top: 2px solid #3b82f6;
+  padding: 8px 16px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  z-index: 30;
+  flex-wrap: wrap;
+}
+.validation-action-bar-count {
+  font-size: 13px;
+  color: #1e40af;
+}
+.validation-action-bar-sep {
+  width: 1px;
+  height: 20px;
+  background: #bfdbfe;
+  margin: 0 4px;
 }
