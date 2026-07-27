@@ -11000,7 +11000,7 @@ input[type="range"]::-webkit-slider-thumb {
 .spin { animation: spin .8s linear infinite; }
 
 /* ── Validation Report Modal ─────────────────────────────────────────────── */
-.vrm-report { width: 520px; max-width: 95vw; max-height: 75vh; }
+.vrm-report { width: 520px !important; min-width: 520px; max-width: 95vw; max-height: 75vh; }
 .vrm-hd { display: flex; align-items: center; gap: 8px; padding: 14px 20px; border-bottom: 1px solid var(--border); flex-shrink: 0; }
 .vrm-hd h3 { margin: 0; font-size: 16px; flex: 1; }
 .vrm-close { background: none; border: none; font-size: 16px; cursor: pointer; color: var(--text-muted); }
@@ -11034,7 +11034,7 @@ input[type="range"]::-webkit-slider-thumb {
 
 /* ── Validation Workbench shared ─────────────────────────────────────────── */
 .vr-modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.35); z-index: 100; display: flex; align-items: center; justify-content: center; }
-.vr-modal { background: var(--white); border-radius: var(--card-radius); box-shadow: var(--shadow-lg); display: flex; flex-direction: column; overflow: hidden; }
+.vr-modal { background: var(--white); border-radius: var(--card-radius); box-shadow: var(--shadow-lg); display: flex; flex-direction: column; overflow: hidden; flex-shrink: 0; }
 .vr-panel { display: flex; flex-direction: column; height: 100%; overflow: hidden; }
 .vr-header { display: flex; align-items: center; justify-content: space-between; padding: 12px 20px; border-bottom: 1px solid var(--border); background: var(--white); flex-shrink: 0; }
 .vr-tabs { display: flex; gap: 4px; }

@@ -228,7 +228,7 @@ export function ValidationMirrorPanel({ actionType, mirrorTab, onMirrorTabChange
         await submitMirrorReviewAction({
           target_type: targetType,
           target_id: item.id,
-          action: 'accept_signal',
+          action: 'approve',
           reviewer: 'admin',
           reviewer_note: 'rule_checked',
         })
