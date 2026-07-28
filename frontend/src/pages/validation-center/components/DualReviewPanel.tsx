@@ -50,6 +50,7 @@ export function DualReviewPanel({ granularityLevel }: Props) {
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [actionLoading, setActionLoading] = useState(false)
   const [actionMessage, setActionMessage] = useState<string | null>(null)
+  const [reviewProgress, setReviewProgress] = useState<{open: boolean; runId: string; status: string; done: number; total: number} | null>(null)
 
   const fetchData = useCallback(async () => {
     setLoading(true)
@@ -91,9 +92,34 @@ export function DualReviewPanel({ granularityLevel }: Props) {
       if (!res.ok) throw new Error(`API错误: ${res.status}`)
       const data = await res.json()
       setSelected(new Set())
-      setActionMessage(`${label} 已完成 (已处理 ${data.eligible_count || data.processed_count || '?'} 项)`)
-      setTimeout(() => setActionMessage(null), 5000)
-      fetchData()
+
+      // Show progress for dual-review submissions
+      const runId = data.internal_run_id || ''
+      if (endpoint.includes('dual-review') && runId) {
+        setReviewProgress({open: true, runId, status: 'running', done: 0, total: data.eligible_count || 0})
+        const poll = setInterval(async () => {
+          try {
+            const prRes = await fetch(`/api/validation/circuit/runs/${runId}/progress`)
+            if (!prRes.ok) { clearInterval(poll); return }
+            const pr = await prRes.json()
+            setReviewProgress(p => p ? {
+              ...p,
+              done: (pr.dual_review_agreement_count || 0) + (pr.dual_review_conflict_count || 0) + (pr.dual_review_rejection_count || 0) + (pr.dual_review_uncertain_count || 0),
+              total: pr.dual_review_total_count || p.total,
+              status: pr.status || p.status,
+            } : null)
+            if (pr.status === 'completed' || pr.status === 'failed' || pr.status === 'cancelled') {
+              clearInterval(poll)
+              setReviewProgress(p => p ? {...p, status: pr.status} : null)
+              fetchData()
+            }
+          } catch { clearInterval(poll) }
+        }, 2000)
+      } else {
+        setActionMessage(`${label} 已完成 (已处理 ${data.eligible_count || data.processed_count || '?'} 项)`)
+        setTimeout(() => setActionMessage(null), 5000)
+        fetchData()
+      }
     } catch (e: unknown) {
       setActionMessage(e instanceof Error ? e.message : '操作失败')
       setTimeout(() => setActionMessage(null), 5000)
@@ -206,6 +232,29 @@ export function DualReviewPanel({ granularityLevel }: Props) {
           >
             清除选择
           </button>
+        </div>
+      )}
+      {reviewProgress?.open && (
+        <div className="vw-modal-overlay">
+          <div className="vw-modal vw-modal-sm">
+            <div className="vw-modal-hd"><h3>双模型盲审中</h3></div>
+            <div className="vw-modal-body">
+              <div className="vw-progress-bar-wrap">
+                <div className="vw-progress-bar" style={{
+                  width: `${reviewProgress.total > 0 ? (reviewProgress.done / reviewProgress.total) * 100 : 0}%`
+                }} />
+              </div>
+              <p>已完成 {reviewProgress.done}/{reviewProgress.total} 项</p>
+              <p>状态: {reviewProgress.status === 'completed' ? '已完成' :
+                        reviewProgress.status === 'failed' ? '失败' :
+                        reviewProgress.status === 'cancelled' ? '已取消' : '运行中...'}</p>
+            </div>
+            {reviewProgress.status !== 'running' && (
+              <div className="vw-modal-ft">
+                <button className="btn btn-primary" onClick={() => setReviewProgress(null)}>确定</button>
+              </div>
+            )}
+          </div>
         </div>
       )}
     </div>

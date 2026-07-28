@@ -55,6 +55,11 @@ export function PromotionPanel({ granularityLevel }: Props) {
   const [actionLoading, setActionLoading] = useState(false)
   const [actionMessage, setActionMessage] = useState<string | null>(null)
   const [showPreview, setShowPreview] = useState(false)
+  const [previewData, setPreviewData] = useState<Record<string, any> | null>(null)
+  const [previewLoading, setPreviewLoading] = useState(false)
+  const [previewError, setPreviewError] = useState<string | null>(null)
+  const [dryRunResult, setDryRunResult] = useState<Record<string, any> | null>(null)
+  const [dryRunLoading, setDryRunLoading] = useState(false)
 
   const fetchData = useCallback(async () => {
     setLoading(true)
@@ -107,9 +112,45 @@ export function PromotionPanel({ granularityLevel }: Props) {
     }
   }, [selected, fetchData])
 
-  const handlePreview = useCallback(() => {
+  const handlePreview = useCallback(async () => {
     if (selected.size === 0) return
-    setShowPreview(true)
+    setPreviewLoading(true)
+    setPreviewError(null)
+    setPreviewData(null)
+    try {
+      // Preview the first selected item
+      const id = Array.from(selected)[0]
+      const res = await fetch(`/api/validation/circuit/promotion/${id}/preview`)
+      if (!res.ok) throw new Error(`API错误: ${res.status}`)
+      const data = await res.json()
+      setPreviewData(data)
+    } catch (e: unknown) {
+      setPreviewError(e instanceof Error ? e.message : '预览失败')
+    } finally {
+      setPreviewLoading(false)
+      setShowPreview(true)
+    }
+  }, [selected])
+
+  const handleDryRunPromote = useCallback(async () => {
+    if (selected.size === 0) return
+    setDryRunLoading(true)
+    setDryRunResult(null)
+    try {
+      const id = Array.from(selected)[0]
+      const res = await fetch(`/api/validation/circuit/promotion/${id}/execute`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ dry_run: true }),
+      })
+      if (!res.ok) throw new Error(`API错误: ${res.status}`)
+      const data = await res.json()
+      setDryRunResult(data)
+    } catch (e: unknown) {
+      setDryRunResult({error: e instanceof Error ? e.message : '操作失败'})
+    } finally {
+      setDryRunLoading(false)
+    }
   }, [selected])
 
   if (loading && items.length === 0) {
@@ -189,9 +230,16 @@ export function PromotionPanel({ granularityLevel }: Props) {
           <button
             className="btn btn-sm btn-outline"
             onClick={handlePreview}
-            disabled={actionLoading}
+            disabled={actionLoading || previewLoading}
           >
-            晋升预览
+            {previewLoading ? '加载中...' : '晋升预览'}
+          </button>
+          <button
+            className="btn btn-sm btn-outline"
+            onClick={handleDryRunPromote}
+            disabled={actionLoading || dryRunLoading}
+          >
+            {dryRunLoading ? '模拟中...' : '晋升模拟(Dry Run)'}
           </button>
           <button
             className="btn btn-sm btn-primary"
@@ -212,46 +260,122 @@ export function PromotionPanel({ granularityLevel }: Props) {
 
       {showPreview && (
         <div className="vr-modal-overlay" onClick={() => setShowPreview(false)}>
-          <div className="vr-modal" style={{ width: 520 }} onClick={e => e.stopPropagation()}>
+          <div className="vr-modal" style={{ width: 560 }} onClick={e => e.stopPropagation()}>
             <div className="vr-modal-hd">
               <h3>晋升预览</h3>
               <span className="vr-modal-meta">已选 {selected.size} 项</span>
               <button className="vr-modal-close" onClick={() => setShowPreview(false)}>✕</button>
             </div>
             <div className="vr-modal-body">
-              <div className="vr-section">
-                <h4>即将晋升的回路</h4>
-                <ul style={{ margin: 0, padding: 0, listStyle: 'none' }}>
-                  {items.filter(item => selected.has(item.id)).map(item => (
-                    <li key={item.id} style={{
-                      padding: '6px 0', borderBottom: '1px solid #f0f0f0',
-                      display: 'flex', justifyContent: 'space-between', fontSize: 13,
-                    }}>
-                      <span>{item.circuit_name}</span>
-                      <span style={{ color: 'var(--text-muted)' }}>{formatConfidence(item.confidence)}</span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-              <div className="vr-section">
-                <h4>操作说明</h4>
-                <p style={{ fontSize: 12, color: 'var(--text-muted)', lineHeight: 1.6 }}>
-                  晋升后，选中的回路将从 Mirror KG 复制到 Final KG，
-                  并记录晋升审计日志。此操作不可逆转。
-                </p>
-              </div>
+              {previewError ? (
+                <div style={{color: 'var(--danger)', padding: 12, fontSize: 13}}>{previewError}</div>
+              ) : previewData ? (
+                <>
+                  <div className="vr-section">
+                    <h4>回路详情</h4>
+                    <table style={{width: '100%', fontSize: 13, borderCollapse: 'collapse'}}>
+                      <tbody>
+                        <tr><td style={{padding: '4px 8px', color: 'var(--text-muted)'}}>名称</td>
+                            <td style={{padding: '4px 8px'}}>{previewData.circuit_name}</td></tr>
+                        <tr><td style={{padding: '4px 8px', color: 'var(--text-muted)'}}>审核状态</td>
+                            <td style={{padding: '4px 8px'}}>{badgeHtml(previewData.review_status)}</td></tr>
+                        <tr><td style={{padding: '4px 8px', color: 'var(--text-muted)'}}>晋升状态</td>
+                            <td style={{padding: '4px 8px'}}>{badgeHtml(previewData.promotion_status)}</td></tr>
+                        <tr><td style={{padding: '4px 8px', color: 'var(--text-muted)'}}>是否可晋升</td>
+                            <td style={{padding: '4px 8px'}}>{previewData.eligible ? '是' : '否'}</td></tr>
+                      </tbody>
+                    </table>
+                    {previewData.blockers && previewData.blockers.length > 0 && (
+                      <div style={{marginTop: 8}}>
+                        <h5 style={{fontSize: 12, color: 'var(--danger)', margin: '4px 0'}}>阻塞原因:</h5>
+                        <ul style={{margin: 0, paddingLeft: 16, fontSize: 12, color: 'var(--danger)'}}>
+                          {previewData.blockers.map((b: string, i: number) => <li key={i}>{b}</li>)}
+                        </ul>
+                      </div>
+                    )}
+                    {previewData.details?.circuit_record && (
+                      <div style={{marginTop: 8, padding: 8, background: '#f5f5f5', borderRadius: 6, fontSize: 12}}>
+                        <strong>目标记录:</strong>
+                        <pre style={{margin: '4px 0 0', whiteSpace: 'pre-wrap', fontSize: 11}}>
+                          {JSON.stringify(previewData.details.circuit_record, null, 2)}
+                        </pre>
+                      </div>
+                    )}
+                  </div>
+                  <div className="vr-section" style={{marginTop: 12}}>
+                    <h4>操作说明</h4>
+                    <p style={{fontSize: 12, color: 'var(--text-muted)', lineHeight: 1.6}}>
+                      晋升后，选中的回路将从 Mirror KG 复制到 Final KG，
+                      并记录晋升审计日志。此操作不可逆转。
+                    </p>
+                  </div>
+                </>
+              ) : (
+                <div style={{padding: 20, textAlign: 'center', color: 'var(--text-muted)'}}>加载中...</div>
+              )}
             </div>
             <div className="vr-modal-ft">
-              <button className="btn btn-sm btn-outline" onClick={() => setShowPreview(false)}>取消</button>
-              <button
-                className="btn btn-sm btn-primary"
-                onClick={() => {
-                  setShowPreview(false)
-                  doAction('/api/validation/circuit/selection/promote', '晋升')
-                }}
-              >
-                确认晋升
-              </button>
+              <button className="btn btn-sm btn-outline" onClick={() => setShowPreview(false)}>关闭</button>
+              {previewData?.eligible && (
+                <button
+                  className="btn btn-sm btn-primary"
+                  onClick={() => {
+                    setShowPreview(false)
+                    doAction('/api/validation/circuit/selection/promote', '晋升')
+                  }}
+                >
+                  确认晋升
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {dryRunResult && (
+        <div className="vr-modal-overlay" onClick={() => setDryRunResult(null)}>
+          <div className="vr-modal" style={{ width: 520 }} onClick={e => e.stopPropagation()}>
+            <div className="vr-modal-hd">
+              <h3>晋升模拟结果 (Dry Run)</h3>
+              <button className="vr-modal-close" onClick={() => setDryRunResult(null)}>✕</button>
+            </div>
+            <div className="vr-modal-body">
+              {dryRunResult.error ? (
+                <div style={{color: 'var(--danger)', padding: 12}}>{dryRunResult.error}</div>
+              ) : (
+                <>
+                  <table style={{width: '100%', fontSize: 13, borderCollapse: 'collapse'}}>
+                    <tbody>
+                      <tr><td style={{padding: '4px 8px', color: 'var(--text-muted)'}}>状态</td>
+                          <td style={{padding: '4px 8px'}}>{dryRunResult.status}</td></tr>
+                      <tr><td style={{padding: '4px 8px', color: 'var(--text-muted)'}}>可晋升</td>
+                          <td style={{padding: '4px 8px'}}>{dryRunResult.eligible ? '是' : '否'}</td></tr>
+                      <tr><td style={{padding: '4px 8px', color: 'var(--text-muted)'}}>幂等键</td>
+                          <td style={{padding: '4px 8px', fontSize: 11}}>{dryRunResult.idempotency_key}</td></tr>
+                    </tbody>
+                  </table>
+                  {dryRunResult.target_records?.circuit && (
+                    <div style={{marginTop: 8, padding: 8, background: '#f5f5f5', borderRadius: 6, fontSize: 12}}>
+                      <strong>目标记录:</strong>
+                      <pre style={{margin: '4px 0 0', whiteSpace: 'pre-wrap', fontSize: 11}}>
+                        {JSON.stringify(dryRunResult.target_records.circuit, null, 2)}
+                      </pre>
+                    </div>
+                  )}
+                  {dryRunResult.warnings && dryRunResult.warnings.length > 0 && (
+                    <div style={{marginTop: 8}}>
+                      {dryRunResult.warnings.map((w: string, i: number) => (
+                        <div key={i} style={{padding: '4px 8px', background: '#fffbe6', borderRadius: 4, fontSize: 12, marginTop: 4}}>
+                          ⚠ {w}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+            <div className="vr-modal-ft">
+              <button className="btn btn-sm btn-outline" onClick={() => setDryRunResult(null)}>关闭</button>
             </div>
           </div>
         </div>

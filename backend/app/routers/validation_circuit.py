@@ -259,12 +259,33 @@ async def list_candidates(
     total = (await db.execute(count_q)).scalar_one()
     rows = list((await db.execute(q)).scalars().all())
 
-    # Enrich with step counts
+    # Enrich with step counts and latest validation results
     items = []
     for r in rows:
         step_count = (await db.execute(
             select(func.count()).select_from(MirrorCircuitStep).where(MirrorCircuitStep.circuit_id == r.id)
         )).scalar_one()
+
+        # Get latest validation result for this circuit
+        latest_val = (await db.execute(
+            select(MirrorCircuitValidationResult)
+            .where(
+                MirrorCircuitValidationResult.target_id == r.id,
+                MirrorCircuitValidationResult.target_type == "circuit",
+            )
+            .order_by(MirrorCircuitValidationResult.created_at.desc())
+            .limit(1)
+        )).scalars().first()
+
+        rule_overall_status = None
+        reviewer_a_decision = None
+        reviewer_b_decision = None
+        adjudication_status = None
+        if latest_val:
+            rule_overall_status = latest_val.rule_overall_status
+            reviewer_a_decision = latest_val.reviewer_a_decision
+            reviewer_b_decision = latest_val.reviewer_b_decision
+            adjudication_status = latest_val.adjudication_status
 
         items.append({
             "id": str(r.id),
@@ -282,6 +303,10 @@ async def list_candidates(
             "mirror_status": r.mirror_status or "llm_suggested",
             "source_atlas": r.source_atlas or "",
             "created_at": r.created_at.isoformat() if r.created_at else None,
+            "rule_overall_status": rule_overall_status,
+            "reviewer_a_decision": reviewer_a_decision,
+            "reviewer_b_decision": reviewer_b_decision,
+            "adjudication_status": adjudication_status,
         })
 
     return {"items": items, "total": total}
@@ -1195,6 +1220,108 @@ async def promotion_preview(circuit_id: uuid.UUID, db: AsyncSession = Depends(ge
             },
         },
         "blockers": blockers,
+    }
+
+
+# ---------------------------------------------------------------------------
+# POST /api/validation/circuit/promotion/{circuit_id}/execute
+# ---------------------------------------------------------------------------
+
+
+@router.post("/promotion/{circuit_id}/execute")
+async def promotion_execute(
+    circuit_id: uuid.UUID,
+    body: dict,
+    db: AsyncSession = Depends(get_db),
+):
+    """Execute promotion (dry-run by default)."""
+    from app.models.mirror_kg import MirrorRegionCircuit
+
+    dry_run = body.get("dry_run", True)
+    idempotency_key = body.get("idempotency_key", str(uuid.uuid4()))
+
+    circuit = await db.get(MirrorRegionCircuit, circuit_id)
+    if circuit is None:
+        raise HTTPException(status_code=404, detail="Circuit not found")
+    if circuit.review_status not in ("approved", "manual_approved"):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Circuit not human-approved (status: {circuit.review_status})",
+        )
+
+    if dry_run:
+        return {
+            "dry_run": True,
+            "circuit_id": str(circuit.id),
+            "eligible": True,
+            "target_records": {
+                "circuit": {
+                    "name": circuit.circuit_name,
+                    "type": circuit.circuit_type,
+                    "confidence": float(circuit.confidence) if circuit.confidence else 0,
+                },
+            },
+            "idempotency_key": idempotency_key,
+            "status": "dry_run_complete",
+            "warnings": ["Dry run — no data written to formal library"],
+        }
+
+    # Real promotion (transactional)
+    try:
+        circuit.promotion_status = "promoted_to_final"
+        await db.commit()
+        return {
+            "status": "promoted",
+            "idempotency_key": idempotency_key,
+            "circuit_id": str(circuit.id),
+        }
+    except Exception as e:
+        await db.rollback()
+        return {"status": "rollback", "error": str(e)}
+
+
+# ---------------------------------------------------------------------------
+# GET /api/validation/circuit/promotion/{circuit_id}/history
+# ---------------------------------------------------------------------------
+
+
+@router.get("/promotion/{circuit_id}/history")
+async def promotion_history(circuit_id: uuid.UUID):
+    """Return promotion history for a circuit (stub — returns empty array)."""
+    return {"items": [], "total": 0}
+
+
+# ---------------------------------------------------------------------------
+# POST /api/validation/circuit/selection/promote
+# ---------------------------------------------------------------------------
+
+
+@router.post("/selection/promote")
+async def selection_promote(body: dict, db: AsyncSession = Depends(get_db)):
+    """Batch promote selected circuits to Final KG."""
+    from app.models.mirror_kg import MirrorRegionCircuit
+
+    circuit_ids = body.get("circuit_ids", [])
+    if not circuit_ids:
+        raise HTTPException(status_code=400, detail="circuit_ids required")
+
+    uuids = [uuid.UUID(c) for c in circuit_ids]
+    circuits = list((await db.execute(
+        select(MirrorRegionCircuit).where(MirrorRegionCircuit.id.in_(uuids))
+    )).scalars().all())
+
+    eligible = [c for c in circuits if c.review_status in ("approved", "manual_approved") and c.promotion_status == "not_promoted"]
+    promoted_count = 0
+    for c in eligible:
+        c.promotion_status = "promoted_to_final"
+        promoted_count += 1
+
+    await db.commit()
+    return {
+        "selected_count": len(circuit_ids),
+        "eligible_count": len(eligible),
+        "promoted_count": promoted_count,
+        "status": "completed",
     }
 
 

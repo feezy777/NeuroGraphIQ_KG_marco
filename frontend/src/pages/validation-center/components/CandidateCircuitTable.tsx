@@ -90,6 +90,7 @@ export function CandidateCircuitTable({ granularityLevel }: Props) {
   const [detailCircuitId, setDetailCircuitId] = useState<string | null>(null)
   const [batchLoading, setBatchLoading] = useState(false)
   const [batchMessage, setBatchMessage] = useState<string | null>(null)
+  const [validationProgress, setValidationProgress] = useState<{open: boolean; runId: string; status: string; done: number; total: number} | null>(null)
 
   const pageSize = 25
 
@@ -151,7 +152,30 @@ export function CandidateCircuitTable({ granularityLevel }: Props) {
       if (!res.ok) throw new Error(`API错误: ${res.status}`)
       const data = await res.json()
       setSelected(new Set())
-      setBatchMessage(`验证任务已创建 (ID: ${data.internal_run_id?.slice(0, 8) || '—'}) 已处理 ${data.eligible_count || 0}/${data.selected_count || 0} 个回路`)
+      const runId = data.internal_run_id || ''
+      setBatchMessage(`验证任务已创建 (ID: ${runId.slice(0, 8) || '—'}) 已处理 ${data.eligible_count || 0}/${data.selected_count || 0} 个回路`)
+      // Show progress modal and start polling
+      if (runId) {
+        setValidationProgress({open: true, runId, status: 'running', done: 0, total: data.eligible_count || 0})
+        const poll = setInterval(async () => {
+          try {
+            const prRes = await fetch(`/api/validation/circuit/runs/${runId}/progress`)
+            if (!prRes.ok) { clearInterval(poll); return }
+            const pr = await prRes.json()
+            setValidationProgress(p => p ? {
+              ...p,
+              done: pr.rule_passed_count + pr.rule_failed_count + pr.rule_blocked_count || 0,
+              total: pr.rule_total_count || p.total,
+              status: pr.status || p.status,
+            } : null)
+            if (pr.status === 'completed' || pr.status === 'failed' || pr.status === 'cancelled') {
+              clearInterval(poll)
+              setValidationProgress(p => p ? {...p, status: pr.status} : null)
+              fetchData()
+            }
+          } catch { clearInterval(poll) }
+        }, 2000)
+      }
       setTimeout(() => setBatchMessage(null), 5000)
     } catch (e: unknown) {
       setBatchMessage(e instanceof Error ? e.message : '提交失败')
@@ -159,7 +183,7 @@ export function CandidateCircuitTable({ granularityLevel }: Props) {
     } finally {
       setBatchLoading(false)
     }
-  }, [selected])
+  }, [selected, fetchData])
 
   // Detail drawer
   const handleRowClick = (item: CandidateCircuit) => {
@@ -333,6 +357,31 @@ export function CandidateCircuitTable({ granularityLevel }: Props) {
 
       {/* Detail drawer */}
       <CircuitDetailDrawer circuitId={detailCircuitId} onClose={() => setDetailCircuitId(null)} />
+
+      {/* Validation progress modal */}
+      {validationProgress?.open && (
+        <div className="vw-modal-overlay">
+          <div className="vw-modal vw-modal-sm">
+            <div className="vw-modal-hd"><h3>规则校验中</h3></div>
+            <div className="vw-modal-body">
+              <div className="vw-progress-bar-wrap">
+                <div className="vw-progress-bar" style={{
+                  width: `${validationProgress.total > 0 ? (validationProgress.done / validationProgress.total) * 100 : 0}%`
+                }} />
+              </div>
+              <p>已完成 {validationProgress.done}/{validationProgress.total} 项</p>
+              <p>状态: {validationProgress.status === 'completed' ? '已完成' :
+                        validationProgress.status === 'failed' ? '失败' :
+                        validationProgress.status === 'cancelled' ? '已取消' : '运行中...'}</p>
+            </div>
+            {validationProgress.status !== 'running' && (
+              <div className="vw-modal-ft">
+                <button className="btn btn-primary" onClick={() => setValidationProgress(null)}>确定</button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   )
 }
