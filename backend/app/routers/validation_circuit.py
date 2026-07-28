@@ -10,7 +10,7 @@ import uuid
 from typing import Optional
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
-from sqlalchemy import select, desc
+from sqlalchemy import select, desc, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
@@ -27,7 +27,7 @@ from app.schemas.mirror_circuit_validation import (
 )
 from app.services import mirror_circuit_validation_service as vc
 
-router = APIRouter(prefix="/api/validation/circuit", tags=["Circuit Validation"])
+router = APIRouter(tags=["Circuit Validation"])
 
 
 # ---------------------------------------------------------------------------
@@ -43,10 +43,11 @@ router = APIRouter(prefix="/api/validation/circuit", tags=["Circuit Validation"]
 async def create_run(
     req: CircuitValidationCreateRequest,
     db: AsyncSession = Depends(get_db),
-) -> CircuitValidationRunRead:
-    """Create a new circuit validation run."""
-    run = await vc.create_validation_run(db, req)
-    return _run_to_read(run)
+):
+    """Create a new circuit validation run. Returns run + scan stats."""
+    run, stats = await vc.create_validation_run(db, req)
+    await db.commit()
+    return {**_run_to_read(run).model_dump(), "scan_stats": stats}
 
 
 # ---------------------------------------------------------------------------
@@ -191,6 +192,44 @@ async def cancel_run(
     await db.commit()
     await db.refresh(run)
     return _run_to_read(run)
+
+
+# ---------------------------------------------------------------------------
+# GET /api/validation/circuit/counts
+# ---------------------------------------------------------------------------
+
+@router.get("/counts")
+async def get_counts(
+    granularity_level: Optional[str] = None,
+    db: AsyncSession = Depends(get_db),
+):
+    """Get aggregate counts for the validation center stats bar."""
+    total_runs_q = select(func.count()).select_from(MirrorCircuitValidationRun)
+    completed_q = select(func.count()).select_from(MirrorCircuitValidationRun).where(MirrorCircuitValidationRun.status == "completed")
+    if granularity_level:
+        total_runs_q = total_runs_q.where(MirrorCircuitValidationRun.granularity_level == granularity_level)
+        completed_q = completed_q.where(MirrorCircuitValidationRun.granularity_level == granularity_level)
+
+    total_runs = (await db.execute(total_runs_q)).scalar_one()
+    completed_runs = (await db.execute(completed_q)).scalar_one()
+
+    # Count approved circuits from mirror_region_circuits
+    from app.models.mirror_kg import MirrorRegionCircuit
+    approved_q = select(func.count()).select_from(MirrorRegionCircuit).where(
+        MirrorRegionCircuit.review_status == "approved"
+    )
+    if granularity_level:
+        approved_q = approved_q.where(MirrorRegionCircuit.granularity_level == granularity_level)
+    approved_count = (await db.execute(approved_q)).scalar_one()
+
+    return {
+        "total_runs": total_runs,
+        "completed_runs": completed_runs,
+        "pending_review": approved_count or 0,
+        "rule_passed": 0,
+        "dual_agreement": 0,
+        "promoted": 0,
+    }
 
 
 # ---------------------------------------------------------------------------

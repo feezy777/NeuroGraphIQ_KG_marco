@@ -4833,3 +4833,8 @@ export const getCircuitValidationProgress = (runId: string) =>
 
 export const cancelCircuitValidationRun = (runId: string) =>
   postJson<CircuitValidationRun>(`/api/validation/circuit/runs/${runId}/cancel`)
+
+export const getValidationCounts = (granularityLevel?: string) => {
+  const params = granularityLevel ? `?granularity_level=${encodeURIComponent(granularityLevel)}` : ''
+  return getJson<{ total_runs: number; completed_runs: number; pending_review: number }>(`/api/validation/circuit/counts${params}`)
+}

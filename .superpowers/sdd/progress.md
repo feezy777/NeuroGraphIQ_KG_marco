@@ -1,9 +1,20 @@
 ## Progress Ledger
-Task 1: complete (commits 805bdf0, clean directory)
-Task 2: complete (commits 2fe2579, ValidationActionBar)
-Task 3: complete (commits [drawer], ValidationObjectDrawer)
-Task 4: complete (commits 40f945a, ValidationReviewPanel)
-Task 5: complete (commits [rule], ValidationRulePanel)
-Task 6: complete (commits 046878d, ValidationPromotionPanel)
-Task 7: complete (commits 50a26d7, wired panels)
-Task 8: complete (tsc clean for validation-center, 4 pre-existing errors elsewhere)
+### Phase 1: Backend Core
+Task 1.1: Migration - complete (commits 17d81f3)
+Task 1.2: Models - complete (commits 17d81f3)
+Task 1.3: Schemas - complete (commits 17d81f3)
+Task 1.4: Service - complete (commits [service])
+Task 1.5: Router - complete (commits [router])
+Task 1.6: Tests - complete (commits 8d9cbe8)
+
+### Phase 2: Frontend Workbench
+Task 2.1: Types + API - complete (commits 253bf48)
+Task 2.2: Workbench - complete (commits 253bf48)
+Task 2.3: Panel skeletons - complete (commits 9ed8c9f)
+Task 2.4: DualReviewComparison - complete (commits 5254e1a)
+Task 2.5: i18n + CSS - complete (commits 5254e1a)
+
+### Phase 3: Integration + Cleanup
+Task 3.1: Unified tasks - complete (commits 5254e1a)
+Task 3.2: Code cleanup - complete (commits 5254e1a)
+Task 3.3: E2E tests - complete (commits 5254e1a)

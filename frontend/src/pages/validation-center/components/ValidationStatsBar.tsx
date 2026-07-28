@@ -1,42 +1,32 @@
 import { useEffect, useState } from 'react'
-import { useData } from '../../../hooks/useData'
+
+interface Counts { total_runs: number; completed_runs: number; pending_review: number; rule_passed: number; dual_agreement: number; promoted: number }
 
 interface Props { granularityLevel?: string }
-
-interface CountsResponse {
-  mirrorConnections: number; mirrorFunctions: number; mirrorCircuits: number; mirrorTriples: number
-  macroCircuitSteps: number; macroProjectionFunctions: number; macroMemberships: number
-  macroCrossResults: number; macroDualResults: number
-  finalCircuits: number; finalProjections: number; finalSteps: number; finalFunctions: number; finalTriples: number
-  pendingReview: number; ruleChecked: number; promotionReady: number
-  hasApiError: boolean; warnings: string[]
-}
-
 export function ValidationStatsBar({ granularityLevel }: Props) {
-  const [counts, setCounts] = useState<CountsResponse | null>(null)
-  const { data, loading } = useData<CountsResponse>(
-    () => fetch('/api/validation/circuit/counts').then(r => r.json()),
-    [granularityLevel],
-  )
+  const [counts, setCounts] = useState<Counts | null>(null)
+  const [error, setError] = useState(false)
 
   useEffect(() => {
-    if (data) setCounts(data)
-  }, [data])
+    const params = granularityLevel ? `?granularity_level=${encodeURIComponent(granularityLevel)}` : ''
+    fetch(`/api/validation/circuit/counts${params}`)
+      .then(r => { if (!r.ok) throw new Error(); return r.json() })
+      .then(setCounts).catch(() => setError(true))
+  }, [granularityLevel])
 
   const items = [
-    { label: 'Mirror Connections', value: counts?.mirrorConnections ?? '-' },
-    { label: 'Mirror Circuits', value: counts?.mirrorCircuits ?? '-' },
-    { label: 'Final Circuits', value: counts?.finalCircuits ?? '-' },
-    { label: 'Pending Review', value: counts?.pendingReview ?? '-' },
-    { label: 'Promotion Ready', value: counts?.promotionReady ?? '-' },
+    { label: '验证运行', value: counts?.total_runs ?? '-' },
+    { label: '已完成', value: counts?.completed_runs ?? '-' },
+    { label: '规则通过', value: counts?.rule_passed ?? '-' },
+    { label: '双模型一致', value: counts?.dual_agreement ?? '-' },
+    { label: '待审核', value: counts?.pending_review ?? '-' },
   ]
 
   return (
-    <div className="vw-stats-bar">
-      {loading && <span className="vw-stats-loading">Loading...</span>}
-      {!loading && items.map(item => (
-        <div key={item.label} className="vw-stat-item">
-          <span className="vw-stat-value">{item.value}</span>
+    <div className="vw-stats">
+      {items.map(item => (
+        <div key={item.label} className="vw-stat">
+          <span className="vw-stat-num">{error ? '!' : item.value}</span>
           <span className="vw-stat-label">{item.label}</span>
         </div>
       ))}

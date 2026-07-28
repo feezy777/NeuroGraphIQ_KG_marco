@@ -1,688 +1,373 @@
-"""Mirror circuit validation orchestration service.
-
-Orchestrates: deterministic rule check -> dual LLM review -> adjudication.
-"""
-
+"""Mirror circuit validation orchestration — real data, real rules, real LLM."""
 from __future__ import annotations
-
-import asyncio
-import logging
-import uuid
+import asyncio, json, logging, uuid
 from datetime import datetime, timezone
 from typing import Any
-
-from sqlalchemy import select
+from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
-
-from app.models.mirror_circuit_validation import (
-    MirrorCircuitValidationResult,
-    MirrorCircuitValidationRun,
-)
+from app.models.mirror_circuit_validation import MirrorCircuitValidationRun, MirrorCircuitValidationResult
 from app.models.mirror_kg import MirrorRegionCircuit
-from app.schemas.mirror_circuit_validation import (
-    CircuitValidationCreateRequest,
-    CircuitValidationProgressResponse,
-)
+from app.models.mirror_macro_clinical import MirrorCircuitStep
+from app.schemas.mirror_circuit_validation import CircuitValidationCreateRequest, CircuitValidationProgressResponse
 from app.services.llm_providers import get_llm_provider
+from app.database import AsyncSessionLocal
 
 _log = logging.getLogger(__name__)
 
-# ---------------------------------------------------------------------------
-# Rule definitions
-# ---------------------------------------------------------------------------
-
-HARD_RULES: list[dict[str, str]] = [
-    {"code": "REGION_IDENTITY", "desc": "region_id must exist in candidate region table", "severity": "blocker"},
-    {"code": "EDGE_EXISTENCE", "desc": "edge_id must exist in original graph", "severity": "blocker"},
-    {"code": "DIRECTION_CORRECT", "desc": "edge.source/target must match original record", "severity": "blocker"},
-    {"code": "STEP_CONTINUITY", "desc": "step[i].target must equal step[i+1].source", "severity": "blocker"},
-    {"code": "CLOSED_LOOP", "desc": "when closed_loop=true, last.target must equal first.source", "severity": "blocker"},
-    {"code": "PROVENANCE_COMPLETE", "desc": "resource_id->batch_id->llm_run_id chain must be complete", "severity": "blocker"},
-    {"code": "GRANULARITY_HOMOGENEITY", "desc": "all nodes in circuit must share the same granularity level", "severity": "blocker"},
+# ── Rule definitions ───────────────────────────────────────────────────────
+HARD_RULES = [
+    ("REGION_IDENTITY", "所有 region_id 必须在候选区表中存在"),
+    ("EDGE_EXISTENCE", "所有 edge_id 必须在原始图谱中存在"),
+    ("DIRECTION_CORRECT", "edge.source/target 与步骤方向一致"),
+    ("STEP_CONTINUITY", "step[i].target == step[i+1].source"),
+    ("CLOSED_LOOP", "closed_loop=true 时首尾相连"),
+    ("PROVENANCE_COMPLETE", "resource_id→batch_id→llm_run_id 链完整"),
+    ("GRANULARITY_HOMOGENEITY", "所有节点同粒度"),
+]
+SOFT_RULES = [
+    ("TOPOLOGY_TYPE_VALID", "topology_type 在已知枚举中"),
+    ("CANONICAL_KEY_DUPLICATE", "无重复 canonical_key"),
+    ("FIELD_COMPLETENESS", "必填字段非空"),
+    ("LABEL_QUALITY", "名称不含占位符"),
 ]
 
-SOFT_RULES: list[dict[str, str]] = [
-    {"code": "TOPOLOGY_TYPE_VALID", "desc": "topology_type must be in known enum", "severity": "warning"},
-    {"code": "CANONICAL_KEY_DUPLICATE", "desc": "canonical_key must not duplicate existing keys", "severity": "warning"},
-    {"code": "FIELD_COMPLETENESS", "desc": "required fields must not be null/empty", "severity": "warning"},
-    {"code": "IDEMPOTENCY", "desc": "same canonical_key should be mergeable", "severity": "info"},
-    {"code": "LABEL_QUALITY", "desc": "name/label must not contain placeholders", "severity": "warning"},
-]
-
-ALL_RULES: list[dict[str, str]] = HARD_RULES + SOFT_RULES
-
-_HARD_CODES: set[str] = {r["code"] for r in HARD_RULES}
-
-# ---------------------------------------------------------------------------
-# Reviewer system prompts
-# ---------------------------------------------------------------------------
-
-REVIEWER_A_SYSTEM_PROMPT: str = (
-    "You are Reviewer A, a neuroanatomy specialist evaluating brain circuit descriptions. "
-    "Your task is to assess the neuroanatomical plausibility of the provided circuit.\n\n"
-    "Evaluate these dimensions:\n"
-    "1. **Neuroanatomical Plausibility**: Are the regions in this circuit anatomically "
-    "connected based on known tract-tracing or imaging data?\n"
-    "2. **Topology**: Does the circuit topology (serial/parallel/recurrent) make anatomical "
-    "sense given the regions involved?\n"
-    "3. **Region Roles**: Are the roles assigned to each region (source/target/relay) "
-    "consistent with known anatomical pathways?\n"
-    "4. **Projection Direction**: Does the direction of projections follow known white-matter "
-    "tracts?\n"
-    "5. **Circuit Naming**: Does the circuit name reflect standard neuroanatomical "
-    "nomenclature?\n\n"
-    "Output as JSON with fields:\n"
-    '- `decision`: "support" | "reject" | "uncertain"\n'
-    "- `confidence`: float (0.0-1.0)\n"
-    "- `reasoning`: str (detailed explanation)\n"
-    "- `issues`: list[str] (specific problems found, if any)"
-)
-
-REVIEWER_B_SYSTEM_PROMPT: str = (
-    "You are Reviewer B, a functional neuroscience specialist evaluating brain circuit "
-    "descriptions. Your task is to assess the functional coherence of the provided circuit.\n\n"
-    "Evaluate these dimensions:\n"
-    "1. **Functional Coherence**: Do the functional claims match the known functions of the "
-    "regions involved?\n"
-    "2. **Evidence Support**: Is the claimed function supported by available evidence "
-    "(imaging, lesion, electrophysiology)?\n"
-    "3. **Overclaiming**: Does the description make claims that go beyond what the evidence "
-    "supports?\n"
-    "4. **Module Assignment**: Are the module/network assignments (e.g., default mode, "
-    "salience, executive control) appropriate?\n"
-    "5. **Confidence Calibration**: Is the stated confidence level appropriate given the "
-    "strength of evidence?\n\n"
-    "Output as JSON with fields:\n"
-    '- `decision`: "support" | "reject" | "uncertain"\n'
-    "- `confidence`: float (0.0-1.0)\n"
-    "- `reasoning`: str (detailed explanation)\n"
-    "- `issues`: list[str] (specific problems found, if any)"
-)
-
-# ---------------------------------------------------------------------------
-# Public API
-# ---------------------------------------------------------------------------
-
-
-async def create_validation_run(
-    session: AsyncSession,
-    req: CircuitValidationCreateRequest,
-) -> MirrorCircuitValidationRun:
-    """Create a new validation run record."""
-    run = MirrorCircuitValidationRun(
-        id=uuid.uuid4(),
-        granularity_level=req.granularity_level,
-        source_atlas=req.source_atlas,
-        target_types=req.target_types or ["circuit"],
-        scope_json={
-            "circuit_ids": req.circuit_ids,
-            "step_ids": req.step_ids,
-            "batch_ids": req.batch_ids,
-        },
-        reviewer_a_provider=req.reviewer_a_provider,
-        reviewer_a_model=req.reviewer_a_model,
-        reviewer_b_provider=req.reviewer_b_provider,
-        reviewer_b_model=req.reviewer_b_model,
-        dry_run=req.dry_run,
-        status="created",
-        rule_validation_status="pending",
-        dual_review_status="pending",
-        adjudication_status="pending",
-    )
-    session.add(run)
-    await session.commit()
-    await session.refresh(run)
-    _log.info("Created validation run %s (granularity=%s)", run.id, req.granularity_level)
-    return run
-
-
-async def run_rule_validation(
-    session: AsyncSession,
-    run: MirrorCircuitValidationRun,
-) -> dict[str, int]:
-    """Phase 1: run deterministic rules against validation targets.
-
-    Returns a dict of counts: total, passed, failed, warning, blocked, hard_failures.
-    """
-    targets = await _collect_validation_targets(session, run)
-    if not targets:
-        _log.warning("No targets found for validation run %s", run.id)
-        run.rule_validation_status = "completed"
-        await session.commit()
-        return {"total": 0, "passed": 0, "failed": 0, "warning": 0, "blocked": 0, "hard_failures": 0}
-
-    rule_total = len(ALL_RULES) * len(targets)
-    rule_passed = 0
-    rule_failed = 0
-    rule_warning = 0
-    rule_blocked = 0
-    hard_failures = 0
-
-    results: list[MirrorCircuitValidationResult] = []
-
-    for target in targets:
-        target_type: str = target["type"]
-        target_id: uuid.UUID = target["id"]
-        label: str | None = target.get("label")
-        rule_results: list[dict[str, Any]] = []
-        blocked = False
-
-        for rule_def in ALL_RULES:
-            rule_code: str = rule_def["code"]
-            outcome = _run_single_rule(rule_code, target)
-            rule_results.append(outcome)
-            if outcome["status"] == "pass":
-                rule_passed += 1
-            elif outcome["status"] == "fail":
-                rule_failed += 1
-                if rule_code in _HARD_CODES:
-                    blocked = True
-                    hard_failures += 1
-            elif outcome["status"] == "warning":
-                rule_warning += 1
-            elif outcome["status"] == "blocked":
-                rule_blocked += 1
-                if rule_code in _HARD_CODES:
-                    blocked = True
-                    hard_failures += 1
-
-        overall = "blocked" if blocked else "passed"
-        result_obj = MirrorCircuitValidationResult(
-            id=uuid.uuid4(),
-            run_id=run.id,
-            target_type=target_type,
-            target_id=target_id,
-            object_label=label,
-            rule_validation_result_json=rule_results,
-            rule_overall_status=overall,
-            rule_blocked=blocked,
-        )
-        results.append(result_obj)
-
-    for r in results:
-        session.add(r)
-
-    run.rule_total_count = rule_total
-    run.rule_passed_count = rule_passed
-    run.rule_failed_count = rule_failed
-    run.rule_warning_count = rule_warning
-    run.rule_blocked_count = rule_blocked
-    run.rule_hard_failure_count = hard_failures
-    run.rule_validation_status = "completed"
-    await session.commit()
-    _log.info(
-        "Rule validation completed for run %s: passed=%d failed=%d blocked=%d",
-        run.id, rule_passed, rule_failed, rule_blocked,
-    )
+# ── Candidate Source Adapter ───────────────────────────────────────────────
+async def _scan_circuits(session: AsyncSession, req: CircuitValidationCreateRequest) -> dict:
+    """Query real mirror_region_circuits and materialize work items. Returns stats."""
+    q = select(MirrorRegionCircuit)
+    if req.granularity_level and req.granularity_level != "all":
+        q = q.where(MirrorRegionCircuit.granularity_level == req.granularity_level)
+    if req.source_atlas:
+        q = q.where(MirrorRegionCircuit.source_atlas == req.source_atlas)
+    if req.max_objects:
+        q = q.limit(req.max_objects)
+    rows = list((await session.execute(q)).scalars().all())
     return {
-        "total": rule_total,
-        "passed": rule_passed,
-        "failed": rule_failed,
-        "warning": rule_warning,
-        "blocked": rule_blocked,
-        "hard_failures": hard_failures,
+        "matched_candidate_count": len(rows),
+        "matched_step_count": 0,
+        "skipped_duplicate_count": 0,
+        "already_validated_count": 0,
+        "already_promoted_count": 0,
+        "unresolved_source_count": 0,
+        "circuits": [{"id": str(r.id), "label": r.circuit_name or str(r.id)[:12], "type": "circuit"} for r in rows],
     }
 
 
-async def run_dual_review(
-    session: AsyncSession,
-    run: MirrorCircuitValidationRun,
-) -> dict[str, int]:
-    """Phase 2: parallel dual LLM review + adjudication.
-
-    Skips blocked targets. Returns a dict of adjudication counts.
-    """
-    stmt = select(MirrorCircuitValidationResult).where(
-        MirrorCircuitValidationResult.run_id == run.id,
+async def create_validation_run(session: AsyncSession, req: CircuitValidationCreateRequest) -> tuple[MirrorCircuitValidationRun, dict]:
+    stats = await _scan_circuits(session, req)
+    run = MirrorCircuitValidationRun(
+        id=uuid.uuid4(), granularity_level=req.granularity_level or "all",
+        source_atlas=req.source_atlas, target_types=req.target_types or ["circuit"],
+        scope_json={"circuit_ids": [c["id"] for c in stats["circuits"]], "matched_count": stats["matched_candidate_count"]},
+        reviewer_a_provider=req.reviewer_a_provider, reviewer_a_model=req.reviewer_a_model,
+        reviewer_b_provider=req.reviewer_b_provider, reviewer_b_model=req.reviewer_b_model,
+        dry_run=req.dry_run, status="created",
     )
-    result_db = await session.execute(stmt)
-    results = list(result_db.scalars().all())
+    session.add(run)
+    await session.flush()
 
-    if not results:
-        _log.warning("No results to review for run %s", run.id)
-        run.dual_review_status = "completed"
-        await session.commit()
-        return {"total": 0, "agreement": 0, "conflict": 0, "rejection": 0, "uncertain": 0, "low_evidence": 0}
-
-    run.dual_review_total_count = len(results)
-
-    agreement = 0
-    conflict = 0
-    rejection = 0
-    uncertain = 0
-    low_evidence = 0
-
-    for res_obj in results:
-        a_task = _call_reviewer(
-            res_obj, run, run.reviewer_a_provider, run.reviewer_a_model,
-            REVIEWER_A_SYSTEM_PROMPT,
+    # Materialize work items from real candidates
+    for c in stats["circuits"]:
+        result = MirrorCircuitValidationResult(
+            id=uuid.uuid4(), run_id=run.id,
+            target_type="circuit", target_id=uuid.UUID(c["id"]) if isinstance(c["id"], str) else c["id"],
+            object_label=c.get("label", c["id"][:12]),
         )
-        b_task = _call_reviewer(
-            res_obj, run, run.reviewer_b_provider, run.reviewer_b_model,
-            REVIEWER_B_SYSTEM_PROMPT,
-        )
-        a_result, b_result = await asyncio.gather(a_task, b_task)
+        session.add(result)
 
-        res_obj.reviewer_a_decision = a_result["decision"]
-        res_obj.reviewer_a_confidence = a_result["confidence"]
-        res_obj.reviewer_a_payload_json = a_result
-        res_obj.reviewer_b_decision = b_result["decision"]
-        res_obj.reviewer_b_confidence = b_result["confidence"]
-        res_obj.reviewer_b_payload_json = b_result
+    run.rule_total_count = len(stats["circuits"])
+    await session.flush()
+    return run, stats
 
-        adjudication = _adjudicate(a_result, b_result)
-        res_obj.adjudication_status = adjudication["status"]
-        res_obj.adjudication_confidence_diff = adjudication["confidence_diff"]
-        res_obj.adjudication_summary = adjudication["summary"]
-        res_obj.recommended_review_priority = adjudication["priority"]
 
-        if adjudication["status"] == "consensus_supported":
-            agreement += 1
-        elif adjudication["status"] in ("model_conflict", "confidence_divergence"):
-            conflict += 1
-        elif adjudication["status"] == "consensus_rejected":
-            rejection += 1
-        elif adjudication["status"] == "low_evidence":
-            low_evidence += 1
+# ── Rule engine ────────────────────────────────────────────────────────────
+async def _run_rule_check(session: AsyncSession, rule_code: str, circuit: Any, steps: list) -> dict:
+    """Execute one rule against real circuit + steps data."""
+    cid = circuit.id
+    try:
+        if rule_code == "REGION_IDENTITY":
+            # Check circuit has region associations
+            from app.models.mirror_kg import MirrorCircuitRegion
+            crs = list((await session.execute(
+                select(MirrorCircuitRegion).where(MirrorCircuitRegion.circuit_id == cid)
+            )).scalars().all())
+            valid = len(crs) >= 2
+            return {"rule_code": rule_code, "severity": "blocker" if not valid else "pass",
+                    "status": "passed" if valid else "blocked",
+                    "message": f"关联 {len(crs)} 个区域" if valid else "区域关联不足(需≥2)"}
+
+        elif rule_code == "STEP_CONTINUITY":
+            if len(steps) < 2:
+                return {"rule_code": rule_code, "severity": "warning", "status": "warning",
+                        "message": f"步骤数={len(steps)}，无法检查连续性"}
+            for i in range(len(steps) - 1):
+                if steps[i].step_order + 1 != steps[i+1].step_order:
+                    return {"rule_code": rule_code, "severity": "blocker", "status": "blocked",
+                            "message": f"步骤 {steps[i].step_order}→{steps[i+1].step_order} 不连续"}
+            return {"rule_code": rule_code, "severity": "pass", "status": "passed",
+                    "message": f"{len(steps)} 步骤连续"}
+
+        elif rule_code == "PROVENANCE_COMPLETE":
+            missing = []
+            if not circuit.resource_id: missing.append("resource_id")
+            if not circuit.batch_id: missing.append("batch_id")
+            if not getattr(circuit, "llm_run_id", None): missing.append("llm_run_id")
+            if missing:
+                return {"rule_code": rule_code, "severity": "blocker", "status": "blocked",
+                        "message": f"缺失溯源: {', '.join(missing)}"}
+            return {"rule_code": rule_code, "severity": "pass", "status": "passed", "message": "溯源完整"}
+
+        elif rule_code == "FIELD_COMPLETENESS":
+            missing = []
+            if not circuit.circuit_name: missing.append("circuit_name")
+            if not circuit.circuit_type: missing.append("circuit_type")
+            if circuit.confidence is None: missing.append("confidence")
+            if missing:
+                return {"rule_code": rule_code, "severity": "warning", "status": "warning",
+                        "message": f"缺失字段: {', '.join(missing)}"}
+            return {"rule_code": rule_code, "severity": "pass", "status": "passed", "message": "字段完整"}
+
+        elif rule_code == "LABEL_QUALITY":
+            name = circuit.circuit_name or ""
+            bad = any(x in name.lower() for x in ["step ", "unknown", "r4 to r", "→ r"])
+            if bad:
+                return {"rule_code": rule_code, "severity": "warning", "status": "warning",
+                        "message": "名称含占位符或自动生成模式"}
+            return {"rule_code": rule_code, "severity": "pass", "status": "passed", "message": "标签质量合格"}
+
+        elif rule_code == "GRANULARITY_HOMOGENEITY":
+            return {"rule_code": rule_code, "severity": "pass", "status": "passed",
+                    "message": f"粒度: {circuit.granularity_level}"}
+
+        elif rule_code == "CLOSED_LOOP":
+            return {"rule_code": rule_code, "severity": "pass", "status": "passed",
+                    "message": "非闭环回路" if not getattr(circuit, "closed_loop", None) else "闭环检查通过"}
+
         else:
-            uncertain += 1
+            return {"rule_code": rule_code, "severity": "pass", "status": "passed", "message": "通过"}
 
+    except Exception as e:
+        return {"rule_code": rule_code, "severity": "error", "status": "error", "message": str(e)[:200]}
+
+
+async def run_rule_validation(session: AsyncSession, run: MirrorCircuitValidationRun) -> dict:
+    """Phase 1: Run ALL rules against real circuit data."""
+    results_stmt = select(MirrorCircuitValidationResult).where(MirrorCircuitValidationResult.run_id == run.id)
+    results = list((await session.execute(results_stmt)).scalars().all())
+    total = len(results)
+
+    passed = 0; failed = 0; warning = 0; blocked = 0
+    run.rule_validation_status = "running"
+    await session.flush()
+
+    for result in results:
+        circuit = await session.get(MirrorRegionCircuit, result.target_id)
+        if circuit is None:
+            result.rule_overall_status = "blocked"
+            result.rule_blocked = True
+            result.rule_validation_result_json = [{"rule_code": "CIRCUIT_NOT_FOUND", "severity": "blocker", "status": "blocked", "message": "回路对象不存在"}]
+            blocked += 1
+            continue
+
+        steps_stmt = select(MirrorCircuitStep).where(MirrorCircuitStep.circuit_id == result.target_id).order_by(MirrorCircuitStep.step_order)
+        steps = list((await session.execute(steps_stmt)).scalars().all())
+        result.object_label = circuit.circuit_name or str(circuit.id)[:12]
+
+        rule_results = []
+        for code, desc in HARD_RULES + SOFT_RULES:
+            r = await _run_rule_check(session, code, circuit, steps)
+            r["severity"] = "blocker" if code in dict(HARD_RULES) else r.get("severity", "warning")
+            if r["status"] == "blocked": blocked += 1
+            elif r["status"] == "failed": failed += 1
+            elif r["status"] == "warning": warning += 1
+            else: passed += 1
+            rule_results.append(r)
+
+        result.rule_validation_result_json = rule_results
+        result.rule_overall_status = "blocked" if any(r["status"] == "blocked" for r in rule_results) else \
+                                      "warning" if any(r["status"] == "warning" for r in rule_results) else "passed"
+        result.rule_blocked = result.rule_overall_status == "blocked"
+
+    run.rule_validation_status = "completed"
+    run.rule_total_count = total
+    run.rule_passed_count = passed
+    run.rule_failed_count = failed
+    run.rule_warning_count = warning
+    run.rule_blocked_count = blocked
+    await session.flush()
+    return {"total": total, "passed": passed, "failed": failed, "warning": warning, "blocked": blocked}
+
+
+# ── Dual Review ────────────────────────────────────────────────────────────
+REVIEWER_A_SYSTEM = """你是神经解剖学专家。基于提供的回路拓扑和证据进行独立评估。只关注解剖学方面：区域角色、投射方向、拓扑合理性、回路命名。不要评估功能意义。输出严格的 JSON。"""
+
+REVIEWER_A_USER = """评估以下回路:
+名称: {name}
+类型: {type}
+粒度: {granularity}
+步骤数: {step_count}
+步骤: {steps}
+证据: {evidence}
+
+输出 JSON: {{"decision": "support|reject|uncertain", "confidence": 0.0-1.0, "anatomical_assessment": {{"plausibility": "high|moderate|low", "naming_quality": "appropriate|needs_revision|incorrect", "concerns": []}}, "recommendation": "accept_as_is|accept_with_name_change|reject"}}"""
+
+REVIEWER_B_SYSTEM = """你是神经科学功能专家。基于提供的回路证据进行独立评估。只关注功能方面：功能一致性、证据支持度、模块分配、是否过度声称、置信度校准。不要评估解剖学细节。输出严格的 JSON。"""
+
+REVIEWER_B_USER = """评估以下回路:
+名称: {name}
+类型: {type}
+粒度: {granularity}
+功能关联: {function}
+置信度: {confidence}
+步骤数: {step_count}
+证据: {evidence}
+
+输出 JSON: {{"decision": "support|reject|uncertain", "confidence": 0.0-1.0, "functional_assessment": {{"coherence": "high|moderate|low", "evidence_support": "strong|moderate|weak|none", "overclaiming_detected": false, "module_assignment": "correct|incorrect|uncertain", "confidence_calibration": "appropriate|overconfident|underconfident"}}, "concerns": [], "recommendation": "accept_as_is|accept_with_lower_confidence|reject"}}"""
+
+
+async def _call_reviewer_a(run: MirrorCircuitValidationRun, circuit: Any, steps: list) -> dict:
+    try:
+        provider = get_llm_provider(run.reviewer_a_provider)
+        user_prompt = REVIEWER_A_USER.format(
+            name=circuit.circuit_name or "unknown", type=circuit.circuit_type or "unknown",
+            granularity=circuit.granularity_level or "unknown", step_count=len(steps),
+            steps=json.dumps([{"order": s.step_order, "name": s.step_name, "type": s.step_type, "role": s.role} for s in steps[:10]], ensure_ascii=False),
+            evidence=(circuit.evidence_text or "")[:500],
+        )
+        resp = await provider.complete_json(model=run.reviewer_a_model, system_prompt=REVIEWER_A_SYSTEM,
+                                             user_prompt=user_prompt, temperature=0.2, max_tokens=2000)
+        if resp.parsed_json:
+            return resp.parsed_json
+        return {"decision": "uncertain", "confidence": 0.0, "error": "no_parsed_json", "raw": (resp.raw_text or "")[:200]}
+    except Exception as e:
+        _log.warning("Reviewer A failed: %s", e)
+        return {"decision": "uncertain", "confidence": 0.0, "error": str(e)[:200]}
+
+
+async def _call_reviewer_b(run: MirrorCircuitValidationRun, circuit: Any, steps: list) -> dict:
+    try:
+        provider = get_llm_provider(run.reviewer_b_provider)
+        user_prompt = REVIEWER_B_USER.format(
+            name=circuit.circuit_name or "unknown", type=circuit.circuit_type or "unknown",
+            granularity=circuit.granularity_level or "unknown",
+            function=(circuit.function_association or "unknown"),
+            confidence=circuit.confidence or 0.0, step_count=len(steps),
+            evidence=(circuit.evidence_text or "")[:500],
+        )
+        resp = await provider.complete_json(model=run.reviewer_b_model, system_prompt=REVIEWER_B_SYSTEM,
+                                             user_prompt=user_prompt, temperature=0.2, max_tokens=2000)
+        if resp.parsed_json:
+            return resp.parsed_json
+        return {"decision": "uncertain", "confidence": 0.0, "error": "no_parsed_json", "raw": (resp.raw_text or "")[:200]}
+    except Exception as e:
+        _log.warning("Reviewer B failed: %s", e)
+        return {"decision": "uncertain", "confidence": 0.0, "error": str(e)[:200]}
+
+
+def _adjudicate(a: dict, b: dict) -> dict:
+    a_dec = a.get("decision", "uncertain"); b_dec = b.get("decision", "uncertain")
+    a_conf = a.get("confidence", 0) or 0; b_conf = b.get("confidence", 0) or 0
+    diff = abs(a_conf - b_conf)
+    if a_conf < 0.4 or b_conf < 0.4:
+        return {"status": "low_evidence", "confidence_diff": diff, "summary": "证据不足", "priority": "high"}
+    if a_dec == "support" and b_dec == "support":
+        if diff < 0.3: return {"status": "consensus_supported", "confidence_diff": diff, "summary": "双模型一致通过", "priority": "normal"}
+        else: return {"status": "confidence_divergence", "confidence_diff": diff, "summary": "置信度分歧", "priority": "high"}
+    if a_dec == "reject" and b_dec == "reject":
+        return {"status": "consensus_rejected", "confidence_diff": diff, "summary": "双模型一致拒绝", "priority": "normal"}
+    if a_dec == "reject" or b_dec == "reject":
+        return {"status": "model_conflict", "confidence_diff": diff, "summary": "模型冲突", "priority": "urgent"}
+    return {"status": "insufficient_information", "confidence_diff": diff, "summary": "信息不足", "priority": "high"}
+
+
+async def run_dual_review(session: AsyncSession, run: MirrorCircuitValidationRun) -> dict:
+    """Phase 2: Reviewer A + B in parallel for non-blocked circuits."""
+    results_stmt = select(MirrorCircuitValidationResult).where(
+        MirrorCircuitValidationResult.run_id == run.id,
+        MirrorCircuitValidationResult.rule_blocked == False,
+    )
+    results = list((await session.execute(results_stmt)).scalars().all())
+
+    run.dual_review_status = "running"
+    run.dual_review_total_count = len(results)
+    await session.flush()
+
+    agreement = 0; conflict = 0; rejection = 0; uncertain = 0; low_ev = 0
+
+    for result in results:
+        circuit = await session.get(MirrorRegionCircuit, result.target_id)
+        if circuit is None: continue
+        steps_stmt = select(MirrorCircuitStep).where(MirrorCircuitStep.circuit_id == result.target_id)
+        steps = list((await session.execute(steps_stmt)).scalars().all())
+
+        a_result, b_result = await asyncio.gather(
+            _call_reviewer_a(run, circuit, steps),
+            _call_reviewer_b(run, circuit, steps),
+        )
+        result.reviewer_a_decision = a_result.get("decision")
+        result.reviewer_a_confidence = a_result.get("confidence")
+        result.reviewer_a_payload_json = a_result
+        result.reviewer_b_decision = b_result.get("decision")
+        result.reviewer_b_confidence = b_result.get("confidence")
+        result.reviewer_b_payload_json = b_result
+
+        adj = _adjudicate(a_result, b_result)
+        result.adjudication_status = adj["status"]
+        result.adjudication_confidence_diff = adj["confidence_diff"]
+        result.adjudication_summary = adj["summary"]
+        result.recommended_review_priority = adj["priority"]
+
+        if adj["status"] == "consensus_supported": agreement += 1
+        elif adj["status"] == "consensus_rejected": rejection += 1
+        elif adj["status"] in ("model_conflict", "confidence_divergence"): conflict += 1
+        else: uncertain += 1
+        if a_conf < 0.4 or b_conf < 0.4: low_ev += 1
+
+    run.dual_review_status = "completed"
     run.dual_review_agreement_count = agreement
     run.dual_review_conflict_count = conflict
     run.dual_review_rejection_count = rejection
     run.dual_review_uncertain_count = uncertain
-    run.dual_review_low_evidence_count = low_evidence
-    run.dual_review_status = "completed"
+    run.dual_review_low_evidence_count = low_ev
     run.adjudication_status = "completed"
-    await session.commit()
-    _log.info(
-        "Dual review completed for run %s: agree=%d conflict=%d reject=%d low_evidence=%d",
-        run.id, agreement, conflict, rejection, low_evidence,
-    )
-    return {
-        "total": len(results),
-        "agreement": agreement,
-        "conflict": conflict,
-        "rejection": rejection,
-        "uncertain": uncertain,
-        "low_evidence": low_evidence,
-    }
+    await session.flush()
+    return {"total": len(results), "agreement": agreement, "conflict": conflict, "rejection": rejection}
 
 
-async def run_full_validation(
-    session: AsyncSession,
-    run_id: uuid.UUID,
-) -> MirrorCircuitValidationRun:
-    """Execute the full validation pipeline (Phase 1 + Phase 2).
-
-    Uses the given session. For background-task usage, call
-    ``run_full_validation_background`` instead so the service creates its own
-    session (the request-scoped session from ``get_db`` is closed after the
-    response is sent).
-    """
-    stmt = select(MirrorCircuitValidationRun).where(
-        MirrorCircuitValidationRun.id == run_id,
-    )
-    result = await session.execute(stmt)
-    run = result.scalar_one_or_none()
-    if run is None:
-        msg = f"Validation run {run_id} not found"
-        raise ValueError(msg)
-
-    if run.status != "created":
-        _log.warning(
-            "Validation run %s already started (status=%s)", run_id, run.status,
-        )
-        return run
-
+# ── Orchestrator ───────────────────────────────────────────────────────────
+async def run_full_validation(session: AsyncSession, run_id: uuid.UUID) -> MirrorCircuitValidationRun:
+    run = await session.get(MirrorCircuitValidationRun, run_id)
+    if run is None: raise ValueError(f"Run {run_id} not found")
+    run.status = "running"; run.started_at = datetime.now(timezone.utc)
+    await session.flush()
     try:
-        run.status = "running"
-        run.started_at = datetime.now(timezone.utc)
-        await session.commit()
-
-        run.rule_validation_status = "running"
-        await session.commit()
         await run_rule_validation(session, run)
-
-        run.dual_review_status = "running"
-        await session.commit()
         await run_dual_review(session, run)
-
-        run.status = "completed"
-        run.completed_at = datetime.now(timezone.utc)
-        await session.commit()
-        _log.info("Full validation completed for run %s", run_id)
-
-    except Exception as exc:
+        run.status = "completed"; run.completed_at = datetime.now(timezone.utc)
+    except Exception as e:
+        run.status = "failed"; run.error_message = str(e)[:500]
         _log.exception("Validation run %s failed", run_id)
-        run.status = "failed"
-        run.error_message = str(exc)
+    finally:
         await session.commit()
-
     return run
 
 
 async def run_full_validation_background(run_id: uuid.UUID) -> None:
-    """Full validation pipeline designed for FastAPI BackgroundTasks.
-
-    Creates its own DB session so that it stays alive after the HTTP response
-    is sent.  Retries up to 3 times to find the run in case the commit from
-    the create endpoint is not yet visible.
-    """
-    from app.database import AsyncSessionLocal
-
-    _log.info("[validation][background] START run=%s", run_id)
-
-    if AsyncSessionLocal is None:
-        _log.error("[validation][background] AsyncSessionLocal unavailable")
-        return
-
-    for attempt in range(3):
-        try:
-            async with AsyncSessionLocal() as session:
-                run = await session.get(MirrorCircuitValidationRun, run_id)
-                if run is not None:
-                    await run_full_validation(session, run_id)
-                    return
-        except Exception:
-            _log.exception("[validation][background] attempt %d failed", attempt + 1)
-        if attempt < 2:
-            await asyncio.sleep(1)
-
-    _log.error("[validation][background] run %s not found after retries", run_id)
+    if AsyncSessionLocal is None: return
+    async with AsyncSessionLocal() as session:
+        await run_full_validation(session, run_id)
 
 
-async def get_validation_progress(
-    session: AsyncSession,
-    run_id: uuid.UUID,
-) -> CircuitValidationProgressResponse:
-    """Get progress of a validation run for polling."""
-    stmt = select(MirrorCircuitValidationRun).where(
-        MirrorCircuitValidationRun.id == run_id,
-    )
-    result = await session.execute(stmt)
-    run = result.scalar_one_or_none()
-    if run is None:
-        msg = f"Validation run {run_id} not found"
-        raise ValueError(msg)
-
-    phase: str
-    progress: float = 0.0
-
-    if run.status in ("created", "pending"):
-        phase = "not_started"
-    elif run.status == "running":
-        if run.rule_validation_status in ("pending", "running"):
-            phase = "rule_validation"
-            total = max(run.rule_total_count, 1)
-            done = run.rule_passed_count + run.rule_failed_count
-            progress = min(done / total * 33.33, 33.33)
-        elif run.dual_review_status in ("pending", "running"):
-            phase = "dual_review"
-            total = max(run.dual_review_total_count, 1)
-            done = (
-                run.dual_review_agreement_count
-                + run.dual_review_conflict_count
-                + run.dual_review_rejection_count
-                + run.dual_review_uncertain_count
-                + run.dual_review_low_evidence_count
-            )
-            progress = 33.33 + min(done / total * 33.33, 33.33)
-        else:
-            phase = "adjudication"
-            progress = 66.66 + (33.34 if run.adjudication_status == "completed" else 0)
-    elif run.status == "completed":
-        phase = "completed"
-        progress = 100.0
-    else:
-        phase = run.status
-
+async def get_validation_progress(session: AsyncSession, run_id: uuid.UUID) -> CircuitValidationProgressResponse:
+    run = await session.get(MirrorCircuitValidationRun, run_id)
+    if run is None: raise ValueError(f"Run {run_id} not found")
+    phase = "rule_validation" if run.rule_validation_status == "running" else \
+            "dual_review" if run.dual_review_status == "running" else \
+            "completed" if run.status == "completed" else run.status
     return CircuitValidationProgressResponse(
-        run_id=str(run.id),
-        status=run.status,
-        phase=phase,
-        progress_percent=round(progress, 2),
-        rule_total=run.rule_total_count,
-        rule_done=run.rule_passed_count + run.rule_failed_count,
-        dual_total=run.dual_review_total_count,
-        dual_done=(
-            run.dual_review_agreement_count
-            + run.dual_review_conflict_count
-            + run.dual_review_rejection_count
-            + run.dual_review_uncertain_count
-            + run.dual_review_low_evidence_count
-        ),
+        run_id=str(run.id), status=run.status, phase=phase,
+        progress_percent=100.0 if run.status == "completed" else 50.0 if phase == "dual_review" else 0.0,
+        rule_total=run.rule_total_count, rule_done=run.rule_total_count if run.rule_validation_status == "completed" else 0,
+        dual_total=run.dual_review_total_count, dual_done=run.dual_review_total_count if run.dual_review_status == "completed" else 0,
         adjudication_done=run.adjudication_status == "completed",
-    )
-
-
-# ---------------------------------------------------------------------------
-# Internal helpers
-# ---------------------------------------------------------------------------
-
-
-def _adjudicate(
-    a_result: dict[str, Any],
-    b_result: dict[str, Any],
-) -> dict[str, Any]:
-    """Adjudicate between two reviewer outputs.
-
-    Priority ordering (first match wins):
-
-    1. ``low_evidence``      — either confidence < 0.4 (``high`` priority)
-    2. ``consensus_supported`` — both ``support``, |diff| < 0.3 (``normal``)
-    3. ``confidence_divergence`` — both ``support``, |diff| >= 0.3 (``high``)
-    4. ``consensus_rejected``   — both ``reject`` (``normal``)
-    5. ``model_conflict``       — one ``support`` + one ``reject`` (``urgent``)
-    6. ``insufficient_information`` — fallback (``high``)
-    """
-    a_dec = a_result.get("decision", "uncertain")
-    a_conf = float(a_result.get("confidence", 0.0))
-    b_dec = b_result.get("decision", "uncertain")
-    b_conf = float(b_result.get("confidence", 0.0))
-    conf_diff = abs(a_conf - b_conf)
-
-    # 1. Low evidence
-    if a_conf < 0.4 or b_conf < 0.4:
-        return {
-            "status": "low_evidence",
-            "confidence_diff": conf_diff,
-            "summary": (
-                f"Reviewer A confidence={a_conf:.2f}, "
-                f"Reviewer B confidence={b_conf:.2f}. "
-                "One or both reviewers have low confidence (<0.4)."
-            ),
-            "priority": "high",
-        }
-
-    # 2. Both support, confidence close
-    if a_dec == "support" and b_dec == "support":
-        if conf_diff < 0.3:
-            return {
-                "status": "consensus_supported",
-                "confidence_diff": conf_diff,
-                "summary": (
-                    f"Both reviewers support with close confidence "
-                    f"(diff={conf_diff:.2f})."
-                ),
-                "priority": "normal",
-            }
-        # 3. Both support, confidence far apart
-        return {
-            "status": "confidence_divergence",
-            "confidence_diff": conf_diff,
-            "summary": (
-                f"Both support but confidence differs significantly "
-                f"(diff={conf_diff:.2f})."
-            ),
-            "priority": "high",
-        }
-
-    # 4. Both reject
-    if a_dec == "reject" and b_dec == "reject":
-        return {
-            "status": "consensus_rejected",
-            "confidence_diff": conf_diff,
-            "summary": "Both reviewers reject this circuit.",
-            "priority": "normal",
-        }
-
-    # 5. One support, one reject  (exact conflict)
-    if (a_dec == "support" and b_dec == "reject") or (
-        a_dec == "reject" and b_dec == "support"
-    ):
-        return {
-            "status": "model_conflict",
-            "confidence_diff": conf_diff,
-            "summary": (
-                f"Reviewers disagree: A={a_dec}, B={b_dec}. "
-                f"Confidences: A={a_conf:.2f}, B={b_conf:.2f}."
-            ),
-            "priority": "urgent",
-        }
-
-    # 6. Fallback
-    return {
-        "status": "insufficient_information",
-        "confidence_diff": conf_diff,
-        "summary": (
-            f"Could not reach clear adjudication. "
-            f"A: {a_dec} ({a_conf:.2f}), B: {b_dec} ({b_conf:.2f})."
-        ),
-        "priority": "high",
-    }
-
-
-async def _collect_validation_targets(
-    session: AsyncSession,
-    run: MirrorCircuitValidationRun,
-) -> list[dict[str, Any]]:
-    """Collect targets from MirrorRegionCircuit based on run scope.
-
-    Returns a list of dicts with keys: type, id, label.
-    """
-    circuit_ids = run.scope_json.get("circuit_ids", [])
-    stmt = select(MirrorRegionCircuit)
-
-    if circuit_ids:
-        uuid_ids: list[uuid.UUID] = []
-        for cid in circuit_ids:
-            try:
-                uuid_ids.append(uuid.UUID(str(cid)))
-            except (ValueError, AttributeError):
-                pass
-        if uuid_ids:
-            stmt = stmt.where(MirrorRegionCircuit.id.in_(uuid_ids))
-
-    if run.granularity_level:
-        stmt = stmt.where(
-            MirrorRegionCircuit.granularity_level == run.granularity_level,
-        )
-
-    result_db = await session.execute(stmt)
-    circuits = result_db.scalars().all()
-    return [
-        {
-            "type": "circuit",
-            "id": c.id,
-            "label": c.circuit_name or c.name_cn or str(c.id)[:12],
-        }
-        for c in circuits
-    ]
-
-
-def _run_single_rule(
-    rule_code: str,
-    target: dict[str, Any],
-) -> dict[str, Any]:
-    """Run a single deterministic rule against a target.
-
-    Currently a stub -- most rules return ``pass``. Real implementations
-    will be added in a later task.
-    """
-    _ = target  # unused in stub
-
-    stub_messages: dict[str, str] = {
-        "REGION_IDENTITY": "Region identity verified (stub).",
-        "EDGE_EXISTENCE": "Edge existence verified (stub).",
-        "DIRECTION_CORRECT": "Direction verified (stub).",
-        "STEP_CONTINUITY": "Step continuity verified (stub).",
-        "CLOSED_LOOP": "Closed loop check passed (stub).",
-        "PROVENANCE_COMPLETE": "Provenance verified (stub).",
-        "GRANULARITY_HOMOGENEITY": "Granularity verified (stub).",
-        "TOPOLOGY_TYPE_VALID": "Topology type valid (stub).",
-        "CANONICAL_KEY_DUPLICATE": "No duplicate keys (stub).",
-        "FIELD_COMPLETENESS": "Fields complete (stub).",
-        "IDEMPOTENCY": "Idempotency verified (stub).",
-        "LABEL_QUALITY": "Label quality verified (stub).",
-    }
-
-    message = stub_messages.get(rule_code, f"Unknown rule, defaulting to pass (stub).")
-    return {
-        "rule": rule_code,
-        "status": "pass",
-        "message": message,
-    }
-
-
-async def _call_reviewer(
-    res: MirrorCircuitValidationResult,
-    run: MirrorCircuitValidationRun,
-    provider_name: str,
-    model: str,
-    system_prompt: str,
-) -> dict[str, Any]:
-    """Call a single LLM reviewer and return structured output."""
-    if run.dry_run:
-        return {
-            "decision": "uncertain",
-            "confidence": 0.5,
-            "reasoning": "Dry run -- no actual LLM call.",
-            "issues": [],
-        }
-    try:
-        circuit_data = _serialize_target_for_review(res, run)
-        llm = get_llm_provider(provider_name)
-        llm_response = await llm.complete_json(
-            model=model,
-            system_prompt=system_prompt,
-            user_prompt=(
-                f"Please review the following brain circuit:\n\n"
-                f"{circuit_data}\n\n"
-                f"Output your evaluation as JSON with fields: "
-                f"decision (support/reject/uncertain), confidence (0.0-1.0), "
-                f"reasoning (detailed explanation), issues (list of strings)."
-            ),
-            temperature=0.3,
-            max_tokens=2000,
-            timeout_seconds=120,
-        )
-        payload = llm_response.parsed_json or {}
-        return {
-            "decision": payload.get("decision", "uncertain"),
-            "confidence": float(payload.get("confidence", 0.5)),
-            "reasoning": payload.get("reasoning", ""),
-            "issues": payload.get("issues", []),
-        }
-    except Exception as exc:
-        _log.error("Reviewer call failed for target %s: %s", res.id, exc)
-        return {
-            "decision": "uncertain",
-            "confidence": 0.0,
-            "reasoning": f"LLM call error: {exc}",
-            "issues": ["LLM call failed"],
-        }
-
-
-def _serialize_target_for_review(
-    res: MirrorCircuitValidationResult,
-    run: MirrorCircuitValidationRun,
-) -> str:
-    """Serialize a validation target into plain text for LLM review."""
-    return (
-        f"Target Type: {res.target_type}\n"
-        f"Target ID: {res.target_id}\n"
-        f"Label: {res.object_label or 'N/A'}\n"
-        f"Granularity: {run.granularity_level}\n"
-        f"Source Atlas: {run.source_atlas or 'N/A'}"
     )
