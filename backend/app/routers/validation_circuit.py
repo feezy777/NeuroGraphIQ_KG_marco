@@ -757,7 +757,13 @@ async def get_circuit_detail(
 
 @router.post("/selection/deepseek-fix")
 async def selection_deepseek_fix(body: dict, db: AsyncSession = Depends(get_db)):
-    """Use DeepSeek to analyze and suggest fixes for blocked circuits."""
+    """Use DeepSeek to analyze and suggest fixes for blocked circuits.
+
+    For each blocked circuit, DeepSeek explains WHY each rule failed,
+    identifies the specific field that caused the failure, provides a
+    concrete fix suggestion in Chinese, and rates auto-fixability.
+    Diagnosis results are persisted in the validation result record.
+    """
     circuit_ids = body.get("circuit_ids", [])
     if not circuit_ids:
         raise HTTPException(status_code=400, detail="circuit_ids required")
@@ -767,6 +773,7 @@ async def selection_deepseek_fix(body: dict, db: AsyncSession = Depends(get_db))
     from app.models.mirror_circuit_validation import MirrorCircuitValidationResult
 
     results = []
+    diagnosed_ids = []
     for cid_str in circuit_ids:
         cid = uuid.UUID(cid_str)
         circuit = await db.get(MirrorRegionCircuit, cid)
@@ -774,7 +781,7 @@ async def selection_deepseek_fix(body: dict, db: AsyncSession = Depends(get_db))
             results.append({"circuit_id": cid_str, "status": "skipped", "reason": "circuit not found"})
             continue
 
-        # Get blocked rules
+        # Get the latest validation result for this circuit
         val = (await db.execute(
             select(MirrorCircuitValidationResult).where(
                 MirrorCircuitValidationResult.target_id == cid,
@@ -793,34 +800,58 @@ async def selection_deepseek_fix(body: dict, db: AsyncSession = Depends(get_db))
             select(MirrorCircuitStep).where(MirrorCircuitStep.circuit_id == cid).order_by(MirrorCircuitStep.step_order)
         )).scalars().all())
 
-        # Call DeepSeek for analysis
+        # Call DeepSeek for diagnosis
         try:
             provider = get_llm_provider("deepseek")
 
-            system = """你是神经回路数据质量专家。分析以下被规则校验阻塞的回路，给出具体的修复建议。
-对于每条阻塞规则，提供: 1)问题描述 2)建议的修复方案 3)是否可以自动修复。
+            # Upgraded system prompt: per-task spec — explains WHY, pinpoints field, suggests fix in Chinese
+            system = """你是 NeuroGraphIQ 回路数据质量诊断专家。
+分析以下被规则校验阻塞的回路。对每条阻塞规则提供：
+1. 失败原因（用中文解释为什么这条规则不通过）
+2. 具体问题字段（定位到 circuit、step、region 的哪个字段）
+3. 修复建议（具体可操作的步骤）
+4. 是否可自动修复
 
-输出严格的 JSON 数组: [{"rule_code": "...", "problem": "...", "suggestion": "...", "auto_fixable": true/false, "auto_fix_description": "..."}]"""
+返回 JSON 数组: [{"rule_code":"...","failure_reason":"...","problem_field":"...","suggestion":"...","auto_fixable":true/false}]"""
 
             user = f"""回路: {circuit.circuit_name}
 阻塞规则: {json.dumps([{"rule_code": r["rule_code"], "message": r.get("message","")} for r in blocked_rules], ensure_ascii=False)}
 步骤数: {len(steps)}
 步骤: {json.dumps([{"order": s.step_order, "name": s.step_name, "type": s.step_type, "role": s.role} for s in steps[:10]], ensure_ascii=False)}"""
 
-            resp = await provider.complete_json(model="deepseek-chat", system_prompt=system, user_prompt=user, temperature=0.3, max_tokens=2000)
+            resp = await provider.complete_json(
+                model="deepseek-chat", system_prompt=system, user_prompt=user,
+                temperature=0.3, max_tokens=2000,
+            )
+
+            diagnosis = resp.parsed_json if resp.parsed_json else [{
+                "rule_code": "—", "failure_reason": (resp.raw_text or "解析失败")[:500],
+                "problem_field": "", "suggestion": "", "auto_fixable": False,
+            }]
+
+            # Persist diagnosis to the validation result record
+            val.deepseek_diagnosis_json = diagnosis
+            diagnosed_ids.append(cid_str)
 
             results.append({
                 "circuit_id": cid_str,
                 "circuit_name": circuit.circuit_name,
                 "status": "analyzed",
                 "blocked_rule_count": len(blocked_rules),
-                "deepseek_analysis": resp.parsed_json if resp.parsed_json else {"raw": (resp.raw_text or "")[:500]},
+                "deepseek_analysis": diagnosis,
                 "token_usage": {"prompt": resp.usage.prompt_tokens, "completion": resp.usage.completion_tokens} if resp.usage else None,
             })
         except Exception as e:
             results.append({"circuit_id": cid_str, "circuit_name": circuit.circuit_name, "status": "error", "reason": str(e)[:200]})
 
-    return {"total": len(circuit_ids), "results": results}
+    await db.commit()
+
+    return {
+        "total": len(circuit_ids),
+        "diagnosed_count": len(diagnosed_ids),
+        "diagnosed_circuit_ids": diagnosed_ids,
+        "results": results,
+    }
 
 
 # ---------------------------------------------------------------------------

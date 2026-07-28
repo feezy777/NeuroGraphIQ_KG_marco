@@ -591,45 +591,83 @@ export function CandidateCircuitTable({ granularityLevel }: Props) {
               {validationProgress.phase === 'completed' && (
                 <>
                   <span className="vpm-ft-info">已完成: {validationProgress.pass_count} 通过, {validationProgress.hard_fail_count} 阻塞 | 可双审: {validationProgress.eligible_for_dual_review_count}</span>
-                  <button className="btn btn-sm btn-primary" disabled={validationProgress.eligible_for_dual_review_count === 0}
-                    onClick={() => {
-                      const cprog = validationProgress.candidate_progress || []
-                      const eligible = cprog.filter(cp => cp.eligible_for_dual_review)
-                      const warningOnly = eligible.filter(cp => cp.status === 'warning')
-                      const blocked = cprog.filter(cp => cp.status === 'blocked')
-                      const skipped = cprog.filter(cp => !cp.eligible_for_dual_review && cp.status !== 'blocked')
-                      setDualReviewConfirm({
-                        open: true,
-                        eligibleIds: eligible.map(c => c.circuit_id),
-                        eligibleCount: eligible.length,
-                        warningIds: warningOnly.map(c => c.circuit_id),
-                        blockCount: blocked.length,
-                        skipCount: skipped.length,
-                      })
-                    }}>
-                    <Zap size={14}/> 送入双模型审核({validationProgress.eligible_for_dual_review_count})
-                  </button>
+
+                  {/* Path 1: Eligible circuits → Dual Model Review */}
+                  {validationProgress.eligible_for_dual_review_count > 0 && (
+                    <button className="btn btn-sm btn-primary"
+                      onClick={() => {
+                        const eligible = validationProgress.candidate_progress.filter(cp => cp.eligible_for_dual_review)
+                        setDualReviewConfirm({
+                          open: true,
+                          eligibleIds: eligible.map(c => c.circuit_id),
+                          eligibleCount: eligible.length,
+                          warningIds: eligible.filter(c => c.status === 'warning').map(c => c.circuit_id),
+                          blockCount: validationProgress.blocked_candidate_count || 0,
+                          skipCount: 0,
+                        })
+                      }}>
+                      <Zap size={14}/> 送入双模型审核({validationProgress.eligible_for_dual_review_count})
+                    </button>
+                  )}
+
+                  {/* Path 2: Blocked circuits → DeepSeek Diagnosis */}
+                  {validationProgress.hard_fail_count > 0 && (
+                    <button className="btn btn-sm"
+                      onClick={async () => {
+                        const blocked = validationProgress.candidate_progress.filter(cp => cp.status === 'blocked')
+                        if (blocked.length === 0) return
+                        try {
+                          setBatchMessage('正在调用 DeepSeek 分析阻塞原因...')
+                          const resp = await fetch('/api/validation/circuit/selection/deepseek-fix', {
+                            method: 'POST', headers: {'Content-Type':'application/json'},
+                            body: JSON.stringify({circuit_ids: blocked.map(c => c.circuit_id)})
+                          })
+                          if (!resp.ok) throw new Error(`API错误: ${resp.status}`)
+                          const data = await resp.json()
+                          const results = Array.isArray(data.results) ? data.results : []
+                          // Build diagnosis summary
+                          const parts: string[] = []
+                          for (const r of results) {
+                            const analyses = Array.isArray(r.deepseek_analysis) ? r.deepseek_analysis :
+                                             (r.deepseek_analysis?.raw ? [{rule_code:'—',failure_reason:r.deepseek_analysis.raw, suggestion:'',auto_fixable:false}] : [])
+                            parts.push(`【${r.circuit_name?.slice(0,25) || r.circuit_id?.slice(0,8)}】`)
+                            for (const a of analyses) {
+                              parts.push(`  ${a.rule_code}: ${(a.failure_reason || a.problem || a.message || '').slice(0,80)}`)
+                              if (a.suggestion) parts.push(`  → ${a.suggestion.slice(0,80)}`)
+                            }
+                          }
+                          alert(`DeepSeek 阻塞诊断完成:\n\n${parts.join('\n')}\n\n诊断完成后可点击"重新规则校验"重新验证。`)
+                          setBatchMessage(null)
+                        } catch (e: any) {
+                          setBatchMessage(null)
+                          alert(`DeepSeek 诊断失败: ${e.message || '网络错误'}`)
+                        }
+                      }}>
+                      🤖 DeepSeek 阻塞诊断({validationProgress.hard_fail_count})
+                    </button>
+                  )}
+
                   <button className="btn btn-sm" onClick={() => setValidationProgress(null)}>关闭</button>
                 </>
               )}
               {validationProgress.phase === 'failed' && (
                 <>
-                  <span className="vpm-ft-error">任务失败</span>
+                  <span className="vpm-ft-error">规则校验异常</span>
                   <button className="btn btn-sm btn-primary" onClick={async () => {
+                    // Re-run failed circuits
+                    const failed = validationProgress.candidate_progress.filter(cp => cp.status === 'failed').map(cp => cp.circuit_id)
+                    if (failed.length === 0) { alert('没有需要重试的项目'); return }
                     try {
-                      const eligible = (validationProgress.candidate_progress || []).filter(cp => cp.status === 'failed').map(cp => cp.circuit_id)
-                      if (eligible.length === 0) return
+                      setBatchMessage('重新提交规则校验...')
                       await fetch('/api/validation/circuit/selection/rule-validate', {
                         method: 'POST', headers: {'Content-Type':'application/json'},
-                        body: JSON.stringify({circuit_ids: eligible, force_revalidate: true})
+                        body: JSON.stringify({circuit_ids: failed, force_revalidate: true})
                       })
                       setValidationProgress(null)
                       fetchData()
-                    } catch (e: any) {
-                      console.error('重试失败:', e)
-                      setBatchMessage(e?.message || '重试失败')
-                    }
-                  }}>重试失败项</button>
+                    } catch(e: any) { alert('重试失败: ' + (e.message || '网络错误')) }
+                    setBatchMessage(null)
+                  }}>重新校验失败项</button>
                   <button className="btn btn-sm" onClick={() => setValidationProgress(null)}>关闭</button>
                 </>
               )}

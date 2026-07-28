@@ -85,6 +85,7 @@ class CandidateProgressItem(BaseModel):
     eligible_for_dual_review: bool = False
     error_message: Optional[str] = None
     blocked_reasons: list[dict] = Field(default_factory=list)
+    deepseek_diagnosis: list[dict] = Field(default_factory=list)
 
 
 class CircuitValidationProgressResponse(BaseModel):

@@ -21,10 +21,10 @@ HARD_RULES = [
     ("DIRECTION_CORRECT", "edge.source/target 与步骤方向一致"),
     ("STEP_CONTINUITY", "step[i].target == step[i+1].source"),
     ("CLOSED_LOOP", "closed_loop=true 时首尾相连"),
-    ("PROVENANCE_COMPLETE", "resource_id→batch_id→llm_run_id 链完整"),
     ("GRANULARITY_HOMOGENEITY", "所有节点同粒度"),
 ]
 SOFT_RULES = [
+    ("PROVENANCE_COMPLETE", "resource_id→batch_id→llm_run_id 链完整"),
     ("TOPOLOGY_TYPE_VALID", "topology_type 在已知枚举中"),
     ("CANONICAL_KEY_DUPLICATE", "无重复 canonical_key"),
     ("FIELD_COMPLETENESS", "必填字段非空"),
@@ -175,8 +175,8 @@ async def _run_rule_check(session: AsyncSession, rule_code: str, circuit: Any, s
             if not circuit.batch_id: missing.append("batch_id")
             if not getattr(circuit, "llm_run_id", None): missing.append("llm_run_id")
             if missing:
-                return {"rule_code": rule_code, "severity": "blocker", "status": "blocked",
-                        "message": f"缺失溯源: {', '.join(missing)}"}
+                return {"rule_code": rule_code, "severity": "warning", "status": "warning",
+                        "message": f"溯源不完整: {', '.join(missing)}（不影响进入双模型审核）"}
             return {"rule_code": rule_code, "severity": "pass", "status": "passed", "message": "溯源完整"}
 
         elif rule_code == "GRANULARITY_HOMOGENEITY":
@@ -504,6 +504,7 @@ async def get_validation_progress(session: AsyncSession, run_id: uuid.UUID) -> C
             "current_rule_code": "",
             "error_message": None,
             "eligible_for_dual_review": r.rule_overall_status in ("passed", "warning"),
+            "deepseek_diagnosis": r.deepseek_diagnosis_json or [],
             "blocked_reasons": [
                 {"rule_code": br["rule_code"], "message": br.get("message", "未知原因")}
                 for br in blocked_rules

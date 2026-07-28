@@ -65,4 +65,5 @@ class MirrorCircuitValidationResult(Base):
     adjudication_summary: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     recommended_review_priority: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
     mirror_review_record_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), nullable=True)
+    deepseek_diagnosis_json: Mapped[Optional[list[dict[str, Any]]]] = mapped_column(JSONB, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
