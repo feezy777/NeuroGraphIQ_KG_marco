@@ -485,15 +485,15 @@ export function RepairModal({ circuitIds, circuitNames, onClose, onRevalidationC
 
                     {/* Rule diagnostics */}
                     <h4 style={{ fontSize: 14, marginBottom: 12 }}>
-                      规则诊断 ({currentDiagnosis.rule_diagnostics.length} 条)
+                      规则诊断 ({(currentDiagnosis?.rule_diagnostics || []).length} 条)
                     </h4>
-                    {currentDiagnosis.rule_diagnostics.length === 0 ? (
+                    {(currentDiagnosis?.rule_diagnostics || []).length === 0 ? (
                       <p style={{ color: 'var(--text-muted)', fontSize: 13 }}>
                         暂无详细规则诊断信息
                       </p>
                     ) : (
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                        {currentDiagnosis.rule_diagnostics.map((rd, i) => (
+                        {(currentDiagnosis?.rule_diagnostics || []).map((rd, i) => (
                           <div key={i} style={{
                             padding: 12, borderRadius: 8,
                             border: '1px solid var(--border)',
