@@ -727,6 +727,478 @@ async def get_circuit_detail(
 
 
 # ---------------------------------------------------------------------------
+# GET /api/validation/circuit/rules
+# ---------------------------------------------------------------------------
+
+
+@router.get("/rules")
+async def get_rules():
+    """Return the authoritative 12-rule registry."""
+    rules = vc.get_rule_registry()
+    return {"rules": rules, "enabled_rule_count": len(rules)}
+
+
+# ---------------------------------------------------------------------------
+# POST /api/validation/circuit/selection/dual-review
+# ---------------------------------------------------------------------------
+
+
+@router.post("/selection/dual-review")
+async def selection_dual_review(body: dict, db: AsyncSession = Depends(get_db)):
+    """Direct selection: send circuits to dual-review (skip rule validation)."""
+    circuit_ids = body.get("circuit_ids", [])
+    force = body.get("force_review", False)
+    if not circuit_ids:
+        raise HTTPException(status_code=400, detail="circuit_ids required")
+
+    from app.models.mirror_kg import MirrorRegionCircuit
+
+    valid = list((await db.execute(
+        select(MirrorRegionCircuit).where(MirrorRegionCircuit.id.in_([uuid.UUID(c) for c in circuit_ids]))
+    )).scalars().all())
+
+    # Check reviewer configuration
+    from app.services.llm_providers import get_llm_provider
+    a_ok = True
+    b_ok = True
+    try:
+        get_llm_provider("deepseek")
+    except Exception:
+        a_ok = False
+    try:
+        get_llm_provider("kimi")
+    except Exception:
+        b_ok = False
+
+    skip_reasons = {}
+    if not a_ok:
+        skip_reasons["reviewer_a"] = "DeepSeek not configured"
+    if not b_ok:
+        skip_reasons["reviewer_b"] = "Kimi not configured"
+
+    if not valid:
+        return {
+            "selected_count": len(circuit_ids),
+            "eligible_count": 0,
+            "skipped_count": len(circuit_ids),
+            "skip_reasons": skip_reasons,
+            "reviewer_a_configured": a_ok,
+            "reviewer_b_configured": b_ok,
+            "status": "no_eligible",
+        }
+
+    # Create internal run (dual-review only, no rule validation)
+    req = CircuitValidationCreateRequest(
+        granularity_level=valid[0].granularity_level if valid else "all",
+        circuit_ids=[str(v.id) for v in valid],
+        reviewer_a_provider="deepseek",
+        reviewer_b_provider="kimi",
+    )
+    run, stats = await vc.create_validation_run(db, req)
+    await db.commit()
+
+    # Start async dual review in background
+    import asyncio
+
+    async def dual_only():
+        from app.database import AsyncSessionLocal
+        async with AsyncSessionLocal() as s:
+            await vc.run_dual_review(s, run)
+
+    asyncio.create_task(dual_only())
+
+    return {
+        "internal_run_id": str(run.id),
+        "selected_count": len(circuit_ids),
+        "eligible_count": len(valid),
+        "skipped_count": len(circuit_ids) - len(valid),
+        "skip_reasons": skip_reasons,
+        "reviewer_a_configured": a_ok,
+        "reviewer_b_configured": b_ok,
+        "status": "queued",
+    }
+
+
+# ---------------------------------------------------------------------------
+# POST /api/validation/circuit/selection/retry-reviewer-a
+# ---------------------------------------------------------------------------
+
+
+@router.post("/selection/retry-reviewer-a")
+async def selection_retry_reviewer_a(body: dict, db: AsyncSession = Depends(get_db)):
+    """Rerun Reviewer A (anatomical) for selected circuits."""
+    circuit_ids = body.get("circuit_ids", [])
+    if not circuit_ids:
+        raise HTTPException(status_code=400, detail="circuit_ids required")
+
+    from app.models.mirror_circuit_validation import MirrorCircuitValidationResult
+    from app.models.mirror_kg import MirrorRegionCircuit
+    from app.models.mirror_macro_clinical import MirrorCircuitStep
+
+    uuids = [uuid.UUID(c) for c in circuit_ids]
+    results = list((await db.execute(
+        select(MirrorCircuitValidationResult).where(
+            MirrorCircuitValidationResult.target_id.in_(uuids),
+            MirrorCircuitValidationResult.target_type == "circuit",
+        )
+    )).scalars().all())
+
+    if not results:
+        raise HTTPException(status_code=404, detail="No validation results found for given circuits")
+
+    rerun_count = 0
+    for result in results:
+        circuit = await db.get(MirrorRegionCircuit, result.target_id)
+        if circuit is None:
+            continue
+        steps = list((await db.execute(
+            select(MirrorCircuitStep).where(MirrorCircuitStep.circuit_id == result.target_id)
+        )).scalars().all())
+        a_result = await vc._call_reviewer_a(
+            await db.get(MirrorCircuitValidationRun, result.run_id), circuit, steps  # type: ignore
+        )
+        result.reviewer_a_decision = a_result.get("decision")
+        result.reviewer_a_confidence = a_result.get("confidence")
+        result.reviewer_a_payload_json = a_result
+        # Re-adjudicate
+        adj = vc._adjudicate(
+            a_result,
+            {"decision": result.reviewer_b_decision or "uncertain",
+             "confidence": result.reviewer_b_confidence or 0.0},
+        )
+        result.adjudication_status = adj["status"]
+        result.adjudication_confidence_diff = adj["confidence_diff"]
+        result.adjudication_summary = adj["summary"]
+        result.recommended_review_priority = adj["priority"]
+        rerun_count += 1
+
+    await db.commit()
+    return {"rerun_count": rerun_count, "reviewer": "a"}
+
+
+# ---------------------------------------------------------------------------
+# POST /api/validation/circuit/selection/retry-reviewer-b
+# ---------------------------------------------------------------------------
+
+
+@router.post("/selection/retry-reviewer-b")
+async def selection_retry_reviewer_b(body: dict, db: AsyncSession = Depends(get_db)):
+    """Rerun Reviewer B (functional) for selected circuits."""
+    circuit_ids = body.get("circuit_ids", [])
+    if not circuit_ids:
+        raise HTTPException(status_code=400, detail="circuit_ids required")
+
+    from app.models.mirror_circuit_validation import MirrorCircuitValidationResult
+    from app.models.mirror_kg import MirrorRegionCircuit
+    from app.models.mirror_macro_clinical import MirrorCircuitStep
+
+    uuids = [uuid.UUID(c) for c in circuit_ids]
+    results = list((await db.execute(
+        select(MirrorCircuitValidationResult).where(
+            MirrorCircuitValidationResult.target_id.in_(uuids),
+            MirrorCircuitValidationResult.target_type == "circuit",
+        )
+    )).scalars().all())
+
+    if not results:
+        raise HTTPException(status_code=404, detail="No validation results found for given circuits")
+
+    rerun_count = 0
+    for result in results:
+        circuit = await db.get(MirrorRegionCircuit, result.target_id)
+        if circuit is None:
+            continue
+        steps = list((await db.execute(
+            select(MirrorCircuitStep).where(MirrorCircuitStep.circuit_id == result.target_id)
+        )).scalars().all())
+        b_result = await vc._call_reviewer_b(
+            await db.get(MirrorCircuitValidationRun, result.run_id), circuit, steps  # type: ignore
+        )
+        result.reviewer_b_decision = b_result.get("decision")
+        result.reviewer_b_confidence = b_result.get("confidence")
+        result.reviewer_b_payload_json = b_result
+        # Re-adjudicate
+        adj = vc._adjudicate(
+            {"decision": result.reviewer_a_decision or "uncertain",
+             "confidence": result.reviewer_a_confidence or 0.0},
+            b_result,
+        )
+        result.adjudication_status = adj["status"]
+        result.adjudication_confidence_diff = adj["confidence_diff"]
+        result.adjudication_summary = adj["summary"]
+        result.recommended_review_priority = adj["priority"]
+        rerun_count += 1
+
+    await db.commit()
+    return {"rerun_count": rerun_count, "reviewer": "b"}
+
+
+# ---------------------------------------------------------------------------
+# GET /api/validation/circuit/review-queue
+# ---------------------------------------------------------------------------
+
+
+@router.get("/review-queue")
+async def review_queue(
+    limit: int = 25,
+    offset: int = 0,
+    db: AsyncSession = Depends(get_db),
+):
+    """Return candidates whose dual-review is complete and need human review."""
+    from app.models.mirror_circuit_validation import MirrorCircuitValidationResult
+
+    q = select(MirrorCircuitValidationResult).where(
+        MirrorCircuitValidationResult.adjudication_status.in_([
+            "consensus_supported", "confidence_divergence", "model_conflict",
+            "insufficient_information", "low_evidence",
+        ]),
+        MirrorCircuitValidationResult.adjudication_status.isnot(None),
+    ).order_by(
+        MirrorCircuitValidationResult.recommended_review_priority,
+        MirrorCircuitValidationResult.created_at,
+    ).offset(offset).limit(limit)
+
+    count_q = select(func.count()).select_from(MirrorCircuitValidationResult).where(
+        MirrorCircuitValidationResult.adjudication_status.in_([
+            "consensus_supported", "confidence_divergence", "model_conflict",
+            "insufficient_information", "low_evidence",
+        ]),
+        MirrorCircuitValidationResult.adjudication_status.isnot(None),
+    )
+
+    total = (await db.execute(count_q)).scalar_one()
+    rows = list((await db.execute(q)).scalars().all())
+
+    return {
+        "items": [{
+            "id": str(r.id),
+            "circuit_id": str(r.target_id),
+            "circuit_label": r.object_label,
+            "adjudication_status": r.adjudication_status,
+            "priority": r.recommended_review_priority,
+            "reviewer_a_decision": r.reviewer_a_decision,
+            "reviewer_b_decision": r.reviewer_b_decision,
+            "reviewer_a_confidence": r.reviewer_a_confidence,
+            "reviewer_b_confidence": r.reviewer_b_confidence,
+        } for r in rows],
+        "total": total,
+    }
+
+
+# ---------------------------------------------------------------------------
+# POST /api/validation/circuit/human-review/approve
+# ---------------------------------------------------------------------------
+
+
+@router.post("/human-review/approve")
+async def human_review_approve(body: dict, db: AsyncSession = Depends(get_db)):
+    """Human reviewer approves a circuit (accepts LLM suggestion)."""
+    circuit_id = body.get("circuit_id")
+    note = body.get("note", "")
+    if not circuit_id:
+        raise HTTPException(status_code=400, detail="circuit_id required")
+
+    from app.models.mirror_kg import MirrorRegionCircuit
+    circuit = await db.get(MirrorRegionCircuit, uuid.UUID(circuit_id))
+    if circuit is None:
+        raise HTTPException(status_code=404, detail="Circuit not found")
+
+    circuit.review_status = "approved"
+    await db.commit()
+    return {"status": "approved", "circuit_id": circuit_id, "note": note}
+
+
+# ---------------------------------------------------------------------------
+# POST /api/validation/circuit/human-review/reject
+# ---------------------------------------------------------------------------
+
+
+@router.post("/human-review/reject")
+async def human_review_reject(body: dict, db: AsyncSession = Depends(get_db)):
+    """Human reviewer rejects a circuit."""
+    circuit_id = body.get("circuit_id")
+    note = body.get("note", "")
+    if not circuit_id:
+        raise HTTPException(status_code=400, detail="circuit_id required")
+
+    from app.models.mirror_kg import MirrorRegionCircuit
+    circuit = await db.get(MirrorRegionCircuit, uuid.UUID(circuit_id))
+    if circuit is None:
+        raise HTTPException(status_code=404, detail="Circuit not found")
+
+    circuit.review_status = "rejected"
+    await db.commit()
+    return {"status": "rejected", "circuit_id": circuit_id, "note": note}
+
+
+# ---------------------------------------------------------------------------
+# POST /api/validation/circuit/human-review/retain
+# ---------------------------------------------------------------------------
+
+
+@router.post("/human-review/retain")
+async def human_review_retain(body: dict, db: AsyncSession = Depends(get_db)):
+    """Human reviewer retains a circuit for further investigation."""
+    circuit_id = body.get("circuit_id")
+    note = body.get("note", "")
+    if not circuit_id:
+        raise HTTPException(status_code=400, detail="circuit_id required")
+
+    from app.models.mirror_kg import MirrorRegionCircuit
+    circuit = await db.get(MirrorRegionCircuit, uuid.UUID(circuit_id))
+    if circuit is None:
+        raise HTTPException(status_code=404, detail="Circuit not found")
+
+    circuit.review_status = "manual_review_needed"
+    await db.commit()
+    return {"status": "retained", "circuit_id": circuit_id, "note": note}
+
+
+# ---------------------------------------------------------------------------
+# POST /api/validation/circuit/human-review/return-review
+# ---------------------------------------------------------------------------
+
+
+@router.post("/human-review/return-review")
+async def human_review_return_review(body: dict, db: AsyncSession = Depends(get_db)):
+    """Human reviewer returns a circuit to re-run dual review."""
+    circuit_id = body.get("circuit_id")
+    note = body.get("note", "")
+    if not circuit_id:
+        raise HTTPException(status_code=400, detail="circuit_id required")
+
+    # Reset review status to trigger re-review
+    from app.models.mirror_kg import MirrorRegionCircuit
+    circuit = await db.get(MirrorRegionCircuit, uuid.UUID(circuit_id))
+    if circuit is None:
+        raise HTTPException(status_code=404, detail="Circuit not found")
+
+    circuit.review_status = "pending"
+    await db.commit()
+    return {"status": "returned_for_review", "circuit_id": circuit_id, "note": note}
+
+
+# ---------------------------------------------------------------------------
+# POST /api/validation/circuit/human-review/topology-only
+# ---------------------------------------------------------------------------
+
+
+@router.post("/human-review/topology-only")
+async def human_review_topology_only(body: dict, db: AsyncSession = Depends(get_db)):
+    """Human reviewer approves circuit but only the topology, not the full content."""
+    circuit_id = body.get("circuit_id")
+    note = body.get("note", "")
+    if not circuit_id:
+        raise HTTPException(status_code=400, detail="circuit_id required")
+
+    from app.models.mirror_kg import MirrorRegionCircuit
+    circuit = await db.get(MirrorRegionCircuit, uuid.UUID(circuit_id))
+    if circuit is None:
+        raise HTTPException(status_code=404, detail="Circuit not found")
+
+    circuit.review_status = "approved"
+    await db.commit()
+    return {"status": "approved_topology_only", "circuit_id": circuit_id, "note": note}
+
+
+# ---------------------------------------------------------------------------
+# POST /api/validation/circuit/human-review/merge-duplicate
+# ---------------------------------------------------------------------------
+
+
+@router.post("/human-review/merge-duplicate")
+async def human_review_merge_duplicate(body: dict, db: AsyncSession = Depends(get_db)):
+    """Human reviewer identifies a circuit as duplicate and merges it."""
+    circuit_id = body.get("circuit_id")
+    target_circuit_id = body.get("target_circuit_id")
+    note = body.get("note", "")
+    if not circuit_id or not target_circuit_id:
+        raise HTTPException(status_code=400, detail="circuit_id and target_circuit_id required")
+
+    from app.models.mirror_kg import MirrorRegionCircuit
+    circuit = await db.get(MirrorRegionCircuit, uuid.UUID(circuit_id))
+    target = await db.get(MirrorRegionCircuit, uuid.UUID(target_circuit_id))
+    if circuit is None or target is None:
+        raise HTTPException(status_code=404, detail="Circuit or target not found")
+
+    circuit.review_status = "merged_into_other"
+    # Optionally increase confidence of the target
+    if target.confidence and circuit.confidence:
+        target.confidence = max(target.confidence, circuit.confidence)
+    await db.commit()
+    return {
+        "status": "merged",
+        "circuit_id": circuit_id,
+        "target_circuit_id": target_circuit_id,
+        "note": note,
+    }
+
+
+# ---------------------------------------------------------------------------
+# GET /api/validation/circuit/promotion/queue
+# ---------------------------------------------------------------------------
+
+
+@router.get("/promotion/queue")
+async def promotion_queue(db: AsyncSession = Depends(get_db)):
+    """Get human-approved candidates ready for promotion."""
+    from app.models.mirror_kg import MirrorRegionCircuit
+
+    q = select(MirrorRegionCircuit).where(
+        MirrorRegionCircuit.review_status.in_(["approved", "manual_approved"]),
+        MirrorRegionCircuit.promotion_status == "not_promoted",
+    ).limit(50)
+    rows = list((await db.execute(q)).scalars().all())
+    return {
+        "items": [{
+            "id": str(r.id),
+            "name": r.circuit_name,
+            "type": r.circuit_type,
+            "confidence": float(r.confidence) if r.confidence else 0,
+        } for r in rows],
+        "total": len(rows),
+    }
+
+
+# ---------------------------------------------------------------------------
+# GET /api/validation/circuit/promotion/{circuit_id}/preview
+# ---------------------------------------------------------------------------
+
+
+@router.get("/promotion/{circuit_id}/preview")
+async def promotion_preview(circuit_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
+    """Preview what would be promoted for a circuit."""
+    from app.models.mirror_kg import MirrorRegionCircuit
+
+    circuit = await db.get(MirrorRegionCircuit, circuit_id)
+    if circuit is None:
+        raise HTTPException(status_code=404, detail="Circuit not found")
+
+    eligible = circuit.review_status in ("approved", "manual_approved") and circuit.promotion_status == "not_promoted"
+    blockers = []
+    if circuit.review_status not in ("approved", "manual_approved"):
+        blockers.append("circuit not human-approved")
+    if circuit.promotion_status != "not_promoted":
+        blockers.append(f"promotion status is '{circuit.promotion_status}'")
+
+    return {
+        "circuit_id": str(circuit.id),
+        "circuit_name": circuit.circuit_name,
+        "review_status": circuit.review_status,
+        "promotion_status": circuit.promotion_status,
+        "eligible": eligible,
+        "details": {
+            "circuit_record": {
+                "name": circuit.circuit_name,
+                "type": circuit.circuit_type,
+                "confidence": float(circuit.confidence) if circuit.confidence else 0,
+            },
+        },
+        "blockers": blockers,
+    }
+
+
+# ---------------------------------------------------------------------------
 # Conversion helpers
 # ---------------------------------------------------------------------------
 

@@ -18,6 +18,10 @@ interface CandidateCircuit {
   mirror_status: string
   source_atlas: string
   created_at: string | null
+  rule_overall_status?: string
+  reviewer_a_decision?: string
+  reviewer_b_decision?: string
+  adjudication_status?: string
 }
 
 interface Props {
@@ -32,16 +36,40 @@ const STATUS_COLORS: Record<string, string> = {
   not_promoted: '#86909c',
   promoted_to_final: '#2f54eb',
   llm_suggested: '#2f54eb',
+  passed: '#52c41a',
+  failed: '#ff4d4f',
+  blocked: '#faad14',
+  support: '#52c41a',
+  reject: '#ff4d4f',
+  conflict: '#faad14',
+  agreement: '#52c41a',
+}
+
+const STATUS_LABELS: Record<string, string> = {
+  pending: '待审核', approved: '已通过', rejected: '已拒绝',
+  not_promoted: '未晋升', promoted_to_final: '已晋升',
+  llm_suggested: 'LLM建议', passed: '通过', failed: '失败',
+  blocked: '阻塞', support: '支持', reject: '拒绝',
+  conflict: '冲突', agreement: '一致',
 }
 
 function statusBadge(status: string): { color: string; label: string } {
   const c = STATUS_COLORS[status] || '#86909c'
-  const labels: Record<string, string> = {
-    pending: '待审核', approved: '已通过', rejected: '已拒绝',
-    not_promoted: '未晋升', promoted_to_final: '已晋升',
-    llm_suggested: 'LLM建议',
-  }
-  return { color: c, label: labels[status] || status }
+  return { color: c, label: STATUS_LABELS[status] || status }
+}
+
+function badgeHtml(status: string): React.ReactNode {
+  const { color, label } = statusBadge(status)
+  if (!status) return <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>—</span>
+  return (
+    <span style={{
+      display: 'inline-block', padding: '1px 8px', borderRadius: 10,
+      fontSize: 11, fontWeight: 600,
+      background: color + '1a', color, border: `1px solid ${color}44`,
+    }}>
+      {label}
+    </span>
+  )
 }
 
 function formatConfidence(v: number): string {
@@ -228,14 +256,18 @@ export function CandidateCircuitTable({ granularityLevel }: Props) {
                 <th className="vr-th-check">
                   <input type="checkbox" checked={selected.size === items.length && items.length > 0} onChange={toggleSelectAll} />
                 </th>
-                <th style={{ minWidth: 160 }}>回路名称</th>
+                <th style={{ minWidth: 140 }}>回路名称</th>
                 <th className="vr-th-type">类型</th>
-                <th style={{ width: 80 }}>粒度</th>
-                <th style={{ width: 60, textAlign: 'center' }}>步骤</th>
+                <th style={{ width: 72 }}>粒度</th>
+                <th style={{ width: 48, textAlign: 'center' }}>步骤</th>
                 <th className="vr-th-conf">置信度</th>
-                <th className="vr-th-status">审核状态</th>
-                <th className="vr-th-status">晋升状态</th>
-                <th style={{ width: 120 }}>数据源</th>
+                <th className="vr-th-status">规则</th>
+                <th className="vr-th-status">审 A</th>
+                <th className="vr-th-status">审 B</th>
+                <th className="vr-th-status">裁决</th>
+                <th className="vr-th-status">审核</th>
+                <th className="vr-th-status">晋升</th>
+                <th style={{ width: 100 }}>数据源</th>
               </tr>
             </thead>
             <tbody>
@@ -255,6 +287,10 @@ export function CandidateCircuitTable({ granularityLevel }: Props) {
                     <td style={{ fontSize: 12 }}>{item.granularity_level}</td>
                     <td style={{ textAlign: 'center', fontSize: 13 }}>{item.step_count}</td>
                     <td>{formatConfidence(item.confidence)}</td>
+                    <td>{badgeHtml(item.rule_overall_status || '')}</td>
+                    <td style={{ fontSize: 12, color: 'var(--text-muted)' }}>{item.reviewer_a_decision || '—'}</td>
+                    <td style={{ fontSize: 12, color: 'var(--text-muted)' }}>{item.reviewer_b_decision || '—'}</td>
+                    <td style={{ fontSize: 12, color: 'var(--text-muted)' }}>{item.adjudication_status || '—'}</td>
                     <td>
                       <span style={{
                         display: 'inline-block', padding: '1px 8px', borderRadius: 10,

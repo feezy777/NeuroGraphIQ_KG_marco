@@ -29,10 +29,22 @@ SOFT_RULES = [
     ("CANONICAL_KEY_DUPLICATE", "无重复 canonical_key"),
     ("FIELD_COMPLETENESS", "必填字段非空"),
     ("LABEL_QUALITY", "名称不含占位符"),
+    ("PREDICATE_VALIDITY", "step_type 和 role 组合有效"),
 ]
 KNOWN_CIRCUIT_TYPES = {"closed_loop", "open_loop", "feedforward", "feedback",
                        "recurrent", "divergent", "convergent", "chain",
                        "bundle", "simple", "complex", "undefined", "unknown"}
+
+
+def get_rule_registry():
+    """Return the authoritative rule registry for all 12 rules."""
+    return [
+        {"rule_code": code, "rule_name": code, "description": desc,
+         "default_severity": "blocker" if code in dict(HARD_RULES) else "warning",
+         "enabled": True, "validator_version": "1.0"}
+        for code, desc in HARD_RULES + SOFT_RULES
+    ]
+
 
 # ── Candidate Source Adapter ───────────────────────────────────────────────
 async def _scan_circuits(session: AsyncSession, req: CircuitValidationCreateRequest) -> dict:
@@ -218,6 +230,21 @@ async def _run_rule_check(session: AsyncSession, rule_code: str, circuit: Any, s
                 return {"rule_code": rule_code, "severity": "warning", "status": "warning",
                         "message": "名称含占位符或自动生成模式"}
             return {"rule_code": rule_code, "severity": "pass", "status": "passed", "message": "标签质量合格"}
+
+        elif rule_code == "PREDICATE_VALIDITY":
+            valid_roles = {"source", "target", "relay", "hub", "modulator", "participant", "unknown"}
+            valid_types = {"region", "region_group", "relay", "hub", "modulator", "functional_stage", "unknown"}
+            issues = []
+            for s in steps:
+                if s.role.lower() not in valid_roles:
+                    issues.append(f"步骤{s.step_order}无效角色'{s.role}'")
+                if s.step_type.lower() not in valid_types:
+                    issues.append(f"步骤{s.step_order}无效类型'{s.step_type}'")
+            if issues:
+                return {"rule_code": rule_code, "severity": "warning", "status": "warning",
+                        "message": "; ".join(issues)}
+            return {"rule_code": rule_code, "severity": "pass", "status": "passed",
+                    "message": f"所有{len(steps)}步骤的predicate有效"}
 
         else:
             return {"rule_code": rule_code, "severity": "pass", "status": "passed", "message": "通过"}
