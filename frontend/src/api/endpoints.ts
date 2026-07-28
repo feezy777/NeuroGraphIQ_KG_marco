@@ -5,6 +5,7 @@ import {
   normalizeOptionalUuid,
   omitUndefined,
 } from './payloadUtils'
+import type { CircuitValidationRun, CircuitValidationResult, CircuitValidationCreateRequest } from '../pages/validation-center/validationCenterTypes'
 
 // ── Common ────────────────────────────────────────────────────────────────────
 export interface Paginated<T> {
@@ -612,6 +613,24 @@ export const fetchRuleValidationRunResults = (
     p,
   )
 export const fetchRuleValidationOptions = () => getJson<Record<string, unknown>>('/api/rule-validation/options')
+
+// ── Circuit Validation (Circuit Validation Center) ────────────────────────────
+export interface CircuitValidationRun {
+  id: string
+  status: string
+  rule_passed_count: number
+  rule_total_count: number
+  dual_review_agreement_count: number
+  dual_review_total_count: number | null
+  created_at: string | null
+  finished_at: string | null
+}
+export const listCircuitValidationRuns = (p?: {
+  limit?: number
+  offset?: number
+  status?: string
+  granularity_level?: string
+}) => getJson<Paginated<CircuitValidationRun>>('/api/circuit-validation/runs', p)
 
 // ── Human Review ──────────────────────────────────────────────────────────────
 export interface CandidateReviewRecord {
@@ -4812,3 +4831,23 @@ export const listUnifiedTasks = (params?: {
   limit?: number
   offset?: number
 }) => getJson<UnifiedTaskListResponse>('/api/tasks/runs', params)
+
+// ── Circuit Validation (Phase 1) ──────────────────────────────────────────
+
+export const createCircuitValidationRun = (body: CircuitValidationCreateRequest) =>
+  postJson<CircuitValidationRun>('/api/validation/circuit/runs', body)
+
+export const startCircuitValidationRun = (runId: string) =>
+  postJson<CircuitValidationRun>(`/api/validation/circuit/runs/${runId}/start`)
+
+export const listCircuitValidationRuns = (p?: { status?: string; granularity_level?: string; limit?: number; offset?: number }) =>
+  getJson<Paginated<CircuitValidationRun>>('/api/validation/circuit/runs', p)
+
+export const getCircuitValidationRun = (runId: string) =>
+  getJson<CircuitValidationRun & { results: CircuitValidationResult[] }>(`/api/validation/circuit/runs/${runId}`)
+
+export const getCircuitValidationProgress = (runId: string) =>
+  getJson<{ run_id: string; status: string; phase: string; progress_percent: number }>(`/api/validation/circuit/runs/${runId}/progress`)
+
+export const cancelCircuitValidationRun = (runId: string) =>
+  postJson<CircuitValidationRun>(`/api/validation/circuit/runs/${runId}/cancel`)
