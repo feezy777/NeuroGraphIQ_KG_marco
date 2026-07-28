@@ -387,7 +387,7 @@ export function RepairModal({ circuitIds, circuitNames, onClose, onRevalidationC
             padding: '8px 24px', borderBottom: '1px solid var(--border)',
             display: 'flex', gap: 6, flexWrap: 'wrap', background: 'var(--bg-muted)',
           }}>
-            {circuitIds.map((id, i) => (
+            {safeCircuitIds.map((id, i) => (
               <button
                 key={id}
                 className={`btn btn-sm ${i === selectedCircuitIdx ? 'btn-primary' : 'btn-outline'}`}

@@ -425,6 +425,8 @@ async def run_dual_review(session: AsyncSession, run: MirrorCircuitValidationRun
         elif adj["status"] == "consensus_rejected": rejection += 1
         elif adj["status"] in ("model_conflict", "confidence_divergence"): conflict += 1
         else: uncertain += 1
+        a_conf = (a_result.get("confidence") or 0)
+        b_conf = (b_result.get("confidence") or 0)
         if a_conf < 0.4 or b_conf < 0.4: low_ev += 1
 
     run.dual_review_status = "completed"
