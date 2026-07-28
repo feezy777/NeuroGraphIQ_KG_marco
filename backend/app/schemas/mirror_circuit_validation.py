@@ -5,6 +5,49 @@ from typing import Any, Optional
 from pydantic import BaseModel, Field
 
 
+# ── Circuit Correction Schemas ────────────────────────────────────────────
+
+
+class CorrectionRead(BaseModel):
+    """A single proposed field-level correction from DeepSeek diagnosis."""
+    id: str
+    circuit_id: str
+    rule_code: str
+    field_path: str
+    original_value: Optional[Any] = None
+    suggested_value: Optional[Any] = None
+    approved_value: Optional[Any] = None
+    correction_type: str = "metadata"
+    repairability: str = "manual_required"
+    approval_status: str = "proposed"
+    deterministic_validation_status: str = "pending"
+    suggestion_source: str = "deepseek"
+    suggestion_confidence: Optional[float] = None
+    authoritative_source: Optional[str] = None
+    revalidation_status: str = "not_started"
+    created_at: Optional[datetime] = None
+    model_config = {"from_attributes": True}
+
+
+class BlockerAnalysisRequest(BaseModel):
+    """Request to analyze blocked circuits with DeepSeek."""
+    circuit_ids: list[str] = Field(default_factory=list)
+    force_refresh: bool = False
+
+
+class BlockerAnalysisResponse(BaseModel):
+    """Per-circuit diagnosis response from DeepSeek."""
+    circuit_id: str
+    circuit_name: str
+    status: str
+    overall_repairability: str = "manual_required"
+    rule_diagnostics: list[dict] = Field(default_factory=list)
+    suggested_changes: list[dict] = Field(default_factory=list)
+    revalidation_recommended: bool = True
+    reextraction_recommended: bool = False
+    rejection_recommended: bool = False
+
+
 class CircuitValidationCreateRequest(BaseModel):
     granularity_level: str
     source_atlas: Optional[str] = None

@@ -56,6 +56,7 @@ from app.models.mirror_macro_clinical import (
     MirrorProjectionFunction,
 )
 from app.models.mirror_promotion import MirrorPromotionRecord, MirrorPromotionRun
+from app.models.mirror_circuit_correction import MirrorCircuitCorrection
 from app.models.mirror_cross_validation import (
     MirrorCircuitProjectionCrossValidationResult,
     MirrorCircuitProjectionCrossValidationRun,
@@ -123,4 +124,5 @@ __all__ = [
     "MirrorDualModelVerificationResult",
     "MirrorCircuitProjectionCrossValidationRun",
     "MirrorCircuitProjectionCrossValidationResult",
+    "MirrorCircuitCorrection",
 ]

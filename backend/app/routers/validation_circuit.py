@@ -6,9 +6,11 @@ and cancel circuit validation runs.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import uuid
-from typing import Optional
+from datetime import datetime, timezone
+from typing import Any, Optional
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from sqlalchemy import select, desc, func
@@ -25,6 +27,7 @@ from app.schemas.mirror_circuit_validation import (
     CircuitValidationResultRead,
     CircuitValidationRunDetail,
     CircuitValidationRunRead,
+    CorrectionRead,
 )
 from app.services import mirror_circuit_validation_service as vc
 from app.services.llm_providers import get_llm_provider
@@ -756,93 +759,361 @@ async def get_circuit_detail(
 
 
 @router.post("/selection/deepseek-fix")
-async def selection_deepseek_fix(body: dict, db: AsyncSession = Depends(get_db)):
-    """Use DeepSeek to analyze and suggest fixes for blocked circuits.
+async def selection_deepseek_fix(
+    body: dict,
+    db: AsyncSession = Depends(get_db),
+):
+    """Upgraded DeepSeek diagnosis endpoint.
 
-    For each blocked circuit, DeepSeek explains WHY each rule failed,
-    identifies the specific field that caused the failure, provides a
-    concrete fix suggestion in Chinese, and rates auto-fixability.
-    Diagnosis results are persisted in the validation result record.
+    For each blocked circuit, DeepSeek:
+    1. Diagnoses root cause of each rule failure
+    2. Identifies affected fields
+    3. Assesses repairability (auto_safe / manual_required / reextract_required / unrecoverable)
+    4. Produces structured correction suggestions
+
+    After DeepSeek responds, deterministic validation runs on each suggestion.
+    MirrorCircuitCorrection records are created for each proposed change.
+    NEVER modifies source mirror tables — all corrections go to the overlay.
     """
     circuit_ids = body.get("circuit_ids", [])
+    force_refresh = body.get("force_refresh", False)
     if not circuit_ids:
         raise HTTPException(status_code=400, detail="circuit_ids required")
 
     from app.models.mirror_kg import MirrorRegionCircuit
     from app.models.mirror_macro_clinical import MirrorCircuitStep
     from app.models.mirror_circuit_validation import MirrorCircuitValidationResult
+    from app.models.mirror_circuit_correction import MirrorCircuitCorrection
 
+    # ── Repairability classification rules ────────────────────────────────
+    NEVER_AUTO_SAFE = {
+        "missing_edge", "invented_region", "direction_mismatch",
+        "broken_continuity", "EDGE_EXISTENCE", "DIRECTION_CORRECT",
+        "STEP_CONTINUITY",
+    }
+
+    HARD_REPAIR_FIELDS = {
+        "step_type", "role", "circuit_type", "topology_type",
+        "canonical_start_region_id", "canonical_end_region_id",
+    }
+
+    # ── Deterministic validation ──────────────────────────────────────────
+    async def _deterministic_validate_change(
+        change: dict,
+    ) -> tuple[str, str]:
+        """Run deterministic checks on a suggested change.
+
+        Returns (status, message).
+        """
+        field_path = change.get("field_path", "")
+        suggested = change.get("suggested_value")
+        repairability = change.get("repairability", "manual_required")
+        rule_code = change.get("rule_code", "")
+
+        # auto_safe: verify value doesn't change structural fields
+        if repairability == "auto_safe":
+            path_parts = field_path.split(".")
+            field_name = path_parts[-1] if path_parts else field_path
+            if field_name in HARD_REPAIR_FIELDS:
+                return (
+                    "rejected",
+                    f"Field '{field_name}' is structural; auto_safe not allowed",
+                )
+            if suggested is None or suggested == {}:
+                return (
+                    "rejected",
+                    "Suggested value is empty — cannot auto-apply",
+                )
+            return (
+                "verified",
+                f"Auto-safe change OK for field '{field_path}'",
+            )
+
+        # manual_required: verify referenced entities exist
+        if repairability == "manual_required":
+            return (
+                "pending_human",
+                "Requires human review before applying",
+            )
+
+        # reextract_required / unrecoverable: skip
+        return (
+            "skipped",
+            f"Repairability '{repairability}' — no patch created",
+        )
+
+    def _classify_repairability(rule_code: str, change: dict) -> str:
+        """Classify repairability based on rule and change characteristics."""
+        if rule_code in NEVER_AUTO_SAFE:
+            return "reextract_required"
+
+        field_path = change.get("field_path", "")
+        correction_type = change.get("correction_type", "metadata")
+
+        if correction_type == "structural":
+            return "manual_required"
+
+        if correction_type == "reextract":
+            return "reextract_required"
+
+        # Check field path for structural fields
+        for field in HARD_REPAIR_FIELDS:
+            if field in field_path:
+                return "manual_required"
+
+        # Check for unrecoverable patterns
+        original = change.get("original_value")
+        if original is None:
+            return "unrecoverable"
+
+        return "auto_safe"
+
+    # ── Main loop ─────────────────────────────────────────────────────────
     results = []
     diagnosed_ids = []
+    total_corrections_created = 0
+
     for cid_str in circuit_ids:
         cid = uuid.UUID(cid_str)
+        correction_count = 0
+
         circuit = await db.get(MirrorRegionCircuit, cid)
         if circuit is None:
-            results.append({"circuit_id": cid_str, "status": "skipped", "reason": "circuit not found"})
+            results.append({
+                "circuit_id": cid_str,
+                "status": "skipped",
+                "reason": "circuit not found",
+            })
             continue
 
         # Get the latest validation result for this circuit
         val = (await db.execute(
             select(MirrorCircuitValidationResult).where(
                 MirrorCircuitValidationResult.target_id == cid,
-                MirrorCircuitValidationResult.target_type == "circuit"
+                MirrorCircuitValidationResult.target_type == "circuit",
             ).order_by(MirrorCircuitValidationResult.created_at.desc()).limit(1)
         )).scalars().first()
 
         if val is None or not val.rule_blocked:
-            results.append({"circuit_id": cid_str, "status": "skipped", "reason": "not blocked"})
+            results.append({
+                "circuit_id": cid_str,
+                "status": "skipped",
+                "reason": "not blocked",
+            })
             continue
 
-        blocked_rules = [r for r in (val.rule_validation_result_json or []) if r.get("status") == "blocked"]
+        # Clear old corrections if force_refresh
+        if force_refresh:
+            old = list((await db.execute(
+                select(MirrorCircuitCorrection).where(
+                    MirrorCircuitCorrection.circuit_id == cid,
+                )
+            )).scalars().all())
+            for o in old:
+                await db.delete(o)
+
+        blocked_rules = [
+            r for r in (val.rule_validation_result_json or [])
+            if r.get("status") == "blocked"
+        ]
 
         # Get steps for context
         steps = list((await db.execute(
-            select(MirrorCircuitStep).where(MirrorCircuitStep.circuit_id == cid).order_by(MirrorCircuitStep.step_order)
+            select(MirrorCircuitStep).where(
+                MirrorCircuitStep.circuit_id == cid,
+            ).order_by(MirrorCircuitStep.step_order)
         )).scalars().all())
 
         # Call DeepSeek for diagnosis
         try:
             provider = get_llm_provider("deepseek")
 
-            # Upgraded system prompt: per-task spec — explains WHY, pinpoints field, suggests fix in Chinese
-            system = """你是 NeuroGraphIQ 回路数据质量诊断专家。
-分析以下被规则校验阻塞的回路。对每条阻塞规则提供：
-1. 失败原因（用中文解释为什么这条规则不通过）
-2. 具体问题字段（定位到 circuit、step、region 的哪个字段）
-3. 修复建议（具体可操作的步骤）
-4. 是否可自动修复
+            system = """你是 NeuroGraphIQ 回路数据质量诊断专家。对每条阻塞规则：
+1. 诊断根因（为什么失败）
+2. 定位受影响字段
+3. 评估可修复性：
+   auto_safe — 标签标准化、枚举规范化、从权威源补全
+   manual_required — 拓扑修改、角色变更、键修改
+   reextract_required — 缺失边、发明节点、方向错误
+   unrecoverable — 溯源完全丢失
+4. 给出结构化修正建议
+5. 绝不对{missing_edge, invented_region, direction_mismatch, broken_continuity}标记为auto_safe
 
-返回 JSON 数组: [{"rule_code":"...","failure_reason":"...","problem_field":"...","suggestion":"...","auto_fixable":true/false}]"""
+返回 JSON: {
+  "circuit_id":"",
+  "overall_diagnosis":"",
+  "overall_repairability":"auto_safe|manual_required|reextract_required|unrecoverable",
+  "rule_diagnostics":[{
+    "rule_result_id":"","rule_code":"","problem_summary":"","root_cause":"",
+    "affected_fields":[],"source_data_conflict":"",
+    "recommended_action":"normalize_metadata|fill_from_authoritative_source|change_reviewed_metadata|manual_structure_review|reextract|reject",
+    "repairability":"auto_safe|manual_required|reextract_required|unrecoverable","confidence":0.0,"uncertainties":[]
+  }],
+  "suggested_changes":[{
+    "rule_result_id":"","field_path":"","original_value":null,"suggested_value":null,
+    "reason":"","correction_type":"metadata|structural|reextract",
+    "repairability":"auto_safe|manual_required|reextract_required|unrecoverable",
+    "authoritative_source":"","safe_to_apply_after_verification":false,"confidence":0.0
+  }],
+  "revalidation_recommended":true,"reextraction_recommended":false,
+  "rejection_recommended":false,"uncertainties":[]
+}"""
 
-            user = f"""回路: {circuit.circuit_name}
-阻塞规则: {json.dumps([{"rule_code": r["rule_code"], "message": r.get("message","")} for r in blocked_rules], ensure_ascii=False)}
-步骤数: {len(steps)}
-步骤: {json.dumps([{"order": s.step_order, "name": s.step_name, "type": s.step_type, "role": s.role} for s in steps[:10]], ensure_ascii=False)}"""
+            # Build rich context for DeepSeek
+            steps_json = [
+                {
+                    "order": s.step_order,
+                    "name": s.step_name,
+                    "type": s.step_type,
+                    "role": s.role,
+                    "region_candidate_id": str(s.region_candidate_id) if s.region_candidate_id else None,
+                }
+                for s in steps
+            ]
+
+            # Build circuit context
+            circuit_context = {
+                "id": str(circuit.id),
+                "circuit_name": circuit.circuit_name,
+                "circuit_type": circuit.circuit_type,
+                "granularity_level": circuit.granularity_level,
+                "source_atlas": circuit.source_atlas,
+                "function_association": circuit.function_association,
+                "confidence": float(circuit.confidence) if circuit.confidence else None,
+                "review_status": circuit.review_status,
+            }
+
+            user = json.dumps({
+                "circuit": circuit_context,
+                "blocked_rules": [
+                    {
+                        "rule_code": r.get("rule_code", ""),
+                        "message": r.get("message", ""),
+                        "severity": r.get("severity", "blocker"),
+                        "result": r.get("result", "fail"),
+                    }
+                    for r in blocked_rules
+                ],
+                "step_count": len(steps),
+                "steps": steps_json[:15],  # Limit to 15 steps for token efficiency
+            }, ensure_ascii=False, default=str)
 
             resp = await provider.complete_json(
-                model="deepseek-chat", system_prompt=system, user_prompt=user,
-                temperature=0.3, max_tokens=2000,
+                model="deepseek-chat",
+                system_prompt=system,
+                user_prompt=user,
+                temperature=0.3,
+                max_tokens=4000,
             )
 
-            diagnosis = resp.parsed_json if resp.parsed_json else [{
-                "rule_code": "—", "failure_reason": (resp.raw_text or "解析失败")[:500],
-                "problem_field": "", "suggestion": "", "auto_fixable": False,
-            }]
+            diagnosis_data = resp.parsed_json if resp.parsed_json else {
+                "circuit_id": cid_str,
+                "overall_diagnosis": "Failed to parse DeepSeek response",
+                "overall_repairability": "manual_required",
+                "rule_diagnostics": [],
+                "suggested_changes": [],
+                "revalidation_recommended": True,
+                "reextraction_recommended": False,
+                "rejection_recommended": False,
+                "uncertainties": ["Raw response did not parse as JSON"],
+            }
 
-            # Persist diagnosis to the validation result record
-            val.deepseek_diagnosis_json = diagnosis
+            # Persist full diagnosis to the validation result record
+            val.deepseek_diagnosis_json = diagnosis_data
             diagnosed_ids.append(cid_str)
+
+            # Create MirrorCircuitCorrection records for each suggested change
+            suggested_changes = diagnosis_data.get("suggested_changes", [])
+            corrections_created = []
+
+            for change in suggested_changes:
+                rule_code = change.get("rule_code", "unknown")
+                field_path = change.get("field_path", "")
+                original_val = change.get("original_value")
+                suggested_val = change.get("suggested_value")
+                reason = change.get("reason", "")
+
+                # Classify repairability if not set by DeepSeek
+                repairability = change.get(
+                    "repairability",
+                    _classify_repairability(rule_code, change),
+                )
+
+                # Run deterministic validation
+                det_status, det_message = await _deterministic_validate_change(change)
+
+                # Create correction record
+                correction = MirrorCircuitCorrection(
+                    id=uuid.uuid4(),
+                    circuit_id=cid,
+                    validation_result_id=val.id,
+                    rule_code=rule_code,
+                    field_path=field_path,
+                    original_value=original_val if isinstance(original_val, dict) else (
+                        {"value": original_val} if original_val is not None else None
+                    ),
+                    suggested_value=suggested_val if isinstance(suggested_val, dict) else (
+                        {"value": suggested_val} if suggested_val is not None else None
+                    ),
+                    correction_type=change.get("correction_type", "metadata"),
+                    repairability=repairability,
+                    suggestion_source="deepseek",
+                    suggestion_confidence=change.get("confidence"),
+                    authoritative_source=change.get("authoritative_source", ""),
+                    deterministic_validation_status=det_status,
+                    deterministic_validation_message=det_message,
+                    approval_status="proposed",
+                )
+                db.add(correction)
+                corrections_created.append({
+                    "id": str(correction.id),
+                    "field_path": field_path,
+                    "repairability": repairability,
+                    "deterministic_status": det_status,
+                })
+                correction_count += 1
+
+            total_corrections_created += correction_count
+
+            # Count by repairability
+            repairability_counts: dict[str, int] = {}
+            for c in corrections_created:
+                r = c["repairability"]
+                repairability_counts[r] = repairability_counts.get(r, 0) + 1
 
             results.append({
                 "circuit_id": cid_str,
                 "circuit_name": circuit.circuit_name,
                 "status": "analyzed",
                 "blocked_rule_count": len(blocked_rules),
-                "deepseek_analysis": diagnosis,
-                "token_usage": {"prompt": resp.usage.prompt_tokens, "completion": resp.usage.completion_tokens} if resp.usage else None,
+                "overall_repairability": diagnosis_data.get(
+                    "overall_repairability", "manual_required",
+                ),
+                "corrections_created": correction_count,
+                "corrections": corrections_created,
+                "repairability_breakdown": repairability_counts,
+                "revalidation_recommended": diagnosis_data.get(
+                    "revalidation_recommended", True,
+                ),
+                "reextraction_recommended": diagnosis_data.get(
+                    "reextraction_recommended", False,
+                ),
+                "rejection_recommended": diagnosis_data.get(
+                    "rejection_recommended", False,
+                ),
+                "token_usage": {
+                    "prompt": resp.usage.prompt_tokens,
+                    "completion": resp.usage.completion_tokens,
+                } if resp.usage else None,
             })
+
         except Exception as e:
-            results.append({"circuit_id": cid_str, "circuit_name": circuit.circuit_name, "status": "error", "reason": str(e)[:200]})
+            results.append({
+                "circuit_id": cid_str,
+                "circuit_name": circuit.circuit_name,
+                "status": "error",
+                "reason": str(e)[:500],
+            })
 
     await db.commit()
 
@@ -850,6 +1121,7 @@ async def selection_deepseek_fix(body: dict, db: AsyncSession = Depends(get_db))
         "total": len(circuit_ids),
         "diagnosed_count": len(diagnosed_ids),
         "diagnosed_circuit_ids": diagnosed_ids,
+        "total_corrections_created": total_corrections_created,
         "results": results,
     }
 
@@ -1425,6 +1697,138 @@ async def selection_promote(body: dict, db: AsyncSession = Depends(get_db)):
         "eligible_count": len(eligible),
         "promoted_count": promoted_count,
         "status": "completed",
+    }
+
+
+# ---------------------------------------------------------------------------
+# Correction Management APIs
+# ---------------------------------------------------------------------------
+
+
+@router.get("/candidates/{circuit_id}/corrections")
+async def get_corrections(
+    circuit_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+):
+    """Get all proposed corrections for a given circuit.
+
+    Returns corrections ordered by creation time (ascending).
+    """
+    from app.models.mirror_circuit_correction import MirrorCircuitCorrection
+
+    rows = list((await db.execute(
+        select(MirrorCircuitCorrection)
+        .where(MirrorCircuitCorrection.circuit_id == circuit_id)
+        .order_by(MirrorCircuitCorrection.created_at)
+    )).scalars().all())
+
+    return {
+        "items": [CorrectionRead.model_validate(r) for r in rows],
+        "total": len(rows),
+    }
+
+
+@router.post("/corrections/{correction_id}/approve")
+async def approve_correction(
+    correction_id: uuid.UUID,
+    body: dict,
+    db: AsyncSession = Depends(get_db),
+):
+    """Approve a proposed correction.
+
+    Sets approval_status='approved' and stores the approved value,
+    reviewer identity, and optional reason.
+    """
+    from app.models.mirror_circuit_correction import MirrorCircuitCorrection
+
+    corr = await db.get(MirrorCircuitCorrection, correction_id)
+    if corr is None:
+        raise HTTPException(status_code=404, detail="Correction not found")
+
+    corr.approval_status = "approved"
+    corr.approved_value = body.get("approved_value", corr.suggested_value)
+    corr.approved_by = body.get("reviewer", "admin")
+    corr.approved_at = datetime.now(timezone.utc)
+    corr.approval_reason = body.get("reason", "")
+    await db.commit()
+    await db.refresh(corr)
+    return {
+        "status": "approved",
+        "correction_id": str(correction_id),
+    }
+
+
+@router.post("/corrections/{correction_id}/reject")
+async def reject_correction(
+    correction_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+):
+    """Reject a proposed correction.
+
+    Sets approval_status='rejected'.
+    """
+    from app.models.mirror_circuit_correction import MirrorCircuitCorrection
+
+    corr = await db.get(MirrorCircuitCorrection, correction_id)
+    if corr is None:
+        raise HTTPException(status_code=404, detail="Correction not found")
+
+    corr.approval_status = "rejected"
+    await db.commit()
+    return {
+        "status": "rejected",
+        "correction_id": str(correction_id),
+    }
+
+
+@router.post("/candidates/{circuit_id}/revalidate")
+async def revalidate_circuit(
+    circuit_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+):
+    """Revalidate a circuit after applying approved corrections.
+
+    1. Fetches all approved corrections for this circuit
+    2. Marks them as revalidation queued
+    3. Creates an internal validation run for this single circuit
+    4. Starts background revalidation
+
+    Returns the internal run ID for progress tracking.
+    """
+    from app.models.mirror_circuit_correction import MirrorCircuitCorrection
+
+    corrections = list((await db.execute(
+        select(MirrorCircuitCorrection).where(
+            MirrorCircuitCorrection.circuit_id == circuit_id,
+            MirrorCircuitCorrection.approval_status == "approved",
+        )
+    )).scalars().all())
+
+    if not corrections:
+        raise HTTPException(
+            status_code=400,
+            detail="No approved corrections found for this circuit",
+        )
+
+    # Mark corrections as revalidation queued
+    for c in corrections:
+        c.revalidation_status = "queued"
+
+    # Create internal validation run for this single circuit
+    req = CircuitValidationCreateRequest(
+        granularity_level="molecular_attr",
+        circuit_ids=[str(circuit_id)],
+    )
+    run, stats = await vc.create_validation_run(db, req)
+    await db.commit()
+
+    # Start async re-validation
+    asyncio.create_task(vc.run_full_validation_background(run.id))
+
+    return {
+        "internal_run_id": str(run.id),
+        "correction_count": len(corrections),
+        "status": "queued",
     }
 
 
