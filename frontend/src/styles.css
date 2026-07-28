@@ -11213,3 +11213,35 @@ input[type="range"]::-webkit-slider-thumb {
 .vw-dual-row:last-child { border-bottom: none; }
 .vw-c-green { color: var(--success); }
 .vw-c-red { color: var(--danger); }
+
+/* ── Validation Progress Modal ───────────────────────────────────────────── */
+.vw-modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.35); z-index: 100; display: flex; align-items: center; justify-content: center; }
+.vw-modal { background: var(--white); border-radius: var(--card-radius); box-shadow: var(--shadow-lg); display: flex; flex-direction: column; overflow: hidden; flex-shrink: 0; }
+.vw-modal-hd { display: flex; align-items: center; gap: 10px; padding: 16px 24px; border-bottom: 1px solid var(--border); flex-shrink: 0; }
+.vw-modal-hd h3 { margin: 0; font-size: 16px; flex: 1; }
+.vw-modal-body { padding: 16px 24px; overflow-y: auto; flex: 1; }
+.vw-modal-ft { display: flex; align-items: center; gap: 8px; padding: 12px 24px; border-top: 1px solid var(--border); flex-shrink: 0; }
+.vw-modal-close { background: none; border: none; cursor: pointer; font-size: 16px; color: var(--text-muted); padding: 4px; }
+.vw-modal-meta { font-size: 12px; color: var(--text-muted); }
+.vw-modal-wide { width: 1000px; max-width: 95vw; max-height: 80vh; }
+.vpm-cards { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; margin-bottom: 12px; }
+.vpm-card { text-align: center; padding: 8px 4px; background: #fafbfc; border-radius: var(--radius); }
+.vpm-card-num { font-size: 20px; font-weight: 700; display: block; }
+.vpm-card span:last-child { font-size: 11px; color: #86909c; }
+.vpm-card-green .vpm-card-num { color: var(--success); }
+.vpm-card-amber .vpm-card-num { color: #d4a017; }
+.vpm-card-red .vpm-card-num { color: var(--danger); }
+.vpm-card-blue .vpm-card-num { color: var(--primary); }
+.vpm-progress-section { margin-bottom: 12px; font-size: 13px; }
+.vpm-bar { height: 6px; background: #f0f0f0; border-radius: 3px; overflow: hidden; margin: 4px 0; }
+.vpm-bar-fill { height: 100%; background: var(--primary); transition: width .3s; }
+.vpm-progress-detail { font-size: 11px; color: #86909c; }
+.vpm-checkbox { display: flex; align-items: center; gap: 6px; font-size: 12px; margin-bottom: 10px; cursor: pointer; }
+.vpm-table-wrap { max-height: 300px; overflow-y: auto; }
+.vpm-row-passed { background: #f6ffed; }
+.vpm-row-blocked { background: #fff2f0; }
+.vpm-green { color: var(--success); font-weight: 600; }
+.vpm-amber { color: #d4a017; font-weight: 600; }
+.vpm-red { color: var(--danger); font-weight: 600; }
+.vpm-ft-info { font-size: 13px; color: var(--text); margin-right: auto; }
+.vpm-ft-error { font-size: 13px; color: var(--danger); font-weight: 600; margin-right: auto; }

@@ -1,4 +1,5 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
+import { Zap } from 'lucide-react'
 import { CircuitDetailDrawer } from './CircuitDetailDrawer'
 
 // ── Types ──────────────────────────────────────────────────────────────────
@@ -28,6 +29,41 @@ interface Props {
   granularityLevel?: string
 }
 
+// ── Progress Types ──────────────────────────────────────────────────────────
+interface CandidateProgress {
+  circuit_id: string
+  circuit_name: string
+  path_summary: string
+  completed_rule_count: number
+  enabled_rule_count: number
+  pass_count: number
+  warning_count: number
+  hard_fail_count: number
+  status: string
+  current_rule_code: string
+  eligible_for_dual_review: boolean
+}
+
+interface ValidationProgress {
+  open: boolean
+  runId: string
+  phase: string
+  selected_candidate_count: number
+  completed_candidate_count: number
+  enabled_rule_count: number
+  expected_rule_execution_count: number
+  completed_rule_execution_count: number
+  pass_count: number
+  warning_count: number
+  hard_fail_count: number
+  eligible_for_dual_review_count: number
+  blocked_candidate_count: number
+  candidate_progress: CandidateProgress[]
+  started_at: string
+  elapsed_seconds: number
+  autoHandoff: boolean
+}
+
 // ── Helpers ────────────────────────────────────────────────────────────────
 const STATUS_COLORS: Record<string, string> = {
   pending: '#faad14',
@@ -51,6 +87,11 @@ const STATUS_LABELS: Record<string, string> = {
   llm_suggested: 'LLM建议', passed: '通过', failed: '失败',
   blocked: '阻塞', support: '支持', reject: '拒绝',
   conflict: '冲突', agreement: '一致',
+}
+
+const PHASE_LABELS: Record<string, string> = {
+  running: '运行中', completed: '已完成', failed: '失败',
+  cancelled: '已取消', rule_validation: '规则校验', dual_review: '双审',
 }
 
 function statusBadge(status: string): { color: string; label: string } {
@@ -90,7 +131,14 @@ export function CandidateCircuitTable({ granularityLevel }: Props) {
   const [detailCircuitId, setDetailCircuitId] = useState<string | null>(null)
   const [batchLoading, setBatchLoading] = useState(false)
   const [batchMessage, setBatchMessage] = useState<string | null>(null)
-  const [validationProgress, setValidationProgress] = useState<{open: boolean; runId: string; status: string; done: number; total: number} | null>(null)
+  const [validationProgress, setValidationProgress] = useState<ValidationProgress | null>(null)
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const autoHandoffRef = useRef(false)
+
+  // Sync autoHandoffRef with state
+  useEffect(() => {
+    autoHandoffRef.current = validationProgress?.autoHandoff || false
+  }, [validationProgress?.autoHandoff])
 
   const pageSize = 25
 
@@ -156,24 +204,70 @@ export function CandidateCircuitTable({ granularityLevel }: Props) {
       setBatchMessage(`验证任务已创建 (ID: ${runId.slice(0, 8) || '—'}) 已处理 ${data.eligible_count || 0}/${data.selected_count || 0} 个回路`)
       // Show progress modal and start polling
       if (runId) {
-        setValidationProgress({open: true, runId, status: 'running', done: 0, total: data.eligible_count || 0})
-        const poll = setInterval(async () => {
+        setValidationProgress({
+          open: true, runId, phase: 'running',
+          selected_candidate_count: data.eligible_count || 0,
+          completed_candidate_count: 0,
+          enabled_rule_count: 0,
+          expected_rule_execution_count: 0,
+          completed_rule_execution_count: 0,
+          pass_count: 0, warning_count: 0, hard_fail_count: 0,
+          eligible_for_dual_review_count: 0, blocked_candidate_count: 0,
+          candidate_progress: [],
+          started_at: '', elapsed_seconds: 0,
+          autoHandoff: false,
+        })
+        pollRef.current = setInterval(async () => {
           try {
             const prRes = await fetch(`/api/validation/circuit/runs/${runId}/progress`)
-            if (!prRes.ok) { clearInterval(poll); return }
+            if (!prRes.ok) { if (pollRef.current) clearInterval(pollRef.current); return }
             const pr = await prRes.json()
-            setValidationProgress(p => p ? {
-              ...p,
-              done: pr.rule_passed_count + pr.rule_failed_count + pr.rule_blocked_count || 0,
-              total: pr.rule_total_count || p.total,
-              status: pr.status || p.status,
-            } : null)
-            if (pr.status === 'completed' || pr.status === 'failed' || pr.status === 'cancelled') {
-              clearInterval(poll)
-              setValidationProgress(p => p ? {...p, status: pr.status} : null)
+            // After completion
+            if (pr.phase === 'completed') {
+              if (pollRef.current) clearInterval(pollRef.current)
+              pollRef.current = null
+              setValidationProgress(p => p ? {
+                ...p,
+                phase: 'completed',
+                completed_candidate_count: pr.completed_candidate_count || 0,
+                pass_count: pr.pass_count || 0,
+                warning_count: pr.warning_count || 0,
+                hard_fail_count: pr.hard_fail_count || 0,
+                eligible_for_dual_review_count: pr.eligible_for_dual_review_count || 0,
+                blocked_candidate_count: pr.blocked_candidate_count || 0,
+                candidate_progress: pr.candidate_progress || [],
+                elapsed_seconds: pr.elapsed_seconds || 0,
+              } : null)
+              // Auto-handoff if enabled (read from ref to avoid stale closure)
+              if (autoHandoffRef.current && (pr.eligible_for_dual_review_count || 0) > 0) {
+                const eligible = (pr.candidate_progress || []).filter((cp: CandidateProgress) => cp.eligible_for_dual_review).map((cp: CandidateProgress) => cp.circuit_id)
+                try {
+                  await fetch('/api/validation/circuit/selection/dual-review', {
+                    method: 'POST', headers: {'Content-Type':'application/json'},
+                    body: JSON.stringify({circuit_ids: eligible, force_review: false})
+                  })
+                } catch { /* silent */ }
+              }
               fetchData()
+            } else if (pr.phase === 'failed' || pr.status === 'failed' || pr.status === 'cancelled') {
+              if (pollRef.current) clearInterval(pollRef.current)
+              pollRef.current = null
+              setValidationProgress(p => p ? { ...p, phase: 'failed', elapsed_seconds: pr.elapsed_seconds || 0 } : null)
+              fetchData()
+            } else {
+              // Mid-run update
+              setValidationProgress(p => p ? {
+                ...p,
+                completed_candidate_count: pr.completed_candidate_count || 0,
+                pass_count: pr.pass_count || 0,
+                warning_count: pr.warning_count || 0,
+                hard_fail_count: pr.hard_fail_count || 0,
+                eligible_for_dual_review_count: pr.eligible_for_dual_review_count || 0,
+                candidate_progress: pr.candidate_progress || [],
+                elapsed_seconds: pr.elapsed_seconds || 0,
+              } : null)
             }
-          } catch { clearInterval(poll) }
+          } catch { if (pollRef.current) clearInterval(pollRef.current); pollRef.current = null }
         }, 2000)
       }
       setTimeout(() => setBatchMessage(null), 5000)
@@ -360,25 +454,112 @@ export function CandidateCircuitTable({ granularityLevel }: Props) {
 
       {/* Validation progress modal */}
       {validationProgress?.open && (
-        <div className="vw-modal-overlay">
-          <div className="vw-modal vw-modal-sm">
-            <div className="vw-modal-hd"><h3>规则校验中</h3></div>
-            <div className="vw-modal-body">
-              <div className="vw-progress-bar-wrap">
-                <div className="vw-progress-bar" style={{
-                  width: `${validationProgress.total > 0 ? (validationProgress.done / validationProgress.total) * 100 : 0}%`
-                }} />
-              </div>
-              <p>已完成 {validationProgress.done}/{validationProgress.total} 项</p>
-              <p>状态: {validationProgress.status === 'completed' ? '已完成' :
-                        validationProgress.status === 'failed' ? '失败' :
-                        validationProgress.status === 'cancelled' ? '已取消' : '运行中...'}</p>
+        <div className="vw-modal-overlay" onClick={() => { if (validationProgress.phase !== 'running') setValidationProgress(null) }}>
+          <div className="vw-modal vw-modal-wide" onClick={e => e.stopPropagation()}>
+            {/* Header */}
+            <div className="vw-modal-hd">
+              <h3>🛡 规则校验</h3>
+              <span className="badge">{PHASE_LABELS[validationProgress.phase] || validationProgress.phase}</span>
+              <span className="vw-modal-meta">Run: {validationProgress.runId.slice(0,8)}</span>
+              {validationProgress.phase !== 'running' && <button className="vw-modal-close" onClick={() => setValidationProgress(null)}>✕</button>}
             </div>
-            {validationProgress.status !== 'running' && (
-              <div className="vw-modal-ft">
-                <button className="btn btn-primary" onClick={() => setValidationProgress(null)}>确定</button>
+
+            <div className="vw-modal-body">
+              {/* Summary cards */}
+              <div className="vpm-cards">
+                <div className="vpm-card"><span className="vpm-card-num">{validationProgress.selected_candidate_count}</span><span>候选回路</span></div>
+                <div className="vpm-card vpm-card-green"><span className="vpm-card-num">{validationProgress.pass_count}</span><span>通过</span></div>
+                <div className="vpm-card vpm-card-amber"><span className="vpm-card-num">{validationProgress.warning_count}</span><span>警告</span></div>
+                <div className="vpm-card vpm-card-red"><span className="vpm-card-num">{validationProgress.hard_fail_count}</span><span>阻塞</span></div>
+                <div className="vpm-card vpm-card-blue"><span className="vpm-card-num">{validationProgress.eligible_for_dual_review_count}</span><span>可双审</span></div>
               </div>
-            )}
+
+              {/* Two-level progress */}
+              <div className="vpm-progress-section">
+                <span>回路: {validationProgress.completed_candidate_count}/{validationProgress.selected_candidate_count}</span>
+                <div className="vpm-bar">
+                  <div className="vpm-bar-fill" style={{width:`${validationProgress.selected_candidate_count>0?(validationProgress.completed_candidate_count/validationProgress.selected_candidate_count)*100:0}%`}}/>
+                </div>
+                <span className="vpm-progress-detail">规则执行: {validationProgress.completed_rule_execution_count}/{validationProgress.expected_rule_execution_count} | 启用规则: {validationProgress.enabled_rule_count}条 | 耗时: {Math.round(validationProgress.elapsed_seconds)}s</span>
+              </div>
+
+              {/* Auto-handoff checkbox (before completion) */}
+              {validationProgress.phase === 'running' && (
+                <label className="vpm-checkbox">
+                  <input type="checkbox" checked={validationProgress.autoHandoff}
+                    onChange={() => setValidationProgress(p => p ? {...p, autoHandoff: !p.autoHandoff} : null)}/>
+                  规则通过后自动送入双模型审核
+                </label>
+              )}
+
+              {/* Candidate result table */}
+              {validationProgress.candidate_progress.length > 0 && (
+                <div className="vpm-table-wrap">
+                  <table className="vr-table">
+                    <thead><tr><th>#</th><th>回路名称</th><th>规则</th><th>通过</th><th>警告</th><th>阻塞</th><th>状态</th></tr></thead>
+                    <tbody>
+                      {validationProgress.candidate_progress.map((cp, i) => (
+                        <tr key={cp.circuit_id} className={`vr-row vpm-row-${cp.status}`}>
+                          <td>{i+1}</td>
+                          <td title={cp.circuit_name}>{cp.circuit_name.slice(0,30)}</td>
+                          <td>{cp.completed_rule_count}/{cp.enabled_rule_count}</td>
+                          <td className="vpm-green">{cp.pass_count}</td>
+                          <td className="vpm-amber">{cp.warning_count}</td>
+                          <td className="vpm-red">{cp.hard_fail_count}</td>
+                          <td><span className={`badge badge-${cp.status}`}>{cp.status}</span></td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+
+            {/* Footer actions */}
+            <div className="vw-modal-ft">
+              {validationProgress.phase === 'running' && (
+                <button className="btn btn-sm" onClick={() => {
+                  if (pollRef.current) clearInterval(pollRef.current)
+                  pollRef.current = null
+                  setValidationProgress(null)
+                }}>后台运行</button>
+              )}
+              {validationProgress.phase === 'completed' && (
+                <>
+                  <span className="vpm-ft-info">已完成: {validationProgress.pass_count} 通过, {validationProgress.hard_fail_count} 阻塞 | 可双审: {validationProgress.eligible_for_dual_review_count}</span>
+                  <button className="btn btn-sm btn-primary" disabled={validationProgress.eligible_for_dual_review_count === 0}
+                    onClick={async () => {
+                      const eligible = validationProgress.candidate_progress.filter(cp => cp.eligible_for_dual_review).map(cp => cp.circuit_id)
+                      if (eligible.length === 0) return
+                      if (!confirm(`送入 ${eligible.length} 条回路到双模型审核？`)) return
+                      await fetch('/api/validation/circuit/selection/dual-review', {
+                        method: 'POST', headers: {'Content-Type':'application/json'},
+                        body: JSON.stringify({circuit_ids: eligible, force_review: false})
+                      })
+                      setValidationProgress(null)
+                      fetchData()
+                    }}>
+                    <Zap size={14}/> 送入双模型审核({validationProgress.eligible_for_dual_review_count})
+                  </button>
+                  <button className="btn btn-sm" onClick={() => setValidationProgress(null)}>关闭</button>
+                </>
+              )}
+              {validationProgress.phase === 'failed' && (
+                <>
+                  <span className="vpm-ft-error">任务失败</span>
+                  <button className="btn btn-sm btn-primary" onClick={async () => {
+                    const eligible = validationProgress.candidate_progress.filter(cp => cp.status === 'failed').map(cp => cp.circuit_id)
+                    await fetch('/api/validation/circuit/selection/rule-validate', {
+                      method: 'POST', headers: {'Content-Type':'application/json'},
+                      body: JSON.stringify({circuit_ids: eligible, force_revalidate: true})
+                    })
+                    setValidationProgress(null)
+                    fetchData()
+                  }}>重试失败项</button>
+                  <button className="btn btn-sm" onClick={() => setValidationProgress(null)}>关闭</button>
+                </>
+              )}
+            </div>
           </div>
         </div>
       )}

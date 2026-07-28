@@ -465,13 +465,74 @@ async def run_full_validation_background(run_id: uuid.UUID) -> None:
 async def get_validation_progress(session: AsyncSession, run_id: uuid.UUID) -> CircuitValidationProgressResponse:
     run = await session.get(MirrorCircuitValidationRun, run_id)
     if run is None: raise ValueError(f"Run {run_id} not found")
+
     phase = "rule_validation" if run.rule_validation_status == "running" else \
             "dual_review" if run.dual_review_status == "running" else \
-            "completed" if run.status == "completed" else run.status
+            "completed" if run.status == "completed" else \
+            "failed" if run.status == "failed" else run.status
+
+    # Compute enriched progress from validation results
+    from sqlalchemy import select
+    stmt = select(MirrorCircuitValidationResult).where(
+        MirrorCircuitValidationResult.run_id == run_id,
+        MirrorCircuitValidationResult.target_type == "circuit",
+    )
+    result_rows = list((await session.execute(stmt)).scalars().all())
+
+    total_candidates = len(result_rows) or run.rule_total_count or 0
+    enabled_rules = len(get_rule_registry())
+
+    passed = sum(1 for r in result_rows if r.rule_overall_status == "passed")
+    blocked = sum(1 for r in result_rows if r.rule_overall_status == "blocked")
+    warning = sum(1 for r in result_rows if r.rule_overall_status == "warning")
+    failed = sum(1 for r in result_rows if r.rule_overall_status in ("failed", None))
+
+    candidate_progress = []
+    for r in result_rows:
+        rules = r.rule_validation_result_json or []
+        cp = {
+            "circuit_id": str(r.target_id),
+            "circuit_name": r.object_label or str(r.target_id)[:12],
+            "path_summary": "",
+            "completed_rule_count": len([x for x in rules if x.get("status") != "running"]),
+            "enabled_rule_count": enabled_rules,
+            "pass_count": len([x for x in rules if x.get("status") == "passed"]),
+            "warning_count": len([x for x in rules if x.get("status") == "warning"]),
+            "hard_fail_count": len([x for x in rules if x.get("status") == "blocked"]),
+            "status": r.rule_overall_status or "pending",
+            "current_rule_code": "",
+            "error_message": None,
+            "eligible_for_dual_review": r.rule_overall_status in ("passed", "warning"),
+        }
+        candidate_progress.append(cp)
+
+    elapsed = 0.0
+    if run.started_at:
+        elapsed = (datetime.now(timezone.utc) - run.started_at).total_seconds()
+
+    completed_rule_exec = sum(
+        len(r.rule_validation_result_json or []) for r in result_rows
+    )
+
     return CircuitValidationProgressResponse(
         run_id=str(run.id), status=run.status, phase=phase,
         progress_percent=100.0 if run.status == "completed" else 50.0 if phase == "dual_review" else 0.0,
         rule_total=run.rule_total_count, rule_done=run.rule_total_count if run.rule_validation_status == "completed" else 0,
         dual_total=run.dual_review_total_count, dual_done=run.dual_review_total_count if run.dual_review_status == "completed" else 0,
         adjudication_done=run.adjudication_status == "completed",
+        # Enriched fields
+        selected_candidate_count=total_candidates,
+        completed_candidate_count=len([r for r in result_rows if r.rule_overall_status is not None]),
+        enabled_rule_count=enabled_rules,
+        expected_rule_execution_count=total_candidates * enabled_rules,
+        completed_rule_execution_count=completed_rule_exec,
+        pass_count=passed,
+        warning_count=warning,
+        hard_fail_count=blocked,
+        eligible_for_dual_review_count=passed + warning,
+        blocked_candidate_count=blocked,
+        failed_candidate_count=failed,
+        started_at=run.started_at.isoformat() if run.started_at else None,
+        elapsed_seconds=elapsed,
+        candidate_progress=candidate_progress,
     )

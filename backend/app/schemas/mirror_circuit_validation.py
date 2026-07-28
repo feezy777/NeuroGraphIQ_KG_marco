@@ -75,9 +75,25 @@ class CircuitValidationProgressResponse(BaseModel):
     run_id: str
     status: str
     phase: str
+    # Legacy fields (kept for backward compat)
     progress_percent: float = 0.0
     rule_total: int = 0
     rule_done: int = 0
     dual_total: int = 0
     dual_done: int = 0
     adjudication_done: bool = False
+    # Enriched progress fields
+    selected_candidate_count: int = 0
+    completed_candidate_count: int = 0
+    enabled_rule_count: int = 0
+    expected_rule_execution_count: int = 0
+    completed_rule_execution_count: int = 0
+    pass_count: int = 0
+    warning_count: int = 0
+    hard_fail_count: int = 0
+    eligible_for_dual_review_count: int = 0
+    blocked_candidate_count: int = 0
+    failed_candidate_count: int = 0
+    started_at: Optional[str] = None
+    elapsed_seconds: float = 0.0
+    candidate_progress: list[dict] = Field(default_factory=list)
