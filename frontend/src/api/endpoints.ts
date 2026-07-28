@@ -614,24 +614,6 @@ export const fetchRuleValidationRunResults = (
   )
 export const fetchRuleValidationOptions = () => getJson<Record<string, unknown>>('/api/rule-validation/options')
 
-// ── Circuit Validation (Circuit Validation Center) ────────────────────────────
-export interface CircuitValidationRun {
-  id: string
-  status: string
-  rule_passed_count: number
-  rule_total_count: number
-  dual_review_agreement_count: number
-  dual_review_total_count: number | null
-  created_at: string | null
-  finished_at: string | null
-}
-export const listCircuitValidationRuns = (p?: {
-  limit?: number
-  offset?: number
-  status?: string
-  granularity_level?: string
-}) => getJson<Paginated<CircuitValidationRun>>('/api/circuit-validation/runs', p)
-
 // ── Human Review ──────────────────────────────────────────────────────────────
 export interface CandidateReviewRecord {
   id: string

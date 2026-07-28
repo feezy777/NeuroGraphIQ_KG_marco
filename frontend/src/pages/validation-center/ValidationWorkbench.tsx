@@ -1,0 +1,50 @@
+import { useState } from 'react'
+import { useI18n } from '../../i18n-context'
+import { ValidationStatsBar } from './components/ValidationStatsBar'
+import { ValidationOverviewPanel } from './panels/ValidationOverviewPanel'
+import { ValidationRulePanel } from './panels/ValidationRulePanel'
+import { ValidationDualReviewPanel } from './panels/ValidationDualReviewPanel'
+import { ValidationHumanReviewPanel } from './panels/ValidationHumanReviewPanel'
+import { ValidationPromotionPanel } from './panels/ValidationPromotionPanel'
+import type { ValidationCenterTabId } from './validationCenterTypes'
+
+const TABS: { key: ValidationCenterTabId; label: string }[] = [
+  { key: 'overview', label: '总览' },
+  { key: 'rule_check', label: '规则校验' },
+  { key: 'dual_review', label: '双模型盲审' },
+  { key: 'review', label: '人工审核' },
+  { key: 'promotion', label: '晋升管理' },
+]
+
+interface Props { granularityLevel?: string }
+export function ValidationWorkbench({ granularityLevel }: Props) {
+  const { t } = useI18n()
+  const [activeTab, setActiveTab] = useState<ValidationCenterTabId>('overview')
+
+  const renderPanel = () => {
+    switch (activeTab) {
+      case 'overview': return <ValidationOverviewPanel granularityLevel={granularityLevel} />
+      case 'rule_check': return <ValidationRulePanel granularityLevel={granularityLevel} />
+      case 'dual_review': return <ValidationDualReviewPanel granularityLevel={granularityLevel} />
+      case 'review': return <ValidationHumanReviewPanel granularityLevel={granularityLevel} />
+      case 'promotion': return <ValidationPromotionPanel granularityLevel={granularityLevel} />
+      default: return <ValidationOverviewPanel granularityLevel={granularityLevel} />
+    }
+  }
+
+  return (
+    <div className="vw-root">
+      <ValidationStatsBar granularityLevel={granularityLevel} />
+      <div className="vr-header">
+        <div className="vr-tabs">
+          {TABS.map(table => (
+            <button key={table.key} type="button"
+              className={`vr-tab${activeTab === table.key ? ' active' : ''}`}
+              onClick={() => setActiveTab(table.key)}>{table.label}</button>
+          ))}
+        </div>
+      </div>
+      <div style={{ flex: 1, overflow: 'auto' }}>{renderPanel()}</div>
+    </div>
+  )
+}
