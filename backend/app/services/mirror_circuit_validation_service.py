@@ -38,7 +38,9 @@ KNOWN_CIRCUIT_TYPES = {"closed_loop", "open_loop", "feedforward", "feedback",
 async def _scan_circuits(session: AsyncSession, req: CircuitValidationCreateRequest) -> dict:
     """Query real mirror_region_circuits and materialize work items. Returns stats."""
     q = select(MirrorRegionCircuit)
-    if req.granularity_level and req.granularity_level != "all":
+    if req.circuit_ids:
+        q = q.where(MirrorRegionCircuit.id.in_([uuid.UUID(c) for c in req.circuit_ids]))
+    elif req.granularity_level and req.granularity_level != "all":
         q = q.where(MirrorRegionCircuit.granularity_level == req.granularity_level)
     if req.source_atlas:
         q = q.where(MirrorRegionCircuit.source_atlas == req.source_atlas)

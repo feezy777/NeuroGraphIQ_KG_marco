@@ -196,6 +196,207 @@ async def cancel_run(
 
 
 # ---------------------------------------------------------------------------
+# GET /api/validation/circuit/candidates
+# ---------------------------------------------------------------------------
+
+
+@router.get("/candidates")
+async def list_candidates(
+    granularity_level: Optional[str] = Query(None, description="Filter by granularity"),
+    topology_type: Optional[str] = Query(None, description="Filter by topology/circuit type"),
+    min_confidence: Optional[float] = Query(None, ge=0, le=1, description="Minimum confidence"),
+    max_confidence: Optional[float] = Query(None, ge=0, le=1, description="Maximum confidence"),
+    min_evidence: Optional[int] = Query(None, ge=0, description="Min evidence length"),
+    search: Optional[str] = Query(None, description="Search circuit_name"),
+    rule_status: Optional[str] = Query(None, description="Rule overall status"),
+    review_status: Optional[str] = Query(None, description="Review status"),
+    adjudication_status: Optional[str] = Query(None, description="Adjudication status"),
+    promotion_status: Optional[str] = Query(None, description="Promotion status"),
+    only_unvalidated: bool = Query(False, description="Only circuits with no validation results"),
+    only_pending_review: bool = Query(False, description="Only pending review circuits"),
+    only_not_promoted: bool = Query(False, description="Only not promoted circuits"),
+    limit: int = Query(25, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+    db: AsyncSession = Depends(get_db),
+):
+    """List candidate circuits for direct selection."""
+    from app.models.mirror_kg import MirrorRegionCircuit
+    from app.models.mirror_macro_clinical import MirrorCircuitStep
+
+    q = select(MirrorRegionCircuit)
+    count_q = select(func.count()).select_from(MirrorRegionCircuit)
+
+    if granularity_level and granularity_level != "all":
+        q = q.where(MirrorRegionCircuit.granularity_level == granularity_level)
+        count_q = count_q.where(MirrorRegionCircuit.granularity_level == granularity_level)
+    if topology_type:
+        q = q.where(MirrorRegionCircuit.circuit_type == topology_type)
+        count_q = count_q.where(MirrorRegionCircuit.circuit_type == topology_type)
+    if min_confidence is not None:
+        q = q.where(MirrorRegionCircuit.confidence >= min_confidence)
+        count_q = count_q.where(MirrorRegionCircuit.confidence >= min_confidence)
+    if max_confidence is not None:
+        q = q.where(MirrorRegionCircuit.confidence <= max_confidence)
+        count_q = count_q.where(MirrorRegionCircuit.confidence <= max_confidence)
+    if search:
+        q = q.where(MirrorRegionCircuit.circuit_name.ilike(f'%{search}%'))
+        count_q = count_q.where(MirrorRegionCircuit.circuit_name.ilike(f'%{search}%'))
+    if min_evidence is not None:
+        q = q.where(func.length(MirrorRegionCircuit.evidence_text) >= min_evidence)
+        count_q = count_q.where(func.length(MirrorRegionCircuit.evidence_text) >= min_evidence)
+    if review_status:
+        q = q.where(MirrorRegionCircuit.review_status == review_status)
+        count_q = count_q.where(MirrorRegionCircuit.review_status == review_status)
+    if promotion_status:
+        q = q.where(MirrorRegionCircuit.promotion_status == promotion_status)
+        count_q = count_q.where(MirrorRegionCircuit.promotion_status == promotion_status)
+    if only_not_promoted:
+        q = q.where(MirrorRegionCircuit.promotion_status != 'promoted_to_final')
+        count_q = count_q.where(MirrorRegionCircuit.promotion_status != 'promoted_to_final')
+
+    q = q.order_by(MirrorRegionCircuit.created_at.desc()).offset(offset).limit(limit)
+
+    total = (await db.execute(count_q)).scalar_one()
+    rows = list((await db.execute(q)).scalars().all())
+
+    # Enrich with step counts
+    items = []
+    for r in rows:
+        step_count = (await db.execute(
+            select(func.count()).select_from(MirrorCircuitStep).where(MirrorCircuitStep.circuit_id == r.id)
+        )).scalar_one()
+
+        items.append({
+            "id": str(r.id),
+            "circuit_name": r.circuit_name or str(r.id)[:12],
+            "granularity_level": r.granularity_level,
+            "circuit_type": r.circuit_type or "unknown",
+            "topology_type": "unknown",
+            "closed_loop": False,
+            "step_count": step_count,
+            "confidence": float(r.confidence) if r.confidence else 0.0,
+            "function_association": r.function_association or "",
+            "evidence_text": (r.evidence_text or "")[:200],
+            "review_status": r.review_status or "pending",
+            "promotion_status": r.promotion_status or "not_promoted",
+            "mirror_status": r.mirror_status or "llm_suggested",
+            "source_atlas": r.source_atlas or "",
+            "created_at": r.created_at.isoformat() if r.created_at else None,
+        })
+
+    return {"items": items, "total": total}
+
+
+# ---------------------------------------------------------------------------
+# GET /api/validation/circuit/candidates/counts
+# ---------------------------------------------------------------------------
+
+
+@router.get("/candidates/counts")
+async def get_candidate_counts(
+    granularity_level: Optional[str] = Query(None),
+    db: AsyncSession = Depends(get_db),
+):
+    """Get aggregate counts for the candidate circuit table."""
+    from app.models.mirror_kg import MirrorRegionCircuit
+    from app.models.mirror_macro_clinical import MirrorCircuitStep
+
+    base_q = select(func.count()).select_from(MirrorRegionCircuit)
+    if granularity_level and granularity_level != "all":
+        base_q = base_q.where(MirrorRegionCircuit.granularity_level == granularity_level)
+
+    total = (await db.execute(base_q)).scalar_one()
+
+    # Count by circuit_type
+    type_counts_q = select(
+        MirrorRegionCircuit.circuit_type,
+        func.count().label("cnt")
+    )
+    if granularity_level and granularity_level != "all":
+        type_counts_q = type_counts_q.where(MirrorRegionCircuit.granularity_level == granularity_level)
+    type_counts_q = type_counts_q.group_by(MirrorRegionCircuit.circuit_type)
+    type_rows = list((await db.execute(type_counts_q)).all())
+    type_counts = {r.circuit_type: r.cnt for r in type_rows}
+
+    # Count by review_status
+    review_q = select(
+        MirrorRegionCircuit.review_status,
+        func.count().label("cnt")
+    )
+    if granularity_level and granularity_level != "all":
+        review_q = review_q.where(MirrorRegionCircuit.granularity_level == granularity_level)
+    review_q = review_q.group_by(MirrorRegionCircuit.review_status)
+    review_rows = list((await db.execute(review_q)).all())
+    review_counts = {r.review_status: r.cnt for r in review_rows}
+
+    # Step count
+    steps_q = select(func.count()).select_from(MirrorCircuitStep)
+    if granularity_level and granularity_level != "all":
+        steps_q = steps_q.where(MirrorCircuitStep.granularity_level == granularity_level)
+    total_steps = (await db.execute(steps_q)).scalar_one()
+
+    return {
+        "total_circuits": total,
+        "total_steps": total_steps,
+        "types": type_counts,
+        "review_status": review_counts,
+    }
+
+
+# ---------------------------------------------------------------------------
+# POST /api/validation/circuit/selection/rule-validate
+# ---------------------------------------------------------------------------
+
+
+@router.post("/selection/rule-validate")
+async def selection_rule_validate(
+    body: dict,
+    db: AsyncSession = Depends(get_db),
+):
+    """Direct selection: send circuits to rule validation."""
+    circuit_ids = body.get("circuit_ids", [])
+    force = body.get("force_revalidate", False)
+
+    if not circuit_ids:
+        raise HTTPException(status_code=400, detail="circuit_ids required")
+
+    # Count and filter
+    from app.models.mirror_kg import MirrorRegionCircuit
+
+    valid = list((await db.execute(
+        select(MirrorRegionCircuit).where(MirrorRegionCircuit.id.in_([uuid.UUID(c) for c in circuit_ids]))
+    )).scalars().all())
+
+    stats = {
+        "selected_count": len(circuit_ids),
+        "eligible_count": len(valid),
+        "skipped_count": len(circuit_ids) - len(valid),
+        "skip_reasons": {"invalid_id": len(circuit_ids) - len(valid)},
+        "status": "queued",
+    }
+
+    if not valid:
+        return {**stats, "message": "No valid circuits found"}
+
+    # Create validation run for the selected circuits
+    req = CircuitValidationCreateRequest(
+        granularity_level=valid[0].granularity_level if valid else "all",
+        circuit_ids=[str(v.id) for v in valid],
+    )
+    run, scan_stats = await vc.create_validation_run(db, req)
+    stats["internal_run_id"] = str(run.id)
+    stats.update(scan_stats)
+    await db.commit()
+
+    # Start async
+    import asyncio
+
+    asyncio.create_task(vc.run_full_validation_background(run.id))
+
+    return stats
+
+
+# ---------------------------------------------------------------------------
 # GET /api/validation/circuit/counts
 # ---------------------------------------------------------------------------
 
