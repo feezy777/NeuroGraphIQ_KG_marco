@@ -18,3 +18,4 @@ dist/
 .idea/
 .vscode/
 .DS_Store
+backend_log.txt
