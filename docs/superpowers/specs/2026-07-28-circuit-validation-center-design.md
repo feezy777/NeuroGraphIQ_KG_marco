@@ -506,4 +506,39 @@ frontend/src/pages/validation-center/panels/ValidationMirrorPanel.tsx # 改造
 
 ---
 
+## 11. 旧 API/代码清理
+
+新验证中心上线后，以下旧接口和页面应移除：
+
+### 后端清理
+
+| 文件/端点 | 原因 |
+|---|---|
+| `POST /api/rule-validation/run` (candidate 版) | 被 `POST /api/validation/circuit/runs` 取代 |
+| `POST /api/candidates/{id}/validate` | 同上，单对象校验已整合 |
+| `POST /api/candidates/{id}/submit-review` | 被 `POST /api/mirror-kg/review/action` 取代 |
+| `POST /api/candidates/{id}/review` | 同上 |
+| `POST /api/candidates/{id}/promote` | 被 `POST /api/mirror-kg/promotion/run` 取代 |
+| `app/routers/human_review.py` | 功能已迁移到 mirror_review.py (如完全冗余则删除) |
+| `app/routers/rule_validation.py` | 功能已迁移到 validation_circuit.py (如完全冗余则删除) |
+
+### 前端清理
+
+| 文件 | 原因 |
+|---|---|
+| `RuleValidationPage.tsx` | 被 ValidationRulePanel 取代 |
+| `HumanReviewPage.tsx` | 被 ValidationHumanReviewPanel 取代 |
+| `PromotionsPage.tsx` | 被 ValidationPromotionPanel 取代 |
+| `validation-center/panels/ValidationMirrorPanel.tsx` | 被 ValidationWorkbench 取代 |
+| `validation-center/panels/ValidationReviewPanel.tsx` | 已废弃 |
+| `validation-center/panels/ValidationPromotionPanel.tsx` | 被新版本取代 |
+
+### 清理时机
+
+- Phase 1: 标记 `@deprecated` 注释
+- Phase 2: 确认新端点稳定后删除
+- Phase 3: 最终清理，移除所有废弃代码和路由
+
+---
+
 *请审阅此设计文档。审批后进入 writing-plans 阶段生成实现计划。*
