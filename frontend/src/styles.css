@@ -11070,3 +11070,18 @@ input[type="range"]::-webkit-slider-thumb {
 .vr-action-bar { position: sticky; bottom: 0; display: flex; align-items: center; gap: 10px; padding: 10px 20px; background: #f0f5ff; border-top: 2px solid var(--primary); z-index: 20; flex-wrap: wrap; flex-shrink: 0; }
 .vr-action-bar span { font-size: 13px; color: #1d2129; }
 .vr-action-sep { width: 1px; height: 20px; background: #d6e4ff; margin: 0 4px; }
+
+/* ── Validation Workbench ────────────────────────────────────────────────── */
+.vw-root { display: flex; flex-direction: column; height: 100%; overflow: hidden; }
+.vw-stats { display: flex; gap: 2px; padding: 8px 20px; background: var(--white); border-bottom: 1px solid var(--border); flex-shrink: 0; }
+.vw-stat { flex: 1; text-align: center; padding: 6px 4px; border-radius: var(--radius); }
+.vw-stat-num { font-size: 22px; font-weight: 700; display: block; line-height: 1.2; }
+.vw-stat-label { font-size: 11px; color: var(--text-muted); }
+.vw-dual-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px; }
+.vw-dual-col { display: flex; flex-direction: column; }
+.vw-dual-label { font-size: 12px; font-weight: 600; color: var(--primary); margin-bottom: 6px; }
+.vw-dual-card { background: #fafbfc; border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 12px; }
+.vw-dual-row { display: flex; justify-content: space-between; padding: 3px 0; font-size: 12px; border-bottom: 1px solid #f0f0f0; }
+.vw-dual-row:last-child { border-bottom: none; }
+.vw-c-green { color: var(--success); }
+.vw-c-red { color: var(--danger); }

@@ -5,7 +5,6 @@ import { ValidationOverviewPanel } from './panels/ValidationOverviewPanel'
 import { ValidationRulePanel } from './panels/ValidationRulePanel'
 import { ValidationDualReviewPanel } from './panels/ValidationDualReviewPanel'
 import { ValidationHumanReviewPanel } from './panels/ValidationHumanReviewPanel'
-import { ValidationPromotionPanel } from './panels/ValidationPromotionPanel'
 import type { ValidationCenterTabId } from './validationCenterTypes'
 
 const TABS: { key: ValidationCenterTabId; label: string }[] = [
@@ -13,7 +12,6 @@ const TABS: { key: ValidationCenterTabId; label: string }[] = [
   { key: 'rule_check', label: '规则校验' },
   { key: 'dual_review', label: '双模型盲审' },
   { key: 'review', label: '人工审核' },
-  { key: 'promotion', label: '晋升管理' },
 ]
 
 interface Props { granularityLevel?: string }
@@ -27,7 +25,6 @@ export function ValidationWorkbench({ granularityLevel }: Props) {
       case 'rule_check': return <ValidationRulePanel granularityLevel={granularityLevel} />
       case 'dual_review': return <ValidationDualReviewPanel granularityLevel={granularityLevel} />
       case 'review': return <ValidationHumanReviewPanel granularityLevel={granularityLevel} />
-      case 'promotion': return <ValidationPromotionPanel granularityLevel={granularityLevel} />
       default: return <ValidationOverviewPanel granularityLevel={granularityLevel} />
     }
   }

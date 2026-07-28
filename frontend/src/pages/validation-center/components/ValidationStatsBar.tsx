@@ -15,8 +15,8 @@ interface CountsResponse {
 export function ValidationStatsBar({ granularityLevel }: Props) {
   const [counts, setCounts] = useState<CountsResponse | null>(null)
   const { data, loading } = useData<CountsResponse>(
-    '/api/validation/circuit/counts',
-    { params: { granularity_level: granularityLevel } },
+    () => fetch('/api/validation/circuit/counts').then(r => r.json()),
+    [granularityLevel],
   )
 
   useEffect(() => {

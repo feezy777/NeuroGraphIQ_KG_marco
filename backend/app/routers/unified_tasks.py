@@ -19,6 +19,7 @@ from sqlalchemy import select as sa_select
 from app.database import get_db
 from app.models.llm_circuit_extraction import CircuitExtractionRun
 from app.models.llm_circuit_connection_extraction import LlmCircuitConnectionExtractionRun
+from app.models.mirror_circuit_validation import MirrorCircuitValidationRun
 from app.services import llm_composite_workflow_service as composite_svc
 from app.services import llm_field_completion_service as fc_svc
 from app.services import molecular_circuit_extraction_service as mol_svc
@@ -30,7 +31,7 @@ _log = logging.getLogger(__name__)
 
 class UnifiedTaskItem(BaseModel):
     id: str
-    type: str  # composite_workflow | field_completion | circuit_extraction | circuit_connection_extraction | molecular_circuit
+    type: str  # composite_workflow | field_completion | circuit_extraction | circuit_connection_extraction | circuit_validation | molecular_circuit
     status: str
     label: str
     target_type: str | None = None
@@ -173,6 +174,31 @@ async def list_unified_tasks(
             _log.exception("Failed to fetch circuit_connection_extraction runs")
             return []
 
+    async def _circuit_validation():
+        try:
+            cv_stmt = sa_select(MirrorCircuitValidationRun).order_by(MirrorCircuitValidationRun.created_at.desc()).limit(limit).offset(offset)
+            cv_rows = list((await session.execute(cv_stmt)).scalars().all())
+            return [
+                UnifiedTaskItem(
+                    id=str(r.id),
+                    type="circuit_validation",
+                    status=r.status or "",
+                    label=f"回路验证 #{str(r.id)[:8]}",
+                    target_type=r.granularity_level,
+                    target_count=r.rule_total_count,
+                    provider=None,
+                    model_name=None,
+                    created_at=_ts(r.created_at) or "",
+                    started_at=_ts(r.started_at),
+                    completed_at=_ts(r.completed_at),
+                    meta={"phase": "rule" if getattr(r, "rule_validation_status", None) == "running" else "dual" if getattr(r, "dual_review_status", None) == "running" else r.status or ""},
+                )
+                for r in cv_rows
+            ]
+        except Exception:
+            _log.exception("Failed to fetch circuit_validation runs")
+            return []
+
     async def _molecular():
         try:
             items, _ = await mol_svc.list_extraction_runs(
@@ -202,7 +228,7 @@ async def list_unified_tasks(
     # session across concurrent asyncio tasks (InvalidRequestError: "concurrent
     # operations are not permitted").
     merged: list[UnifiedTaskItem] = []
-    for coro in (_composite, _field_completion, _circuit_extraction, _circuit_connection_extraction, _molecular):
+    for coro in (_composite, _field_completion, _circuit_extraction, _circuit_connection_extraction, _circuit_validation, _molecular):
         try:
             items = await coro()
             if isinstance(items, list):

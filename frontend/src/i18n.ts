@@ -2086,10 +2086,12 @@ export const messages: Record<Language, Record<string, string>> = {
 
     // data center
     // Validation Center
+    'validationCenter.overview': '总览',
     'validationCenter.title': '验证中心',
     'validationCenter.subtitle': '规则校验、人工审核、晋升管理、数据质量验证',
     'validationCenter.governanceFlow': '治理工作流',
     'validationCenter.ruleCheck': '规则校验',
+    'validationCenter.dualReview': '双模型盲审',
     'validationCenter.dualModel': '大模型校验',
     'validationCenter.review': '人工审核',
     'validationCenter.promotion': '晋升管理',
