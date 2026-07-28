@@ -30,6 +30,9 @@ SOFT_RULES = [
     ("FIELD_COMPLETENESS", "必填字段非空"),
     ("LABEL_QUALITY", "名称不含占位符"),
 ]
+KNOWN_CIRCUIT_TYPES = {"closed_loop", "open_loop", "feedforward", "feedback",
+                       "recurrent", "divergent", "convergent", "chain",
+                       "bundle", "simple", "complex", "undefined", "unknown"}
 
 # ── Candidate Source Adapter ───────────────────────────────────────────────
 async def _scan_circuits(session: AsyncSession, req: CircuitValidationCreateRequest) -> dict:
@@ -75,7 +78,7 @@ async def create_validation_run(session: AsyncSession, req: CircuitValidationCre
         )
         session.add(result)
 
-    run.rule_total_count = len(stats["circuits"])
+    run.rule_total_count = len(stats["circuits"]) * len(HARD_RULES + SOFT_RULES)
     await session.flush()
     return run, stats
 
@@ -96,16 +99,61 @@ async def _run_rule_check(session: AsyncSession, rule_code: str, circuit: Any, s
                     "status": "passed" if valid else "blocked",
                     "message": f"关联 {len(crs)} 个区域" if valid else "区域关联不足(需≥2)"}
 
+        elif rule_code == "EDGE_EXISTENCE":
+            # Check each step references a valid region
+            invalid_steps = []
+            for s in steps:
+                if not s.region_candidate_id and not s.region_final_id:
+                    invalid_steps.append(s.step_order)
+            if invalid_steps:
+                return {"rule_code": rule_code, "severity": "blocker", "status": "blocked",
+                        "message": f"步骤 {invalid_steps} 缺少区域关联"}
+            return {"rule_code": rule_code, "severity": "pass", "status": "passed",
+                    "message": f"{len(steps)} 步骤均有关联区域"}
+
+        elif rule_code == "DIRECTION_CORRECT":
+            # Check step direction consistency: role assignment makes sense
+            if len(steps) >= 2:
+                issues = []
+                first_role = steps[0].role.lower()
+                last_role = steps[-1].role.lower()
+                if first_role not in ("origin", "source", "start", "input"):
+                    issues.append(f"首步角色 '{steps[0].role}' 非起点")
+                if last_role not in ("terminus", "target", "end", "output"):
+                    issues.append(f"末步角色 '{steps[-1].role}' 非终点")
+                if issues:
+                    return {"rule_code": rule_code, "severity": "warning", "status": "warning",
+                            "message": "; ".join(issues)}
+            return {"rule_code": rule_code, "severity": "pass", "status": "passed",
+                    "message": f"方向检查通过 ({len(steps)} 步骤)"}
+
         elif rule_code == "STEP_CONTINUITY":
             if len(steps) < 2:
                 return {"rule_code": rule_code, "severity": "warning", "status": "warning",
                         "message": f"步骤数={len(steps)}，无法检查连续性"}
+            # Check step_order sequence
             for i in range(len(steps) - 1):
                 if steps[i].step_order + 1 != steps[i+1].step_order:
                     return {"rule_code": rule_code, "severity": "blocker", "status": "blocked",
                             "message": f"步骤 {steps[i].step_order}→{steps[i+1].step_order} 不连续"}
             return {"rule_code": rule_code, "severity": "pass", "status": "passed",
                     "message": f"{len(steps)} 步骤连续"}
+
+        elif rule_code == "CLOSED_LOOP":
+            if getattr(circuit, "closed_loop", None):
+                if len(steps) < 2:
+                    return {"rule_code": rule_code, "severity": "warning", "status": "warning",
+                            "message": "闭环回路但步骤<2，无法验证首尾相连"}
+                # Check if first step -> last step forms a loop (same regions)
+                has_canonical_refs = (getattr(circuit, "canonical_start_region_id", None) and
+                                      getattr(circuit, "canonical_end_region_id", None))
+                if has_canonical_refs and circuit.canonical_start_region_id == circuit.canonical_end_region_id:
+                    return {"rule_code": rule_code, "severity": "pass", "status": "passed",
+                            "message": "闭环回路，首尾区域一致"}
+                return {"rule_code": rule_code, "severity": "pass", "status": "passed",
+                        "message": "闭环回路"}
+            return {"rule_code": rule_code, "severity": "pass", "status": "passed",
+                    "message": "非闭环回路"}
 
         elif rule_code == "PROVENANCE_COMPLETE":
             missing = []
@@ -116,6 +164,40 @@ async def _run_rule_check(session: AsyncSession, rule_code: str, circuit: Any, s
                 return {"rule_code": rule_code, "severity": "blocker", "status": "blocked",
                         "message": f"缺失溯源: {', '.join(missing)}"}
             return {"rule_code": rule_code, "severity": "pass", "status": "passed", "message": "溯源完整"}
+
+        elif rule_code == "GRANULARITY_HOMOGENEITY":
+            if not circuit.granularity_level:
+                return {"rule_code": rule_code, "severity": "warning", "status": "warning",
+                        "message": "电路缺少粒度信息"}
+            return {"rule_code": rule_code, "severity": "pass", "status": "passed",
+                    "message": f"粒度: {circuit.granularity_level}"}
+
+        elif rule_code == "TOPOLOGY_TYPE_VALID":
+            ctype = (circuit.circuit_type or "").lower()
+            if ctype and ctype not in KNOWN_CIRCUIT_TYPES:
+                return {"rule_code": rule_code, "severity": "warning", "status": "warning",
+                        "message": f"拓扑类型 '{circuit.circuit_type}' 不在已知枚举中"}
+            if not ctype:
+                return {"rule_code": rule_code, "severity": "warning", "status": "warning",
+                        "message": "拓扑类型为空"}
+            return {"rule_code": rule_code, "severity": "pass", "status": "passed",
+                    "message": f"拓扑类型: {circuit.circuit_type}"}
+
+        elif rule_code == "CANONICAL_KEY_DUPLICATE":
+            # Check for duplicate circuit names in the same granularity
+            from app.models.mirror_kg import MirrorRegionCircuit
+            name = circuit.circuit_name
+            if name:
+                dup_q = select(func.count()).select_from(MirrorRegionCircuit).where(
+                    MirrorRegionCircuit.circuit_name == name,
+                    MirrorRegionCircuit.granularity_level == circuit.granularity_level,
+                    MirrorRegionCircuit.id != cid,
+                )
+                dup_count = (await session.execute(dup_q)).scalar_one()
+                if dup_count > 0:
+                    return {"rule_code": rule_code, "severity": "warning", "status": "warning",
+                            "message": f"发现 {dup_count} 个同名电路 (granularity={circuit.granularity_level})"}
+            return {"rule_code": rule_code, "severity": "pass", "status": "passed", "message": "无重复canonical_key"}
 
         elif rule_code == "FIELD_COMPLETENESS":
             missing = []
@@ -134,14 +216,6 @@ async def _run_rule_check(session: AsyncSession, rule_code: str, circuit: Any, s
                 return {"rule_code": rule_code, "severity": "warning", "status": "warning",
                         "message": "名称含占位符或自动生成模式"}
             return {"rule_code": rule_code, "severity": "pass", "status": "passed", "message": "标签质量合格"}
-
-        elif rule_code == "GRANULARITY_HOMOGENEITY":
-            return {"rule_code": rule_code, "severity": "pass", "status": "passed",
-                    "message": f"粒度: {circuit.granularity_level}"}
-
-        elif rule_code == "CLOSED_LOOP":
-            return {"rule_code": rule_code, "severity": "pass", "status": "passed",
-                    "message": "非闭环回路" if not getattr(circuit, "closed_loop", None) else "闭环检查通过"}
 
         else:
             return {"rule_code": rule_code, "severity": "pass", "status": "passed", "message": "通过"}
@@ -189,13 +263,14 @@ async def run_rule_validation(session: AsyncSession, run: MirrorCircuitValidatio
         result.rule_blocked = result.rule_overall_status == "blocked"
 
     run.rule_validation_status = "completed"
-    run.rule_total_count = total
+    rule_count = len(HARD_RULES + SOFT_RULES)
+    run.rule_total_count = total * rule_count
     run.rule_passed_count = passed
     run.rule_failed_count = failed
     run.rule_warning_count = warning
     run.rule_blocked_count = blocked
     await session.flush()
-    return {"total": total, "passed": passed, "failed": failed, "warning": warning, "blocked": blocked}
+    return {"total": total, "rule_count": rule_count, "passed": passed, "failed": failed, "warning": warning, "blocked": blocked}
 
 
 # ── Dual Review ────────────────────────────────────────────────────────────

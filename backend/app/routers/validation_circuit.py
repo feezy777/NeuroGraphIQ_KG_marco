@@ -222,13 +222,46 @@ async def get_counts(
         approved_q = approved_q.where(MirrorRegionCircuit.granularity_level == granularity_level)
     approved_count = (await db.execute(approved_q)).scalar_one()
 
+    # Real circuit count from mirror_region_circuits
+    total_circuits_q = select(func.count()).select_from(MirrorRegionCircuit)
+    if granularity_level:
+        total_circuits_q = total_circuits_q.where(MirrorRegionCircuit.granularity_level == granularity_level)
+    total_circuits = (await db.execute(total_circuits_q)).scalar_one()
+
+    # Real step count from mirror_circuit_steps
+    from app.models.mirror_macro_clinical import MirrorCircuitStep
+    total_steps_q = select(func.count()).select_from(MirrorCircuitStep)
+    if granularity_level:
+        total_steps_q = total_steps_q.where(MirrorCircuitStep.granularity_level == granularity_level)
+    total_steps = (await db.execute(total_steps_q)).scalar_one()
+
+    # Rule-checked count (circuits that have completed rule validation)
+    rule_checked_q = select(func.count()).select_from(MirrorCircuitValidationResult).where(
+        MirrorCircuitValidationResult.rule_overall_status.isnot(None)
+    )
+    rule_checked = (await db.execute(rule_checked_q)).scalar_one()
+
+    # Aggregate rule_passed_count and dual_review_agreement_count from completed runs
+    agg_q = select(
+        func.coalesce(func.sum(MirrorCircuitValidationRun.rule_passed_count), 0),
+        func.coalesce(func.sum(MirrorCircuitValidationRun.dual_review_agreement_count), 0),
+    ).where(MirrorCircuitValidationRun.status == "completed")
+    if granularity_level:
+        agg_q = agg_q.where(MirrorCircuitValidationRun.granularity_level == granularity_level)
+    agg_row = (await db.execute(agg_q)).one()
+    rule_passed_total = agg_row[0] or 0
+    dual_agreement_total = agg_row[1] or 0
+
     return {
         "total_runs": total_runs,
         "completed_runs": completed_runs,
         "pending_review": approved_count or 0,
-        "rule_passed": 0,
-        "dual_agreement": 0,
+        "rule_passed": rule_passed_total or 0,
+        "dual_agreement": dual_agreement_total or 0,
         "promoted": 0,
+        "total_circuits": total_circuits or 0,
+        "total_steps": total_steps or 0,
+        "rule_checked": rule_checked or 0,
     }
 
 
