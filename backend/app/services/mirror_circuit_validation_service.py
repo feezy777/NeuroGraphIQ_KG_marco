@@ -2,7 +2,7 @@
 from __future__ import annotations
 import asyncio, json, logging, re, uuid
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, Optional
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.mirror_circuit_validation import MirrorCircuitValidationRun, MirrorCircuitValidationResult
@@ -653,6 +653,20 @@ async def get_validation_progress(session: AsyncSession, run_id: uuid.UUID) -> C
         len(r.rule_validation_result_json or []) for r in result_rows
     )
 
+    # Check for revalidation comparison
+    original_run_id: Optional[str] = None
+    original_hard_fails: Optional[int] = None
+    if run.scope_json and isinstance(run.scope_json, dict):
+        orig_id = run.scope_json.get("original_validation_run_id")
+        if orig_id:
+            original_run_id = str(orig_id)
+            try:
+                orig_run = await session.get(MirrorCircuitValidationRun, uuid.UUID(orig_id))
+                if orig_run:
+                    original_hard_fails = orig_run.rule_blocked_count
+            except Exception:
+                pass
+
     return CircuitValidationProgressResponse(
         run_id=str(run.id), status=run.status, phase=phase,
         progress_percent=100.0 if run.status == "completed" else 50.0 if phase == "dual_review" else 0.0,
@@ -674,4 +688,6 @@ async def get_validation_progress(session: AsyncSession, run_id: uuid.UUID) -> C
         started_at=run.started_at.isoformat() if run.started_at else None,
         elapsed_seconds=elapsed,
         candidate_progress=candidate_progress,
+        original_run_id=original_run_id,
+        original_hard_fails=original_hard_fails,
     )

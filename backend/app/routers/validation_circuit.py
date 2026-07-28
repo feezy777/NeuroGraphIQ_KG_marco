@@ -1844,6 +1844,20 @@ async def revalidate_circuit(
     run.scope_json["effective_circuit"] = effective
     run.scope_json["correction_ids"] = [str(c.id) for c in corrections]
 
+    # Store original validation run ID for before/after comparison
+    from app.models.mirror_circuit_validation import MirrorCircuitValidationResult
+    latest_result = (await db.execute(
+        select(MirrorCircuitValidationResult)
+        .where(
+            MirrorCircuitValidationResult.target_id == circuit_id,
+            MirrorCircuitValidationResult.target_type == "circuit",
+        )
+        .order_by(MirrorCircuitValidationResult.created_at.desc())
+        .limit(1)
+    )).scalars().first()
+    if latest_result:
+        run.scope_json["original_validation_run_id"] = str(latest_result.run_id)
+
     await db.commit()
 
     # Start async re-validation — the run will use original source data,

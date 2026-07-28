@@ -46,6 +46,7 @@ export function DualReviewPanel({ granularityLevel }: Props) {
   const [items, setItems] = useState<DualReviewCandidate[]>([])
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
+  const [loaded, setLoaded] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [actionLoading, setActionLoading] = useState(false)
@@ -64,6 +65,7 @@ export function DualReviewPanel({ granularityLevel }: Props) {
       const data = await res.json()
       setItems(data.items || [])
       setTotal(data.total || data.items?.length || 0)
+      setLoaded(true)
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : '加载失败')
     } finally {
@@ -129,9 +131,28 @@ export function DualReviewPanel({ granularityLevel }: Props) {
   }, [selected, fetchData])
 
   if (loading && items.length === 0) {
-    return <div className="vr-panel"><div className="vr-empty">加载中...</div></div>
+    return <div className="vr-panel"><div className="vw-empty-state"><p>加载中...</p></div></div>
   }
-  if (error) return <div className="vr-panel"><div className="vr-error">{error}</div></div>
+  if (error) {
+    return (
+      <div className="vr-panel">
+        <div className="vw-error">{error} <button className="btn btn-sm" onClick={fetchData}>重试</button></div>
+      </div>
+    )
+  }
+  if (!loaded) {
+    return <div className="vr-panel"><div className="vw-empty-state"><p>尚未加载</p></div></div>
+  }
+  if (items.length === 0) {
+    return (
+      <div className="vr-panel">
+        <div className="vw-empty-state">
+          <p>当前没有通过规则校验、可送入双模型审核的回路。请先在候选回路页面执行规则校验。</p>
+          <button className="btn btn-sm" onClick={fetchData} style={{ marginTop: 8 }}>刷新</button>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="vr-panel">

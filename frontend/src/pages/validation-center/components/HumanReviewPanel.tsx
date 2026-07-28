@@ -60,6 +60,7 @@ export function HumanReviewPanel({ granularityLevel }: Props) {
   const [items, setItems] = useState<HumanReviewCandidate[]>([])
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
+  const [loaded, setLoaded] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [actionLoading, setActionLoading] = useState(false)
@@ -77,6 +78,7 @@ export function HumanReviewPanel({ granularityLevel }: Props) {
       const data = await res.json()
       setItems(data.items || [])
       setTotal(data.total || data.items?.length || 0)
+      setLoaded(true)
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : '加载失败')
     } finally {
@@ -117,9 +119,28 @@ export function HumanReviewPanel({ granularityLevel }: Props) {
   }, [selected, fetchData])
 
   if (loading && items.length === 0) {
-    return <div className="vr-panel"><div className="vr-empty">加载中...</div></div>
+    return <div className="vr-panel"><div className="vw-empty-state"><p>加载中...</p></div></div>
   }
-  if (error) return <div className="vr-panel"><div className="vr-error">{error}</div></div>
+  if (error) {
+    return (
+      <div className="vr-panel">
+        <div className="vw-error">{error} <button className="btn btn-sm" onClick={fetchData}>重试</button></div>
+      </div>
+    )
+  }
+  if (!loaded) {
+    return <div className="vr-panel"><div className="vw-empty-state"><p>尚未加载</p></div></div>
+  }
+  if (items.length === 0) {
+    return (
+      <div className="vr-panel">
+        <div className="vw-empty-state">
+          <p>当前没有待人工审核的回路。请先完成双模型审核和自动裁决。</p>
+          <button className="btn btn-sm" onClick={fetchData} style={{ marginTop: 8 }}>刷新</button>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="vr-panel">

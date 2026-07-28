@@ -179,3 +179,6 @@ class CircuitValidationProgressResponse(BaseModel):
     started_at: Optional[str] = None
     elapsed_seconds: float = 0.0
     candidate_progress: list[CandidateProgressItem] = Field(default_factory=list)
+    # Revalidation comparison fields
+    original_run_id: Optional[str] = None
+    original_hard_fails: Optional[int] = None

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react'
-import { Zap } from 'lucide-react'
+import { Zap, RefreshCw } from 'lucide-react'
 import { CircuitDetailDrawer } from './CircuitDetailDrawer'
 import { RepairModal } from './RepairModal'
 
@@ -60,10 +60,13 @@ interface ValidationProgress {
   hard_fail_count: number
   eligible_for_dual_review_count: number
   blocked_candidate_count: number
+  failed_candidate_count: number
   candidate_progress: CandidateProgress[]
   started_at: string
   elapsed_seconds: number
   autoHandoff: boolean
+  original_run_id?: string
+  original_hard_fails?: number
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -147,6 +150,8 @@ const EMPTY_PROGRESS = {
   elapsed_seconds: 0, expected_rule_execution_count: 0,
   completed_rule_execution_count: 0,
   selected_candidate_count: 0, enabled_rule_count: 12,
+  original_run_id: undefined as string | undefined,
+  original_hard_fails: undefined as number | undefined,
 }
 
 // ── Main Component ─────────────────────────────────────────────────────────
@@ -259,6 +264,7 @@ export function CandidateCircuitTable({ granularityLevel }: Props) {
           completed_rule_execution_count: 0,
           pass_count: 0, warning_count: 0, hard_fail_count: 0,
           eligible_for_dual_review_count: 0, blocked_candidate_count: 0,
+          failed_candidate_count: 0,
           candidate_progress: [],
           started_at: '', elapsed_seconds: 0,
           autoHandoff: false,
@@ -282,8 +288,11 @@ export function CandidateCircuitTable({ granularityLevel }: Props) {
                 hard_fail_count: pr.hard_fail_count || 0,
                 eligible_for_dual_review_count: pr.eligible_for_dual_review_count || 0,
                 blocked_candidate_count: pr.blocked_candidate_count || 0,
+                failed_candidate_count: pr.failed_candidate_count || 0,
                 candidate_progress: pr.candidate_progress || [],
                 elapsed_seconds: pr.elapsed_seconds || 0,
+                original_run_id: pr.original_run_id,
+                original_hard_fails: pr.original_hard_fails,
               } : null)
               // Auto-handoff if enabled (read from ref to avoid stale closure)
               if (autoHandoffRef.current && (pr.eligible_for_dual_review_count || 0) > 0) {
@@ -310,8 +319,11 @@ export function CandidateCircuitTable({ granularityLevel }: Props) {
                 warning_count: pr.warning_count || 0,
                 hard_fail_count: pr.hard_fail_count || 0,
                 eligible_for_dual_review_count: pr.eligible_for_dual_review_count || 0,
+                failed_candidate_count: pr.failed_candidate_count || 0,
                 candidate_progress: pr.candidate_progress || [],
                 elapsed_seconds: pr.elapsed_seconds || 0,
+                original_run_id: pr.original_run_id,
+                original_hard_fails: pr.original_hard_fails,
               } : null)
             }
           } catch { if (pollRef.current) clearInterval(pollRef.current); pollRef.current = null }
@@ -584,6 +596,27 @@ export function CandidateCircuitTable({ granularityLevel }: Props) {
                   </table>
                 </div>
               )}
+
+              {/* Before/After comparison for revalidation (inside body) */}
+              {validationProgress.original_run_id && validationProgress.original_hard_fails !== undefined && (
+                <div style={{
+                  marginTop: 12, padding: 12, borderRadius: 8,
+                  border: '1px solid var(--border)', background: 'var(--bg-muted)',
+                }}>
+                  <h4 style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>重新校验结果对比</h4>
+                  <div style={{ fontSize: 13, marginBottom: 4 }}>
+                    原阻塞数: <strong>{validationProgress.original_hard_fails}</strong> → 当前: <strong>{validationProgress.hard_fail_count}</strong>
+                  </div>
+                  <div style={{ fontSize: 13, color: 'var(--success)' }}>
+                    已解决: <strong>{validationProgress.original_hard_fails - validationProgress.hard_fail_count}</strong>
+                  </div>
+                  {validationProgress.hard_fail_count === 0 && (
+                    <div style={{ marginTop: 8, fontSize: 13, color: 'var(--success)', fontWeight: 600 }}>
+                      ✅ 全部阻塞已解决，可送入双模型审核
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
 
             {/* Footer actions */}
@@ -599,7 +632,7 @@ export function CandidateCircuitTable({ granularityLevel }: Props) {
                 <>
                   <span className="vpm-ft-info">已完成: {validationProgress.pass_count} 通过, {validationProgress.hard_fail_count} 阻塞 | 可双审: {validationProgress.eligible_for_dual_review_count}</span>
 
-                  {/* Path 1: Eligible circuits → Dual Model Review */}
+                  {/* Path 1: Eligible circuits -> Dual Model Review */}
                   {validationProgress.eligible_for_dual_review_count > 0 && (
                     <button className="btn btn-sm btn-primary"
                       onClick={() => {
@@ -617,7 +650,7 @@ export function CandidateCircuitTable({ granularityLevel }: Props) {
                     </button>
                   )}
 
-                  {/* Path 2: Blocked circuits → DeepSeek Diagnosis + RepairModal */}
+                  {/* Path 2: Blocked circuits -> DeepSeek Diagnosis */}
                   {validationProgress.hard_fail_count > 0 && (
                     <button className="btn btn-sm"
                       onClick={async () => {
@@ -625,7 +658,6 @@ export function CandidateCircuitTable({ granularityLevel }: Props) {
                         if (blocked.length === 0) return
                         const blockedIds = blocked.map(c => c.circuit_id)
                         const blockedNames = blocked.map(c => c.circuit_name || c.circuit_id.slice(0, 12))
-                        // Open RepairModal which will auto-run DeepSeek diagnosis
                         setRepairModal({
                           open: true,
                           circuitIds: blockedIds,
@@ -633,7 +665,27 @@ export function CandidateCircuitTable({ granularityLevel }: Props) {
                           autoRun: true,
                         })
                       }}>
-                      🤖 DeepSeek 诊断与修复({validationProgress.hard_fail_count})
+                      🤖 DeepSeek 阻塞诊断({validationProgress.hard_fail_count})
+                    </button>
+                  )}
+
+                  {/* Path 3: Failed circuits -> Retry */}
+                  {validationProgress.failed_candidate_count > 0 && (
+                    <button className="btn btn-sm" onClick={async () => {
+                      const failed = validationProgress.candidate_progress.filter(cp => cp.status === 'failed').map(cp => cp.circuit_id)
+                      if (failed.length === 0) { setBatchMessage('没有需要重试的项目'); setTimeout(() => setBatchMessage(null), 3000); return }
+                      try {
+                        setBatchMessage('重新提交规则校验...')
+                        await fetch('/api/validation/circuit/selection/rule-validate', {
+                          method: 'POST', headers: {'Content-Type':'application/json'},
+                          body: JSON.stringify({circuit_ids: failed, force_revalidate: true})
+                        })
+                        setValidationProgress(null)
+                        fetchData()
+                      } catch(e: any) { setBatchMessage('重试失败: ' + (e.message || '网络错误')); setTimeout(() => setBatchMessage(null), 3000) }
+                      setBatchMessage(null)
+                    }}>
+                      <RefreshCw size={14}/> 重新校验失败项({validationProgress.failed_candidate_count})
                     </button>
                   )}
 
@@ -644,7 +696,6 @@ export function CandidateCircuitTable({ granularityLevel }: Props) {
                 <>
                   <span className="vpm-ft-error">规则校验异常</span>
                   <button className="btn btn-sm btn-primary" onClick={async () => {
-                    // Re-run failed circuits
                     const failed = validationProgress.candidate_progress.filter(cp => cp.status === 'failed').map(cp => cp.circuit_id)
                     if (failed.length === 0) { setBatchMessage('没有需要重试的项目'); setTimeout(() => setBatchMessage(null), 3000); return }
                     try {
