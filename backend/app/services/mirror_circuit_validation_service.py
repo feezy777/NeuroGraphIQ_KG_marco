@@ -1,6 +1,6 @@
 """Mirror circuit validation orchestration — real data, real rules, real LLM."""
 from __future__ import annotations
-import asyncio, json, logging, uuid
+import asyncio, json, logging, re, uuid
 from datetime import datetime, timezone
 from typing import Any
 from sqlalchemy import select, func
@@ -8,8 +8,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.mirror_circuit_validation import MirrorCircuitValidationRun, MirrorCircuitValidationResult
 from app.models.mirror_kg import MirrorRegionCircuit
 from app.models.mirror_macro_clinical import MirrorCircuitStep
-from app.schemas.mirror_circuit_validation import CircuitValidationCreateRequest, CircuitValidationProgressResponse
+from app.schemas.mirror_circuit_validation import (
+    BlockedReasonResponse,
+    CircuitValidationCreateRequest,
+    CircuitValidationProgressResponse,
+    CandidateProgressItem,
+)
 from app.services.llm_providers import get_llm_provider
+from app.services.validation_state_machine import get_rule_severity
 from app.database import AsyncSessionLocal
 
 _log = logging.getLogger(__name__)
@@ -44,6 +50,128 @@ def get_rule_registry():
          "enabled": True, "validator_version": "1.0"}
         for code, desc in HARD_RULES + SOFT_RULES
     ]
+
+
+# ── Blocked Reasons Assembly ────────────────────────────────────────────────
+def assemble_blocked_reasons(rule_results: list[dict], rule_result_id: str = "") -> tuple[list[dict], bool]:
+    """Assemble blocked reasons from persisted rule results. Returns (reasons, data_integrity_warning)."""
+    blocked = [r for r in rule_results if r.get("status") == "blocked"]
+    hard_fail = [
+        r for r in rule_results
+        if get_rule_severity(r.get("rule_code", ""))["validation"] == "hard_fail"
+        and r.get("status") == "blocked"
+    ]
+
+    if len(hard_fail) > 0 and len(blocked) == 0:
+        return [], True  # integrity warning
+
+    reasons = []
+    for r in blocked:
+        policy = get_rule_severity(r.get("rule_code", ""))
+        reasons.append({
+            "rule_result_id": rule_result_id,
+            "rule_code": r.get("rule_code", ""),
+            "rule_name": r.get("rule_code", ""),
+            "severity": policy["validation"],
+            "message": r.get("message", ""),
+            "field": r.get("field", ""),
+            "expected": r.get("expected"),
+            "actual": r.get("actual"),
+            "source_reference": r.get("source_reference", ""),
+            "validator_version": r.get("validator_version", "1.0"),
+        })
+
+    integrity_warning = len(hard_fail) > 0 and len(reasons) == 0
+    return reasons, integrity_warning
+
+
+def parse_deepseek_diagnosis(raw_text: str) -> dict:
+    """Fail-closed structured parser for DeepSeek diagnosis output."""
+    # Try 1: Direct JSON parse
+    try:
+        data = json.loads(raw_text)
+        if isinstance(data, dict):
+            return data
+        if isinstance(data, list) and len(data) > 0:
+            return {"rule_diagnostics": data, "suggested_changes": []}
+    except (json.JSONDecodeError, ValueError):
+        pass
+
+    # Try 2: Extract from fenced code block
+    fence = re.search(r'```(?:json)?\s*([\s\S]*?)```', raw_text)
+    if fence:
+        try:
+            data = json.loads(fence.group(1))
+            if isinstance(data, dict):
+                return data
+        except (json.JSONDecodeError, ValueError):
+            pass
+
+    # Try 3: Find first JSON object
+    obj_match = re.search(r'\{[\s\S]*\}', raw_text)
+    if obj_match:
+        try:
+            data = json.loads(obj_match.group(0))
+            if isinstance(data, dict):
+                return data
+        except (json.JSONDecodeError, ValueError):
+            pass
+
+    # Failed — return parse_failed marker
+    return {
+        "parse_failed": True,
+        "raw_text": raw_text[:1000],
+        "rule_diagnostics": [],
+        "suggested_changes": [],
+        "overall_repairability": "manual_required",
+        "revalidation_recommended": True,
+    }
+
+
+async def build_effective_circuit(session: AsyncSession, circuit_id: uuid.UUID) -> dict:
+    """Build effective circuit = source data + approved correction overlays."""
+    from app.models.mirror_circuit_correction import MirrorCircuitCorrection
+
+    circuit = await session.get(MirrorRegionCircuit, circuit_id)
+    if circuit is None:
+        raise ValueError(f"Circuit {circuit_id} not found")
+
+    # Get approved corrections in chronological order
+    corrections = list((await session.execute(
+        select(MirrorCircuitCorrection).where(
+            MirrorCircuitCorrection.circuit_id == circuit_id,
+            MirrorCircuitCorrection.approval_status == "approved",
+        ).order_by(MirrorCircuitCorrection.created_at)
+    )).scalars().all())
+
+    # Build effective data
+    effective: dict[str, Any] = {
+        "circuit_id": str(circuit.id),
+        "circuit_name": circuit.circuit_name,
+        "circuit_type": circuit.circuit_type,
+        "granularity_level": circuit.granularity_level,
+        "confidence": float(circuit.confidence) if circuit.confidence else 0,
+        "applied_corrections": len(corrections),
+        "source_is_immutable": True,
+        "corrections": [{
+            "id": str(c.id), "field_path": c.field_path,
+            "original": c.original_value, "approved": c.approved_value,
+            "correction_type": c.correction_type, "repairability": c.repairability,
+        } for c in corrections],
+    }
+
+    # Apply corrections (later supersedes earlier)
+    for c in corrections:
+        if c.field_path and c.approved_value is not None:
+            # Apply to effective dict (simple flat fields only)
+            field = c.field_path.split(".")[-1]
+            approved = c.approved_value
+            if isinstance(approved, dict) and "value" in approved:
+                effective[field] = approved["value"]
+            else:
+                effective[field] = approved
+
+    return effective
 
 
 # ── Candidate Source Adapter ───────────────────────────────────────────────
@@ -489,29 +617,32 @@ async def get_validation_progress(session: AsyncSession, run_id: uuid.UUID) -> C
     warning = sum(1 for r in result_rows if r.rule_overall_status == "warning")
     failed = sum(1 for r in result_rows if r.rule_overall_status in ("failed", None))
 
-    candidate_progress = []
+    candidate_progress: list[CandidateProgressItem] = []
     for r in result_rows:
         rules = r.rule_validation_result_json or []
-        blocked_rules = [x for x in rules if x.get("status") == "blocked"]
-        cp = {
-            "circuit_id": str(r.target_id),
-            "circuit_name": r.object_label or str(r.target_id)[:12],
-            "path_summary": "",
-            "completed_rule_count": len([x for x in rules if x.get("status") != "running"]),
-            "enabled_rule_count": enabled_rules,
-            "pass_count": len([x for x in rules if x.get("status") == "passed"]),
-            "warning_count": len([x for x in rules if x.get("status") == "warning"]),
-            "hard_fail_count": len([x for x in rules if x.get("status") == "blocked"]),
-            "status": r.rule_overall_status or "pending",
-            "current_rule_code": "",
-            "error_message": None,
-            "eligible_for_dual_review": r.rule_overall_status in ("passed", "warning"),
-            "deepseek_diagnosis": r.deepseek_diagnosis_json or [],
-            "blocked_reasons": [
-                {"rule_code": br["rule_code"], "message": br.get("message", "未知原因")}
-                for br in blocked_rules
-            ],
-        }
+        reasons, integrity_warning = assemble_blocked_reasons(rules, str(r.id))
+        blocked_reason_objects = [
+            BlockedReasonResponse(**br) for br in reasons
+        ]
+        cp = CandidateProgressItem(
+            circuit_id=str(r.target_id),
+            circuit_name=r.object_label or str(r.target_id)[:12],
+            path_summary="",
+            completed_rule_count=len([x for x in rules if x.get("status") != "running"]),
+            enabled_rule_count=enabled_rules,
+            pass_count=len([x for x in rules if x.get("status") == "passed"]),
+            warning_count=len([x for x in rules if x.get("status") == "warning"]),
+            hard_fail_count=len([x for x in rules if x.get("status") == "blocked"]),
+            status=r.rule_overall_status or "pending",
+            current_rule_code="",
+            error_message=None,
+            eligible_for_dual_review=r.rule_overall_status in ("passed", "warning"),
+            blocked_reasons=blocked_reason_objects,
+            data_integrity_warning=integrity_warning,
+            reviewer_a_status=r.reviewer_a_decision or "not_started",
+            reviewer_b_status=r.reviewer_b_decision or "not_started",
+            adjudication_status=r.adjudication_status or "not_started",
+        )
         candidate_progress.append(cp)
 
     elapsed = 0.0

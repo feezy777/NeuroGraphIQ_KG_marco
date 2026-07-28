@@ -156,11 +156,14 @@ async def get_run_detail(
 # ---------------------------------------------------------------------------
 
 
-@router.get("/runs/{run_id}/progress")
+@router.get(
+    "/runs/{run_id}/progress",
+    response_model=CircuitValidationProgressResponse,
+)
 async def get_progress(
     run_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
-):
+) -> CircuitValidationProgressResponse:
     """Poll validation progress."""
     try:
         return await vc.get_validation_progress(db, run_id)
@@ -1789,9 +1792,12 @@ async def revalidate_circuit(
     """Revalidate a circuit after applying approved corrections.
 
     1. Fetches all approved corrections for this circuit
-    2. Marks them as revalidation queued
-    3. Creates an internal validation run for this single circuit
-    4. Starts background revalidation
+    2. Verifies approved corrections exist
+    3. Builds effective candidate (source + corrections overlay)
+    4. Marks corrections as revalidation queued
+    5. Creates an internal validation run for this single circuit
+    6. Links the run to original data + corrections
+    7. Starts background revalidation
 
     Returns the internal run ID for progress tracking.
     """
@@ -1810,24 +1816,45 @@ async def revalidate_circuit(
             detail="No approved corrections found for this circuit",
         )
 
+    # Build effective circuit (source data + approved correction overlays)
+    try:
+        effective = await vc.build_effective_circuit(db, circuit_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+
     # Mark corrections as revalidation queued
     for c in corrections:
         c.revalidation_status = "queued"
 
+    # Get circuit to determine granularity_level
+    from app.models.mirror_kg import MirrorRegionCircuit
+
+    circuit = await db.get(MirrorRegionCircuit, circuit_id)
+    granularity = circuit.granularity_level if circuit else "all"
+
     # Create internal validation run for this single circuit
     req = CircuitValidationCreateRequest(
-        granularity_level="molecular_attr",
+        granularity_level=granularity,
         circuit_ids=[str(circuit_id)],
     )
     run, stats = await vc.create_validation_run(db, req)
+
+    # Store the effective view as scope metadata for later comparison
+    run.scope_json["revalidation_source"] = "correction_revalidation"
+    run.scope_json["effective_circuit"] = effective
+    run.scope_json["correction_ids"] = [str(c.id) for c in corrections]
+
     await db.commit()
 
-    # Start async re-validation
+    # Start async re-validation — the run will use original source data,
+    # and the frontend can reference the effective view for comparison
     asyncio.create_task(vc.run_full_validation_background(run.id))
 
     return {
         "internal_run_id": str(run.id),
         "correction_count": len(corrections),
+        "effective_corrections_applied": effective.get("applied_corrections", 0),
+        "granularity_level": granularity,
         "status": "queued",
     }
 

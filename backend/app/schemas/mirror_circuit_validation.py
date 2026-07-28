@@ -5,6 +5,23 @@ from typing import Any, Optional
 from pydantic import BaseModel, Field
 
 
+# ── Blocked Reason Schema ─────────────────────────────────────────────────
+
+
+class BlockedReasonResponse(BaseModel):
+    """A single blocked reason assembled from rule validation results."""
+    rule_result_id: str = ""
+    rule_code: str
+    rule_name: str = ""
+    severity: str = "hard_fail"
+    message: str = ""
+    field: str = ""
+    expected: Optional[Any] = None
+    actual: Optional[Any] = None
+    source_reference: str = ""
+    validator_version: str = "1.0"
+
+
 # ── Circuit Correction Schemas ────────────────────────────────────────────
 
 
@@ -127,8 +144,13 @@ class CandidateProgressItem(BaseModel):
     current_rule_code: str = ""
     eligible_for_dual_review: bool = False
     error_message: Optional[str] = None
-    blocked_reasons: list[dict] = Field(default_factory=list)
-    deepseek_diagnosis: list[dict] = Field(default_factory=list)
+    blocked_reasons: list[BlockedReasonResponse] = Field(default_factory=list)
+    data_integrity_warning: bool = False
+    reviewer_a_status: str = "not_started"
+    reviewer_b_status: str = "not_started"
+    adjudication_status: str = "not_started"
+    correction_status: str = "none"
+    revalidation_status: str = "not_started"
 
 
 class CircuitValidationProgressResponse(BaseModel):
