@@ -37,7 +37,6 @@ router = APIRouter(tags=["Circuit Validation"])
 
 @router.post(
     "/runs",
-    response_model=CircuitValidationRunRead,
     status_code=201,
 )
 async def create_run(
@@ -47,7 +46,9 @@ async def create_run(
     """Create a new circuit validation run. Returns run + scan stats."""
     run, stats = await vc.create_validation_run(db, req)
     await db.commit()
-    return {**_run_to_read(run).model_dump(), "scan_stats": stats}
+    result = _run_to_read(run).model_dump()
+    result["scan_stats"] = stats
+    return result
 
 
 # ---------------------------------------------------------------------------
