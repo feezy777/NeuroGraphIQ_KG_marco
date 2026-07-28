@@ -42,6 +42,7 @@ interface CandidateProgress {
   status: string
   current_rule_code: string
   eligible_for_dual_review: boolean
+  blocked_reasons?: Array<{rule_code: string; message: string}>
 }
 
 interface ValidationProgress {
@@ -522,7 +523,7 @@ export function CandidateCircuitTable({ granularityLevel }: Props) {
                               <td colSpan={7}>
                                 <div className="vpm-detail-block">
                                   <strong>阻塞原因:</strong>
-                                  {(cp as any).blocked_reasons?.map((br: any, j: number) => (
+                                  {cp.blocked_reasons?.map((br, j) => (
                                     <div key={j} className="vpm-block-reason">
                                       <span className="badge badge-blocked">{br.rule_code}</span>
                                       <span>{br.message}</span>
@@ -576,8 +577,9 @@ export function CandidateCircuitTable({ granularityLevel }: Props) {
                           body: JSON.stringify({circuit_ids: blocked})
                         })
                         const data = await resp.json()
-                        const summary = data.results.map((r: any) => `${(r.circuit_name || '').slice(0,20)}: ${r.status} (${r.blocked_rule_count || 0} rules)`).join('\n')
-                        alert(`DeepSeek 分析完成:\n\n${summary}`)
+                        const results = data.results || []
+                        const summary = results.map((r: any) => `${(r.circuit_name || '').slice(0,20)}: ${r.status} (${r.blocked_rule_count || 0} rules)`).join('\n')
+                        alert(`DeepSeek 分析完成:\n\n${summary || '无阻塞回路需要分析'}`)
                       }}>
                       🤖 DeepSeek 分析修复建议
                     </button>
