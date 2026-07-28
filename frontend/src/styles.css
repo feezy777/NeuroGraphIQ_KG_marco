@@ -11239,9 +11239,15 @@ input[type="range"]::-webkit-slider-thumb {
 .vpm-checkbox { display: flex; align-items: center; gap: 6px; font-size: 12px; margin-bottom: 10px; cursor: pointer; }
 .vpm-table-wrap { max-height: 300px; overflow-y: auto; }
 .vpm-row-passed { background: #f6ffed; }
-.vpm-row-blocked { background: #fff2f0; }
+.vpm-row-blocked { background: #fff2f0; cursor: pointer; }
+.vpm-row-clickable { cursor: pointer; }
+.vpm-row-clickable:hover { filter: brightness(0.97); }
 .vpm-green { color: var(--success); font-weight: 600; }
 .vpm-amber { color: #d4a017; font-weight: 600; }
 .vpm-red { color: var(--danger); font-weight: 600; }
 .vpm-ft-info { font-size: 13px; color: var(--text); margin-right: auto; }
 .vpm-ft-error { font-size: 13px; color: var(--danger); font-weight: 600; margin-right: auto; }
+.vpm-detail-row td { background: #fff2f0; padding: 8px 12px; border-top: none; }
+.vpm-detail-block { display: flex; flex-direction: column; gap: 4px; font-size: 12px; }
+.vpm-detail-block strong { margin-bottom: 4px; }
+.vpm-block-reason { display: flex; gap: 8px; align-items: flex-start; padding: 2px 0; }

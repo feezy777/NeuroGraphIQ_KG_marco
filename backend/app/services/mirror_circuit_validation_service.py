@@ -490,6 +490,7 @@ async def get_validation_progress(session: AsyncSession, run_id: uuid.UUID) -> C
     candidate_progress = []
     for r in result_rows:
         rules = r.rule_validation_result_json or []
+        blocked_rules = [x for x in rules if x.get("status") == "blocked"]
         cp = {
             "circuit_id": str(r.target_id),
             "circuit_name": r.object_label or str(r.target_id)[:12],
@@ -503,6 +504,10 @@ async def get_validation_progress(session: AsyncSession, run_id: uuid.UUID) -> C
             "current_rule_code": "",
             "error_message": None,
             "eligible_for_dual_review": r.rule_overall_status in ("passed", "warning"),
+            "blocked_reasons": [
+                {"rule_code": br["rule_code"], "message": br.get("message", "未知原因")}
+                for br in blocked_rules
+            ],
         }
         candidate_progress.append(cp)
 

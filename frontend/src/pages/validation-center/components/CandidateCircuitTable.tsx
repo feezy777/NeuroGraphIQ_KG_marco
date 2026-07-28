@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { Zap } from 'lucide-react'
 import { CircuitDetailDrawer } from './CircuitDetailDrawer'
 
@@ -134,6 +134,7 @@ export function CandidateCircuitTable({ granularityLevel }: Props) {
   const [validationProgress, setValidationProgress] = useState<ValidationProgress | null>(null)
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const autoHandoffRef = useRef(false)
+  const [expandedRow, setExpandedRow] = useState<string | null>(null)
 
   // Sync autoHandoffRef with state
   useEffect(() => {
@@ -499,15 +500,39 @@ export function CandidateCircuitTable({ granularityLevel }: Props) {
                     <thead><tr><th>#</th><th>回路名称</th><th>规则</th><th>通过</th><th>警告</th><th>阻塞</th><th>状态</th></tr></thead>
                     <tbody>
                       {validationProgress.candidate_progress.map((cp, i) => (
-                        <tr key={cp.circuit_id} className={`vr-row vpm-row-${cp.status}`}>
-                          <td>{i+1}</td>
-                          <td title={cp.circuit_name}>{cp.circuit_name.slice(0,30)}</td>
-                          <td>{cp.completed_rule_count}/{cp.enabled_rule_count}</td>
-                          <td className="vpm-green">{cp.pass_count}</td>
-                          <td className="vpm-amber">{cp.warning_count}</td>
-                          <td className="vpm-red">{cp.hard_fail_count}</td>
-                          <td><span className={`badge badge-${cp.status}`}>{cp.status}</span></td>
-                        </tr>
+                        <React.Fragment key={cp.circuit_id}>
+                          <tr
+                            className={`vr-row vpm-row-${cp.status}${cp.status === 'blocked' ? ' vpm-row-clickable' : ''}`}
+                            onClick={() => {
+                              if (cp.status === 'blocked') {
+                                setExpandedRow(expandedRow === cp.circuit_id ? null : cp.circuit_id)
+                              }
+                            }}
+                          >
+                            <td>{i+1}</td>
+                            <td title={cp.circuit_name}>{cp.circuit_name.slice(0,30)}</td>
+                            <td>{cp.completed_rule_count}/{cp.enabled_rule_count}</td>
+                            <td className="vpm-green">{cp.pass_count}</td>
+                            <td className="vpm-amber">{cp.warning_count}</td>
+                            <td className="vpm-red">{cp.hard_fail_count}</td>
+                            <td><span className={`badge badge-${cp.status}`}>{cp.status}</span></td>
+                          </tr>
+                          {cp.status === 'blocked' && expandedRow === cp.circuit_id && (
+                            <tr key={`${cp.circuit_id}-detail`} className="vpm-detail-row">
+                              <td colSpan={7}>
+                                <div className="vpm-detail-block">
+                                  <strong>阻塞原因:</strong>
+                                  {(cp as any).blocked_reasons?.map((br: any, j: number) => (
+                                    <div key={j} className="vpm-block-reason">
+                                      <span className="badge badge-blocked">{br.rule_code}</span>
+                                      <span>{br.message}</span>
+                                    </div>
+                                  )) || <span>无详细信息</span>}
+                                </div>
+                              </td>
+                            </tr>
+                          )}
+                        </React.Fragment>
                       ))}
                     </tbody>
                   </table>
@@ -541,6 +566,22 @@ export function CandidateCircuitTable({ granularityLevel }: Props) {
                     }}>
                     <Zap size={14}/> 送入双模型审核({validationProgress.eligible_for_dual_review_count})
                   </button>
+                  {validationProgress.hard_fail_count > 0 && (
+                    <button className="btn btn-sm"
+                      onClick={async () => {
+                        const blocked = validationProgress.candidate_progress.filter(cp => cp.status === 'blocked').map(cp => cp.circuit_id)
+                        if (blocked.length === 0) return
+                        const resp = await fetch('/api/validation/circuit/selection/deepseek-fix', {
+                          method: 'POST', headers: {'Content-Type':'application/json'},
+                          body: JSON.stringify({circuit_ids: blocked})
+                        })
+                        const data = await resp.json()
+                        const summary = data.results.map((r: any) => `${(r.circuit_name || '').slice(0,20)}: ${r.status} (${r.blocked_rule_count || 0} rules)`).join('\n')
+                        alert(`DeepSeek 分析完成:\n\n${summary}`)
+                      }}>
+                      🤖 DeepSeek 分析修复建议
+                    </button>
+                  )}
                   <button className="btn btn-sm" onClick={() => setValidationProgress(null)}>关闭</button>
                 </>
               )}

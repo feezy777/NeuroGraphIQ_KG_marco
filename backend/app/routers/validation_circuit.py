@@ -6,6 +6,7 @@ and cancel circuit validation runs.
 
 from __future__ import annotations
 
+import json
 import uuid
 from typing import Optional
 
@@ -26,6 +27,7 @@ from app.schemas.mirror_circuit_validation import (
     CircuitValidationRunRead,
 )
 from app.services import mirror_circuit_validation_service as vc
+from app.services.llm_providers import get_llm_provider
 
 router = APIRouter(tags=["Circuit Validation"])
 
@@ -749,6 +751,79 @@ async def get_circuit_detail(
             },
         },
     }
+
+
+# ---------------------------------------------------------------------------
+# POST /api/validation/circuit/selection/deepseek-fix
+# ---------------------------------------------------------------------------
+
+
+@router.post("/selection/deepseek-fix")
+async def selection_deepseek_fix(body: dict, db: AsyncSession = Depends(get_db)):
+    """Use DeepSeek to analyze and suggest fixes for blocked circuits."""
+    circuit_ids = body.get("circuit_ids", [])
+    if not circuit_ids:
+        raise HTTPException(status_code=400, detail="circuit_ids required")
+
+    from app.models.mirror_kg import MirrorRegionCircuit
+    from app.models.mirror_macro_clinical import MirrorCircuitStep
+    from app.models.mirror_circuit_validation import MirrorCircuitValidationResult
+
+    results = []
+    for cid_str in circuit_ids:
+        cid = uuid.UUID(cid_str)
+        circuit = await db.get(MirrorRegionCircuit, cid)
+        if circuit is None:
+            results.append({"circuit_id": cid_str, "status": "skipped", "reason": "circuit not found"})
+            continue
+
+        # Get blocked rules
+        val = (await db.execute(
+            select(MirrorCircuitValidationResult).where(
+                MirrorCircuitValidationResult.target_id == cid,
+                MirrorCircuitValidationResult.target_type == "circuit"
+            ).order_by(MirrorCircuitValidationResult.created_at.desc()).limit(1)
+        )).scalars().first()
+
+        if val is None or not val.rule_blocked:
+            results.append({"circuit_id": cid_str, "status": "skipped", "reason": "not blocked"})
+            continue
+
+        blocked_rules = [r for r in (val.rule_validation_result_json or []) if r.get("status") == "blocked"]
+
+        # Get steps for context
+        steps = list((await db.execute(
+            select(MirrorCircuitStep).where(MirrorCircuitStep.circuit_id == cid).order_by(MirrorCircuitStep.step_order)
+        )).scalars().all())
+
+        # Call DeepSeek for analysis
+        try:
+            provider = get_llm_provider("deepseek")
+
+            system = """你是神经回路数据质量专家。分析以下被规则校验阻塞的回路，给出具体的修复建议。
+对于每条阻塞规则，提供: 1)问题描述 2)建议的修复方案 3)是否可以自动修复。
+
+输出严格的 JSON 数组: [{"rule_code": "...", "problem": "...", "suggestion": "...", "auto_fixable": true/false, "auto_fix_description": "..."}]"""
+
+            user = f"""回路: {circuit.circuit_name}
+阻塞规则: {json.dumps([{"rule_code": r["rule_code"], "message": r.get("message","")} for r in blocked_rules], ensure_ascii=False)}
+步骤数: {len(steps)}
+步骤: {json.dumps([{"order": s.step_order, "name": s.step_name, "type": s.step_type, "role": s.role} for s in steps[:10]], ensure_ascii=False)}"""
+
+            resp = await provider.complete_json(model="deepseek-chat", system_prompt=system, user_prompt=user, temperature=0.3, max_tokens=2000)
+
+            results.append({
+                "circuit_id": cid_str,
+                "circuit_name": circuit.circuit_name,
+                "status": "analyzed",
+                "blocked_rule_count": len(blocked_rules),
+                "deepseek_analysis": resp.parsed_json if resp.parsed_json else {"raw": (resp.raw_text or "")[:500]},
+                "token_usage": {"prompt": resp.usage.prompt_tokens, "completion": resp.usage.completion_tokens} if resp.usage else None,
+            })
+        except Exception as e:
+            results.append({"circuit_id": cid_str, "circuit_name": circuit.circuit_name, "status": "error", "reason": str(e)[:200]})
+
+    return {"total": len(circuit_ids), "results": results}
 
 
 # ---------------------------------------------------------------------------
