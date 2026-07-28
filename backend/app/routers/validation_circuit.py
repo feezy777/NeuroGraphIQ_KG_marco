@@ -468,6 +468,265 @@ async def get_counts(
 
 
 # ---------------------------------------------------------------------------
+# GET /api/validation/circuit/candidates/{circuit_id}
+# ---------------------------------------------------------------------------
+
+
+@router.get("/candidates/{circuit_id}")
+async def get_circuit_detail(
+    circuit_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+):
+    """Get complete circuit detail with all related data (steps, regions, functions, evidence, validation)."""
+    from app.models.mirror_kg import (
+        MirrorCircuitRegion,
+        MirrorEvidenceRecord,
+        MirrorRegionCircuit,
+    )
+    from app.models.mirror_macro_clinical import MirrorCircuitFunction, MirrorCircuitStep
+    from app.models.mirror_circuit_validation import MirrorCircuitValidationResult
+    from app.models.candidate import CandidateBrainRegion
+
+    circuit = await db.get(MirrorRegionCircuit, circuit_id)
+    if circuit is None:
+        raise HTTPException(404, f"Circuit {circuit_id} not found")
+
+    # Load steps ordered by step_order
+    steps = list(
+        (
+            await db.execute(
+                select(MirrorCircuitStep)
+                .where(MirrorCircuitStep.circuit_id == circuit_id)
+                .order_by(MirrorCircuitStep.step_order)
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+    # Load functions
+    functions = list(
+        (
+            await db.execute(
+                select(MirrorCircuitFunction).where(
+                    MirrorCircuitFunction.circuit_id == circuit_id
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+    # Load regions from mirror_circuit_regions
+    regions = list(
+        (
+            await db.execute(
+                select(MirrorCircuitRegion).where(
+                    MirrorCircuitRegion.circuit_id == circuit_id
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+    # Load candidate region details
+    region_ids = [r.region_candidate_id for r in regions if r.region_candidate_id]
+    candidate_regions = []
+    if region_ids:
+        candidate_regions = list(
+            (
+                await db.execute(
+                    select(CandidateBrainRegion).where(
+                        CandidateBrainRegion.id.in_(region_ids)
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+
+    # Load validation results (target_type == "circuit")
+    val_results = list(
+        (
+            await db.execute(
+                select(MirrorCircuitValidationResult).where(
+                    MirrorCircuitValidationResult.target_id == circuit_id,
+                    MirrorCircuitValidationResult.target_type == "circuit",
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+    # Load evidence records
+    evidence = list(
+        (
+            await db.execute(
+                select(MirrorEvidenceRecord).where(
+                    MirrorEvidenceRecord.evidence_target_id == circuit_id,
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+    candidate_map = {str(cr.id): cr for cr in candidate_regions}
+
+    return {
+        "circuit": {
+            "id": str(circuit.id),
+            "circuit_name": circuit.circuit_name,
+            "name_cn": getattr(circuit, "name_cn", None),
+            "circuit_type": circuit.circuit_type,
+            "description": getattr(circuit, "description", None),
+            "function_association": circuit.function_association,
+            "confidence": float(circuit.confidence) if circuit.confidence else None,
+            "granularity_level": circuit.granularity_level,
+            "granularity_family": getattr(circuit, "granularity_family", None),
+            "source_atlas": circuit.source_atlas,
+            "source_version": getattr(circuit, "source_version", None),
+            "mirror_status": circuit.mirror_status,
+            "review_status": circuit.review_status,
+            "promotion_status": circuit.promotion_status,
+            "evidence_text": circuit.evidence_text,
+            "uncertainty_reason": getattr(circuit, "uncertainty_reason", None),
+            "canonical_start_region_id": str(circuit.canonical_start_region_id)
+            if getattr(circuit, "canonical_start_region_id", None)
+            else None,
+            "canonical_end_region_id": str(circuit.canonical_end_region_id)
+            if getattr(circuit, "canonical_end_region_id", None)
+            else None,
+            "circuit_strength": float(circuit.circuit_strength)
+            if getattr(circuit, "circuit_strength", None)
+            else None,
+            "created_at": circuit.created_at.isoformat() if circuit.created_at else None,
+            "updated_at": circuit.updated_at.isoformat() if circuit.updated_at else None,
+            "resource_id": str(circuit.resource_id) if circuit.resource_id else None,
+            "batch_id": str(circuit.batch_id) if circuit.batch_id else None,
+            "llm_run_id": str(circuit.llm_run_id)
+            if getattr(circuit, "llm_run_id", None)
+            else None,
+        },
+        "granularity": {
+            "level": circuit.granularity_level,
+            "family": getattr(circuit, "granularity_family", None),
+            "atlas": circuit.source_atlas,
+            "version": getattr(circuit, "source_version", None),
+            "region_pool_match": True,
+            "mixed_granularity_warning": None,
+        },
+        "topology": {
+            "circuit_type": circuit.circuit_type,
+            "closed_loop": False,
+            "canonical_key": None,
+            "node_count": len(steps),
+            "start_region": steps[0].step_name if steps else None,
+            "end_region": steps[-1].step_name if steps else None,
+        },
+        "steps": [
+            {
+                "step_order": s.step_order,
+                "step_name": s.step_name,
+                "step_type": s.step_type,
+                "role": s.role,
+                "description": s.description,
+                "confidence": float(s.confidence) if s.confidence else None,
+                "evidence_text": s.evidence_text,
+                "region_candidate_id": str(s.region_candidate_id)
+                if s.region_candidate_id
+                else None,
+                "source_atlas": s.source_atlas,
+                "granularity_level": s.granularity_level,
+            }
+            for s in steps
+        ],
+        "regions": [
+            {
+                "role": r.role,
+                "sort_order": r.sort_order,
+                "candidate_id": str(r.region_candidate_id)
+                if r.region_candidate_id
+                else None,
+                "candidate": (
+                    {
+                        "id": str(cr.id),
+                        "name": getattr(cr, "en_name", None)
+                        or getattr(cr, "raw_name", str(cr.id)[:12]),
+                        "granularity_level": getattr(cr, "granularity_level", None),
+                        "source_atlas": getattr(cr, "source_atlas", None),
+                    }
+                    if (cr := candidate_map.get(str(r.region_candidate_id)))
+                    else None
+                ),
+            }
+            for r in regions
+        ],
+        "functions": [
+            {
+                "id": str(f.id),
+                "function_term_en": f.function_term_en,
+                "function_term_cn": f.function_term_cn,
+                "function_domain": f.function_domain,
+                "function_role": f.function_role,
+                "effect_type": f.effect_type,
+                "confidence_score": float(f.confidence_score)
+                if f.confidence_score
+                else None,
+                "evidence_level": f.evidence_level,
+                "description": f.description,
+                "evidence_text": f.evidence_text,
+            }
+            for f in functions
+        ],
+        "evidence": [
+            {
+                "id": str(e.id),
+                "evidence_type": getattr(e, "evidence_type", None),
+                "evidence_text": getattr(e, "evidence_text", None),
+                "source": getattr(e, "source_reference_text", None),
+            }
+            for e in evidence
+        ],
+        "validation": {
+            "results": [
+                {
+                    "id": str(v.id),
+                    "run_id": str(v.run_id),
+                    "rule_overall_status": v.rule_overall_status,
+                    "rule_blocked": v.rule_blocked,
+                    "rule_validation_result_json": v.rule_validation_result_json,
+                    "reviewer_a_decision": v.reviewer_a_decision,
+                    "reviewer_a_confidence": v.reviewer_a_confidence,
+                    "reviewer_b_decision": v.reviewer_b_decision,
+                    "reviewer_b_confidence": v.reviewer_b_confidence,
+                    "adjudication_status": v.adjudication_status,
+                }
+                for v in val_results
+            ],
+        },
+        "extraction": {
+            "resource_id": str(circuit.resource_id) if circuit.resource_id else None,
+            "batch_id": str(circuit.batch_id) if circuit.batch_id else None,
+            "llm_run_id": str(circuit.llm_run_id)
+            if getattr(circuit, "llm_run_id", None)
+            else None,
+            "source_atlas": circuit.source_atlas,
+            "confidence": float(circuit.confidence) if circuit.confidence else None,
+        },
+        "raw_fields": {
+            "circuit": {
+                k: str(v)
+                for k, v in circuit.__dict__.items()
+                if not k.startswith("_")
+            },
+        },
+    }
+
+
+# ---------------------------------------------------------------------------
 # Conversion helpers
 # ---------------------------------------------------------------------------
 

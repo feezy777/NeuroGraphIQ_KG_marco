@@ -1,4 +1,5 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback } from 'react'
+import { CircuitDetailDrawer } from './CircuitDetailDrawer'
 
 // ── Types ──────────────────────────────────────────────────────────────────
 interface CandidateCircuit {
@@ -48,48 +49,6 @@ function formatConfidence(v: number): string {
   return (v * 100).toFixed(0) + '%'
 }
 
-function formatTime(s: string | null): string {
-  if (!s) return '—'
-  try { return s.slice(0, 16).replace('T', ' ') } catch { return s }
-}
-
-// ── Side Detail Panel ──────────────────────────────────────────────────────
-function CandidateDetail({ circuit, onClose }: { circuit: CandidateCircuit; onClose: () => void }) {
-  return (
-    <div className="vw-detail-panel">
-      <div className="vw-detail-hd">
-        <h4>{circuit.circuit_name}</h4>
-        <button className="vr-modal-close" onClick={onClose}>✕</button>
-      </div>
-      <div className="vw-detail-bd">
-        <DetailRow label="ID" value={<code>{circuit.id.slice(0, 12)}</code>} />
-        <DetailRow label="粒度" value={circuit.granularity_level} />
-        <DetailRow label="回路类型" value={circuit.circuit_type} />
-        <DetailRow label="步骤数" value={String(circuit.step_count)} />
-        <DetailRow label="置信度" value={formatConfidence(circuit.confidence)} />
-        <DetailRow label="数据源" value={circuit.source_atlas || '—'} />
-        <DetailRow label="功能关联" value={circuit.function_association || '—'} />
-        <DetailRow label="创建时间" value={formatTime(circuit.created_at)} />
-        <DetailRow label="审核状态" value={statusBadge(circuit.review_status).label} />
-        <DetailRow label="晋升状态" value={statusBadge(circuit.promotion_status).label} />
-        <DetailRow label="Mirror 状态" value={statusBadge(circuit.mirror_status).label} />
-        {circuit.evidence_text && (
-          <DetailRow label="证据" value={<span style={{ fontSize: 12, lineHeight: 1.5 }}>{circuit.evidence_text}</span>} />
-        )}
-      </div>
-    </div>
-  )
-}
-
-function DetailRow({ label, value }: { label: string; value: React.ReactNode }) {
-  return (
-    <div className="vw-detail-row">
-      <span className="vw-detail-label">{label}</span>
-      <span className="vw-detail-value">{value}</span>
-    </div>
-  )
-}
-
 // ── Main Component ─────────────────────────────────────────────────────────
 export function CandidateCircuitTable({ granularityLevel }: Props) {
   const [items, setItems] = useState<CandidateCircuit[]>([])
@@ -100,10 +59,9 @@ export function CandidateCircuitTable({ granularityLevel }: Props) {
   const [search, setSearch] = useState('')
   const [granFilter, setGranFilter] = useState(granularityLevel || 'all')
   const [selected, setSelected] = useState<Set<string>>(new Set())
-  const [detailItem, setDetailItem] = useState<CandidateCircuit | null>(null)
+  const [detailCircuitId, setDetailCircuitId] = useState<string | null>(null)
   const [batchLoading, setBatchLoading] = useState(false)
   const [batchMessage, setBatchMessage] = useState<string | null>(null)
-  const detailRef = useRef<HTMLDivElement>(null)
 
   const pageSize = 25
 
@@ -175,23 +133,10 @@ export function CandidateCircuitTable({ granularityLevel }: Props) {
     }
   }, [selected])
 
-  // Detail panel
+  // Detail drawer
   const handleRowClick = (item: CandidateCircuit) => {
-    setDetailItem(item)
+    setDetailCircuitId(item.id)
   }
-
-  // Close detail panel by clicking outside
-  useEffect(() => {
-    function handleClick(e: MouseEvent) {
-      if (detailRef.current && !detailRef.current.contains(e.target as Node)) {
-        setDetailItem(null)
-      }
-    }
-    if (detailItem) {
-      setTimeout(() => document.addEventListener('click', handleClick), 0)
-      return () => document.removeEventListener('click', handleClick)
-    }
-  }, [detailItem])
 
   const totalPages = Math.ceil(total / pageSize)
 
@@ -350,12 +295,8 @@ export function CandidateCircuitTable({ granularityLevel }: Props) {
         </div>
       )}
 
-      {/* Detail side panel */}
-      {detailItem && (
-        <div ref={detailRef}>
-          <CandidateDetail circuit={detailItem} onClose={() => setDetailItem(null)} />
-        </div>
-      )}
+      {/* Detail drawer */}
+      <CircuitDetailDrawer circuitId={detailCircuitId} onClose={() => setDetailCircuitId(null)} />
     </div>
   )
 }

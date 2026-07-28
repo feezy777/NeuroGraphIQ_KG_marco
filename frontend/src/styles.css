@@ -9212,6 +9212,134 @@ tr:hover td { background: #fafbfc; cursor: pointer; }
 .conf-mid { color: #d48806; font-weight: 600; }
 .conf-low { color: #cf1322; font-weight: 600; }
 
+/* ── Circuit Detail Drawer ─────────────────────────────────────────────────── */
+.vcd-overlay {
+  position: fixed; inset: 0; background: rgba(0,0,0,0.35); z-index: 300;
+}
+.vcd-drawer {
+  position: fixed; top: 0; right: 0; bottom: 0; width: 640px; max-width: 90vw;
+  background: var(--white); box-shadow: -4px 0 24px rgba(0,0,0,0.15);
+  z-index: 301; display: flex; flex-direction: column; overflow: hidden;
+}
+.vcd-header {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  padding: 14px 18px; border-bottom: 1px solid var(--border); flex-shrink: 0;
+}
+.vcd-header-text { flex: 1; min-width: 0; margin-right: 10px; }
+.vcd-header-name { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+.vcd-circuit-name { font-size: 16px; font-weight: 700; color: var(--text); }
+.vcd-type-badge {
+  display: inline-block; padding: 1px 8px; border-radius: 10px;
+  font-size: 10px; font-weight: 700; letter-spacing: 0.02em;
+  background: #e6f4ff; color: #1677ff; border: 1px solid #91caff;
+  white-space: nowrap;
+}
+.vcd-header-meta { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.vcd-header-source { font-size: 11px; color: var(--text-muted); margin-left: 4px; }
+.vcd-close {
+  background: none; border: none; cursor: pointer; font-size: 18px;
+  color: var(--text-muted); padding: 4px; line-height: 1; flex-shrink: 0;
+}
+.vcd-close:hover { color: var(--text); }
+.vcd-tabs {
+  display: flex; border-bottom: 1px solid var(--border); flex-shrink: 0;
+  overflow-x: auto; padding: 0 14px;
+}
+.vcd-tab {
+  flex-shrink: 0; padding: 8px 12px; font-size: 12px; font-weight: 600;
+  color: var(--text-muted); background: none; border: none; cursor: pointer;
+  border-bottom: 2px solid transparent; transition: color 0.15s, border-color 0.15s;
+}
+.vcd-tab:hover { color: var(--primary); }
+.vcd-tab.active { color: var(--primary); border-bottom-color: var(--primary); }
+.vcd-body {
+  flex: 1; overflow-y: auto; padding: 14px 18px;
+}
+.vcd-body::-webkit-scrollbar { width: 5px; }
+.vcd-body::-webkit-scrollbar-thumb { background: #d4d4d4; border-radius: 3px; }
+
+.vcd-tab-content { display: flex; flex-direction: column; gap: 12px; }
+.vcd-section-header {
+  display: flex; align-items: center; gap: 8px; margin: 8px 0 4px;
+}
+.vcd-section-title {
+  font-size: 12px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.05em; color: #999;
+}
+.vcd-section-count {
+  font-size: 11px; color: var(--text-muted); background: var(--bg);
+  padding: 0 6px; border-radius: 8px; line-height: 18px;
+}
+.vcd-grid {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 0;
+  background: var(--white); border: 1px solid var(--border); border-radius: var(--radius);
+  overflow: hidden;
+}
+.vcd-row {
+  display: flex; flex-direction: column; gap: 1px;
+  padding: 8px 12px; border-bottom: 1px solid #f0f0f0;
+}
+.vcd-row:nth-child(odd) { background: #fafbfc; }
+.vcd-row:nth-last-child(-n+2) { border-bottom: none; }
+.vcd-row-label { font-size: 10px; font-weight: 700; color: #999; text-transform: uppercase; letter-spacing: 0.03em; }
+.vcd-row-value { font-size: 13px; color: var(--text); word-break: break-word; }
+.vcd-loading { padding: 40px; text-align: center; color: var(--text-muted); }
+.vcd-error { padding: 20px; text-align: center; color: var(--danger); background: #fff1f0; border-radius: var(--radius); }
+.vcd-empty { padding: 40px; text-align: center; color: var(--text-muted); }
+
+/* Step chain */
+.vcd-step-chain { display: flex; flex-direction: column; gap: 4px; }
+.vcd-step-node { display: flex; align-items: center; gap: 8px; }
+.vcd-step-order {
+  width: 24px; height: 24px; border-radius: 50%; background: var(--primary);
+  color: white; font-size: 11px; font-weight: 700; display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+}
+.vcd-step-info { display: flex; flex-direction: column; gap: 1px; }
+.vcd-step-name { font-size: 13px; font-weight: 600; }
+.vcd-step-type { font-size: 11px; color: var(--text-muted); }
+.vcd-step-arrow { color: var(--text-muted); font-size: 14px; padding-left: 6px; }
+
+/* Tables */
+.vcd-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.vcd-table thead { position: sticky; top: 0; z-index: 1; }
+.vcd-table th {
+  background: var(--bg); font-weight: 600; font-size: 11px; color: var(--text-muted);
+  padding: 6px 8px; text-align: left; border-bottom: 1px solid var(--border);
+  white-space: nowrap; text-transform: uppercase; letter-spacing: 0.03em;
+}
+.vcd-table td { padding: 6px 8px; border-bottom: 1px solid #f0f0f0; }
+.vcd-table tr.even td { background: #fafbfc; }
+.vcd-table-compact td { padding: 4px 8px; }
+.vcd-td-name { font-weight: 600; }
+.vcd-td-key { font-family: 'Consolas', 'Menlo', monospace; font-size: 11px; color: #555; white-space: nowrap; }
+
+/* Tags */
+.vcd-tag {
+  display: inline-block; padding: 1px 6px; border-radius: 4px;
+  font-size: 10px; font-weight: 600; background: #f0f0f0; color: #555;
+}
+
+/* Evidence cards */
+.vcd-evidence-card {
+  border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 12px;
+  background: var(--white);
+}
+.vcd-evidence-header { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.vcd-evidence-source { font-size: 11px; color: var(--text-muted); }
+.vcd-evidence-text { font-size: 13px; line-height: 1.6; color: var(--text); }
+
+/* Validation cards */
+.vcd-validation-card {
+  border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 14px;
+  background: var(--white);
+}
+.vcd-validation-row { display: flex; align-items: center; gap: 8px; padding: 4px 0; font-size: 13px; }
+.vcd-validation-label { font-size: 11px; font-weight: 600; color: #999; min-width: 90px; }
+.vcd-validation-blocked {
+  font-size: 12px; color: var(--warning); font-weight: 600;
+  background: #fffbe6; padding: 2px 8px; border-radius: 4px; margin: 4px 0;
+}
+
 /* ── Drawer (right-side detail panel) ────────────────────────────────────────── */
 .drawer-overlay {
   position: fixed;
