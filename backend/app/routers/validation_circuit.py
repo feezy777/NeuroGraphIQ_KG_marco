@@ -153,14 +153,11 @@ async def get_run_detail(
 # ---------------------------------------------------------------------------
 
 
-@router.get(
-    "/runs/{run_id}/progress",
-    response_model=CircuitValidationProgressResponse,
-)
+@router.get("/runs/{run_id}/progress")
 async def get_progress(
     run_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
-) -> CircuitValidationProgressResponse:
+):
     """Poll validation progress."""
     try:
         return await vc.get_validation_progress(db, run_id)

@@ -71,6 +71,22 @@ class CircuitValidationRunDetail(CircuitValidationRunRead):
     results: list[CircuitValidationResultRead] = Field(default_factory=list)
 
 
+class CandidateProgressItem(BaseModel):
+    circuit_id: str
+    circuit_name: str = ""
+    path_summary: str = ""
+    completed_rule_count: int = 0
+    enabled_rule_count: int = 0
+    pass_count: int = 0
+    warning_count: int = 0
+    hard_fail_count: int = 0
+    status: str = "pending"
+    current_rule_code: str = ""
+    eligible_for_dual_review: bool = False
+    error_message: Optional[str] = None
+    blocked_reasons: list[dict] = Field(default_factory=list)
+
+
 class CircuitValidationProgressResponse(BaseModel):
     run_id: str
     status: str
@@ -96,4 +112,4 @@ class CircuitValidationProgressResponse(BaseModel):
     failed_candidate_count: int = 0
     started_at: Optional[str] = None
     elapsed_seconds: float = 0.0
-    candidate_progress: list[dict] = Field(default_factory=list)
+    candidate_progress: list[CandidateProgressItem] = Field(default_factory=list)

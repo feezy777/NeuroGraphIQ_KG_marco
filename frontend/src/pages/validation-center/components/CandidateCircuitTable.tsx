@@ -119,6 +119,35 @@ function formatConfidence(v: number): string {
   return (v * 100).toFixed(0) + '%'
 }
 
+// ── Response normalizer ───────────────────────────────────────────────────
+function safeApiResponse<T extends Record<string, any>>(data: any, defaults: T): T {
+  if (!data || typeof data !== 'object') return defaults
+  const result = { ...defaults }
+  for (const key of Object.keys(defaults)) {
+    const val = data[key]
+    if (Array.isArray(defaults[key as keyof T])) {
+      (result as any)[key] = Array.isArray(val) ? val : []
+    } else if (val !== undefined && val !== null) {
+      (result as any)[key] = val
+    }
+  }
+  return result
+}
+
+const EMPTY_PROGRESS = {
+  candidate_progress: [] as CandidateProgress[],
+  results: [] as any[],
+  eligible_candidates: [] as string[],
+  blocked_candidates: [] as string[],
+  errors: [] as string[],
+  phase: '', status: '', pass_count: 0, warning_count: 0, hard_fail_count: 0,
+  eligible_for_dual_review_count: 0, completed_candidate_count: 0,
+  blocked_candidate_count: 0, failed_candidate_count: 0,
+  elapsed_seconds: 0, expected_rule_execution_count: 0,
+  completed_rule_execution_count: 0,
+  selected_candidate_count: 0, enabled_rule_count: 12,
+}
+
 // ── Main Component ─────────────────────────────────────────────────────────
 export function CandidateCircuitTable({ granularityLevel }: Props) {
   const [items, setItems] = useState<CandidateCircuit[]>([])
@@ -136,6 +165,14 @@ export function CandidateCircuitTable({ granularityLevel }: Props) {
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const autoHandoffRef = useRef(false)
   const [expandedRow, setExpandedRow] = useState<string | null>(null)
+  const [dualReviewConfirm, setDualReviewConfirm] = useState<{
+    open: boolean
+    eligibleIds: string[]
+    eligibleCount: number
+    warningIds: string[]
+    blockCount: number
+    skipCount: number
+  } | null>(null)
 
   // Sync autoHandoffRef with state
   useEffect(() => {
@@ -223,7 +260,8 @@ export function CandidateCircuitTable({ granularityLevel }: Props) {
           try {
             const prRes = await fetch(`/api/validation/circuit/runs/${runId}/progress`)
             if (!prRes.ok) { if (pollRef.current) clearInterval(pollRef.current); return }
-            const pr = await prRes.json()
+            const prRaw = await prRes.json()
+            const pr = safeApiResponse(prRaw, EMPTY_PROGRESS)
             // After completion
             if (pr.phase === 'completed') {
               if (pollRef.current) clearInterval(pollRef.current)
@@ -495,12 +533,12 @@ export function CandidateCircuitTable({ granularityLevel }: Props) {
               )}
 
               {/* Candidate result table */}
-              {validationProgress.candidate_progress.length > 0 && (
+              {(validationProgress.candidate_progress || []).length > 0 && (
                 <div className="vpm-table-wrap">
                   <table className="vr-table">
                     <thead><tr><th>#</th><th>回路名称</th><th>规则</th><th>通过</th><th>警告</th><th>阻塞</th><th>状态</th></tr></thead>
                     <tbody>
-                      {validationProgress.candidate_progress.map((cp, i) => (
+                      {(validationProgress.candidate_progress || []).map((cp, i) => (
                         <React.Fragment key={cp.circuit_id}>
                           <tr
                             className={`vr-row vpm-row-${cp.status}${cp.status === 'blocked' ? ' vpm-row-clickable' : ''}`}
@@ -554,36 +592,23 @@ export function CandidateCircuitTable({ granularityLevel }: Props) {
                 <>
                   <span className="vpm-ft-info">已完成: {validationProgress.pass_count} 通过, {validationProgress.hard_fail_count} 阻塞 | 可双审: {validationProgress.eligible_for_dual_review_count}</span>
                   <button className="btn btn-sm btn-primary" disabled={validationProgress.eligible_for_dual_review_count === 0}
-                    onClick={async () => {
-                      const eligible = validationProgress.candidate_progress.filter(cp => cp.eligible_for_dual_review).map(cp => cp.circuit_id)
-                      if (eligible.length === 0) return
-                      if (!confirm(`送入 ${eligible.length} 条回路到双模型审核？`)) return
-                      await fetch('/api/validation/circuit/selection/dual-review', {
-                        method: 'POST', headers: {'Content-Type':'application/json'},
-                        body: JSON.stringify({circuit_ids: eligible, force_review: false})
+                    onClick={() => {
+                      const cprog = validationProgress.candidate_progress || []
+                      const eligible = cprog.filter(cp => cp.eligible_for_dual_review)
+                      const warningOnly = eligible.filter(cp => cp.status === 'warning')
+                      const blocked = cprog.filter(cp => cp.status === 'blocked')
+                      const skipped = cprog.filter(cp => !cp.eligible_for_dual_review && cp.status !== 'blocked')
+                      setDualReviewConfirm({
+                        open: true,
+                        eligibleIds: eligible.map(c => c.circuit_id),
+                        eligibleCount: eligible.length,
+                        warningIds: warningOnly.map(c => c.circuit_id),
+                        blockCount: blocked.length,
+                        skipCount: skipped.length,
                       })
-                      setValidationProgress(null)
-                      fetchData()
                     }}>
                     <Zap size={14}/> 送入双模型审核({validationProgress.eligible_for_dual_review_count})
                   </button>
-                  {validationProgress.hard_fail_count > 0 && (
-                    <button className="btn btn-sm"
-                      onClick={async () => {
-                        const blocked = validationProgress.candidate_progress.filter(cp => cp.status === 'blocked').map(cp => cp.circuit_id)
-                        if (blocked.length === 0) return
-                        const resp = await fetch('/api/validation/circuit/selection/deepseek-fix', {
-                          method: 'POST', headers: {'Content-Type':'application/json'},
-                          body: JSON.stringify({circuit_ids: blocked})
-                        })
-                        const data = await resp.json()
-                        const results = data.results || []
-                        const summary = results.map((r: any) => `${(r.circuit_name || '').slice(0,20)}: ${r.status} (${r.blocked_rule_count || 0} rules)`).join('\n')
-                        alert(`DeepSeek 分析完成:\n\n${summary || '无阻塞回路需要分析'}`)
-                      }}>
-                      🤖 DeepSeek 分析修复建议
-                    </button>
-                  )}
                   <button className="btn btn-sm" onClick={() => setValidationProgress(null)}>关闭</button>
                 </>
               )}
@@ -591,17 +616,82 @@ export function CandidateCircuitTable({ granularityLevel }: Props) {
                 <>
                   <span className="vpm-ft-error">任务失败</span>
                   <button className="btn btn-sm btn-primary" onClick={async () => {
-                    const eligible = validationProgress.candidate_progress.filter(cp => cp.status === 'failed').map(cp => cp.circuit_id)
-                    await fetch('/api/validation/circuit/selection/rule-validate', {
-                      method: 'POST', headers: {'Content-Type':'application/json'},
-                      body: JSON.stringify({circuit_ids: eligible, force_revalidate: true})
-                    })
-                    setValidationProgress(null)
-                    fetchData()
+                    try {
+                      const eligible = (validationProgress.candidate_progress || []).filter(cp => cp.status === 'failed').map(cp => cp.circuit_id)
+                      if (eligible.length === 0) return
+                      await fetch('/api/validation/circuit/selection/rule-validate', {
+                        method: 'POST', headers: {'Content-Type':'application/json'},
+                        body: JSON.stringify({circuit_ids: eligible, force_revalidate: true})
+                      })
+                      setValidationProgress(null)
+                      fetchData()
+                    } catch (e: any) {
+                      console.error('重试失败:', e)
+                      setBatchMessage(e?.message || '重试失败')
+                    }
                   }}>重试失败项</button>
                   <button className="btn btn-sm" onClick={() => setValidationProgress(null)}>关闭</button>
                 </>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Dual-review confirmation modal */}
+      {dualReviewConfirm && (
+        <div className="vw-modal-overlay" onClick={() => setDualReviewConfirm(null)}>
+          <div className="vw-modal" onClick={e => e.stopPropagation()}>
+            <div className="vw-modal-hd">
+              <h3>确认送入双模型审核</h3>
+              <button className="vw-modal-close" onClick={() => setDualReviewConfirm(null)}>x</button>
+            </div>
+            <div className="vw-modal-body">
+              <div className="vpm-cards">
+                <div className="vpm-card vpm-card-green">
+                  <span className="vpm-card-num">{dualReviewConfirm.eligibleCount}</span>
+                  <span>可双审</span>
+                </div>
+                <div className="vpm-card vpm-card-amber">
+                  <span className="vpm-card-num">{dualReviewConfirm.warningIds.length}</span>
+                  <span>仅警告</span>
+                </div>
+                <div className="vpm-card vpm-card-red">
+                  <span className="vpm-card-num">{dualReviewConfirm.blockCount}</span>
+                  <span>阻塞(跳过)</span>
+                </div>
+                <div className="vpm-card">
+                  <span className="vpm-card-num">{dualReviewConfirm.skipCount}</span>
+                  <span>跳过</span>
+                </div>
+              </div>
+              <p style={{marginTop: 12, fontSize: 13, color: 'var(--text-muted)'}}>
+                确认将 <strong>{dualReviewConfirm.eligibleCount}</strong> 条回路送入双模型审核？
+                阻塞的 {dualReviewConfirm.blockCount} 条和跳过的 {dualReviewConfirm.skipCount} 条将不会送入。
+              </p>
+            </div>
+            <div className="vw-modal-ft">
+              <button className="btn btn-sm" onClick={() => setDualReviewConfirm(null)}>取消</button>
+              <button className="btn btn-sm btn-primary" onClick={async () => {
+                try {
+                  setDualReviewConfirm(null)
+                  setBatchMessage(`正在提交 ${dualReviewConfirm.eligibleCount} 条回路到双模型审核...`)
+                  const resp = await fetch('/api/validation/circuit/selection/dual-review', {
+                    method: 'POST', headers: {'Content-Type':'application/json'},
+                    body: JSON.stringify({circuit_ids: dualReviewConfirm.eligibleIds, force_review: false})
+                  })
+                  if (!resp.ok) throw new Error(`API错误: ${resp.status}`)
+                  const data = await resp.json()
+                  setValidationProgress(null)
+                  setBatchMessage(`双模型审核已启动 (Run: ${(data.internal_run_id || '').slice(0,8)}) 共 ${data.eligible_count || 0} 条`)
+                  setTimeout(() => setBatchMessage(null), 5000)
+                  fetchData()
+                } catch (e: any) {
+                  console.error('双模型审核提交失败:', e)
+                  setBatchMessage(e?.message || '双模型审核提交失败')
+                  setTimeout(() => setBatchMessage(null), 5000)
+                }
+              }}>确认提交</button>
             </div>
           </div>
         </div>
