@@ -128,6 +128,86 @@ def parse_deepseek_diagnosis(raw_text: str) -> dict:
     }
 
 
+def compute_quality_score(
+    circuit: Any,
+    steps: list[Any],
+    region_count: int,
+) -> float:
+    """Compute 0-100 quality score for a circuit.
+
+    Dimensions: field completeness (30), provenance (20),
+    topology health (20), evidence quality (20), region association (10).
+    """
+    score = 0.0
+
+    # Field Completeness (30 pts)
+    fields_ok = 0
+    for field in ("circuit_name", "circuit_type"):
+        if getattr(circuit, field, None):
+            fields_ok += 1
+    if getattr(circuit, "source_atlas", None):
+        fields_ok += 1
+    if getattr(circuit, "evidence_text", None) and len(circuit.evidence_text or "") >= 10:
+        fields_ok += 1
+    if getattr(circuit, "description", None) and len(getattr(circuit, "description", "") or "") >= 10:
+        fields_ok += 1
+    score += (fields_ok / 5) * 30
+
+    # Provenance (20 pts)
+    prov = 0
+    if getattr(circuit, "resource_id", None):
+        prov += 7
+    if getattr(circuit, "batch_id", None):
+        prov += 7
+    if getattr(circuit, "llm_run_id", None):
+        prov += 6
+    score += prov
+
+    # Topology Health (20 pts)
+    topo = 0
+    if len(steps) >= 2:
+        topo += 5
+    if steps:
+        if steps[0].role and steps[0].role.lower() in ("origin", "source", "start", "input"):
+            topo += 5
+        if steps[-1].role and steps[-1].role.lower() in ("terminus", "target", "end", "output"):
+            topo += 5
+    valid_step_types = all(
+        s.step_type and s.step_type.lower() in {
+            "region", "region_group", "relay", "hub", "modulator",
+            "functional_stage", "unknown",
+        }
+        for s in steps
+    ) if steps else False
+    if valid_step_types:
+        topo += 5
+    score += min(topo, 20)
+
+    # Evidence Quality (20 pts)
+    ev = 0
+    circuit_ev = getattr(circuit, "evidence_text", None) or ""
+    if len(circuit_ev) >= 50:
+        ev += 10
+    elif len(circuit_ev) >= 10:
+        ev += 5
+    step_with_evidence = sum(
+        1 for s in steps if s.evidence_text and len(s.evidence_text or "") >= 10
+    )
+    if step_with_evidence >= len(steps) * 0.5:
+        ev += 10
+    elif step_with_evidence > 0:
+        ev += 5
+    score += min(ev, 20)
+
+    # Region Association (10 pts)
+    if region_count >= 2:
+        score += 10
+    elif region_count == 1:
+        score += 5
+
+    return round(min(score, 100.0), 1)
+
+
 async def build_effective_circuit(session: AsyncSession, circuit_id: uuid.UUID) -> dict:
     """Build effective circuit = source data + approved correction overlays."""
     from app.models.mirror_circuit_correction import MirrorCircuitCorrection
@@ -418,6 +498,17 @@ async def run_rule_validation(session: AsyncSession, run: MirrorCircuitValidatio
         result.rule_overall_status = "blocked" if any(r["status"] == "blocked" for r in rule_results) else \
                                       "warning" if any(r["status"] == "warning" for r in rule_results) else "passed"
         result.rule_blocked = result.rule_overall_status == "blocked"
+
+        # Compute quality score
+        from app.models.mirror_kg import MirrorCircuitRegion
+        region_count_res = await session.execute(
+            select(func.count()).select_from(MirrorCircuitRegion).where(
+                MirrorCircuitRegion.circuit_id == result.target_id,
+            )
+        )
+        region_count = region_count_res.scalar_one()
+        qs = compute_quality_score(circuit, steps, region_count)
+        circuit.quality_score = qs
 
     run.rule_validation_status = "completed"
     rule_count = len(HARD_RULES + SOFT_RULES)
