@@ -211,6 +211,7 @@ async def list_candidates(
     topology_type: Optional[str] = Query(None, description="Filter by topology/circuit type"),
     min_confidence: Optional[float] = Query(None, ge=0, le=1, description="Minimum confidence"),
     max_confidence: Optional[float] = Query(None, ge=0, le=1, description="Maximum confidence"),
+    min_quality_score: Optional[float] = Query(None, ge=0, le=100, description="Minimum quality score"),
     min_evidence: Optional[int] = Query(None, ge=0, description="Min evidence length"),
     search: Optional[str] = Query(None, description="Search circuit_name"),
     rule_status: Optional[str] = Query(None, description="Rule overall status"),
@@ -249,6 +250,9 @@ async def list_candidates(
     if min_evidence is not None:
         q = q.where(func.length(MirrorRegionCircuit.evidence_text) >= min_evidence)
         count_q = count_q.where(func.length(MirrorRegionCircuit.evidence_text) >= min_evidence)
+    if min_quality_score is not None:
+        q = q.where(MirrorRegionCircuit.quality_score >= min_quality_score)
+        count_q = count_q.where(MirrorRegionCircuit.quality_score >= min_quality_score)
     if review_status:
         q = q.where(MirrorRegionCircuit.review_status == review_status)
         count_q = count_q.where(MirrorRegionCircuit.review_status == review_status)
@@ -312,6 +316,7 @@ async def list_candidates(
             "reviewer_a_decision": reviewer_a_decision,
             "reviewer_b_decision": reviewer_b_decision,
             "adjudication_status": adjudication_status,
+            "quality_score": r.quality_score or 0.0,
         })
 
     return {"items": items, "total": total}
