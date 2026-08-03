@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
+import { QualityScoreBadge } from './QualityScoreBadge'
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -9,6 +10,7 @@ export interface CircuitItem {
   circuit_type: string
   step_count: number
   confidence: number
+  quality_score?: number
   review_status: string
   promotion_status: string
   rule_overall_status?: string
@@ -162,6 +164,7 @@ export function CircuitSelector({
                 <th style={{ width: 80 }}>类型</th>
                 <th style={{ width: 48, textAlign: 'center' }}>步骤</th>
                 <th style={{ width: 56 }}>置信度</th>
+                <th style={{ width: 52 }}>质量</th>
                 <th style={{ width: 56 }}>规则</th>
                 <th style={{ width: 64 }}>审核</th>
               </tr>
@@ -193,6 +196,9 @@ export function CircuitSelector({
                     <td><span className="vr-badge" style={{ fontSize: 11 }}>{item.circuit_type}</span></td>
                     <td style={{ textAlign: 'center', fontSize: 13 }}>{item.step_count}</td>
                     <td style={{ fontSize: 12 }}>{formatConfidence(item.confidence)}</td>
+                    <td style={{ fontSize: 12 }}>
+                      <QualityScoreBadge score={item.quality_score || 0} />
+                    </td>
                     <td>
                       <span style={{
                         display: 'inline-block', padding: '1px 6px', borderRadius: 8,

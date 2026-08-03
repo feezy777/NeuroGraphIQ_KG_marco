@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { RefreshCw, FileText, Play, Zap } from 'lucide-react'
+import { RefreshCw, FileText, Play, Zap, Sparkles } from 'lucide-react'
 import { CircuitSelector } from './CircuitSelector'
 
 // ── Types ──────────────────────────────────────────────────────────────────
@@ -564,6 +564,32 @@ function StartValidation({ granularityLevel }: { granularityLevel?: string }) {
                       <RefreshCw size={14} /> 重试失败项({vp.failed_candidate_count})
                     </button>
                   )}
+                  <button className="btn btn-sm btn-outline"
+                    onClick={async () => {
+                      const totalGaps = vp.candidate_progress.reduce(
+                        (sum, cp) => sum + (12 - cp.completed_rule_count || 0), 0
+                      )
+                      const prevVp = { ...vp }
+                      setVp(null)
+                      setMessage(`正在启动数据增强 (${totalGaps} 个缺失字段)...`)
+                      try {
+                        const enhanceResp = await fetch('/api/validation/circuit/selection/enhance', {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ run_id: prevVp.runId, tier2_enabled: true }),
+                        })
+                        if (!enhanceResp.ok) throw new Error(`API: ${enhanceResp.status}`)
+                        const enhanceData = await enhanceResp.json()
+                        setMessage(`✅ 数据增强完成: 自动修复 ${enhanceData.tier1_fixes?.total || 0} 项, LLM建议 ${enhanceData.tier2_suggestions?.total || 0} 条`)
+                        setTimeout(() => setMessage(null), 8000)
+                      } catch (e: unknown) {
+                        setMessage(`增强失败: ${e instanceof Error ? e.message : '未知错误'}`)
+                        setTimeout(() => setMessage(null), 5000)
+                      }
+                    }}>
+                    <Sparkles size={14} style={{ marginRight: 4 }} />
+                    数据增强({vp.selected_candidate_count})
+                  </button>
                   <button className="btn btn-sm" onClick={() => setVp(null)}>关闭</button>
                 </>
               )}
