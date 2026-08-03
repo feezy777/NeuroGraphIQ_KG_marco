@@ -21,6 +21,7 @@ from app.routers import (
     candidate_pool,
     connection_pool,
     database_admin,
+    enhancement,
     file_normalization,
     final_db_query,
     human_review,
@@ -305,6 +306,11 @@ app.include_router(
     validation_circuit.router,
     prefix="/api/validation/circuit",
     tags=["Circuit Validation"],
+)
+app.include_router(
+    enhancement.router,
+    prefix="/api/validation/circuit",
+    tags=["Circuit Validation Enhancement"],
 )
 app.include_router(
     system_admin.router, prefix="/api/system", tags=["System Admin"]
