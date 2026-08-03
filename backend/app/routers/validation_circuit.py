@@ -871,14 +871,22 @@ async def selection_deepseek_fix(
 
         return "auto_safe"
 
-    # ── Main loop ─────────────────────────────────────────────────────────
-    results = []
-    diagnosed_ids = []
+    # ── Phase 1: Pre-scan — load all circuit data (DB reads are fast) ──────
+    _PreScanItem = tuple[
+        str,               # cid_str
+        uuid.UUID,         # cid
+        Any,               # MirrorRegionCircuit
+        Any,               # MirrorCircuitValidationResult
+        list[Any],         # MirrorCircuitStep
+        list[dict],        # blocked_rules
+    ]
+    pre_scan: list[_PreScanItem] = []
+    results: list[dict] = []
+    diagnosed_ids: list[str] = []
     total_corrections_created = 0
 
     for cid_str in circuit_ids:
         cid = uuid.UUID(cid_str)
-        correction_count = 0
 
         circuit = await db.get(MirrorRegionCircuit, cid)
         if circuit is None:
@@ -889,7 +897,6 @@ async def selection_deepseek_fix(
             })
             continue
 
-        # Get the latest validation result for this circuit
         val = (await db.execute(
             select(MirrorCircuitValidationResult).where(
                 MirrorCircuitValidationResult.target_id == cid,
@@ -905,7 +912,6 @@ async def selection_deepseek_fix(
             })
             continue
 
-        # Clear old corrections if force_refresh
         if force_refresh:
             old = list((await db.execute(
                 select(MirrorCircuitCorrection).where(
@@ -920,18 +926,20 @@ async def selection_deepseek_fix(
             if r.get("status") == "blocked"
         ]
 
-        # Get steps for context
         steps = list((await db.execute(
             select(MirrorCircuitStep).where(
                 MirrorCircuitStep.circuit_id == cid,
             ).order_by(MirrorCircuitStep.step_order)
         )).scalars().all())
 
-        # Call DeepSeek for diagnosis
-        try:
-            provider = get_llm_provider("deepseek")
+        pre_scan.append((cid_str, cid, circuit, val, steps, blocked_rules))
 
-            system = """你是 NeuroGraphIQ 回路数据质量诊断专家。对每条阻塞规则：
+    # ── Phase 2: Parallel DeepSeek calls (semaphore-limited) ─────────────────
+    if pre_scan:
+        provider = get_llm_provider("deepseek")
+        sem = asyncio.Semaphore(3)
+
+        system = """你是 NeuroGraphIQ 回路数据质量诊断专家。对每条阻塞规则：
 1. 诊断根因（为什么失败）
 2. 定位受影响字段
 3. 评估可修复性：
@@ -953,7 +961,7 @@ async def selection_deepseek_fix(
     "repairability":"auto_safe|manual_required|reextract_required|unrecoverable","confidence":0.0,"uncertainties":[]
   }],
   "suggested_changes":[{
-    "rule_result_id":"","field_path":"","original_value":null,"suggested_value":null,
+    "rule_result_id":"","rule_code":"","field_path":"","original_value":null,"suggested_value":null,
     "reason":"","correction_type":"metadata|structural|reextract",
     "repairability":"auto_safe|manual_required|reextract_required|unrecoverable",
     "authoritative_source":"","safe_to_apply_after_verification":false,"confidence":0.0
@@ -962,7 +970,10 @@ async def selection_deepseek_fix(
   "rejection_recommended":false,"uncertainties":[]
 }"""
 
-            # Build rich context for DeepSeek
+        async def _call_deepseek(
+            cid_str: str, circuit: Any, blocked_rules: list[dict], steps: list[Any],
+        ) -> tuple[str, dict, Any]:
+            """Call DeepSeek for one circuit. Returns (cid_str, diagnosis_data, resp)."""
             steps_json = [
                 {
                     "order": s.step_order,
@@ -974,7 +985,6 @@ async def selection_deepseek_fix(
                 for s in steps
             ]
 
-            # Build circuit context
             circuit_context = {
                 "id": str(circuit.id),
                 "circuit_name": circuit.circuit_name,
@@ -998,54 +1008,86 @@ async def selection_deepseek_fix(
                     for r in blocked_rules
                 ],
                 "step_count": len(steps),
-                "steps": steps_json[:15],  # Limit to 15 steps for token efficiency
+                "steps": steps_json[:15],
             }, ensure_ascii=False, default=str)
 
-            resp = await provider.complete_json(
-                model="deepseek-chat",
-                system_prompt=system,
-                user_prompt=user,
-                temperature=0.3,
-                max_tokens=4000,
-            )
+            async with sem:
+                resp = await provider.complete_json(
+                    model="deepseek-chat",
+                    system_prompt=system,
+                    user_prompt=user,
+                    temperature=0.3,
+                    max_tokens=4000,
+                )
 
-            diagnosis_data = resp.parsed_json if resp.parsed_json else {
-                "circuit_id": cid_str,
-                "overall_diagnosis": "Failed to parse DeepSeek response",
-                "overall_repairability": "manual_required",
-                "rule_diagnostics": [],
-                "suggested_changes": [],
-                "revalidation_recommended": True,
-                "reextraction_recommended": False,
-                "rejection_recommended": False,
-                "uncertainties": ["Raw response did not parse as JSON"],
-            }
+            # ── Parse diagnosis (provider parser → service fallback) ──────────
+            if resp.parsed_json:
+                diagnosis_data = resp.parsed_json
+            else:
+                fallback = vc.parse_deepseek_diagnosis(resp.raw_text or "")
+                if not fallback.get("parse_failed"):
+                    diagnosis_data = fallback
+                else:
+                    diagnosis_data = {
+                        "circuit_id": cid_str,
+                        "overall_diagnosis": "Failed to parse DeepSeek response",
+                        "overall_repairability": "manual_required",
+                        "rule_diagnostics": [],
+                        "suggested_changes": [],
+                        "revalidation_recommended": True,
+                        "reextraction_recommended": False,
+                        "rejection_recommended": False,
+                        "uncertainties": ["Raw response did not parse as JSON"],
+                    }
 
-            # Persist full diagnosis to the validation result record
+            return cid_str, diagnosis_data, resp
+
+        # Run all DeepSeek calls in parallel (max 3 concurrent)
+        deepseek_results = await asyncio.gather(
+            *[
+                _call_deepseek(cid_str, circuit, blocked_rules, steps)
+                for cid_str, _cid, circuit, _val, steps, blocked_rules in pre_scan
+            ],
+            return_exceptions=True,
+        )
+
+        # ── Phase 3: Process results, create corrections, flush per circuit ──
+        for i, item in enumerate(deepseek_results):
+            cid_str, cid, circuit, val, steps, blocked_rules = pre_scan[i]
+
+            if isinstance(item, Exception):
+                results.append({
+                    "circuit_id": cid_str,
+                    "circuit_name": circuit.circuit_name,
+                    "status": "error",
+                    "reason": str(item)[:500],
+                })
+                continue
+
+            _, diagnosis_data, resp = item
+            correction_count = 0
+
+            # Persist diagnosis to validation result
             val.deepseek_diagnosis_json = diagnosis_data
             diagnosed_ids.append(cid_str)
 
-            # Create MirrorCircuitCorrection records for each suggested change
+            # Create MirrorCircuitCorrection records
             suggested_changes = diagnosis_data.get("suggested_changes", [])
-            corrections_created = []
+            corrections_created: list[dict] = []
 
             for change in suggested_changes:
                 rule_code = change.get("rule_code", "unknown")
                 field_path = change.get("field_path", "")
                 original_val = change.get("original_value")
                 suggested_val = change.get("suggested_value")
-                reason = change.get("reason", "")
 
-                # Classify repairability if not set by DeepSeek
                 repairability = change.get(
                     "repairability",
                     _classify_repairability(rule_code, change),
                 )
 
-                # Run deterministic validation
                 det_status, det_message = await _deterministic_validate_change(change)
 
-                # Create correction record
                 correction = MirrorCircuitCorrection(
                     id=uuid.uuid4(),
                     circuit_id=cid,
@@ -1078,7 +1120,9 @@ async def selection_deepseek_fix(
 
             total_corrections_created += correction_count
 
-            # Count by repairability
+            # Commit per circuit so partial progress is never lost
+            await db.flush()
+
             repairability_counts: dict[str, int] = {}
             for c in corrections_created:
                 r = c["repairability"]
@@ -1110,14 +1154,6 @@ async def selection_deepseek_fix(
                 } if resp.usage else None,
             })
 
-        except Exception as e:
-            results.append({
-                "circuit_id": cid_str,
-                "circuit_name": circuit.circuit_name,
-                "status": "error",
-                "reason": str(e)[:500],
-            })
-
     await db.commit()
 
     return {
@@ -1126,6 +1162,301 @@ async def selection_deepseek_fix(
         "diagnosed_circuit_ids": diagnosed_ids,
         "total_corrections_created": total_corrections_created,
         "results": results,
+    }
+
+
+# ---------------------------------------------------------------------------
+# POST /api/validation/circuit/selection/region-match
+# ---------------------------------------------------------------------------
+
+
+@router.post("/selection/region-match")
+async def selection_region_match(
+    body: dict,
+    db: AsyncSession = Depends(get_db),
+):
+    """Match circuit steps to candidate brain regions and create associations.
+
+    Two phases:
+    1. **Direct fix** — steps that already have ``region_candidate_id`` but
+       no ``MirrorCircuitRegion`` record → create the record directly.
+    2. **LLM match** — steps without ``region_candidate_id`` → DeepSeek
+       matches step names to candidate brain regions in the same granularity,
+       then creates ``MirrorCircuitRegion`` records.
+
+    Returns a coverage report (before/after per granularity).
+    """
+    from app.models.mirror_kg import MirrorCircuitRegion, MirrorRegionCircuit
+    from app.models.mirror_macro_clinical import MirrorCircuitStep
+    from app.models.candidate import CandidateBrainRegion
+
+    circuit_ids = body.get("circuit_ids") or []
+    granularity_filter = body.get("granularity_level")
+    dry_run = body.get("dry_run", False)
+
+    # ── Build circuit query ────────────────────────────────────────────────
+    q = select(MirrorRegionCircuit)
+    if circuit_ids:
+        q = q.where(MirrorRegionCircuit.id.in_(
+            [uuid.UUID(c) for c in circuit_ids]
+        ))
+    if granularity_filter and granularity_filter != "all":
+        q = q.where(MirrorRegionCircuit.granularity_level == granularity_filter)
+    circuits = list((await db.execute(q)).scalars().all())
+
+    # ── Phase 1: Direct fix (steps already have region_candidate_id) ────────
+    direct_fixed = 0
+    direct_skipped = 0
+
+    for circuit in circuits:
+        steps = list((await db.execute(
+            select(MirrorCircuitStep).where(
+                MirrorCircuitStep.circuit_id == circuit.id,
+            ).order_by(MirrorCircuitStep.step_order)
+        )).scalars().all())
+
+        existing_regions = list((await db.execute(
+            select(MirrorCircuitRegion).where(
+                MirrorCircuitRegion.circuit_id == circuit.id,
+            )
+        )).scalars().all())
+
+        existing_candidate_ids = {
+            r.region_candidate_id for r in existing_regions
+            if r.region_candidate_id
+        }
+
+        for i, step in enumerate(steps):
+            cid = step.region_candidate_id
+            if cid and cid not in existing_candidate_ids:
+                if not dry_run:
+                    db.add(MirrorCircuitRegion(
+                        id=uuid.uuid4(),
+                        circuit_id=circuit.id,
+                        region_candidate_id=cid,
+                        role=step.role or (
+                            "origin" if i == 0 else
+                            "terminus" if i == len(steps) - 1 else
+                            "relay"
+                        ),
+                        sort_order=i,
+                    ))
+                existing_candidate_ids.add(cid)
+                direct_fixed += 1
+            elif not cid:
+                direct_skipped += 1  # needs LLM
+
+    if not dry_run:
+        await db.flush()
+
+    # ── Phase 2: LLM match (steps without region_candidate_id) ─────────────
+    llm_matched = 0
+    llm_failed = 0
+    llm_errors: list[dict] = []
+
+    # Collect circuits that need LLM matching (per-granularity batched)
+    needs_llm: list[tuple[uuid.UUID, str, str, list[dict]]] = []
+    for circuit in circuits:
+        steps = list((await db.execute(
+            select(MirrorCircuitStep).where(
+                MirrorCircuitStep.circuit_id == circuit.id,
+                MirrorCircuitStep.region_candidate_id.is_(None),
+            ).order_by(MirrorCircuitStep.step_order)
+        )).scalars().all())
+
+        if not steps:
+            continue
+
+        steps_data = [
+            {"order": s.step_order, "name": s.step_name,
+             "type": s.step_type, "role": s.role}
+            for s in steps
+        ]
+        needs_llm.append((
+            circuit.id, circuit.circuit_name,
+            circuit.granularity_level, steps_data,
+        ))
+
+    if needs_llm:
+        provider = get_llm_provider("deepseek")
+        sem = asyncio.Semaphore(3)
+
+        # Pre-load candidate regions per granularity (once, reused)
+        gran_candidates: dict[str, list[dict]] = {}
+        for _, _, granularity, _ in needs_llm:
+            if granularity not in gran_candidates:
+                cands = list((await db.execute(
+                    select(CandidateBrainRegion).where(
+                        CandidateBrainRegion.granularity_level == granularity,
+                    ).limit(200)
+                )).scalars().all())
+                gran_candidates[granularity] = [
+                    {
+                        "id": str(c.id),
+                        "name": getattr(c, "en_name", None) or getattr(c, "raw_name", str(c.id)[:12]),
+                        "atlas": getattr(c, "source_atlas", ""),
+                    }
+                    for c in cands[:100]
+                ]
+
+        async def _call_deepseek_match(
+            cid: uuid.UUID, name: str, gran: str, steps_data: list[dict],
+        ) -> dict:
+            """DeepSeek call ONLY — no DB. Returns parsed matches."""
+            candidates_json = gran_candidates.get(gran, [])
+            if not candidates_json:
+                return {"matches": [], "total": len(steps_data),
+                        "error": f"No candidates for {gran}"}
+
+            steps_json = [
+                {"order": s["order"], "name": s["name"],
+                 "type": s["type"], "role": s["role"]}
+                for s in steps_data[:20]
+            ]
+
+            system = """你是脑图谱数据匹配专家。回路步骤需匹配到最合适的候选脑区ID。
+规则: 步骤名与候选区名称(英文/中文)精确或模糊匹配; 考虑步骤角色; 同粒度匹配; 不确定返回null。
+返回JSON: {"matches": [{"step_order":0,"candidate_id":"uuid-or-null","confidence":0.0,"reason":""}]}"""
+
+            user = json.dumps({
+                "circuit_name": name, "granularity_level": gran,
+                "steps": steps_json, "candidates": candidates_json,
+            }, ensure_ascii=False, default=str)
+
+            async with sem:
+                resp = await provider.complete_json(
+                    model="deepseek-chat", system_prompt=system,
+                    user_prompt=user, temperature=0.1, max_tokens=2000,
+                )
+
+            diagnosis = resp.parsed_json
+            if not diagnosis:
+                fallback = vc.parse_deepseek_diagnosis(resp.raw_text or "")
+                diagnosis = fallback if not fallback.get("parse_failed") else {}
+
+            if "step_order" in diagnosis and "candidate_id" in diagnosis:
+                matches = [diagnosis]
+            else:
+                matches = diagnosis.get("matches", [])
+            return {"matches": matches, "total": len(steps_data)}
+
+        # Parallel DeepSeek (no DB inside tasks → no pool exhaustion)
+        results_raw = await asyncio.gather(
+            *[_call_deepseek_match(cid, name, gran, sd)
+              for cid, name, gran, sd in needs_llm],
+            return_exceptions=True,
+        )
+
+        # Sequential DB writes in main session (fast)
+        for i, item in enumerate(results_raw):
+            if isinstance(item, Exception):
+                llm_failed += len(needs_llm[i][3])
+                llm_errors.append({"error": str(item)[:200]})
+                continue
+            if not isinstance(item, dict):
+                continue
+
+            circuit_id = needs_llm[i][0]
+            matches = item.get("matches", [])
+            total_steps = item.get("total", 0)
+            matched_count = 0
+            if item.get("error"):
+                llm_errors.append(item)
+
+            db_steps = list((await db.execute(
+                select(MirrorCircuitStep).where(
+                    MirrorCircuitStep.circuit_id == circuit_id,
+                    MirrorCircuitStep.region_candidate_id.is_(None),
+                ).order_by(MirrorCircuitStep.step_order)
+            )).scalars().all())
+
+            for m in matches:
+                step_order = m.get("step_order")
+                candidate_id_str = m.get("candidate_id")
+                if step_order is None or not candidate_id_str:
+                    continue
+                target_step = next(
+                    (s for s in db_steps if s.step_order == step_order), None)
+                if target_step is None:
+                    continue
+                try:
+                    cid = uuid.UUID(candidate_id_str)
+                except (ValueError, TypeError):
+                    continue
+                candidate = await db.get(CandidateBrainRegion, cid)
+                if candidate is None:
+                    continue
+                if not dry_run:
+                    target_step.region_candidate_id = cid
+                    db.add(MirrorCircuitRegion(
+                        id=uuid.uuid4(), circuit_id=circuit_id,
+                        region_candidate_id=cid,
+                        role=target_step.role or "relay",
+                        sort_order=target_step.step_order,
+                    ))
+                matched_count += 1
+
+            llm_matched += matched_count
+            llm_failed += total_steps - matched_count
+
+        if not dry_run and llm_matched > 0:
+            await db.flush()
+
+    if not dry_run:
+        await db.commit()
+
+    # ── Build coverage report ──────────────────────────────────────────────
+    report_rows = []
+    for circuit in circuits:
+        region_count = (await db.execute(
+            select(func.count()).select_from(MirrorCircuitRegion).where(
+                MirrorCircuitRegion.circuit_id == circuit.id,
+            )
+        )).scalar_one()
+
+        step_count = (await db.execute(
+            select(func.count()).select_from(MirrorCircuitStep).where(
+                MirrorCircuitStep.circuit_id == circuit.id,
+            )
+        )).scalar_one()
+
+        report_rows.append({
+            "granularity_level": circuit.granularity_level,
+            "circuit_id": str(circuit.id),
+            "region_count": region_count,
+            "step_count": step_count,
+            "coverage_pct": round(region_count / max(step_count, 1) * 100, 1),
+        })
+
+    # Aggregate by granularity
+    by_gran: dict[str, dict] = {}
+    for r in report_rows:
+        g = r["granularity_level"]
+        if g not in by_gran:
+            by_gran[g] = {"total": 0, "with_regions": 0, "circuit_count": 0}
+        by_gran[g]["total"] += 1
+        by_gran[g]["circuit_count"] += 1
+        if r["region_count"] >= 2:
+            by_gran[g]["with_regions"] += 1
+
+    summary = {}
+    for g, d in by_gran.items():
+        summary[g] = {
+            "total_circuits": d["total"],
+            "circuits_with_regions": d["with_regions"],
+            "circuits_missing_regions": d["total"] - d["with_regions"],
+            "coverage_pct": round(d["with_regions"] / max(d["total"], 1) * 100, 1),
+        }
+
+    return {
+        "dry_run": dry_run,
+        "phase1_direct_fix": direct_fixed,
+        "phase1_needs_llm": direct_skipped,
+        "phase2_llm_matched": llm_matched,
+        "phase2_llm_failed": llm_failed,
+        "phase2_llm_errors": llm_errors[:10],
+        "coverage_by_granularity": summary,
+        "coverage_details": report_rows,
     }
 
 
@@ -1731,6 +2062,107 @@ async def get_corrections(
     }
 
 
+async def _apply_correction_to_source(
+    db: AsyncSession, corr: Any,
+) -> tuple[bool, str]:
+    """Apply an approved correction to the source mirror table.
+
+    Parses ``field_path`` to determine the target table/column and
+    applies the approved (or suggested) value directly.
+
+    Returns (applied: bool, message: str).
+    """
+    from app.models.mirror_kg import MirrorRegionCircuit
+    from app.models.mirror_macro_clinical import MirrorCircuitStep
+
+    field_path = corr.field_path
+    approved = corr.approved_value
+    suggested = corr.suggested_value
+
+    # Resolve the value to apply
+    raw = approved or suggested
+    if raw is None:
+        return False, "No value to apply (approved_value and suggested_value are both None)"
+
+    # Unwrap {"value": ...} wrapper used during creation
+    if isinstance(raw, dict) and set(raw.keys()) == {"value"}:
+        value = raw["value"]
+    else:
+        value = raw
+
+    parts = field_path.split(".")
+
+    # Known UUID fields — must validate before setattr to avoid DB errors
+    _UUID_FIELDS = {
+        "id", "resource_id", "batch_id", "llm_run_id",
+        "canonical_start_region_id", "canonical_end_region_id",
+        "region_candidate_id", "region_final_id",
+    }
+
+    def _validate_field_value(field_name: str, val: Any) -> tuple[Any, str | None]:
+        """Validate/coerce the value for the target field. Returns (safe_value, error_or_None)."""
+        if field_name in _UUID_FIELDS and isinstance(val, str):
+            try:
+                uuid.UUID(val)
+                return val, None
+            except (ValueError, TypeError):
+                return None, f"Cannot set UUID field '{field_name}' to non-UUID value: {str(val)[:80]}"
+        return val, None
+
+    def _safe_setattr(obj: Any, field_name: str, val: Any) -> tuple[bool, str]:
+        """Validate then set attribute. Returns (ok, message)."""
+        safe_val, err = _validate_field_value(field_name, val)
+        if err:
+            return False, err
+        try:
+            setattr(obj, field_name, safe_val)
+            return True, f"Applied {field_name} = {str(safe_val)[:100]}"
+        except Exception as exc:
+            return False, f"setattr failed for '{field_name}': {exc}"
+
+    # ── Circuit-level field ──────────────────────────────────────────────
+    if parts[0] == "circuit":
+        field_name = parts[-1]
+        circuit = await db.get(MirrorRegionCircuit, corr.circuit_id)
+        if circuit is None:
+            return False, f"Circuit {corr.circuit_id} not found"
+        if not hasattr(circuit, field_name):
+            return False, f"Circuit has no attribute '{field_name}'"
+        ok, msg = _safe_setattr(circuit, field_name, value)
+        return ok, msg
+
+    # ── Step-level field: steps.N.field_name ──────────────────────────────
+    if parts[0] == "steps" and len(parts) >= 3:
+        try:
+            step_order = int(parts[1])
+        except (ValueError, IndexError):
+            return False, f"Invalid step order in field_path: {field_path}"
+        field_name = parts[2]
+
+        steps = list((await db.execute(
+            select(MirrorCircuitStep).where(
+                MirrorCircuitStep.circuit_id == corr.circuit_id,
+                MirrorCircuitStep.step_order == step_order,
+            )
+        )).scalars().all())
+
+        if not steps:
+            return False, f"Step order={step_order} not found for circuit {corr.circuit_id}"
+        if not hasattr(steps[0], field_name):
+            return False, f"MirrorCircuitStep has no attribute '{field_name}'"
+
+        ok, msg = _safe_setattr(steps[0], field_name, value)
+        return ok, msg
+
+    # ── Direct field name (no prefix) → try circuit ───────────────────────
+    circuit = await db.get(MirrorRegionCircuit, corr.circuit_id)
+    if circuit is not None and hasattr(circuit, field_path):
+        ok, msg = _safe_setattr(circuit, field_path, value)
+        return ok, msg
+
+    return False, f"Unsupported field_path format: {field_path}"
+
+
 @router.post("/corrections/{correction_id}/approve")
 async def approve_correction(
     correction_id: uuid.UUID,
@@ -1739,8 +2171,9 @@ async def approve_correction(
 ):
     """Approve a proposed correction.
 
-    Sets approval_status='approved' and stores the approved value,
-    reviewer identity, and optional reason.
+    Sets approval_status='approved', stores the approved value +
+    reviewer identity, AND applies the correction to the source
+    mirror table so that revalidation sees the corrected data.
     """
     from app.models.mirror_circuit_correction import MirrorCircuitCorrection
 
@@ -1753,11 +2186,17 @@ async def approve_correction(
     corr.approved_by = body.get("reviewer", "admin")
     corr.approved_at = datetime.now(timezone.utc)
     corr.approval_reason = body.get("reason", "")
+
+    # Apply correction to the source mirror table
+    applied, apply_msg = await _apply_correction_to_source(db, corr)
+
     await db.commit()
     await db.refresh(corr)
     return {
         "status": "approved",
         "correction_id": str(correction_id),
+        "applied_to_source": applied,
+        "apply_message": apply_msg,
     }
 
 

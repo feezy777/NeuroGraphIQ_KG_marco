@@ -191,6 +191,16 @@ export function CandidateCircuitTable({ granularityLevel }: Props) {
     autoHandoffRef.current = validationProgress?.autoHandoff || false
   }, [validationProgress?.autoHandoff])
 
+  // Cleanup polling on unmount
+  useEffect(() => {
+    return () => {
+      if (pollRef.current) {
+        clearInterval(pollRef.current)
+        pollRef.current = null
+      }
+    }
+  }, [])
+
   const pageSize = 25
 
   // Update granFilter when granularityLevel prop changes

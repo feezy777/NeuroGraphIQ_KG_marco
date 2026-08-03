@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { Zap, CheckCircle, XCircle, AlertTriangle, RefreshCw, FileSearch } from 'lucide-react'
 
 // ── Types ──────────────────────────────────────────────────────────────────
@@ -160,6 +160,9 @@ export function RepairModal({ circuitIds, circuitNames, onClose, onRevalidationC
   const [selectedCorrections, setSelectedCorrections] = useState<Set<string>>(new Set())
   const [revalidationStatus, setRevalidationStatus] = useState<string | null>(null)
   const [revalidationRunId, setRevalidationRunId] = useState<string | null>(null)
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const pollCountRef = useRef(0)
+  const MAX_POLL_ATTEMPTS = 150  // 5 minutes at 2s intervals
 
   if (safeCircuitIds.length === 0) return null
   const currentCircuitId = safeCircuitIds[selectedCircuitIdx]
@@ -297,6 +300,16 @@ export function RepairModal({ circuitIds, circuitNames, onClose, onRevalidationC
     setTimeout(() => setActionMsg(null), 3000)
   }
 
+  // ── Cleanup polling on unmount ─────────────────────────────────────────
+  useEffect(() => {
+    return () => {
+      if (pollRef.current) {
+        clearInterval(pollRef.current)
+        pollRef.current = null
+      }
+    }
+  }, [])
+
   // ── Revalidation ────────────────────────────────────────────────────────
 
   const handleRevalidate = async () => {
@@ -311,25 +324,44 @@ export function RepairModal({ circuitIds, circuitNames, onClose, onRevalidationC
       setRevalidationStatus('running')
       onRevalidationComplete?.()
 
-      // Poll for completion
-      const pollInterval = setInterval(async () => {
+      // Clear any existing poll
+      if (pollRef.current) {
+        clearInterval(pollRef.current)
+      }
+      pollCountRef.current = 0
+
+      // Poll for completion (with max attempts timeout)
+      pollRef.current = setInterval(async () => {
+        pollCountRef.current++
+        if (pollCountRef.current > MAX_POLL_ATTEMPTS) {
+          clearInterval(pollRef.current!)
+          pollRef.current = null
+          setRevalidationStatus('error')
+          setActionMsg('重新验证超时（超过5分钟）')
+          setTimeout(() => setActionMsg(null), 5000)
+          return
+        }
         try {
           const prRes = await fetch(`/api/validation/circuit/runs/${data.internal_run_id}/progress`)
           if (!prRes.ok) {
-            clearInterval(pollInterval)
+            clearInterval(pollRef.current!)
+            pollRef.current = null
             setRevalidationStatus('error')
             return
           }
           const pr = await prRes.json()
           if (pr.phase === 'completed') {
-            clearInterval(pollInterval)
+            clearInterval(pollRef.current!)
+            pollRef.current = null
             setRevalidationStatus('completed')
           } else if (pr.phase === 'failed' || pr.status === 'failed' || pr.status === 'cancelled') {
-            clearInterval(pollInterval)
+            clearInterval(pollRef.current!)
+            pollRef.current = null
             setRevalidationStatus('failed')
           }
         } catch {
-          clearInterval(pollInterval)
+          clearInterval(pollRef.current!)
+          pollRef.current = null
           setRevalidationStatus('error')
         }
       }, 2000)
