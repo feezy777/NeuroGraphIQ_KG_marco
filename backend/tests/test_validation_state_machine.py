@@ -366,3 +366,75 @@ class TestRuleSeverityPolicyCompleteness:
         assert set(RULE_SEVERITY_POLICY.keys()) == expected_rules, (
             f"Missing from policy: {expected_rules - set(RULE_SEVERITY_POLICY.keys())}"
         )
+
+
+# ── Enhancement Engine Tests ──────────────────────────────────────────────
+
+
+def test_enhancement_endpoint_loads():
+    """Enhancement router is registered and loads without errors."""
+    from app.routers.enhancement import router
+    assert len(router.routes) >= 3
+
+
+def test_quality_score_computation():
+    """compute_quality_score returns valid 0-100 range."""
+    from app.services.mirror_circuit_validation_service import compute_quality_score
+
+    class FakeCircuit:
+        circuit_name = "test"
+        circuit_type = "feedforward"
+        source_atlas = "AAL3"
+        evidence_text = "Evidence text long enough for scoring purposes"
+        description = "A test circuit description"
+        resource_id = None
+        batch_id = None
+        llm_run_id = None
+
+    class FakeStep:
+        def __init__(self, order, role, step_type, evidence=None):
+            self.step_order = order
+            self.role = role
+            self.step_type = step_type
+            self.evidence_text = evidence
+
+    circuit = FakeCircuit()
+    steps = [
+        FakeStep(1, "origin", "region", "Some evidence"),
+        FakeStep(2, "terminus", "region", "More evidence"),
+    ]
+
+    score = compute_quality_score(circuit, steps, 2)
+    assert 0 <= score <= 100
+    # Should get field completeness(30) + moderate topo + good evidence + region(10)
+    assert score >= 40, f"Expected score >= 40, got {score}"
+
+
+def test_quality_score_empty_circuit():
+    """compute_quality_score returns low score for empty circuit."""
+    from app.services.mirror_circuit_validation_service import compute_quality_score
+
+    class FakeCircuit:
+        circuit_name = None
+        circuit_type = None
+        source_atlas = None
+        evidence_text = None
+        description = None
+        resource_id = None
+        batch_id = None
+        llm_run_id = None
+
+    class FakeStep:
+        def __init__(self, order, role, step_type):
+            self.step_order = order
+            self.role = role
+            self.step_type = step_type
+            self.evidence_text = None
+
+    circuit = FakeCircuit()
+    steps = [
+        FakeStep(1, None, None),
+    ]
+
+    score = compute_quality_score(circuit, steps, 0)
+    assert 0 <= score <= 30, f"Expected low score for empty circuit, got {score}"
