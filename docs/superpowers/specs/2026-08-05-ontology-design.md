@@ -1,4 +1,4 @@
-# 本体层设计（Phase 1：质量控制优先）
+# 本体层与论文证据验证设计（Phase 1：质量控制优先）
 
 > 状态：待用户评审
 > 日期：2026-08-05
@@ -53,6 +53,7 @@ Phase 1 做：
 - 提取/字段补全改读注册表，输出落地即锚定；
 - 存量约 7,000 个去重术语对齐（≥95%），先交付术语全景报告；
 - 前端只读覆盖率卡片 + proposed 词列表。
+- 论文证据验证（Phase B，见第 16 章）：低置信数据接真实文献检索佐证，置信度调整需人工/双模型确认。
 
 Phase 1 不做（明确 YAGNI）：
 
@@ -243,16 +244,27 @@ e) 新提取/补全输出落地即锚定（proposed 池自动增长）。
 
 > RDF/OWL 导出、SPARQL/GQL 属于 Phase 2，不计入本验收。
 
-## 14. 实施顺序（Q10）
+## 14. 实施顺序（Q10，含证据验证两阶段）
+
+### Phase A：本体层（原 Q10 ①–⑧）
 
 1. 本设计文档评审通过；
-2. 数据库迁移 + 种子数据；
+2. 数据库迁移（本体 5 表 + 业务表 term_id + 移除 4 个 CHECK）+ 种子数据；
 3. 注册表服务与 API（CRUD/审批/合并/查询/coverage）；
 4. 术语全景报告（先交付给用户过目）；
 5. 存量对齐（deterministic → 同义词词典 → LLM 残差）；
 6. 校验规则接入 + 提取/补全改读注册表；
 7. 前端只读覆盖率卡片 + proposed 列表；
 8. 验收（第 13 节 5 条）。
+
+### Phase B：论文证据验证（第 16 章）
+
+9. 证据字段迁移 + 文献检索/判定服务；
+10. 置信度校准诊断（300 条分层抽样，先出报告不改数据）；
+11. 投影功能 200 条试点（低置信 150 + 高置信 50 对照）；
+12. EV_* 校验规则 + 预算护栏；
+13. 数据中心 / 验证中心证据展示（面板、待确认队列、覆盖率卡）；
+14. 试点验收 + 扩展决策（投影功能 > 回路功能 > 连接 > 回路）。
 
 ## 15. 风险与缓解
 
@@ -263,3 +275,103 @@ e) 新提取/补全输出落地即锚定（proposed 池自动增长）。
 | 移除 CHECK 后历史非法值 | 先回填 `unknown` 再 DROP，服务层同时兜底 |
 | 术语漂移（多 canonical 表达同一概念） | 定期 coverage 报告 + 人工合并；prompt 注入高频词抑制漂移 |
 | 与正在运行的全量 molecular 提取任务并行 | 新逻辑默认兼容旧数据，存量对齐与校验在提取完成后切换 |
+
+## 16. 论文证据验证（Phase B）
+
+> 用户新增需求：低置信度数据由大模型检索真实论文佐证；数据中心与验证中心都要展示证据。决策经 grill-me 会话 Q1–Q8 确认。
+
+### 16.1 背景与事实
+
+- 置信度普遍偏低（2026-08-05 实测）：回路功能 84.8% < 0.5、投影功能 96.8% < 0.5、连接 90.4% < 0.5、回路 92.2% < 0.5；
+- 现有 `mirror_evidence_records` 99,478 条全部是 `llm_explanation`，无一条论文引用；
+- 大模型不会真实检索文献，凭记忆生成的引用存在编造风险，必须接入文献检索 API 并强制校验。
+
+### 16.2 已确认决策（Q1–Q8 + UI）
+
+| # | 决策 | 结论 |
+|---|---|---|
+| Q1 | 论文来源 | 免费文献检索 API（Europe PMC 主 + PubMed 兜底），引用必须来自检索结果，禁止 LLM 编造 |
+| Q2 | 前置步骤 | 先做 300 条置信度校准诊断，再定验证范围；不做 20 万条无差别验证 |
+| Q3 | 试点规模 | 先小批次（500 条内）跑通流程再扩 |
+| Q4 | 证据用法 | 证据只作置信度上调候选；最终提升必须人工确认或双模型一致 |
+| Q5 | 存储 | 复用 `mirror_evidence_records` + 新增字段，不建平行证据库 |
+| Q6 | 校准报告 | 只出报告不改存量；重打分单独立项批准 |
+| Q7 | 试点范围 | 投影功能 200 条（低置信 150 + 高置信 50 对照） |
+| Q8 | 预算护栏 | 试点不设上限；扩展阶段单任务预算上限默认 50 美元，超限自动暂停 |
+| UI | 展示 | 数据中心对象详情证据面板 + 验证中心 EV_* 详情 / 待确认队列 / 覆盖率卡 |
+
+### 16.3 数据模型改动
+
+迁移文件：`backend/migrations/20260805_evidence_verification.sql`（幂等）。
+
+`mirror_evidence_records` 新增列：
+
+```text
+evidence_direction           VARCHAR(16)            -- supports | partial | contradicts | not_found
+verification_status          VARCHAR(16) DEFAULT 'pending'   -- pending | verified | rejected
+paper_source                 VARCHAR(32)            -- europepmc | pubmed | openalex
+paper_pmid                   VARCHAR(64)
+paper_doi                    VARCHAR(256)
+paper_title                  TEXT
+paper_journal                VARCHAR(256)
+paper_year                   INT
+suggested_confidence         NUMERIC                -- 上调候选值，上限 0.85
+confidence_adjustment_status VARCHAR(16) DEFAULT 'none'   -- none | pending | applied | rejected
+verification_by              VARCHAR(64)
+verification_at              TIMESTAMPTZ
+```
+
+- 现有 `citation_json` / `source_reference_text` 保留，存完整文献快照；
+- 业务表 `confidence` **不直接改**：只有 `verification_status=verified` 且人工/双模型确认后才允许更新，并写入 `confidence_adjustment_status=applied`；
+- `direction=not_found` 也算完成一轮验证（`verification_status=verified`），但业务置信度不调整。
+
+### 16.4 检索与判定流程
+
+```text
+对象（如投影功能：术语 + 源/靶区域）
+  └─ 1. 检索：Europe PMC REST（5 req/s 限速），PubMed 兜底，top-N 候选
+  └─ 2. 判定：deepseek-v4-flash 读标题+摘要，输出
+             {direction, papers[], reason}   -- papers 必须来自检索结果
+  └─ 3. 校验：PMID/DOI 与检索结果比对，真实性硬校验；direction 四选一
+  └─ 4. 存储：mirror_evidence_records（evidence_type='paper_verification'）
+  └─ 5. 使用：support/partial → suggested_confidence 候选
+              → 人工确认或双模型一致 → verified → 才允许更新业务表 confidence
+              not_found → 标记已验证未找到，置信度不动
+```
+
+### 16.5 置信度校准诊断（前置步骤）
+
+- 300 条分层抽样：低置信 200 + 中置信 50 + 高置信 50，按对象类型覆盖；
+- 现有双模型验证服务交叉复核，另抽 30 条人工核验兜底；
+- 产出校准报告：每类 precision@置信区间、建议阈值、是否值得重打分；
+- 不改存量数据；若建议重打分，作为独立任务另行批准。
+
+### 16.6 试点与扩展
+
+- 试点：投影功能 200 条（低置信 150 + 高置信 50 对照），跑通全流程；
+- 扩展顺序：投影功能 > 回路功能 > 连接 > 回路；
+- 限速：文献 API 5 req/s；LLM 批量 20–50 条/批；
+- 预算：试点不限；扩展阶段单任务预算上限默认 50 美元，超限自动暂停（运行配置可调）。
+
+### 16.7 校验规则（EV_*，接入 mirror_rule_validation_service）
+
+| 规则码 | 含义 | 级别 |
+|---|---|---|
+| `EV_REFERENCE_INVALID` | 引用的 PMID/DOI 校验失败或不存在 | blocker |
+| `EV_DIRECTION_INVALID` | evidence_direction 不在四类内 | blocker |
+| `EV_VERIFICATION_PENDING` | 依赖证据提升置信度但未人工/双模型确认 | blocker |
+| `EV_EVIDENCE_MISSING` | 标记“需要论文验证”但无 paper_verification 记录 | warning |
+
+### 16.8 前端展示（数据中心 + 验证中心）
+
+- 数据中心：对象详情新增“证据面板”——论文列表（PMID/DOI 可点击跳转）、方向、验证状态、置信度调整记录；列表页加证据徽章（有论文支持 / 待验证 / 未找到）；
+- 验证中心：EV_* 规则详情；“论文支持但未确认”对象进待确认队列（人工确认或双模型）；证据覆盖率统计卡（有真实引用数 / 待验证数 / 未找到数）；
+- 新增只读端点：`GET /api/evidence/coverage`、`GET /api/evidence/objects?target_type=&verification_status=`、`GET /api/evidence/objects/{target_type}/{target_id}`。
+
+### 16.9 验收标准（Phase B）
+
+a) 试点 200 条跑通，30 条人工抽检一致率出报告；
+b) 引用真实性 100%：每条 PMID/DOI 通过校验，0 条 LLM 编造；
+c) 置信度只允许在 `verified` 后调整，且上限 0.85；
+d) 数据中心 / 验证中心可见证据面板、待确认队列与覆盖率卡；
+e) 预算护栏生效（扩展任务超 50 美元自动暂停）。
