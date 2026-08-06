@@ -1,0 +1,53 @@
+"""Pydantic schemas for DeepSeek residual term alignment (closed-set enums)."""
+
+from __future__ import annotations
+
+from typing import Literal
+
+from pydantic import BaseModel, Field
+
+ParseStatus = Literal["ok", "parse_error", "schema_error", "provider_error"]
+ItemStatus = Literal[
+    "mapped_active",
+    "mapped_proposed",
+    "created_proposed",
+    "low_confidence",
+    "invalid",
+    "failed",
+]
+
+
+class ResidualTermItem(BaseModel):
+    """One LLM suggestion; strict validation with closed-set rules."""
+
+    term: str = Field(min_length=1, max_length=512)
+    canonical_term: str = Field(min_length=1, max_length=512)
+    confidence: float = Field(ge=0.0, le=1.0)
+
+
+class ResidualBatchOutput(BaseModel):
+    """Full model output envelope: {"items": [...]}."""
+
+    items: list[ResidualTermItem]
+
+
+class ResidualItemResult(BaseModel):
+    """Post-processed per-item result with closed-set status."""
+
+    term: str
+    canonical_term: str = ""
+    confidence: float = 0.0
+    status: ItemStatus = "invalid"
+    detail: str | None = None
+
+
+class ResidualBatchRecord(BaseModel):
+    """Per-batch metadata retained for audit/debugging."""
+
+    target_type: str
+    model: str
+    prompt_version: str
+    raw_response: str
+    parse_status: ParseStatus
+    retry_count: int
+    items: list[ResidualItemResult]

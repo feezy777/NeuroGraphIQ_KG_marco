@@ -1,11 +1,12 @@
-"""LLM residual grounding for ungrounded function terms.
+"""LLM residual grounding for ungrounded function terms (structured output).
 
-Reads ungrounded distinct terms, asks deepseek-v4-flash to suggest canonical
-terms, then updates ontology_term_groundings + business term_id.
-Terms suggested with confidence >= 0.9 are grounded; if the canonical is new
-it is created as `proposed` (created_by=llm). Low-confidence results stay
-ungrounded. Idempotent: skips terms already grounded. Runs 4 concurrent
-batches to keep wall-clock time reasonable.
+Reuses the project DeepSeek provider and runtime config; reads model,
+concurrency, backoff, batch size, max tokens and confidence threshold from
+settings. Responses are validated with Pydantic closed-set schemas. JSON mode
+is attempted first; a single retry (plain text + strict parse) is allowed.
+Per-batch metadata (model, prompt_version, raw_response, parse_status,
+retry_count) is retained in the report. The LLM can only create `proposed`
+terms; it never activates, deprecates or merges.
 """
 
 from __future__ import annotations
@@ -23,18 +24,22 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
+from pydantic import ValidationError
 from sqlalchemy import select, text
 
+from app.config import get_settings
 from app.database import AsyncSessionLocal
 from app.models.ontology import OntologyTerm
 from app.services.llm_providers.factory import get_llm_provider
+from app.services.ontology_residual_schemas import (
+    ResidualBatchOutput,
+    ResidualBatchRecord,
+    ResidualItemResult,
+    ResidualTermItem,
+)
 from app.services.ontology_service import _term_code, normalize_term_key
 
-MODEL = "deepseek-v4-flash"
-BATCH_SIZE = 20
-CONCURRENCY = 2
-MAX_TOKENS = 5000
-CONFIDENCE_THRESHOLD = 0.9
+PROMPT_VERSION = "residual_alignment_v2"
 LOG_PATH = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
     "logs",
@@ -50,6 +55,10 @@ TARGET_COLUMNS = {
 term_lock = asyncio.Lock()
 
 
+def _settings():
+    return get_settings()
+
+
 async def load_ungrounded_terms() -> dict[str, list[tuple[str, int]]]:
     per_type: dict[str, list[tuple[str, int]]] = {}
     async with AsyncSessionLocal() as session:
@@ -60,6 +69,7 @@ async def load_ungrounded_terms() -> dict[str, list[tuple[str, int]]]:
                 FROM {table} t
                 JOIN ontology_term_groundings g
                   ON g.target_type = :tt AND g.target_id = t.id AND g.grounded_by = 'ungrounded'
+                  AND g.created_by NOT LIKE 'skipped:%'
                 WHERE t.{column} IS NOT NULL AND trim(t.{column}) <> ''
                 GROUP BY 1
                 ORDER BY cnt DESC
@@ -98,43 +108,16 @@ def _build_prompt(batch: list[tuple[str, int]]) -> tuple[str, str]:
     return system, user
 
 
-def _normalize_items(parsed) -> list[dict]:
-    if isinstance(parsed, list):
-        items = parsed
-    elif isinstance(parsed, dict):
-        if isinstance(parsed.get("_array"), list):
-            items = parsed["_array"]
-        elif isinstance(parsed.get("items"), list):
-            items = parsed["items"]
-        elif parsed:
-            pairs = list(parsed.items())
-            if pairs and all(isinstance(v, dict) for _, v in pairs):
-                # Mapping like {"working memory": {"canonical_term": ..., "confidence": ...}}
-                items = []
-                for key, val in pairs:
-                    val = dict(val)
-                    val.setdefault("term", key)
-                    items.append(val)
-            else:
-                # Single object response (first element unwrapped by provider).
-                items = [parsed]
-        else:
-            items = []
-    else:
-        items = []
-    return [item for item in items if isinstance(item, dict)]
-
-
-def _parse_results(raw_text: str) -> list[dict]:
-    text = (raw_text or "").strip()
-    fence = re.search(r"```(?:json|JSON)?\s*(.*?)```", text, re.DOTALL)
+def _parse_with_fallback(raw_text: str) -> ResidualBatchOutput:
+    """Strict parse: try direct json.loads, then fenced/embedded JSON."""
+    text_value = (raw_text or "").strip()
+    fence = re.search(r"```(?:json|JSON)?\s*(.*?)```", text_value, re.DOTALL)
     if fence:
-        text = fence.group(1).strip()
-    parsed = json.loads(text)
-    items = _normalize_items(parsed)
-    if not items:
-        raise ValueError("unexpected JSON shape")
-    return items
+        text_value = fence.group(1).strip()
+    parsed = json.loads(text_value)
+    if isinstance(parsed, list):
+        parsed = {"items": parsed}
+    return ResidualBatchOutput.model_validate(parsed)
 
 
 async def _new_proposed_term(
@@ -199,138 +182,156 @@ async def process_batch(
     proposed_index: dict[str, int],
     codes: set[str],
     stats: Counter,
-    report_rows: list[dict],
+    records: list[ResidualBatchRecord],
     provider,
 ) -> None:
+    cfg = _settings()
+    model = cfg.ontology_residual_model
+    threshold = cfg.ontology_residual_confidence_threshold
     system_prompt, user_prompt = _build_prompt(batch)
-    parsed = None
+    parsed: ResidualBatchOutput | None = None
+    parse_status = "provider_error"
+    retry_count = 0
+    raw_response = ""
+
     for attempt in range(2):
+        retry_count = attempt
         try:
-            prompt = user_prompt
-            if attempt == 1:
-                prompt = user_prompt + (
+            if attempt == 0:
+                response = await provider.complete_json(
+                    model=model,
+                    system_prompt=system_prompt,
+                    user_prompt=user_prompt,
+                    temperature=0.1,
+                    max_tokens=cfg.ontology_residual_max_tokens,
+                )
+                raw_response = response.raw_text or ""
+                if response.parsed_json is not None:
+                    parsed = ResidualBatchOutput.model_validate(response.parsed_json)
+                else:
+                    parsed = _parse_with_fallback(raw_response)
+            else:
+                retry_user = user_prompt + (
                     "\n\nIMPORTANT: Respond with ONLY the raw JSON object. "
                     "No reasoning or text outside JSON."
                 )
-            text_result = await provider.complete_text(
-                model=MODEL,
-                system_prompt=system_prompt,
-                user_prompt=prompt,
-                temperature=0.1 + 0.1 * attempt,
-                max_tokens=MAX_TOKENS,
-                json_mode=False,
-            )
-            parsed = _parse_results(text_result.raw_text or "")
+                text_result = await provider.complete_text(
+                    model=model,
+                    system_prompt=system_prompt,
+                    user_prompt=retry_user,
+                    temperature=0.2,
+                    max_tokens=cfg.ontology_residual_max_tokens,
+                    json_mode=False,
+                )
+                raw_response = text_result.raw_text or ""
+                parsed = _parse_with_fallback(raw_response)
+            parse_status = "ok"
             break
-        except Exception as exc:  # noqa: BLE001
-            stats["failed"] += 1
+        except (ValidationError, ValueError, json.JSONDecodeError) as exc:  # noqa: BLE001
+            parse_status = "schema_error" if isinstance(exc, ValidationError) else "parse_error"
             if attempt == 0:
-                await asyncio.sleep(20)
+                await asyncio.sleep(cfg.ontology_residual_backoff_seconds)
                 continue
-            if attempt == 1:
-                detail = ""
-                try:
-                    if text_result is not None:
-                        detail = (
-                            f"transport_ok={text_result.transport_ok} "
-                            f"err={text_result.error} "
-                            f"raw={repr((text_result.raw_text or '')[:200])}"
-                        )
-                except Exception:  # noqa: BLE001
-                    detail = ""
-                print(f"[{target_type}] batch failed: {exc} {detail}", flush=True)
-    if parsed is None:
-        for term, _count in batch:
-            report_rows.append({"term": term, "target_type": target_type, "result": "failed"})
-        return
+            print(f"[{target_type}] batch failed: {exc}", flush=True)
 
-    for item in parsed:
-        if not isinstance(item, dict):
-            continue
-        term = str(item.get("term") or "").strip()
-        canonical = str(item.get("canonical_term") or "").strip().lower()
-        try:
-            confidence = float(item.get("confidence") or 0.0)
-        except (TypeError, ValueError):
-            confidence = 0.0
-        if not term:
-            continue
-        stats["processed_terms"] += 1
-        if confidence < CONFIDENCE_THRESHOLD or not canonical:
-            stats["low_confidence"] += 1
-            report_rows.append(
-                {
-                    "term": term,
-                    "canonical": canonical,
-                    "confidence": confidence,
-                    "target_type": target_type,
-                    "result": "low_confidence",
-                }
-            )
-            continue
-        key = normalize_term_key(canonical)
-        if key in active_index:
-            term_id = active_index[key]
-            method = "active"
-        elif key in proposed_index:
-            term_id = proposed_index[key]
-            method = "proposed"
-        else:
-            async with term_lock:
-                if key in proposed_index:
+    item_results: list[ResidualItemResult] = []
+    if parsed is not None:
+        async with AsyncSessionLocal() as session:
+            for item in parsed.items:
+                try:
+                    validated = ResidualTermItem.model_validate(item.model_dump())
+                except ValidationError:
+                    stats["invalid"] += 1
+                    item_results.append(
+                        ResidualItemResult(
+                            term=str(item.term), canonical_term="", confidence=0.0,
+                            status="invalid", detail="schema validation failed",
+                        )
+                    )
+                    continue
+                stats["processed_terms"] += 1
+                if validated.confidence < threshold:
+                    stats["low_confidence"] += 1
+                    item_results.append(
+                        ResidualItemResult(
+                            term=validated.term,
+                            canonical_term=validated.canonical_term,
+                            confidence=validated.confidence,
+                            status="low_confidence",
+                        )
+                    )
+                    continue
+                key = normalize_term_key(validated.canonical_term)
+                if key in active_index:
+                    term_id = active_index[key]
+                    status = "mapped_active"
+                elif key in proposed_index:
                     term_id = proposed_index[key]
-                    method = "proposed"
+                    status = "mapped_proposed"
                 else:
-                    async with AsyncSessionLocal() as session:
-                        new_term = await _new_proposed_term(session, canonical, codes)
-                        await session.commit()
-                    term_id = new_term.id
-                    proposed_index[key] = term_id
-                    stats["created_proposed"] += 1
-                    method = "created_proposed"
-        await apply_mapping(target_type, term, term_id, confidence)
-        if method == "active":
-            stats["grounded_active"] += 1
-        else:
-            stats["grounded_proposed"] += 1
-        report_rows.append(
-            {
-                "term": term,
-                "canonical": canonical,
-                "confidence": confidence,
-                "target_type": target_type,
-                "result": method,
-            }
+                    async with term_lock:
+                        if key in proposed_index:
+                            term_id = proposed_index[key]
+                            status = "mapped_proposed"
+                        else:
+                            new_term = await _new_proposed_term(session, validated.canonical_term, codes)
+                            term_id = new_term.id
+                            proposed_index[key] = term_id
+                            stats["created_proposed"] += 1
+                            status = "created_proposed"
+                await session.commit()
+                await apply_mapping(target_type, validated.term, term_id, validated.confidence)
+                stats[status] += 1
+                item_results.append(
+                    ResidualItemResult(
+                        term=validated.term,
+                        canonical_term=validated.canonical_term,
+                        confidence=validated.confidence,
+                        status=status,
+                    )
+                )
+    records.append(
+        ResidualBatchRecord(
+            target_type=target_type,
+            model=model,
+            prompt_version=PROMPT_VERSION,
+            raw_response=raw_response[:2000],
+            parse_status=parse_status,
+            retry_count=retry_count,
+            items=item_results,
         )
+    )
     print(
         f"[{target_type}] batch of {len(batch)} done "
-        f"(total processed={stats['processed_terms']})",
+        f"(total processed={stats['processed_terms']}) parse={parse_status}",
         flush=True,
     )
 
 
 async def main(min_count: int) -> None:
+    cfg = _settings()
     provider = get_llm_provider("deepseek")
     ungrounded = await load_ungrounded_terms()
     active_index, proposed_index, codes = await load_registry_index()
 
     stats: Counter = Counter({
         "processed_terms": 0,
-        "grounded_active": 0,
-        "grounded_proposed": 0,
+        "mapped_active": 0,
+        "mapped_proposed": 0,
         "created_proposed": 0,
         "low_confidence": 0,
+        "invalid": 0,
         "failed": 0,
     })
-    report_rows: list[dict] = []
+    records: list[ResidualBatchRecord] = []
 
     batches: list[tuple[str, list[tuple[str, int]]]] = []
     for target_type, terms in ungrounded.items():
         filtered = [(term, count) for term, count in terms if count >= min_count]
-        for start in range(0, len(filtered), BATCH_SIZE):
-            batches.append((target_type, filtered[start : start + BATCH_SIZE]))
+        for start in range(0, len(filtered), cfg.ontology_residual_batch_size):
+            batches.append((target_type, filtered[start : start + cfg.ontology_residual_batch_size]))
 
-    semaphore = asyncio.Semaphore(CONCURRENCY)
+    semaphore = asyncio.Semaphore(cfg.ontology_residual_concurrency)
 
     async def worker(batch_item: tuple[str, list[tuple[str, int]]]) -> None:
         async with semaphore:
@@ -341,7 +342,7 @@ async def main(min_count: int) -> None:
                 proposed_index,
                 codes,
                 stats,
-                report_rows,
+                records,
                 provider,
             )
 
@@ -349,8 +350,16 @@ async def main(min_count: int) -> None:
 
     os.makedirs(os.path.dirname(LOG_PATH), exist_ok=True)
     with open(LOG_PATH, "w", encoding="utf-8") as f:
-        json.dump({"stats": stats, "rows": report_rows}, f, ensure_ascii=False, indent=2)
-    print(json.dumps(stats, ensure_ascii=False))
+        json.dump(
+            {
+                "stats": dict(stats),
+                "records": [record.model_dump(mode="json") for record in records],
+            },
+            f,
+            ensure_ascii=False,
+            indent=2,
+        )
+    print(json.dumps(dict(stats), ensure_ascii=False))
     print(f"report: {LOG_PATH}")
 
 

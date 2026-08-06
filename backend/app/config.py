@@ -24,6 +24,12 @@ class Settings(BaseSettings):
     app_port: int = 8000
     cors_origins: str = "http://localhost:5173,http://127.0.0.1:5173,http://localhost:3000"
     ontology_role: str = "ontology_admin"
+    ontology_residual_model: str = "deepseek-v4-flash"
+    ontology_residual_concurrency: int = 2
+    ontology_residual_backoff_seconds: float = 20.0
+    ontology_residual_batch_size: int = 20
+    ontology_residual_max_tokens: int = 5000
+    ontology_residual_confidence_threshold: float = 0.9
 
     # Database components — align with backend/.env.example and docs/dbeaver_postgres_connection.md
     postgres_host: str = "127.0.0.1"
