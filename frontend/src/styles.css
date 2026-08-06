@@ -11161,6 +11161,10 @@ input[type="range"]::-webkit-slider-thumb {
   padding-right: 4px;
   overscroll-behavior: contain;
 }
+.ontology-page-tab-body::-webkit-scrollbar { width: 8px; }
+.ontology-page-tab-body::-webkit-scrollbar-track { background: transparent; }
+.ontology-page-tab-body::-webkit-scrollbar-thumb { background: #c9cdd4; border-radius: 4px; }
+.ontology-page-tab-body::-webkit-scrollbar-thumb:hover { background: #a6adb7; }
 .ontology-page-tabs { display: flex; align-items: center; gap: 8px; }
 .ontology-page-tab {
   padding: 7px 16px;

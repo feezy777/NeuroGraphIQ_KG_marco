@@ -90,7 +90,7 @@ const Sidebar = memo(function Sidebar({ activePath, t }: { activePath: string; t
 
 const MainContent = memo(function MainContent({ activePath, children }: { activePath: string; children: React.ReactNode }) {
   return (
-    <main className={`main${activePath === '/data-center' ? ' main-data-center' : ''}${activePath === '/llm-extraction' ? ' main-llm-data-first' : ''}${activePath === '/brain-3d' ? ' main-brain-3d' : ''}`}>
+    <main className={`main${activePath === '/data-center' || activePath === '/ontology-center' ? ' main-data-center' : ''}${activePath === '/llm-extraction' ? ' main-llm-data-first' : ''}${activePath === '/brain-3d' ? ' main-brain-3d' : ''}`}>
       {children}
     </main>
   )
