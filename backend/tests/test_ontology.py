@@ -14,8 +14,9 @@ from app.services import ontology_service as svc
 
 
 class FakeResult:
-    def __init__(self, rows):
+    def __init__(self, rows, rowcount=0):
         self._rows = rows
+        self.rowcount = rowcount
 
     def scalars(self):
         return self
@@ -135,32 +136,97 @@ def test_deprecate_term():
     assert result.status == "deprecated"
 
 
-def test_merge_term_moves_groundings_and_deletes_source():
+def test_merge_term_soft_merges_source_and_audits():
     source = OntologyTerm(id=uuid.uuid4(), term_code="ng:func:a", canonical_term_en="a", status="proposed")
     target = OntologyTerm(id=uuid.uuid4(), term_code="ng:func:b", canonical_term_en="b", status="active")
     src_syn = OntologyTermSynonym(id=uuid.uuid4(), term_id=source.id, synonym_text="a-syn", lang="en", match_type="synonym")
     session = SessionStub(
-        execute_results=[FakeResult([src_syn]), FakeResult([]), FakeResult([]), FakeResult([]), FakeResult([]), FakeResult([])],
-        get_map={(OntologyTerm, source.id): source, (OntologyTerm, target.id): target},
+        execute_results=[
+            FakeResult([source, target]),  # row locks (fixed id order)
+            FakeResult([src_syn]),  # source synonyms
+            FakeResult([]),  # target synonyms
+            FakeResult([]),  # source external mappings
+            FakeResult([]),  # target external mappings
+            FakeResult([], rowcount=1),  # synonyms update
+            FakeResult([], rowcount=1),  # external mappings update
+            FakeResult([], rowcount=2),  # groundings update
+            FakeResult([], rowcount=5),  # business rows update x3
+            FakeResult([], rowcount=0),
+            FakeResult([], rowcount=0),
+        ],
     )
 
     result = asyncio.run(svc.merge_term(session, source.id, target.id))
 
     assert result is target
-    assert source in session.deleted
+    assert source.status == "merged"
+    assert source.replaced_by_term_id == target.id
+    assert source not in session.deleted
+    assert any(getattr(obj, "action_type", None) == "term.merge" for obj in session.added)
+
+
+def test_merge_term_idempotent():
+    source = OntologyTerm(
+        id=uuid.uuid4(), term_code="ng:func:a", canonical_term_en="a",
+        status="merged", replaced_by_term_id=None,
+    )
+    target = OntologyTerm(id=uuid.uuid4(), term_code="ng:func:b", canonical_term_en="b", status="active")
+    source.replaced_by_term_id = target.id
+    session = SessionStub(execute_results=[FakeResult([source, target])])
+
+    result = asyncio.run(svc.merge_term(session, source.id, target.id))
+
+    assert result is target
+    assert source.status == "merged"
+    assert session.added == []
+
+
+def test_merge_term_drops_conflicting_synonym():
+    source = OntologyTerm(id=uuid.uuid4(), term_code="ng:func:a", canonical_term_en="a", status="proposed")
+    target = OntologyTerm(id=uuid.uuid4(), term_code="ng:func:b", canonical_term_en="b", status="active")
+    src_syn = OntologyTermSynonym(id=uuid.uuid4(), term_id=source.id, synonym_text="same", lang="en", match_type="synonym")
+    tgt_syn = OntologyTermSynonym(id=uuid.uuid4(), term_id=target.id, synonym_text="same", lang="en", match_type="synonym")
+    session = SessionStub(
+        execute_results=[
+            FakeResult([source, target]),
+            FakeResult([src_syn]),
+            FakeResult([tgt_syn]),
+            FakeResult([]),
+            FakeResult([]),
+            FakeResult([], rowcount=0),
+            FakeResult([], rowcount=0),
+            FakeResult([], rowcount=0),
+            FakeResult([], rowcount=0),
+            FakeResult([], rowcount=0),
+            FakeResult([], rowcount=0),
+        ],
+    )
+
+    asyncio.run(svc.merge_term(session, source.id, target.id))
+
+    assert src_syn in session.deleted
 
 
 def test_run_deterministic_grounding_batch_counts():
     term = OntologyTerm(id=uuid.uuid4(), term_code="ng:func:memory", canonical_term_en="memory", status="active")
     row_grounded = MirrorCircuitFunctionStub(id=uuid.uuid4(), function_term_en="memory")
     row_ungrounded = MirrorCircuitFunctionStub(id=uuid.uuid4(), function_term_en="weird phrase")
+    g1 = OntologyTermGrounding(id=uuid.uuid4(), target_type="circuit_function", target_id=row_grounded.id, term_id=term.id, grounded_by="deterministic", confidence=1.0)
+    g2 = OntologyTermGrounding(id=uuid.uuid4(), target_type="circuit_function", target_id=row_ungrounded.id, term_id=None, grounded_by="ungrounded")
     session = SessionStub(
         execute_results=[
             FakeResult([term]),  # active terms
             FakeResult([]),  # synonyms
             FakeResult([row_grounded, row_ungrounded]),  # rows to process
-            FakeResult([]),  # delete existing groundings
-        ]
+            FakeResult([]),  # existing grounding row 1 (none)
+            FakeResult([g1.id]),  # upsert row 1
+            FakeResult([]),  # existing grounding row 2 (none)
+            FakeResult([g2.id]),  # upsert row 2
+        ],
+        get_map={
+            (OntologyTermGrounding, g1.id): g1,
+            (OntologyTermGrounding, g2.id): g2,
+        },
     )
 
     result = asyncio.run(svc.run_deterministic_grounding_batch(session, "circuit_function", limit=10))
@@ -183,9 +249,18 @@ class MirrorCircuitFunctionStub:
 def test_ground_deterministic_single():
     term = OntologyTerm(id=uuid.uuid4(), term_code="ng:func:memory", canonical_term_en="memory", status="active")
     row = MirrorCircuitFunctionStub(id=uuid.uuid4(), function_term_en="MEMORY")
+    g = OntologyTermGrounding(id=uuid.uuid4(), target_type="circuit_function", target_id=row.id, term_id=term.id, grounded_by="deterministic", confidence=1.0)
     session = SessionStub(
-        execute_results=[FakeResult([term]), FakeResult([]), FakeResult([])],
-        get_map={(MirrorCircuitFunctionModel, row.id): row},
+        execute_results=[
+            FakeResult([term]),  # active terms
+            FakeResult([]),  # synonyms
+            FakeResult([]),  # existing grounding (none)
+            FakeResult([g.id]),  # upsert
+        ],
+        get_map={
+            (MirrorCircuitFunctionModel, row.id): row,
+            (OntologyTermGrounding, g.id): g,
+        },
     )
 
     async def run():
@@ -201,6 +276,31 @@ def test_ground_deterministic_single():
     assert grounding.grounded_by == "deterministic"
     assert grounding.term_id == term.id
     assert row.term_id == term.id
+
+
+def test_auto_grounding_does_not_overwrite_manual():
+    existing = OntologyTermGrounding(
+        id=uuid.uuid4(), target_type="circuit_function", target_id=uuid.uuid4(),
+        term_id=uuid.uuid4(), grounded_by="manual",
+    )
+    session = SessionStub(execute_results=[FakeResult([existing])])
+
+    async def run():
+        return await svc._upsert_grounding(
+            session,
+            target_type="circuit_function",
+            target_id=existing.target_id,
+            term_id=None,
+            grounded_by="deterministic",
+            confidence=None,
+            created_by="system",
+        )
+
+    result = asyncio.run(run())
+
+    assert result is existing
+    assert result.grounded_by == "manual"
+    assert session.added == []
 
 
 from app.models.mirror_macro_clinical import MirrorCircuitFunction as MirrorCircuitFunctionModel

@@ -4,14 +4,18 @@ from __future__ import annotations
 
 import re
 import uuid
+from datetime import datetime, timezone
 
-from sqlalchemy import delete, func, or_, select, update
+from sqlalchemy import and_, delete, func, or_, select, update
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.mirror_kg import MirrorRegionFunction
 from app.models.mirror_macro_clinical import MirrorCircuitFunction, MirrorProjectionFunction
 from app.models.candidate import CandidateBrainRegion
 from app.models.ontology import (
+    OntologyAlignmentCandidate,
+    OntologyChangeLog,
     OntologyTerm,
     OntologyTermExternalMapping,
     OntologyTermGrounding,
@@ -92,21 +96,73 @@ async def _upsert_grounding(
     confidence: float | None,
     created_by: str | None,
 ) -> OntologyTermGrounding:
-    await session.execute(
-        delete(OntologyTermGrounding).where(
-            OntologyTermGrounding.target_type == target_type,
-            OntologyTermGrounding.target_id == target_id,
+    existing = (
+        await session.execute(
+            select(OntologyTermGrounding).where(
+                OntologyTermGrounding.target_type == target_type,
+                OntologyTermGrounding.target_id == target_id,
+            )
         )
+    ).scalar_one_or_none()
+    # Automatic tasks must never overwrite human-confirmed grounding.
+    if (
+        existing is not None
+        and existing.grounded_by == "manual"
+        and grounded_by != "manual"
+    ):
+        return existing
+    excluded = pg_insert(OntologyTermGrounding).excluded
+    stmt = (
+        pg_insert(OntologyTermGrounding)
+        .values(
+            target_type=target_type,
+            target_id=target_id,
+            term_id=term_id,
+            grounded_by=grounded_by,
+            confidence=confidence,
+            created_by=created_by,
+        )
+        .on_conflict_do_update(
+            constraint="uq_ontology_grounding_target",
+            set_={
+                "term_id": excluded.term_id,
+                "grounded_by": excluded.grounded_by,
+                "confidence": excluded.confidence,
+                "created_by": excluded.created_by,
+                "grounded_at": func.now(),
+            },
+            where=or_(
+                OntologyTermGrounding.grounded_by != "manual",
+                excluded.grounded_by == "manual",
+            ),
+        )
+        .returning(OntologyTermGrounding.id)
     )
-    grounding = OntologyTermGrounding(
-        target_type=target_type,
-        target_id=target_id,
-        term_id=term_id,
-        grounded_by=grounded_by,
-        confidence=confidence,
-        created_by=created_by,
-    )
-    session.add(grounding)
+    result = await session.execute(stmt)
+    grounding_id = result.scalar_one()
+    grounding = await session.get(OntologyTermGrounding, grounding_id)
+    if grounding is None:
+        raise RuntimeError("grounding row missing after upsert")
+    if existing is not None:
+        session.add(
+            OntologyChangeLog(
+                action_type="grounding.upsert",
+                entity_type=f"ontology_term_grounding:{target_type}",
+                entity_id=target_id,
+                before_data={
+                    "term_id": str(existing.term_id) if existing.term_id else None,
+                    "grounded_by": existing.grounded_by,
+                    "confidence": float(existing.confidence) if existing.confidence is not None else None,
+                },
+                after_data={
+                    "term_id": str(grounding.term_id) if grounding.term_id else None,
+                    "grounded_by": grounding.grounded_by,
+                    "confidence": float(grounding.confidence) if grounding.confidence is not None else None,
+                },
+                operator_id=created_by,
+                reason="grounding upsert",
+            )
+        )
     await session.flush()
     return grounding
 
@@ -264,22 +320,93 @@ async def propose_term(
     return row
 
 
-async def activate_term(session: AsyncSession, term_id: uuid.UUID) -> OntologyTerm:
+def _log_change(
+    session: AsyncSession,
+    *,
+    action_type: str,
+    entity_type: str,
+    entity_id: uuid.UUID,
+    before_data: dict,
+    after_data: dict,
+    operator_id: str | None = None,
+    reason: str | None = None,
+) -> None:
+    session.add(
+        OntologyChangeLog(
+            action_type=action_type,
+            entity_type=entity_type,
+            entity_id=entity_id,
+            before_data=before_data,
+            after_data=after_data,
+            operator_id=operator_id,
+            reason=reason,
+        )
+    )
+
+
+def _term_snapshot(term: OntologyTerm) -> dict:
+    return {
+        "term_code": term.term_code,
+        "canonical_term_en": term.canonical_term_en,
+        "status": term.status,
+        "replaced_by_term_id": str(term.replaced_by_term_id) if term.replaced_by_term_id else None,
+    }
+
+
+async def activate_term(
+    session: AsyncSession,
+    term_id: uuid.UUID,
+    *,
+    operator_id: str | None = None,
+    reason: str | None = None,
+) -> OntologyTerm:
     term = await session.get(OntologyTerm, term_id)
     if term is None:
         raise ValueError("term not found")
     if term.status == "deprecated":
         raise ValueError("cannot activate deprecated term")
+    if term.status == "merged":
+        raise ValueError("cannot activate merged term; use its replacement")
+    before = _term_snapshot(term)
     term.status = "active"
+    _log_change(
+        session,
+        action_type="term.activate",
+        entity_type="ontology_term",
+        entity_id=term.id,
+        before_data=before,
+        after_data=_term_snapshot(term),
+        operator_id=operator_id,
+        reason=reason,
+    )
     await session.flush()
     return term
 
 
-async def deprecate_term(session: AsyncSession, term_id: uuid.UUID) -> OntologyTerm:
+async def deprecate_term(
+    session: AsyncSession,
+    term_id: uuid.UUID,
+    *,
+    operator_id: str | None = None,
+    reason: str | None = None,
+) -> OntologyTerm:
     term = await session.get(OntologyTerm, term_id)
     if term is None:
         raise ValueError("term not found")
+    if term.status == "merged":
+        raise ValueError("cannot deprecate merged term; use its replacement")
+    before = _term_snapshot(term)
     term.status = "deprecated"
+    _log_change(
+        session,
+        action_type="term.deprecate",
+        entity_type="ontology_term",
+        entity_id=term.id,
+        before_data=before,
+        after_data=_term_snapshot(term),
+        operator_id=operator_id,
+        reason=reason,
+    )
     await session.flush()
     return term
 
@@ -288,13 +415,34 @@ async def merge_term(
     session: AsyncSession,
     source_id: uuid.UUID,
     target_id: uuid.UUID,
+    *,
+    operator_id: str | None = None,
+    reason: str | None = None,
 ) -> OntologyTerm:
     if source_id == target_id:
         raise ValueError("cannot merge a term into itself")
-    source = await session.get(OntologyTerm, source_id)
-    target = await session.get(OntologyTerm, target_id)
+    # Lock in fixed id order to avoid concurrent deadlocks.
+    first, second = sorted((source_id, target_id))
+    locked = (
+        await session.execute(
+            select(OntologyTerm)
+            .where(OntologyTerm.id.in_((first, second)))
+            .order_by(OntologyTerm.id)
+            .with_for_update()
+        )
+    ).scalars().all()
+    by_id = {term.id: term for term in locked}
+    source = by_id.get(source_id)
+    target = by_id.get(target_id)
     if source is None or target is None:
         raise ValueError("term not found")
+    # Idempotent: repeated identical merge returns the target unchanged.
+    if source.replaced_by_term_id == target.id:
+        return target
+
+    before = _term_snapshot(source)
+
+    # Synonyms: move with explicit conflict dedup (drop duplicates on target).
     source_synonyms = (
         await session.execute(
             select(OntologyTermSynonym).where(OntologyTermSynonym.term_id == source_id)
@@ -305,32 +453,97 @@ async def merge_term(
             select(OntologyTermSynonym).where(OntologyTermSynonym.term_id == target_id)
         )
     ).scalars().all()
-    target_keys = {(s.synonym_text, s.lang) for s in target_synonyms}
+    target_syn_keys = {(s.synonym_text, s.lang) for s in target_synonyms}
+    dropped_synonyms = 0
     for synonym in source_synonyms:
-        if (synonym.synonym_text, synonym.lang) in target_keys:
+        if (synonym.synonym_text, synonym.lang) in target_syn_keys:
             await session.delete(synonym)
+            dropped_synonyms += 1
     await session.execute(
         update(OntologyTermSynonym)
         .where(OntologyTermSynonym.term_id == source_id)
         .values(term_id=target_id)
     )
+
+    # External mappings: same dedupe strategy.
+    source_mappings = (
+        await session.execute(
+            select(OntologyTermExternalMapping).where(
+                OntologyTermExternalMapping.term_id == source_id
+            )
+        )
+    ).scalars().all()
+    target_mappings = (
+        await session.execute(
+            select(OntologyTermExternalMapping).where(
+                OntologyTermExternalMapping.term_id == target_id
+            )
+        )
+    ).scalars().all()
+    target_map_keys = {(m.external_system, m.external_iri) for m in target_mappings}
+    dropped_mappings = 0
+    for mapping in source_mappings:
+        if (mapping.external_system, mapping.external_iri) in target_map_keys:
+            await session.delete(mapping)
+            dropped_mappings += 1
     await session.execute(
         update(OntologyTermExternalMapping)
         .where(OntologyTermExternalMapping.term_id == source_id)
         .values(term_id=target_id)
     )
-    await session.execute(
+
+    grounding_result = await session.execute(
         update(OntologyTermGrounding)
         .where(OntologyTermGrounding.term_id == source_id)
         .values(term_id=target_id)
     )
+    grounding_count = grounding_result.rowcount or 0
+
+    business_updated = 0
     for model in TERM_TABLE_BY_TYPE.values():
-        await session.execute(
+        result = await session.execute(
             update(model).where(model.term_id == source_id).values(term_id=target_id)
         )
-    await session.delete(source)
+        business_updated += result.rowcount or 0
+
+    now = datetime.now(timezone.utc)
+    source.status = "merged"
+    source.replaced_by_term_id = target.id
+    source.merged_at = now
+    source.merged_by = operator_id
+    _log_change(
+        session,
+        action_type="term.merge",
+        entity_type="ontology_term",
+        entity_id=source.id,
+        before_data=before,
+        after_data={
+            **_term_snapshot(source),
+            "target_term_id": str(target.id),
+            "moved_synonyms": len(source_synonyms) - dropped_synonyms,
+            "dropped_synonyms": dropped_synonyms,
+            "moved_external_mappings": len(source_mappings) - dropped_mappings,
+            "dropped_external_mappings": dropped_mappings,
+            "updated_groundings": grounding_count,
+            "updated_business_rows": business_updated,
+        },
+        operator_id=operator_id,
+        reason=reason or f"merge into {target.term_code}",
+    )
     await session.flush()
     return target
+
+
+async def resolve_term(session: AsyncSession, term_id: uuid.UUID) -> OntologyTerm:
+    """Resolve a possibly-merged term id to its current replacement."""
+    term = await session.get(OntologyTerm, term_id)
+    hops = 0
+    while term is not None and term.replaced_by_term_id is not None and hops < 10:
+        term = await session.get(OntologyTerm, term.replaced_by_term_id)
+        hops += 1
+    if term is None:
+        raise ValueError("term not found")
+    return term
 
 
 async def add_synonym(
@@ -341,6 +554,8 @@ async def add_synonym(
     lang: str = "en",
     match_type: str = "synonym",
     confidence: float | None = None,
+    operator_id: str | None = None,
+    reason: str | None = None,
 ) -> OntologyTermSynonym:
     term = await session.get(OntologyTerm, term_id)
     if term is None:
@@ -353,6 +568,22 @@ async def add_synonym(
         confidence=confidence,
     )
     session.add(row)
+    await session.flush()
+    _log_change(
+        session,
+        action_type="term.synonym.add",
+        entity_type="ontology_term_synonym",
+        entity_id=row.id,
+        before_data={},
+        after_data={
+            "term_id": str(term_id),
+            "synonym_text": row.synonym_text,
+            "lang": row.lang,
+            "match_type": row.match_type,
+        },
+        operator_id=operator_id,
+        reason=reason,
+    )
     await session.flush()
     return row
 
@@ -423,25 +654,17 @@ async def run_deterministic_grounding_batch(
     ).scalars().all()
     if not rows:
         return {"target_type": target_type, "processed": 0, "grounded": 0, "ungrounded": 0}
-    target_ids = [row.id for row in rows]
-    await session.execute(
-        delete(OntologyTermGrounding).where(
-            OntologyTermGrounding.target_type == target_type,
-            OntologyTermGrounding.target_id.in_(target_ids),
-        )
-    )
     grounded = 0
     for row in rows:
         term_id = _index_lookup(index, _term_text_for(row, target_type))
-        session.add(
-            OntologyTermGrounding(
-                target_type=target_type,
-                target_id=row.id,
-                term_id=term_id,
-                grounded_by="deterministic" if term_id else "ungrounded",
-                confidence=1.0 if term_id else None,
-                created_by="system",
-            )
+        await _upsert_grounding(
+            session,
+            target_type=target_type,
+            target_id=row.id,
+            term_id=term_id,
+            grounded_by="deterministic" if term_id else "ungrounded",
+            confidence=1.0 if term_id else None,
+            created_by="system",
         )
         row.term_id = term_id
         if term_id:

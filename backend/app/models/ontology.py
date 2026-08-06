@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
+from typing import Any
 
 from sqlalchemy import DateTime, ForeignKey, Numeric, String, Text, UniqueConstraint, func
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
@@ -51,6 +52,11 @@ class OntologyTerm(Base):
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="proposed")
     created_by: Mapped[str] = mapped_column(String(64), nullable=False, default="manual")
+    replaced_by_term_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("ontology_terms.id"), nullable=True
+    )
+    merged_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    merged_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
@@ -115,3 +121,49 @@ class OntologyTermGrounding(Base):
     confidence: Mapped[float | None] = mapped_column(Numeric, nullable=True)
     created_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
     grounded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class OntologyAlignmentCandidate(Base):
+    """External-standard alignment candidate awaiting human review."""
+
+    __tablename__ = "ontology_alignment_candidates"
+    __table_args__ = (
+        UniqueConstraint(
+            "target_type", "target_id", "external_system", "external_iri",
+            name="uq_ontology_alignment_candidate",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    target_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    target_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    external_system: Mapped[str] = mapped_column(String(64), nullable=False)
+    external_id: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    external_iri: Mapped[str] = mapped_column(String(512), nullable=False)
+    external_label: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    match_type: Mapped[str] = mapped_column(String(16), nullable=False)
+    match_score: Mapped[float | None] = mapped_column(Numeric, nullable=True)
+    match_details: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="pending")
+    reviewed_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class OntologyChangeLog(Base):
+    """Audit trail for ontology governance operations."""
+
+    __tablename__ = "ontology_change_logs"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    action_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    entity_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    entity_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    before_data: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
+    after_data: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
+    operator_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
