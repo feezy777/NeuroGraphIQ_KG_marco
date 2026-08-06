@@ -5109,6 +5109,9 @@ export const getGovernanceDashboard = (p?: { granularity_level?: string }) =>
 export const getGovernanceIssues = (p?: { granularity_level?: string }) =>
   getJson<GovernanceIssues>('/api/ontology/governance/issues', p)
 
+export const getOntologyRole = () =>
+  getJson<{ role: 'viewer' | 'reviewer' | 'ontology_admin' }>('/api/ontology/governance/role')
+
 export const listUngroundedRecords = (p?: { granularity_level?: string; target_type?: string; limit?: number; offset?: number }) =>
   getJson<UngroundedList>('/api/ontology/governance/ungrounded-records', p)
 

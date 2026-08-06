@@ -10,16 +10,19 @@ import {
   getAlignmentStats,
   getGovernanceDashboard,
   getMergePreview,
+  getOntologyRole,
   getTermDetail,
   getVocabularyUsage,
   listAlignmentCandidates,
   listDuplicateTerms,
   listEnumAnomalies,
+  listChangeLogs,
   listOntologyTerms,
   listUngroundedRecords,
   manualGroundOntology,
   mergeOntologyTerm,
   proposeOntologyTerm,
+  replaceEnumValues,
   reviewAlignmentCandidate,
   runDeterministicGrounding,
   runOntologyAudit,
@@ -32,6 +35,7 @@ import {
   type TermDetail,
   type UngroundedRecord,
   type VocabularyUsageItem,
+  type ChangeLogItem,
 } from '../../api/endpoints'
 
 type TabId = 'functions' | 'regions' | 'relations'
@@ -40,6 +44,11 @@ type FunctionSubView = 'pending' | 'all' | 'ungrounded' | 'duplicates'
 export function OntologyCenterPage() {
   const { granularity } = useGlobalGranularity()
   const [tab, setTab] = useState<TabId>('functions')
+  const [role, setRole] = useState<'viewer' | 'reviewer' | 'ontology_admin'>('viewer')
+
+  useEffect(() => {
+    getOntologyRole().then(r => setRole(r.role)).catch(() => setRole('viewer'))
+  }, [])
 
   return (
     <div className="data-center-page">
@@ -68,9 +77,9 @@ export function OntologyCenterPage() {
         </div>
         <GovernanceOverview granularity={granularity} onNavigate={setTab} />
         <div className="ontology-page-tab-body">
-          {tab === 'functions' && <FunctionsTab granularity={granularity} />}
-          {tab === 'regions' && <RegionsTab granularity={granularity} />}
-          {tab === 'relations' && <RelationsTab granularity={granularity} />}
+          {tab === 'functions' && <FunctionsTab granularity={granularity} role={role} />}
+          {tab === 'regions' && <RegionsTab granularity={granularity} role={role} />}
+          {tab === 'relations' && <RelationsTab granularity={granularity} role={role} />}
         </div>
       </div>
     </div>
@@ -180,7 +189,7 @@ function GovernanceOverview({
   )
 }
 
-function FunctionsTab({ granularity }: { granularity: string }) {
+function FunctionsTab({ granularity, role }: { granularity: string; role: string }) {
   const [subView, setSubView] = useState<FunctionSubView>('pending')
   return (
     <div>
@@ -203,15 +212,15 @@ function FunctionsTab({ granularity }: { granularity: string }) {
           </button>
         ))}
       </div>
-      {subView === 'pending' && <PendingTermsTable />}
-      {subView === 'all' && <PendingTermsTable status="all" />}
-      {subView === 'ungrounded' && <UngroundedSubView granularity={granularity} />}
+      {subView === 'pending' && <PendingTermsTable role={role} />}
+      {subView === 'all' && <PendingTermsTable status="all" role={role} />}
+      {subView === 'ungrounded' && <UngroundedSubView granularity={granularity} role={role} />}
       {subView === 'duplicates' && <DuplicatesSubView />}
     </div>
   )
 }
 
-function PendingTermsTable({ status = 'proposed' }: { status?: 'proposed' | 'all' }) {
+function PendingTermsTable({ status = 'proposed', role }: { status?: 'proposed' | 'all'; role: string }) {
   const [terms, setTerms] = useState<OntologyTerm[]>([])
   const [total, setTotal] = useState(0)
   const [offset, setOffset] = useState(0)
@@ -287,7 +296,7 @@ function PendingTermsTable({ status = 'proposed' }: { status?: 'proposed' | 'all
         </div>
       </div>
       {message && <div className="ontology-page-message">{message}</div>}
-      {selected.size > 0 && (
+      {selected.size > 0 && role === 'ontology_admin' && (
         <div className="ontology-batch-bar">
           已选 {selected.size} 条
           <button type="button" className="btn btn-sm" onClick={batchActivate}>批量激活</button>
@@ -314,14 +323,14 @@ function PendingTermsTable({ status = 'proposed' }: { status?: 'proposed' | 'all
               <td><span className={`ontology-status ontology-status-${term.status}`}>{term.status}</span></td>
               <td>{new Date(term.created_at).toLocaleDateString()}</td>
               <td className="ontology-term-actions" onClick={e => e.stopPropagation()}>
-                {term.status === 'proposed' && (
+                {term.status === 'proposed' && role !== 'viewer' && (
                   <button type="button" className="btn btn-xs" onClick={() => activateOntologyTerm(term.id).then(load).catch(err => setMessage(String(err)))}>激活</button>
                 )}
-                {term.status === 'active' && (
+                {term.status === 'active' && role === 'ontology_admin' && (
                   <button type="button" className="btn btn-xs" onClick={() => setDeprecateTerm(term)}>弃用</button>
                 )}
-                <button type="button" className="btn btn-xs" onClick={() => setMergeSource(term)}>合并</button>
-                <button type="button" className="btn btn-xs" onClick={() => setSynonymTerm(term)}>同义词</button>
+                {role === 'ontology_admin' && <button type="button" className="btn btn-xs" onClick={() => setMergeSource(term)}>合并</button>}
+                {role === 'ontology_admin' && <button type="button" className="btn btn-xs" onClick={() => setSynonymTerm(term)}>同义词</button>}
                 <button type="button" className="btn btn-xs" onClick={() => setDetailTerm(term)}>详情</button>
               </td>
             </tr>
@@ -571,7 +580,7 @@ function Modal({ title, children, onClose, busy }: { title: string; children: Re
   )
 }
 
-function UngroundedSubView({ granularity }: { granularity: string }) {
+function UngroundedSubView({ granularity, role }: { granularity: string; role: string }) {
   const [records, setRecords] = useState<UngroundedRecord[]>([])
   const [total, setTotal] = useState(0)
   const [offset, setOffset] = useState(0)
@@ -630,14 +639,12 @@ function UngroundedSubView({ granularity }: { granularity: string }) {
                   : '—'}
               </td>
               <td className="ontology-term-actions">
-                <button type="button" className="btn btn-xs" onClick={() => setAnchor({ record: r, termId: '' })}>人工锚定</button>
-                <button
-                  type="button"
-                  className="btn btn-xs"
-                  onClick={() => setSkipRecord(r)}
-                >
-                  暂不处理
-                </button>
+                {role !== 'viewer' && <button type="button" className="btn btn-xs" onClick={() => setAnchor({ record: r, termId: '' })}>人工锚定</button>}
+                {role !== 'viewer' && (
+                  <button type="button" className="btn btn-xs" onClick={() => setSkipRecord(r)}>
+                    暂不处理
+                  </button>
+                )}
               </td>
             </tr>
           ))}
@@ -779,7 +786,7 @@ function DuplicatesSubView() {
   )
 }
 
-function RegionsTab({ granularity }: { granularity: string }) {
+function RegionsTab({ granularity, role }: { granularity: string; role: string }) {
   const [status, setStatus] = useState('pending')
   const [stats, setStats] = useState<AlignmentStats | null>(null)
   const [items, setItems] = useState<AlignmentCandidateItem[]>([])
@@ -849,7 +856,7 @@ function RegionsTab({ granularity }: { granularity: string }) {
             {key === 'pending' ? '待确认' : key === 'accepted' ? '已对齐' : '已拒绝'}
           </button>
         ))}
-        <button type="button" className="btn btn-sm" onClick={batchAccept}>批量接受 exact</button>
+        {role === 'ontology_admin' && <button type="button" className="btn btn-sm" onClick={batchAccept}>批量接受 exact</button>}
         <button type="button" className="btn btn-sm" onClick={load}>刷新</button>
       </div>
       <table className="data-table ontology-term-table">
@@ -869,7 +876,7 @@ function RegionsTab({ granularity }: { granularity: string }) {
               <td>{c.match_score != null ? Math.round(c.match_score * 100) : '—'}%</td>
               <td><span className={`ontology-status ontology-status-${c.status}`}>{c.status}</span></td>
               <td className="ontology-term-actions">
-                {c.status === 'pending' && (
+                {c.status === 'pending' && role !== 'viewer' && (
                   <>
                     <button type="button" className="btn btn-xs" onClick={() => review(c.candidate_id, 'accept')}>接受</button>
                     <button type="button" className="btn btn-xs" onClick={() => review(c.candidate_id, 'reject')}>拒绝</button>
@@ -889,13 +896,15 @@ function RegionsTab({ granularity }: { granularity: string }) {
   )
 }
 
-function RelationsTab({ granularity }: { granularity: string }) {
-  const [subView, setSubView] = useState<'registry' | 'anomalies' | 'constraints'>('registry')
+function RelationsTab({ granularity, role }: { granularity: string; role: string }) {
+  const [subView, setSubView] = useState<'registry' | 'anomalies' | 'constraints' | 'logs'>('registry')
   const [usage, setUsage] = useState<VocabularyUsageItem[]>([])
   const [field, setField] = useState('category')
   const [anomalies, setAnomalies] = useState<Array<{ target_type: string; target_id: string; field: string; value: string; granularity_level: string | null }>>([])
   const [anomalyTotal, setAnomalyTotal] = useState(0)
   const [message, setMessage] = useState<string | null>(null)
+  const [logs, setLogs] = useState<ChangeLogItem[]>([])
+  const [replaceForm, setReplaceForm] = useState({ old_value: '', new_code: '' })
 
   const loadUsage = useCallback(async () => {
     const resp = await getVocabularyUsage()
@@ -907,10 +916,16 @@ function RelationsTab({ granularity }: { granularity: string }) {
     setAnomalyTotal(resp.total)
   }, [field, granularity])
 
+  const loadLogs = useCallback(async () => {
+    const resp = await listChangeLogs({ limit: 50 })
+    setLogs(resp.items)
+  }, [])
+
   useEffect(() => {
     if (subView === 'registry') loadUsage()
     if (subView === 'anomalies') loadAnomalies()
-  }, [subView, loadUsage, loadAnomalies])
+    if (subView === 'logs') loadLogs()
+  }, [subView, loadUsage, loadAnomalies, loadLogs])
 
   const grouped = useMemo(() => {
     const map = new Map<string, VocabularyUsageItem[]>()
@@ -950,6 +965,7 @@ function RelationsTab({ granularity }: { granularity: string }) {
             ['registry', '注册表'],
             ['anomalies', '异常值'],
             ['constraints', '约束说明'],
+            ['logs', '审计日志'],
           ] as Array<['registry' | 'anomalies' | 'constraints', string]>
         ).map(([key, label]) => (
           <button key={key} type="button" className={`ontology-subview-tab ${subView === key ? 'ontology-subview-tab-active' : ''}`} onClick={() => setSubView(key)}>{label}</button>
@@ -984,6 +1000,32 @@ function RelationsTab({ granularity }: { granularity: string }) {
             </select>
             <button type="button" className="btn btn-sm" onClick={loadAnomalies}>查询（{anomalyTotal}）</button>
           </div>
+          {role === 'ontology_admin' && (
+            <div className="ontology-form-row">
+              <input className="filter-input" placeholder="旧值（异常值）" value={replaceForm.old_value} onChange={e => setReplaceForm(f => ({ ...f, old_value: e.target.value }))} />
+              <select className="filter-select" value={replaceForm.new_code} onChange={e => setReplaceForm(f => ({ ...f, new_code: e.target.value }))}>
+                <option value="">选择合法 code</option>
+                {usage.filter(u => u.vocab_type === field).map(u => <option key={u.id} value={u.code}>{u.code}</option>)}
+              </select>
+              <button
+                type="button"
+                className="btn btn-sm"
+                disabled={!replaceForm.old_value || !replaceForm.new_code}
+                onClick={async () => {
+                  setMessage(null)
+                  try {
+                    const r = await replaceEnumValues({ field, old_value: replaceForm.old_value, new_code: replaceForm.new_code })
+                    setMessage(`已替换 ${r.updated} 条`)
+                    await loadAnomalies()
+                  } catch (err) {
+                    setMessage(`替换失败：${err instanceof Error ? err.message : String(err)}`)
+                  }
+                }}
+              >
+                批量替换
+              </button>
+            </div>
+          )}
           <table className="data-table ontology-term-table">
             <thead><tr><th>类型</th><th>ID</th><th>字段</th><th>异常值</th><th>颗粒度</th></tr></thead>
             <tbody>
@@ -1006,6 +1048,23 @@ function RelationsTab({ granularity }: { granularity: string }) {
             </div>
           ))}
         </div>
+      )}
+      {subView === 'logs' && (
+        <table className="data-table ontology-term-table">
+          <thead><tr><th>时间</th><th>操作</th><th>实体</th><th>操作者</th><th>原因</th></tr></thead>
+          <tbody>
+            {logs.map(log => (
+              <tr key={log.id}>
+                <td>{new Date(log.created_at).toLocaleString()}</td>
+                <td>{log.action_type}</td>
+                <td>{log.entity_type}:{log.entity_id.slice(0, 8)}</td>
+                <td>{log.operator_id ?? 'system'}</td>
+                <td>{log.reason ?? '—'}</td>
+              </tr>
+            ))}
+            {logs.length === 0 && <tr><td colSpan={5} className="ontology-empty">暂无审计日志</td></tr>}
+          </tbody>
+        </table>
       )}
     </div>
   )

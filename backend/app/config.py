@@ -23,6 +23,7 @@ class Settings(BaseSettings):
     app_host: str = "0.0.0.0"
     app_port: int = 8000
     cors_origins: str = "http://localhost:5173,http://127.0.0.1:5173,http://localhost:3000"
+    ontology_role: str = "ontology_admin"
 
     # Database components — align with backend/.env.example and docs/dbeaver_postgres_connection.md
     postgres_host: str = "127.0.0.1"

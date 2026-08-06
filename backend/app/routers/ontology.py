@@ -7,6 +7,7 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import get_settings
 from app.database import get_db
 from app.schemas.ontology import (
     AlignmentReviewRequest,
@@ -35,6 +36,29 @@ from app.services import ontology_governance_service as gov
 
 router = APIRouter()
 
+_ROLE_LEVELS = {"viewer": 0, "reviewer": 1, "ontology_admin": 2}
+
+
+def _current_role() -> str:
+    return (get_settings().ontology_role or "viewer").strip().lower()
+
+
+def require_role(min_role: str):
+    async def _dependency(role: str = Depends(_current_role)):
+        if _ROLE_LEVELS.get(role, -1) < _ROLE_LEVELS.get(min_role, 99):
+            raise HTTPException(
+                status_code=403,
+                detail={"code": "FORBIDDEN", "message": f"requires role {min_role}"},
+            )
+        return role
+
+    return _dependency
+
+
+@router.get("/governance/role")
+async def governance_role():
+    return {"role": _current_role()}
+
 
 @router.get("/vocabularies", response_model=VocabularyListResponse)
 async def get_vocabularies(
@@ -56,6 +80,7 @@ async def get_vocabularies(
 async def create_vocabulary(
     body: VocabularyCreateRequest,
     session: AsyncSession = Depends(get_db),
+    _auth: str = Depends(require_role("ontology_admin")),
 ):
     try:
         row = await svc.create_vocabulary(
@@ -120,6 +145,7 @@ async def create_term(
 async def activate_term(
     term_id: uuid.UUID,
     session: AsyncSession = Depends(get_db),
+    _auth: str = Depends(require_role("reviewer")),
 ):
     try:
         row = await svc.activate_term(session, term_id)
@@ -134,6 +160,7 @@ async def activate_term(
 async def deprecate_term(
     term_id: uuid.UUID,
     session: AsyncSession = Depends(get_db),
+    _auth: str = Depends(require_role("ontology_admin")),
 ):
     try:
         row = await svc.deprecate_term(session, term_id)
@@ -149,6 +176,7 @@ async def merge_term(
     term_id: uuid.UUID,
     body: TermMergeRequest,
     session: AsyncSession = Depends(get_db),
+    _auth: str = Depends(require_role("ontology_admin")),
 ):
     try:
         row = await svc.merge_term(session, term_id, body.target_id)
@@ -164,6 +192,7 @@ async def add_term_synonym(
     term_id: uuid.UUID,
     body: TermSynonymCreateRequest,
     session: AsyncSession = Depends(get_db),
+    _auth: str = Depends(require_role("ontology_admin")),
 ):
     try:
         row = await svc.add_synonym(
@@ -326,6 +355,7 @@ async def governance_merge_preview(
 async def governance_batch_activate(
     body: BatchActivateRequest,
     session: AsyncSession = Depends(get_db),
+    _auth: str = Depends(require_role("ontology_admin")),
 ):
     try:
         result = await gov.batch_activate(
@@ -342,6 +372,7 @@ async def governance_batch_activate(
 async def governance_manual_grounding(
     body: ManualGroundingRequest,
     session: AsyncSession = Depends(get_db),
+    _auth: str = Depends(require_role("reviewer")),
 ):
     try:
         result = await gov.manual_grounding(
@@ -362,6 +393,7 @@ async def governance_manual_grounding(
 async def governance_batch_grounding_by_text(
     body: BatchGroundingByTextRequest,
     session: AsyncSession = Depends(get_db),
+    _auth: str = Depends(require_role("reviewer")),
 ):
     try:
         result = await gov.batch_grounding_by_text(
@@ -381,6 +413,7 @@ async def governance_batch_grounding_by_text(
 async def governance_mark_skip(
     body: GroundingSkipRequest,
     session: AsyncSession = Depends(get_db),
+    _auth: str = Depends(require_role("reviewer")),
 ):
     try:
         result = await gov.mark_skip(
@@ -428,6 +461,7 @@ async def governance_enum_anomalies(
 async def governance_replace_enum_values(
     body: EnumReplaceRequest,
     session: AsyncSession = Depends(get_db),
+    _auth: str = Depends(require_role("ontology_admin")),
 ):
     try:
         result = await gov.replace_enum_values(
@@ -485,6 +519,7 @@ async def governance_review_alignment_candidate(
     candidate_id: uuid.UUID,
     body: AlignmentReviewRequest,
     session: AsyncSession = Depends(get_db),
+    _auth: str = Depends(require_role("reviewer")),
 ):
     try:
         result = await gov.review_alignment_candidate(
@@ -505,6 +540,7 @@ async def governance_review_alignment_candidate(
 @router.post("/alignment/candidates/batch-accept-exact")
 async def governance_batch_accept_exact(
     session: AsyncSession = Depends(get_db),
+    _auth: str = Depends(require_role("ontology_admin")),
 ):
     result = await gov.batch_accept_exact_candidates(session)
     await session.commit()
@@ -534,6 +570,7 @@ async def governance_change_logs(
 async def governance_audit_run(
     granularity_level: str | None = Query(default=None),
     session: AsyncSession = Depends(get_db),
+    _auth: str = Depends(require_role("reviewer")),
 ):
     result = await gov.run_audit(
         session, granularity_level=granularity_level, created_by="system"
