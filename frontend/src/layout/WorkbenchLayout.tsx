@@ -12,6 +12,7 @@ import {
   Share2,
   Search,
   Brain,
+  BookOpen,
 } from 'lucide-react'
 import { useI18n } from '../i18n-context'
 import { useWorkbenchLog } from '../logging/useWorkbenchLog'
@@ -27,6 +28,7 @@ const NAV_ITEMS = [
   { path: '/import-batches', labelKey: 'nav.importBatches', icon: Package },
   { path: '/llm-extraction', labelKey: 'nav.llmExtraction', icon: Sparkles },
   { path: '/data-center', labelKey: 'nav.dataCenter', icon: Layers },
+  { path: '/ontology-center', labelKey: 'nav.ontologyCenter', icon: BookOpen },
   { path: '/validation-center', labelKey: 'nav.validationCenter', icon: ShieldCheck },
   { path: '/task-center', labelKey: 'nav.taskCenter', icon: MonitorPlay },
   { path: '/graph-explorer', labelKey: 'nav.graphExplorer', icon: Share2 },

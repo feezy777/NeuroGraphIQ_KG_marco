@@ -19,6 +19,7 @@ from app.schemas.ontology import (
     TermListResponse,
     TermMergeRequest,
     TermRead,
+    TermSynonymCreateRequest,
     VocabularyCreateRequest,
     VocabularyListResponse,
     VocabularyRead,
@@ -151,9 +152,33 @@ async def merge_term(
         raise HTTPException(status_code=400, detail={"code": "INVALID_REQUEST", "message": str(exc)})
 
 
+@router.post("/terms/{term_id}/synonyms", status_code=201)
+async def add_term_synonym(
+    term_id: uuid.UUID,
+    body: TermSynonymCreateRequest,
+    session: AsyncSession = Depends(get_db),
+):
+    try:
+        row = await svc.add_synonym(
+            session,
+            term_id=term_id,
+            synonym_text=body.synonym_text,
+            lang=body.lang,
+            match_type=body.match_type,
+        )
+        await session.commit()
+        return {"id": str(row.id)}
+    except ValueError as exc:
+        await session.rollback()
+        raise HTTPException(status_code=400, detail={"code": "INVALID_REQUEST", "message": str(exc)})
+
+
 @router.get("/coverage", response_model=CoverageResponse)
-async def get_coverage(session: AsyncSession = Depends(get_db)):
-    data = await svc.coverage(session)
+async def get_coverage(
+    granularity_level: str | None = Query(default=None),
+    session: AsyncSession = Depends(get_db),
+):
+    data = await svc.coverage(session, granularity_level=granularity_level)
     return CoverageResponse.model_validate(data)
 
 
@@ -197,11 +222,25 @@ async def run_deterministic_grounding(
 @router.get("/report/term-panorama", response_model=PanoramaResponse)
 async def get_term_panorama(
     target_type: str = Query(default="projection_function"),
+    granularity_level: str | None = Query(default=None),
     limit: int = Query(default=5000, ge=1, le=50000),
     session: AsyncSession = Depends(get_db),
 ):
     try:
-        data = await svc.term_panorama(session, target_type, limit=limit)
+        data = await svc.term_panorama(
+            session, target_type, granularity_level=granularity_level, limit=limit
+        )
         return PanoramaResponse.model_validate(data)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail={"code": "INVALID_REQUEST", "message": str(exc)})
+
+
+@router.get("/regions/alignment")
+async def get_region_alignment(
+    granularity_level: str | None = Query(default=None),
+    limit: int = Query(default=5000, ge=1, le=50000),
+    session: AsyncSession = Depends(get_db),
+):
+    return await svc.region_alignment_summary(
+        session, granularity_level=granularity_level, limit=limit
+    )

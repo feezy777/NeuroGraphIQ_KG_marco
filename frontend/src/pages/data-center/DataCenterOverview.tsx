@@ -1,7 +1,6 @@
 import { useMemo } from 'react'
 import { useI18n } from '../../i18n-context'
 import type { DataCenterCounts, DataCenterTabId } from './dataCenterTypes'
-import { OntologyCoverageCard } from './OntologyCoverageCard'
 
 interface Props {
   counts: DataCenterCounts
@@ -121,8 +120,6 @@ export function DataCenterOverview({ counts, loading, onNavigate, onRefresh }: P
           </div>
         </div>
       )}
-
-      <OntologyCoverageCard />
 
       {/* Quick Entry */}
       <div className="dc-overview-card">

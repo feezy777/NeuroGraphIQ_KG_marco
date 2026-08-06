@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.mirror_kg import MirrorRegionFunction
 from app.models.mirror_macro_clinical import MirrorCircuitFunction, MirrorProjectionFunction
+from app.models.candidate import CandidateBrainRegion
 from app.models.ontology import (
     OntologyTerm,
     OntologyTermExternalMapping,
@@ -480,22 +481,31 @@ async def list_groundings(
 # ---- Coverage & Panorama ----
 
 
-async def coverage(session: AsyncSession) -> dict:
+async def coverage(session: AsyncSession, granularity_level: str | None = None) -> dict:
     items = []
     for key, model in TERM_TABLE_BY_TYPE.items():
-        total = (
-            await session.execute(select(func.count()).select_from(model))
-        ).scalar_one()
-        grounded = (
-            await session.execute(
-                select(func.count()).select_from(model).where(model.term_id.is_not(None))
+        total_query = select(func.count()).select_from(model)
+        grounded_query = (
+            select(func.count()).select_from(model).where(model.term_id.is_not(None))
+        )
+        method_query = (
+            select(OntologyTermGrounding.grounded_by, func.count())
+            .join(model, OntologyTermGrounding.target_id == model.id)
+            .where(OntologyTermGrounding.target_type == key)
+        )
+        if granularity_level:
+            total_query = total_query.where(model.granularity_level == granularity_level)
+            grounded_query = grounded_query.where(
+                model.granularity_level == granularity_level
             )
-        ).scalar_one()
+            method_query = method_query.where(
+                model.granularity_level == granularity_level
+            )
+        total = (await session.execute(total_query)).scalar_one()
+        grounded = (await session.execute(grounded_query)).scalar_one()
         method_rows = (
             await session.execute(
-                select(OntologyTermGrounding.grounded_by, func.count())
-                .where(OntologyTermGrounding.target_type == key)
-                .group_by(OntologyTermGrounding.grounded_by)
+                method_query.group_by(OntologyTermGrounding.grounded_by)
             )
         ).all()
         items.append(
@@ -532,22 +542,53 @@ async def coverage(session: AsyncSession) -> dict:
 async def term_panorama(
     session: AsyncSession,
     target_type: str,
+    granularity_level: str | None = None,
     limit: int = 5000,
 ) -> dict:
     model = TERM_TABLE_BY_TYPE.get(target_type)
     if model is None:
         raise ValueError(f"unsupported target_type: {target_type}")
     column = model.function_term if hasattr(model, "function_term") else model.function_term_en
-    rows = (
-        await session.execute(
-            select(func.lower(func.trim(column)).label("term_key"), column.label("term_label"), func.count().label("cnt"))
-            .group_by(column)
-            .order_by(func.count().desc())
-            .limit(limit)
-        )
-    ).all()
+    query = (
+        select(func.lower(func.trim(column)).label("term_key"), column.label("term_label"), func.count().label("cnt"))
+        .group_by(column)
+        .order_by(func.count().desc())
+        .limit(limit)
+    )
+    if granularity_level:
+        query = query.where(model.granularity_level == granularity_level)
+    rows = (await session.execute(query)).all()
     items = [
         {"term_key": row[0], "term_label": row[1], "count": row[2], "sample_ids": []}
         for row in rows
     ]
     return {"target_type": target_type, "total_distinct": len(items), "items": items}
+
+
+# ---- Region alignment ----
+
+
+async def region_alignment_summary(
+    session: AsyncSession,
+    granularity_level: str | None = None,
+    limit: int = 5000,
+) -> dict:
+    query = select(CandidateBrainRegion).order_by(CandidateBrainRegion.en_name)
+    if granularity_level:
+        query = query.where(CandidateBrainRegion.granularity_level == granularity_level)
+    rows = (await session.execute(query.limit(limit))).scalars().all()
+    total = len(rows)
+    aligned = sum(1 for row in rows if (row.uberon_iri or "").strip() or (row.nifstd_iri or "").strip())
+    items = [
+        {
+            "id": str(row.id),
+            "en_name": row.en_name,
+            "cn_name": row.cn_name,
+            "source_atlas": row.source_atlas,
+            "uberon_iri": row.uberon_iri,
+            "nifstd_iri": row.nifstd_iri,
+            "alignment_status": row.alignment_status,
+        }
+        for row in rows
+    ]
+    return {"total": total, "aligned": aligned, "unaligned": total - aligned, "items": items}

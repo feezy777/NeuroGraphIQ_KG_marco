@@ -77,6 +77,12 @@ class TermMergeRequest(BaseModel):
     target_id: uuid.UUID
 
 
+class TermSynonymCreateRequest(BaseModel):
+    synonym_text: str
+    lang: str = "en"
+    match_type: str = "synonym"
+
+
 class GroundingRead(BaseModel):
     id: uuid.UUID
     target_type: str

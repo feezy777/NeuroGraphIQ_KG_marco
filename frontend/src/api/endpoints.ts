@@ -4893,8 +4893,63 @@ export interface OntologyTermList {
   total: number
 }
 
-export const getOntologyCoverage = () =>
-  getJson<OntologyCoverage>('/api/ontology/coverage')
+export const getOntologyCoverage = (p?: { granularity_level?: string }) =>
+  getJson<OntologyCoverage>('/api/ontology/coverage', p)
 
 export const listOntologyTerms = (p?: { status?: string; q?: string; limit?: number; offset?: number }) =>
   getJson<OntologyTermList>('/api/ontology/terms', p)
+
+export interface OntologyVocabulary {
+  id: string
+  code: string
+  vocab_type: string
+  label_cn: string | null
+  label_en: string | null
+  description: string | null
+  status: string
+  seq: number
+  created_at: string
+  updated_at: string
+}
+
+export interface OntologyVocabularyList {
+  items: OntologyVocabulary[]
+  total: number
+}
+
+export interface RegionAlignmentItem {
+  id: string
+  en_name: string | null
+  cn_name: string | null
+  source_atlas: string
+  uberon_iri: string | null
+  nifstd_iri: string | null
+  alignment_status: string
+}
+
+export interface RegionAlignmentSummary {
+  total: number
+  aligned: number
+  unaligned: number
+  items: RegionAlignmentItem[]
+}
+
+export const listOntologyVocabularies = (p?: { vocab_type?: string; status?: string }) =>
+  getJson<OntologyVocabularyList>('/api/ontology/vocabularies', p)
+
+export const getRegionAlignment = (p?: { granularity_level?: string }) =>
+  getJson<RegionAlignmentSummary>('/api/ontology/regions/alignment', p)
+
+export const activateOntologyTerm = (termId: string) =>
+  postJson<OntologyTerm>(`/api/ontology/terms/${termId}/activate`)
+
+export const deprecateOntologyTerm = (termId: string) =>
+  postJson<OntologyTerm>(`/api/ontology/terms/${termId}/deprecate`)
+
+export const mergeOntologyTerm = (termId: string, targetId: string) =>
+  postJson<OntologyTerm>(`/api/ontology/terms/${termId}/merge`, { target_id: targetId })
+
+export const addOntologySynonym = (
+  termId: string,
+  body: { synonym_text: string; lang?: string; match_type?: string }
+) => postJson<{ id: string }>(`/api/ontology/terms/${termId}/synonyms`, body)
