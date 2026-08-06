@@ -46,7 +46,7 @@ export function OntologyCenterPage() {
       <div className="data-center-header-static">
         <PageHeader title="本体中心" description="本体治理工作台 · 跟随顶部颗粒度切换" readonly />
       </div>
-      <div className="ontology-page">
+      <div className="ontology-page ontology-page-scroll">
         <div className="ontology-page-tabs">
           {(
             [
