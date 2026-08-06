@@ -100,6 +100,9 @@ class MirrorRegionFunction(Base):
     source_atlas: Mapped[str] = mapped_column(String(128), nullable=False)
     source_version: Mapped[str | None] = mapped_column(String(64), nullable=True)
     function_term: Mapped[str] = mapped_column(String(512), nullable=False)
+    term_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("ontology_terms.id"), nullable=True
+    )
     region_name_cn: Mapped[str | None] = mapped_column(String(256), nullable=True)
     region_name_en: Mapped[str | None] = mapped_column(String(256), nullable=True)
     function_category: Mapped[str] = mapped_column(String(64), nullable=False, default="unknown")

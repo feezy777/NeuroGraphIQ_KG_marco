@@ -98,6 +98,9 @@ class MirrorCircuitFunction(Base):
     source_version: Mapped[str | None] = mapped_column(String(64), nullable=True)
     function_term_en: Mapped[str | None] = mapped_column(String(512), nullable=True)
     function_term_cn: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    term_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("ontology_terms.id"), nullable=True
+    )
     function_domain: Mapped[str | None] = mapped_column(String(128), nullable=True)
     function_role: Mapped[str | None] = mapped_column(String(128), nullable=True)
     effect_type: Mapped[str | None] = mapped_column(String(128), nullable=True)
@@ -152,6 +155,13 @@ class MirrorProjectionFunction(Base):
     source_atlas: Mapped[str] = mapped_column(String(128), nullable=False)
     source_version: Mapped[str | None] = mapped_column(String(64), nullable=True)
     function_term: Mapped[str] = mapped_column(String(512), nullable=False)
+    function_term_cn: Mapped[str | None] = mapped_column(Text, nullable=True)
+    term_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("ontology_terms.id"), nullable=True
+    )
+    function_domain: Mapped[str | None] = mapped_column(Text, nullable=True)
+    function_role: Mapped[str | None] = mapped_column(Text, nullable=True)
+    effect_type: Mapped[str | None] = mapped_column(Text, nullable=True)
     function_category: Mapped[str] = mapped_column(String(64), nullable=False, default="unknown")
     relation_type: Mapped[str] = mapped_column(String(64), nullable=False, default="associated_with")
     confidence: Mapped[float | None] = mapped_column(Numeric, nullable=True)

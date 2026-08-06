@@ -88,6 +88,9 @@ class CandidateBrainRegion(Base):
     region_base_name: Mapped[str | None] = mapped_column(String(500), nullable=True)
     granularity_level: Mapped[str] = mapped_column(String(32), nullable=False)
     granularity_family: Mapped[str] = mapped_column(String(64), nullable=False)
+    uberon_iri: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    nifstd_iri: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    alignment_status: Mapped[str] = mapped_column(String(32), nullable=False, default="not_aligned")
     candidate_status: Mapped[str] = mapped_column(
         String(64), nullable=False, default="candidate_created"
     )
