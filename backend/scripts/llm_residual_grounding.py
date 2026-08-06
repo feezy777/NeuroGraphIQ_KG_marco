@@ -14,6 +14,7 @@ import argparse
 import asyncio
 import json
 import os
+import re
 import sys
 from collections import Counter
 
@@ -27,13 +28,12 @@ from sqlalchemy import select, text
 from app.database import AsyncSessionLocal
 from app.models.ontology import OntologyTerm
 from app.services.llm_providers.factory import get_llm_provider
-from app.services.llm_json_utils import parse_llm_json_response
 from app.services.ontology_service import _term_code, normalize_term_key
 
 MODEL = "deepseek-v4-flash"
 BATCH_SIZE = 20
 CONCURRENCY = 2
-MAX_TOKENS = 3000
+MAX_TOKENS = 5000
 CONFIDENCE_THRESHOLD = 0.9
 LOG_PATH = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
@@ -86,24 +86,14 @@ async def load_registry_index() -> tuple[dict[str, int], dict[str, int], set[str
     return active, proposed, codes
 
 
-def _top_active_terms(active_terms: list[tuple[str, int]], top: int = 120) -> str:
-    return ", ".join(term for term, _ in active_terms[:top])
-
-
-def _build_prompt(batch: list[tuple[str, int]], active_text: str) -> tuple[str, str]:
-    system = (
-        "You map neuroscience function phrases to canonical English terms. "
-        "Existing canonical vocabulary (use these when the phrase is a variant of one):\n"
-        f"{active_text}\n"
-        "Rules: canonical must be lowercase, concise, and stable; "
-        "do not invent overly broad terms; if a phrase already matches an existing "
-        "canonical, use that canonical; otherwise give a clean canonical phrase. "
-        'Respond ONLY with a JSON object like '
-        '{"items": [{"term": "<input term>", "canonical_term": "<canonical>", "confidence": 0.95}]}.'
-    )
-    user = json.dumps(
-        [{"term": term, "count": count} for term, count in batch],
-        ensure_ascii=False,
+def _build_prompt(batch: list[tuple[str, int]]) -> tuple[str, str]:
+    system = "You are a strict JSON API. Reply only with the requested JSON object. Never explain."
+    terms = [term for term, _count in batch]
+    user = (
+        'Normalize each neuroscience function phrase into a concise lowercase canonical term. '
+        'Return JSON exactly like: '
+        '{"items": [{"term": "<input>", "canonical_term": "<canonical>", "confidence": 0.95}]}. '
+        f"Input terms: {json.dumps(terms, ensure_ascii=False)}"
     )
     return system, user
 
@@ -117,8 +107,17 @@ def _normalize_items(parsed) -> list[dict]:
         elif isinstance(parsed.get("items"), list):
             items = parsed["items"]
         elif parsed:
-            # Single object response (first element unwrapped by provider).
-            items = [parsed]
+            pairs = list(parsed.items())
+            if pairs and all(isinstance(v, dict) for _, v in pairs):
+                # Mapping like {"working memory": {"canonical_term": ..., "confidence": ...}}
+                items = []
+                for key, val in pairs:
+                    val = dict(val)
+                    val.setdefault("term", key)
+                    items.append(val)
+            else:
+                # Single object response (first element unwrapped by provider).
+                items = [parsed]
         else:
             items = []
     else:
@@ -127,7 +126,11 @@ def _normalize_items(parsed) -> list[dict]:
 
 
 def _parse_results(raw_text: str) -> list[dict]:
-    parsed = parse_llm_json_response(raw_text)
+    text = (raw_text or "").strip()
+    fence = re.search(r"```(?:json|JSON)?\s*(.*?)```", text, re.DOTALL)
+    if fence:
+        text = fence.group(1).strip()
+    parsed = json.loads(text)
     items = _normalize_items(parsed)
     if not items:
         raise ValueError("unexpected JSON shape")
@@ -192,7 +195,6 @@ async def apply_mapping(
 async def process_batch(
     target_type: str,
     batch: list[tuple[str, int]],
-    active_text: str,
     active_index: dict[str, int],
     proposed_index: dict[str, int],
     codes: set[str],
@@ -200,37 +202,25 @@ async def process_batch(
     report_rows: list[dict],
     provider,
 ) -> None:
-    system_prompt, user_prompt = _build_prompt(batch, active_text)
+    system_prompt, user_prompt = _build_prompt(batch)
     parsed = None
     for attempt in range(2):
         try:
-            if attempt == 0:
-                response = await provider.complete_json(
-                    model=MODEL,
-                    system_prompt=system_prompt,
-                    user_prompt=user_prompt,
-                    temperature=0.1,
-                    max_tokens=MAX_TOKENS,
-                )
-            else:
-                retry = user_prompt + (
+            prompt = user_prompt
+            if attempt == 1:
+                prompt = user_prompt + (
                     "\n\nIMPORTANT: Respond with ONLY the raw JSON object. "
                     "No reasoning or text outside JSON."
                 )
-                text_result = await provider.complete_text(
-                    model=MODEL,
-                    system_prompt=system_prompt,
-                    user_prompt=retry,
-                    temperature=0.2,
-                    max_tokens=MAX_TOKENS,
-                    json_mode=False,
-                )
-                parsed = _parse_results(text_result.raw_text or "")
-                break
-            if response.parsed_json is not None:
-                parsed = _normalize_items(response.parsed_json)
-                break
-            parsed = _parse_results(response.raw_text or "")
+            text_result = await provider.complete_text(
+                model=MODEL,
+                system_prompt=system_prompt,
+                user_prompt=prompt,
+                temperature=0.1 + 0.1 * attempt,
+                max_tokens=MAX_TOKENS,
+                json_mode=False,
+            )
+            parsed = _parse_results(text_result.raw_text or "")
             break
         except Exception as exc:  # noqa: BLE001
             stats["failed"] += 1
@@ -240,11 +230,11 @@ async def process_batch(
             if attempt == 1:
                 detail = ""
                 try:
-                    if response is not None:
+                    if text_result is not None:
                         detail = (
-                            f"transport_ok={response.transport_ok} "
-                            f"err={response.error_message} "
-                            f"raw={repr((response.raw_text or '')[:200])}"
+                            f"transport_ok={text_result.transport_ok} "
+                            f"err={text_result.error} "
+                            f"raw={repr((text_result.raw_text or '')[:200])}"
                         )
                 except Exception:  # noqa: BLE001
                     detail = ""
@@ -323,19 +313,6 @@ async def main(min_count: int) -> None:
     provider = get_llm_provider("deepseek")
     ungrounded = await load_ungrounded_terms()
     active_index, proposed_index, codes = await load_registry_index()
-    async with AsyncSessionLocal() as session:
-        active_terms = (
-            await session.execute(
-                select(OntologyTerm)
-                .where(OntologyTerm.status == "active")
-                .order_by(OntologyTerm.created_at)
-            )
-        ).scalars().all()
-    active_count: Counter = Counter()
-    for term in active_terms:
-        active_count[term.canonical_term_en] += 1
-    active_ranked = sorted(active_count.items(), key=lambda x: x[1], reverse=True)
-    active_text = _top_active_terms(active_ranked)
 
     stats: Counter = Counter({
         "processed_terms": 0,
@@ -360,7 +337,6 @@ async def main(min_count: int) -> None:
             await process_batch(
                 batch_item[0],
                 batch_item[1],
-                active_text,
                 active_index,
                 proposed_index,
                 codes,
