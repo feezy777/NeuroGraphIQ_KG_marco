@@ -47,6 +47,7 @@ from app.services.ontology_vocab_cache import (
     get_vocab_codes,
     refresh_vocab_cache,
 )
+from app.services.ontology_service import ground_written_records
 from app.services.llm_providers import UnknownProviderError, get_llm_provider
 from app.services.settings_service import get_deepseek_runtime_config, get_kimi_runtime_config
 
@@ -397,6 +398,7 @@ async def persist_function_mirror_records(
     created = skipped = triples = evidence = 0
     warnings: list[str] = []
     seen = session_seen or set()
+    created_fns: list[MirrorRegionFunction] = []
 
     for fn in functions:
         region_id = uuid.UUID(fn["region_candidate_id"])
@@ -446,6 +448,7 @@ async def persist_function_mirror_records(
         )
         mirror_fn = await mirror_kg_service.create_mirror_function(session, payload)
         created += 1
+        created_fns.append(mirror_fn)
         seen.add(key)
 
         if create_triples:
@@ -493,6 +496,12 @@ async def persist_function_mirror_records(
             await mirror_kg_service.create_mirror_evidence(session, ev_payload)
             evidence += 1
 
+    await ground_written_records(
+        session,
+        target_type="region_function",
+        rows=created_fns,
+        created_by="extraction",
+    )
     return created, skipped, triples, evidence, warnings
 
 

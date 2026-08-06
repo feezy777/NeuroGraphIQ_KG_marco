@@ -678,6 +678,41 @@ async def run_deterministic_grounding_batch(
     }
 
 
+async def ground_written_records(
+    session: AsyncSession,
+    *,
+    target_type: str,
+    rows: list,
+    created_by: str = "extraction",
+) -> dict:
+    """Ground newly written function records (write-time anchoring).
+
+    Matches against the active term index (deterministic); unmatched rows are
+    explicitly marked ungrounded. Manual grounding is never overwritten.
+    """
+    if target_type not in TERM_TABLE_BY_TYPE or not rows:
+        return {"processed": 0, "grounded": 0}
+    index = await _load_term_index(session)
+    grounded = 0
+    for row in rows:
+        term_text = _term_text_for(row, target_type)
+        term_id = _index_lookup(index, term_text)
+        await _upsert_grounding(
+            session,
+            target_type=target_type,
+            target_id=row.id,
+            term_id=term_id,
+            grounded_by="deterministic" if term_id else "ungrounded",
+            confidence=1.0 if term_id else None,
+            created_by=created_by,
+        )
+        row.term_id = term_id
+        if term_id:
+            grounded += 1
+    await session.flush()
+    return {"processed": len(rows), "grounded": grounded}
+
+
 async def list_groundings(
     session: AsyncSession,
     *,

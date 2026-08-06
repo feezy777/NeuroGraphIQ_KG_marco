@@ -31,6 +31,7 @@ from app.schemas.mirror_macro_clinical import (
     MirrorDualModelVerificationRunCreate,
     MirrorProjectionFunctionCreate,
 )
+from app.services.ontology_service import ground_written_records
 
 
 class MirrorCircuitNotFoundError(Exception):
@@ -344,11 +345,21 @@ async def create_projection_function(
             existing.confidence = payload.confidence
             existing.evidence_text = payload.evidence_text
             existing.uncertainty_reason = payload.uncertainty_reason
+            existing.function_term_cn = payload.function_term_cn
+            existing.function_domain = payload.function_domain
+            existing.function_role = payload.function_role
+            existing.effect_type = payload.effect_type
             existing.llm_run_id = payload.llm_run_id
             existing.llm_item_id = payload.llm_item_id
             existing.mirror_status = MirrorStatus.llm_suggested
             await session.flush()
             await session.refresh(existing)
+            await ground_written_records(
+                session,
+                target_type="circuit_function",
+                rows=[existing],
+                created_by="extraction",
+            )
         return existing
 
     data = payload.model_dump()
@@ -975,4 +986,10 @@ async def create_circuit_function(
     session.add(row)
     await session.flush()
     await session.refresh(row)
+    await ground_written_records(
+        session,
+        target_type="circuit_function",
+        rows=[row],
+        created_by="extraction",
+    )
     return row

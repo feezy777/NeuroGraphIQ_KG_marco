@@ -49,6 +49,7 @@ from app.services.ontology_vocab_cache import (
     get_vocab_codes,
     refresh_vocab_cache,
 )
+from app.services.ontology_service import ground_written_records
 from app.services.llm_providers import LlmProviderResponse, UnknownProviderError, get_llm_provider
 from app.services.settings_service import get_deepseek_runtime_config, get_kimi_runtime_config
 from app.services.llm_workflow_artifact_tagging import tag_raw_payload
@@ -643,6 +644,7 @@ async def persist_projection_functions(
     created = skipped = triples = evidence = 0
     warnings: list[str] = []
     seen = session_seen or set()
+    created_pfs: list[MirrorProjectionFunction] = []
 
     for fn in functions:
         if composite_workflow_run_id and is_cancelling(composite_workflow_run_id):
@@ -721,6 +723,7 @@ async def persist_projection_functions(
         except Exception as exc:
             raise MirrorPersistError(f"projection_function persist failed: {exc}") from exc
         created += 1
+        created_pfs.append(mirror_fn)
         seen.add(key)
 
         if create_triples:
@@ -741,6 +744,12 @@ async def persist_projection_functions(
                 warnings=warnings,
             )
 
+    await ground_written_records(
+        session,
+        target_type="projection_function",
+        rows=created_pfs,
+        created_by="extraction",
+    )
     return created, skipped, triples, evidence, warnings
 
 

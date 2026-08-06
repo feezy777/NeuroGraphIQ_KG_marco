@@ -8,6 +8,7 @@ import pytest
 
 from app.services import llm_function_extraction_service as fes
 from app.services import llm_projection_function_extraction_service as pfes
+from app.services import mirror_macro_clinical_service as mmcs
 from app.services import ontology_vocab_cache as vc
 
 
@@ -25,5 +26,8 @@ def _seed_ontology_vocab_cache(monkeypatch):
     # from the registry at run start in production.
     monkeypatch.setattr(fes, "refresh_vocab_cache", AsyncMock())
     monkeypatch.setattr(pfes, "refresh_vocab_cache", AsyncMock())
+    monkeypatch.setattr(fes, "ground_written_records", AsyncMock())
+    monkeypatch.setattr(pfes, "ground_written_records", AsyncMock())
+    monkeypatch.setattr(mmcs, "ground_written_records", AsyncMock())
     yield
     vc.invalidate_vocab_cache()
