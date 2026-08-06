@@ -42,6 +42,7 @@ CREATE TABLE IF NOT EXISTS ontology_term_synonyms (
     match_type VARCHAR(16) NOT NULL,
     confidence NUMERIC,
     status VARCHAR(16) NOT NULL DEFAULT 'active',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     CONSTRAINT uq_ontology_synonym UNIQUE (term_id, synonym_text, lang)
 );
 
@@ -53,6 +54,7 @@ CREATE TABLE IF NOT EXISTS ontology_term_external_mappings (
     match_type VARCHAR(16) NOT NULL,
     confidence NUMERIC,
     verified_by VARCHAR(64),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     CONSTRAINT uq_ontology_external UNIQUE (term_id, external_system, external_iri)
 );
 

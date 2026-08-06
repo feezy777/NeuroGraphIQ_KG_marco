@@ -394,8 +394,16 @@ async def run_deterministic_grounding_batch(
     if model is None:
         raise ValueError(f"unsupported target_type: {target_type}")
     index = await _load_term_index(session)
+    ungrounded_exists = (
+        select(OntologyTermGrounding.target_id)
+        .where(
+            OntologyTermGrounding.target_type == target_type,
+            OntologyTermGrounding.target_id == model.id,
+        )
+        .exists()
+    )
     rows = (
-        await session.execute(select(model).where(model.term_id.is_(None)).limit(limit))
+        await session.execute(select(model).where(~ungrounded_exists).limit(limit))
     ).scalars().all()
     if not rows:
         return {"target_type": target_type, "processed": 0, "grounded": 0, "ungrounded": 0}
@@ -429,6 +437,29 @@ async def run_deterministic_grounding_batch(
         "grounded": grounded,
         "ungrounded": len(rows) - grounded,
     }
+
+
+async def list_groundings(
+    session: AsyncSession,
+    *,
+    target_type: str | None = None,
+    target_id: uuid.UUID | None = None,
+    limit: int = 100,
+    offset: int = 0,
+) -> tuple[list[OntologyTermGrounding], int]:
+    conditions = []
+    if target_type:
+        conditions.append(OntologyTermGrounding.target_type == target_type)
+    if target_id:
+        conditions.append(OntologyTermGrounding.target_id == target_id)
+    total_query = select(func.count()).select_from(OntologyTermGrounding)
+    query = select(OntologyTermGrounding).order_by(OntologyTermGrounding.grounded_at.desc())
+    for condition in conditions:
+        total_query = total_query.where(condition)
+        query = query.where(condition)
+    total = (await session.execute(total_query)).scalar_one()
+    rows = (await session.execute(query.limit(limit).offset(offset))).scalars().all()
+    return list(rows), total
 
 
 # ---- Coverage & Panorama ----
