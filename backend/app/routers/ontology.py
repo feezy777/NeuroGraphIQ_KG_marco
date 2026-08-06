@@ -18,6 +18,7 @@ from app.schemas.ontology import (
     GroundingRead,
     GroundingRunRequest,
     GroundingRunResponse,
+    GroundingSkipRequest,
     ManualGroundingRequest,
     PanoramaResponse,
     TermCreateRequest,
@@ -376,6 +377,25 @@ async def governance_batch_grounding_by_text(
         raise HTTPException(status_code=400, detail={"code": "INVALID_REQUEST", "message": str(exc)})
 
 
+@router.post("/groundings/skip")
+async def governance_mark_skip(
+    body: GroundingSkipRequest,
+    session: AsyncSession = Depends(get_db),
+):
+    try:
+        result = await gov.mark_skip(
+            session,
+            target_type=body.target_type,
+            target_id=body.target_id,
+            reason=body.reason or "manual skip",
+        )
+        await session.commit()
+        return result
+    except ValueError as exc:
+        await session.rollback()
+        raise HTTPException(status_code=400, detail={"code": "INVALID_REQUEST", "message": str(exc)})
+
+
 @router.get("/vocabularies/usage")
 async def governance_vocabulary_usage(
     vocab_type: str | None = Query(default=None),
@@ -447,6 +467,16 @@ async def governance_alignment_candidates(
         granularity_level=granularity_level,
         limit=limit,
         offset=offset,
+    )
+
+
+@router.get("/alignment/candidates/stats")
+async def governance_alignment_candidates_stats(
+    granularity_level: str | None = Query(default=None),
+    session: AsyncSession = Depends(get_db),
+):
+    return await gov.alignment_candidates_stats(
+        session, granularity_level=granularity_level
     )
 
 

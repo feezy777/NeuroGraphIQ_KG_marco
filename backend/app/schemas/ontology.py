@@ -101,6 +101,12 @@ class BatchGroundingByTextRequest(BaseModel):
     term_id: uuid.UUID
 
 
+class GroundingSkipRequest(BaseModel):
+    target_type: str
+    target_id: uuid.UUID
+    reason: str
+
+
 class EnumReplaceRequest(BaseModel):
     field: str
     old_value: str

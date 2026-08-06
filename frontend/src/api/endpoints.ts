@@ -4896,8 +4896,26 @@ export interface OntologyTermList {
 export const getOntologyCoverage = (p?: { granularity_level?: string }) =>
   getJson<OntologyCoverage>('/api/ontology/coverage', p)
 
+export const runDeterministicGrounding = (body: { target_type: string; limit?: number }) =>
+  postJson<{ target_type: string; processed: number; grounded: number; ungrounded: number }>(
+    '/api/ontology/groundings/run',
+    body,
+  )
+
 export const listOntologyTerms = (p?: { status?: string; q?: string; limit?: number; offset?: number }) =>
   getJson<OntologyTermList>('/api/ontology/terms', p)
+
+export const proposeOntologyTerm = (body: {
+  canonical_term_en: string
+  canonical_term_cn?: string | null
+  term_type?: string
+  category?: string | null
+  domain?: string | null
+  role?: string | null
+  effect_type?: string | null
+  description?: string | null
+  created_by?: string
+}) => postJson<OntologyTerm>('/api/ontology/terms', body)
 
 export interface OntologyVocabulary {
   id: string
@@ -4953,3 +4971,227 @@ export const addOntologySynonym = (
   termId: string,
   body: { synonym_text: string; lang?: string; match_type?: string }
 ) => postJson<{ id: string }>(`/api/ontology/terms/${termId}/synonyms`, body)
+
+// ──── Ontology Governance ─────────────────────────────────────────────
+
+export interface GovernanceDashboard {
+  function_anchor_rate: number
+  function_total: number
+  function_grounded: number
+  proposed_terms: number
+  ungrounded_records: number
+  region_unaligned: number
+  enum_anomalies: number
+  last_audit_at: string | null
+}
+
+export interface GovernanceIssues {
+  term_ungrounded: number
+  term_not_active: number
+  term_deprecated: number
+  region_unaligned: number
+  enum_invalid: number
+  predicate_unknown: number
+  total: number
+}
+
+export interface UngroundedRecord {
+  target_type: string
+  target_id: string
+  function_term: string
+  granularity_level: string
+  reason: string
+  recommendations: Array<{ term_id: string; canonical_term_en: string; term_code: string; confidence: number }>
+}
+
+export interface UngroundedList {
+  items: UngroundedRecord[]
+  total: number
+}
+
+export interface TermReference {
+  target_type: string
+  target_id: string
+  function_term: string
+  granularity_level: string
+}
+
+export interface TermDetail {
+  term: {
+    id: string
+    term_code: string
+    canonical_term_en: string
+    canonical_term_cn: string | null
+    term_type: string
+    status: string
+    created_by: string
+    created_at: string
+    updated_at: string
+    replaced_by_term_id: string | null
+  }
+  synonyms: Array<{ id: string; synonym_text: string; lang: string; match_type: string; status: string }>
+  external_mappings: Array<{ id: string; external_system: string; external_iri: string; external_label: string | null; match_type: string }>
+  references: { items: TermReference[]; total: number }
+  change_logs: Array<{ id: string; action_type: string; operator_id: string | null; reason: string | null; created_at: string }>
+}
+
+export interface MergePreview {
+  source: { id: string; term_code: string; canonical_term_en: string; status: string }
+  target: { id: string; term_code: string; canonical_term_en: string; status: string }
+  synonyms_to_move: number
+  synonym_conflicts: number
+  external_mappings_to_move: number
+  external_mapping_conflicts: number
+  groundings_to_update: number
+  business_rows_to_update: Record<string, number>
+  source_status_after: string
+}
+
+export interface VocabularyUsageItem {
+  id: string
+  code: string
+  vocab_type: string
+  label_cn: string | null
+  label_en: string | null
+  description: string | null
+  status: string
+  seq: number
+  usage_count: number
+  updated_at: string
+}
+
+export interface EnumAnomalyItem {
+  target_type: string
+  target_id: string
+  field: string
+  value: string
+  granularity_level: string | null
+}
+
+export interface AlignmentCandidateItem {
+  candidate_id: string
+  region_id: string
+  en_name: string | null
+  cn_name: string | null
+  source_atlas: string
+  external_system: string
+  external_iri: string
+  external_label: string | null
+  match_type: string
+  match_score: number | null
+  match_details: Record<string, unknown>
+  status: string
+  reviewed_by: string | null
+  reviewed_at: string | null
+}
+
+export interface AlignmentStats {
+  total: number
+  by_status: Record<string, number>
+  by_match_type: Record<string, number>
+}
+
+export interface ChangeLogItem {
+  id: string
+  action_type: string
+  entity_type: string
+  entity_id: string
+  before_data: Record<string, unknown>
+  after_data: Record<string, unknown>
+  operator_id: string | null
+  reason: string | null
+  created_at: string
+}
+
+export const getGovernanceDashboard = (p?: { granularity_level?: string }) =>
+  getJson<GovernanceDashboard>('/api/ontology/governance/dashboard', p)
+
+export const getGovernanceIssues = (p?: { granularity_level?: string }) =>
+  getJson<GovernanceIssues>('/api/ontology/governance/issues', p)
+
+export const listUngroundedRecords = (p?: { granularity_level?: string; target_type?: string; limit?: number; offset?: number }) =>
+  getJson<UngroundedList>('/api/ontology/governance/ungrounded-records', p)
+
+export const getTermDetail = (termId: string) =>
+  getJson<TermDetail>(`/api/ontology/terms/${termId}/detail`)
+
+export const getTermReferences = (termId: string, p?: { limit?: number; offset?: number }) =>
+  getJson<{ items: TermReference[]; total: number }>(`/api/ontology/terms/${termId}/references`, p)
+
+export const getMergePreview = (sourceId: string, targetId: string) =>
+  postJson<MergePreview>(`/api/ontology/terms/${sourceId}/merge-preview`, { target_id: targetId })
+
+export const batchActivateOntologyTerms = (body: { term_ids: string[]; reason?: string }) =>
+  postJson<{ activated: number; skipped: number; failed: number; errors: Array<{ term_id: string; error: string }> }>(
+    '/api/ontology/terms/batch-activate',
+    body,
+  )
+
+export const manualGroundOntology = (body: { target_type: string; target_id: string; term_id: string; reason?: string }) =>
+  postJson<{ target_type: string; target_id: string; term_id: string; term_code: string }>(
+    '/api/ontology/groundings/manual',
+    body,
+  )
+
+export const batchGroundByText = (body: { target_type: string; term_text: string; term_id: string }) =>
+  postJson<{ target_type: string; term_text: string; updated: number }>(
+    '/api/ontology/groundings/batch-by-text',
+    body,
+  )
+
+export const skipUngroundedRecord = (body: { target_type: string; target_id: string; reason: string }) =>
+  postJson<{ target_type: string; target_id: string; skipped: boolean }>(
+    '/api/ontology/groundings/skip',
+    body,
+  )
+
+export const getVocabularyUsage = (p?: { vocab_type?: string }) =>
+  getJson<{ items: VocabularyUsageItem[]; total: number }>('/api/ontology/vocabularies/usage', p)
+
+export const listEnumAnomalies = (p?: { field: string; granularity_level?: string; limit?: number; offset?: number }) =>
+  getJson<{ items: EnumAnomalyItem[]; total: number }>('/api/ontology/enum-anomalies', p)
+
+export const replaceEnumValues = (body: { field: string; old_value: string; new_code: string; reason?: string }) =>
+  postJson<{ field: string; old_value: string; new_code: string; updated: number }>(
+    '/api/ontology/enum-anomalies/replace',
+    body,
+  )
+
+export const listDuplicateTerms = (p?: { limit?: number; offset?: number }) =>
+  getJson<{ items: Array<{ basis: string; term_ids: string[] }>; total: number }>(
+    '/api/ontology/terms/duplicates',
+    p,
+  )
+
+export const listAlignmentCandidates = (p?: { status?: string; granularity_level?: string; limit?: number; offset?: number }) =>
+  getJson<{ items: AlignmentCandidateItem[]; total: number }>('/api/ontology/alignment/candidates', p)
+
+export const getAlignmentStats = (p?: { granularity_level?: string }) =>
+  getJson<AlignmentStats>('/api/ontology/alignment/candidates/stats', p)
+
+export const reviewAlignmentCandidate = (
+  candidateId: string,
+  body: { action: 'accept' | 'reject' | 'modify'; reason?: string; external_iri?: string; external_label?: string },
+) => postJson<{ candidate_id: string; status: string }>(
+  `/api/ontology/alignment/candidates/${candidateId}/review`,
+  body,
+)
+
+export const batchAcceptExactCandidates = () =>
+  postJson<{ accepted: number }>('/api/ontology/alignment/candidates/batch-accept-exact')
+
+export const runOntologyAudit = (p?: { granularity_level?: string }) =>
+  postJson<{ run_id: string; status: string; summary: GovernanceIssues; started_at: string; finished_at: string | null }>(
+    '/api/ontology/audit/run',
+    undefined,
+    p,
+  )
+
+export const listAuditRuns = (p?: { limit?: number; offset?: number }) =>
+  getJson<{ items: Array<{ id: string; status: string; granularity_level: string | null; summary: GovernanceIssues; started_at: string; finished_at: string | null; error_message: string | null }>; total: number }>(
+    '/api/ontology/audit/runs',
+    p,
+  )
+
+export const listChangeLogs = (p?: { entity_type?: string; entity_id?: string; action_type?: string; limit?: number; offset?: number }) =>
+  getJson<{ items: ChangeLogItem[]; total: number }>('/api/ontology/change-logs', p)

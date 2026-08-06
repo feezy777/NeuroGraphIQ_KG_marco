@@ -237,7 +237,10 @@ async def ungrounded_records(
                     OntologyTermGrounding.target_id == model.id,
                 ),
             )
-            .where(OntologyTermGrounding.grounded_by == "ungrounded")
+            .where(
+                OntologyTermGrounding.grounded_by == "ungrounded",
+                OntologyTermGrounding.created_by.not_like("skipped:%"),
+            )
         )
         if granularity_level:
             base = base.where(model.granularity_level == granularity_level)
@@ -265,6 +268,44 @@ async def ungrounded_records(
                 )
             remaining_limit -= len(rows)
     return {"items": items, "total": total}
+
+
+async def mark_skip(
+    session: AsyncSession,
+    *,
+    target_type: str,
+    target_id: uuid.UUID,
+    reason: str,
+    operator_id: str | None = None,
+) -> dict:
+    model = TERM_TABLE_BY_TYPE.get(target_type)
+    if model is None:
+        raise ValueError(f"unsupported target_type: {target_type}")
+    row = await session.get(model, target_id)
+    if row is None:
+        raise ValueError("target not found")
+    await _upsert_grounding(
+        session,
+        target_type=target_type,
+        target_id=target_id,
+        term_id=None,
+        grounded_by="ungrounded",
+        confidence=None,
+        created_by=f"skipped:{reason}"[:64],
+    )
+    session.add(
+        OntologyChangeLog(
+            action_type="grounding.skip",
+            entity_type=f"ontology_term_grounding:{target_type}",
+            entity_id=target_id,
+            before_data={},
+            after_data={"reason": reason},
+            operator_id=operator_id,
+            reason=reason,
+        )
+    )
+    await session.flush()
+    return {"target_type": target_type, "target_id": str(target_id), "skipped": True}
 
 
 def _term_text(row, target_type: str) -> str:
@@ -792,6 +833,34 @@ async def list_alignment_candidates(
             }
         )
     return {"items": items, "total": total}
+
+
+async def alignment_candidates_stats(
+    session: AsyncSession, granularity_level: str | None = None
+) -> dict:
+    q = (
+        select(OntologyAlignmentCandidate, CandidateBrainRegion)
+        .join(
+            CandidateBrainRegion,
+            and_(
+                OntologyAlignmentCandidate.target_type == "region",
+                OntologyAlignmentCandidate.target_id == CandidateBrainRegion.id,
+            ),
+        )
+    )
+    if granularity_level:
+        q = q.where(CandidateBrainRegion.granularity_level == granularity_level)
+    rows = (await session.execute(q)).all()
+    status_counts: dict[str, int] = {}
+    match_counts: dict[str, int] = {}
+    for candidate, _region in rows:
+        status_counts[candidate.status] = status_counts.get(candidate.status, 0) + 1
+        match_counts[candidate.match_type] = match_counts.get(candidate.match_type, 0) + 1
+    return {
+        "total": len(rows),
+        "by_status": status_counts,
+        "by_match_type": match_counts,
+    }
 
 
 async def review_alignment_candidate(
