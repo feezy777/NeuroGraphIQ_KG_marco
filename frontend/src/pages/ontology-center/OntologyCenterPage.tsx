@@ -46,7 +46,7 @@ export function OntologyCenterPage() {
       <div className="data-center-header-static">
         <PageHeader title="本体中心" description="本体治理工作台 · 跟随顶部颗粒度切换" readonly />
       </div>
-      <div className="ontology-page ontology-page-scroll">
+      <div className="ontology-page">
         <div className="ontology-page-tabs">
           {(
             [
@@ -67,9 +67,11 @@ export function OntologyCenterPage() {
           <span className="ontology-page-granularity">当前颗粒度：{granularity}</span>
         </div>
         <GovernanceOverview granularity={granularity} onNavigate={setTab} />
-        {tab === 'functions' && <FunctionsTab granularity={granularity} />}
-        {tab === 'regions' && <RegionsTab granularity={granularity} />}
-        {tab === 'relations' && <RelationsTab granularity={granularity} />}
+        <div className="ontology-page-tab-body">
+          {tab === 'functions' && <FunctionsTab granularity={granularity} />}
+          {tab === 'regions' && <RegionsTab granularity={granularity} />}
+          {tab === 'relations' && <RelationsTab granularity={granularity} />}
+        </div>
       </div>
     </div>
   )
