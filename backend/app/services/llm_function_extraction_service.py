@@ -42,6 +42,11 @@ from app.services.llm_extraction_service import (
 )
 from app.services.llm_json_utils import parse_llm_json_response
 from app.services.llm_prompt_defaults import DEFAULT_TEMPLATES, render_user_prompt
+from app.services.ontology_vocab_cache import (
+    OntologyRegistryUnavailableError,
+    get_vocab_codes,
+    refresh_vocab_cache,
+)
 from app.services.llm_providers import UnknownProviderError, get_llm_provider
 from app.services.settings_service import get_deepseek_runtime_config, get_kimi_runtime_config
 
@@ -258,8 +263,16 @@ def normalize_function_candidates(
     allowed_categories: frozenset[str] | None = None,
     allowed_relation_types: frozenset[str] | None = None,
 ) -> tuple[list[dict[str, Any]], list[str]]:
-    categories = allowed_categories or DEFAULT_ALLOWED_FUNCTION_CATEGORIES
-    relations = allowed_relation_types or DEFAULT_ALLOWED_RELATION_TYPES
+    categories = (
+        allowed_categories
+        if allowed_categories is not None
+        else get_vocab_codes("category")
+    )
+    relations = (
+        allowed_relation_types
+        if allowed_relation_types is not None
+        else get_vocab_codes("relation_type")
+    )
     warnings: list[str] = []
     raw_functions = parsed.get("functions")
     if raw_functions is None:
@@ -502,6 +515,7 @@ async def run_same_granularity_function_extraction(
     create_triples: bool = True,
     create_evidence: bool = True,
 ) -> FunctionExtractionResult:
+    await refresh_vocab_cache(session, ["category", "relation_type"])
     if not candidate_ids:
         raise EmptyCandidatesError()
 
@@ -533,8 +547,16 @@ async def run_same_granularity_function_extraction(
         scope_batch_id=scope_batch_id,
     )
 
-    allowed_cats = frozenset(allowed_function_categories) if allowed_function_categories else DEFAULT_ALLOWED_FUNCTION_CATEGORIES
-    allowed_rels = frozenset(allowed_relation_types) if allowed_relation_types else DEFAULT_ALLOWED_RELATION_TYPES
+    allowed_cats = (
+        frozenset(allowed_function_categories)
+        if allowed_function_categories is not None
+        else get_vocab_codes("category")
+    )
+    allowed_rels = (
+        frozenset(allowed_relation_types)
+        if allowed_relation_types is not None
+        else get_vocab_codes("relation_type")
+    )
 
     system_prompt, user_prompt, prompt_json = build_function_completion_prompt(
         candidates,

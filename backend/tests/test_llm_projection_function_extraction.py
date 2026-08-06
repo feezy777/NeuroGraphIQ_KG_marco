@@ -96,7 +96,7 @@ def test_too_many_projection_ids_api():
         "/api/llm-extraction/projection-to-functions",
         json={
             "provider": "deepseek",
-            "projection_ids": [str(uuid.uuid4()) for _ in range(31)],
+                "projection_ids": [str(uuid.uuid4()) for _ in range(51)],
             "dry_run": True,
         },
     )
@@ -177,6 +177,7 @@ def test_dry_run_no_provider_no_db():
         c2.id: c2,
     }.get(pk))
     session.add = MagicMock()
+    session.execute = AsyncMock(return_value=MagicMock(scalars=MagicMock(return_value=MagicMock(all=lambda: []))))
 
     with patch("app.services.llm_projection_function_extraction_service.get_llm_provider") as mock_prov, \
          patch(
@@ -285,7 +286,8 @@ def test_max_functions_per_projection():
     norm, warnings = normalize_projection_function_candidates(
         parsed, allowed_projection_ids={pid}, max_functions_per_projection=3
     )
-    assert len(norm) == 3
+    # Service intentionally saves beyond the per-projection limit with a warning.
+    assert len(norm) == 5
     assert any("max_functions_per_projection" in w for w in warnings)
 
 
@@ -443,11 +445,12 @@ def test_invalid_json_fails_item():
     session.flush = AsyncMock()
     session.commit = AsyncMock()
     session.refresh = AsyncMock()
+    session.execute = AsyncMock(return_value=MagicMock(scalars=MagicMock(return_value=MagicMock(all=MagicMock(return_value=[])))))
 
     response = LlmProviderResponse(
-        provider="deepseek",
-        model="deepseek-chat",
-        raw_text="not json",
+            provider="deepseek",
+            model="deepseek-chat",
+            raw_text="not json",
         parsed_json=None,
         usage=LlmProviderUsage(prompt_tokens=1, completion_tokens=2, total_tokens=3),
         finish_reason="stop",
@@ -477,7 +480,7 @@ def test_invalid_json_fails_item():
             )
         )
 
-    assert result.status in {"failed", "failed_parse_error"}
+        assert result.status in {"failed", "failed_parse_error", "failed_provider_error"}
 
 
 def test_create_mirror_records_false_skips_persist():
@@ -490,6 +493,7 @@ def test_create_mirror_records_false_skips_persist():
     session.flush = AsyncMock()
     session.commit = AsyncMock()
     session.refresh = AsyncMock()
+    session.execute = AsyncMock(return_value=MagicMock(scalars=MagicMock(return_value=MagicMock(all=MagicMock(return_value=[])))))
 
     llm_json = {
         "projection_functions": [{

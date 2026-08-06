@@ -6,7 +6,9 @@ Does NOT write final_*/kg_*; does NOT auto approve/promote.
 
 from __future__ import annotations
 
+import asyncio
 import json
+import logging
 import uuid
 from collections import defaultdict
 from dataclasses import dataclass, field
@@ -43,13 +45,19 @@ from app.services.llm_json_utils import (
     raw_response_preview,
 )
 from app.services.llm_prompt_defaults import DEFAULT_TEMPLATES, render_user_prompt
-from app.services.llm_providers import UnknownProviderError, get_llm_provider
+from app.services.ontology_vocab_cache import (
+    get_vocab_codes,
+    refresh_vocab_cache,
+)
+from app.services.llm_providers import LlmProviderResponse, UnknownProviderError, get_llm_provider
 from app.services.settings_service import get_deepseek_runtime_config, get_kimi_runtime_config
 from app.services.llm_workflow_artifact_tagging import tag_raw_payload
 from app.services.llm_status_utils import apply_persistent_run_status
 
+logger = logging.getLogger(__name__)
+
 PROJECTION_TO_FUNCTIONS_TEMPLATE_KEY = "projection_to_functions_v1"
-MAX_PROJECTIONS = 20
+MAX_PROJECTIONS = 50
 DEFAULT_MAX_FUNCTIONS_PER_PROJECTION = 5
 
 DEFAULT_ALLOWED_FUNCTION_CATEGORIES = frozenset({
@@ -79,6 +87,86 @@ DEFAULT_ALLOWED_RELATION_TYPES = frozenset({
     FunctionRelationType.uncertain_association,
     FunctionRelationType.unknown,
 })
+
+# Tolerant mapping for legacy/free-text LLM output (function_domain / function_role).
+_FUNCTION_CATEGORY_ALIASES: dict[str, str] = {
+    "motor_function": "motor",
+    "sensorimotor": "motor",
+    "sensory_processing": "sensory",
+    "sensory_function": "sensory",
+    "visual_processing": "visual",
+    "visual_function": "visual",
+    "auditory_processing": "auditory",
+    "auditory_function": "auditory",
+    "language_processing": "language",
+    "language_function": "language",
+    "memory_encoding": "memory",
+    "memory_function": "memory",
+    "memory-related": "memory",
+    "emotional": "emotion",
+    "emotion_processing": "emotion",
+    "executive": "executive_control",
+    "executive_function": "executive_control",
+    "executive_control_function": "executive_control",
+    "attention_control": "attention",
+    "autonomic_function": "autonomic",
+    "default_mode_network": "default_mode",
+    "dmn": "default_mode",
+    "salience_network": "salience",
+    "reward_processing": "reward",
+    "reward_function": "reward",
+    "cognitive_control": "cognitive",
+    "cognitive_function": "cognitive",
+    "other": "unknown",
+}
+
+_FUNCTION_RELATION_ALIASES: dict[str, str] = {
+    "execution": "participates_in",
+    "integration": "participates_in",
+    "modulation": "modulates",
+    "modulating": "modulates",
+    "regulates": "modulates",
+    "facilitates": "modulates",
+    "inhibition": "modulates",
+    "gating": "modulates",
+    "controls": "modulates",
+    "supports": "associated_with",
+    "role": "associated_with",
+}
+
+
+def _normalize_category(
+    value: Any,
+    allowed: frozenset[str] | None = None,
+) -> tuple[str, bool]:
+    allowed = get_vocab_codes("category") if allowed is None else allowed
+    raw = str(value or "").strip()
+    if not raw:
+        return FunctionCategory.unknown, False
+    key = raw.lower().replace(" ", "_")
+    if key in allowed:
+        return key, True
+    mapped = _FUNCTION_CATEGORY_ALIASES.get(key)
+    if mapped is not None:
+        return mapped, True
+    return FunctionCategory.unknown, False
+
+
+def _normalize_relation(
+    value: Any,
+    allowed: frozenset[str] | None = None,
+) -> tuple[str, bool]:
+    allowed = get_vocab_codes("relation_type") if allowed is None else allowed
+    raw = str(value or "").strip()
+    if not raw:
+        return FunctionRelationType.unknown, False
+    key = raw.lower().replace(" ", "_")
+    if key in allowed:
+        return key, True
+    mapped = _FUNCTION_RELATION_ALIASES.get(key)
+    if mapped is not None:
+        return mapped, True
+    return FunctionRelationType.unknown, False
 
 
 class EmptyProjectionsError(Exception):
@@ -132,6 +220,7 @@ class ProjectionToFunctionsResult:
     model_name: str | None = None
     status: str | None = None
     projection_count: int = 0
+    skipped_projection_count: int = 0
     circuit_context_count: int = 0
     function_count: int = 0
     mirror_projection_function_created_count: int = 0
@@ -333,8 +422,16 @@ def normalize_projection_function_candidates(
     allowed_categories: frozenset[str] | None = None,
     allowed_relation_types: frozenset[str] | None = None,
 ) -> tuple[list[dict[str, Any]], list[str]]:
-    categories = allowed_categories or DEFAULT_ALLOWED_FUNCTION_CATEGORIES
-    relations = allowed_relation_types or DEFAULT_ALLOWED_RELATION_TYPES
+    categories = (
+        allowed_categories
+        if allowed_categories is not None
+        else get_vocab_codes("category")
+    )
+    relations = (
+        allowed_relation_types
+        if allowed_relation_types is not None
+        else get_vocab_codes("relation_type")
+    )
     warnings: list[str] = []
     raw_functions = parsed.get("projection_functions")
     if raw_functions is None:
@@ -376,22 +473,14 @@ def normalize_projection_function_candidates(
                 f"({max_functions_per_projection}); still saving"
             )
 
-        category = str(
-            fn.get("function_category")
-            or fn.get("function_domain")  # LLM prompt field name
-            or FunctionCategory.unknown
-        )
-        if category not in categories:
-            category = FunctionCategory.unknown
+        category_raw = fn.get("function_category") or fn.get("function_domain")
+        category, category_ok = _normalize_category(category_raw, categories)
+        if not category_ok and category_raw is not None and str(category_raw).strip():
             warnings.append(f"projection_function[{idx}] function_category coerced to unknown")
 
-        relation = str(
-            fn.get("relation_type")
-            or fn.get("function_role")  # LLM prompt field name
-            or FunctionRelationType.unknown
-        )
-        if relation not in relations:
-            relation = FunctionRelationType.unknown
+        relation_raw = fn.get("relation_type") or fn.get("function_role")
+        relation, relation_ok = _normalize_relation(relation_raw, relations)
+        if not relation_ok and relation_raw is not None and str(relation_raw).strip():
             warnings.append(f"projection_function[{idx}] relation_type coerced to unknown")
 
         term_key = function_term.lower().strip()
@@ -410,6 +499,10 @@ def normalize_projection_function_candidates(
             "projection_id": pid,
             "function_term": function_term,
             "function_term_key": term_key,
+            "function_term_cn": fn.get("function_term_cn"),
+            "function_domain": fn.get("function_domain") or fn.get("function_category"),
+            "function_role": fn.get("function_role") or fn.get("relation_type"),
+            "effect_type": fn.get("effect_type") or "unknown",
             "function_category": category,
             "relation_type": relation,
             "confidence": _clamp_confidence(fn.get("confidence") or fn.get("confidence_score")),
@@ -528,7 +621,8 @@ async def create_projection_function_evidence(
     if not create_evidence:
         return 0
     if fn.get("evidence_text"):
-        warnings.append("PROJECTION_FUNCTION_EVIDENCE_STORED_ON_OBJECT_ONLY")
+        if "PROJECTION_FUNCTION_EVIDENCE_STORED_ON_OBJECT_ONLY" not in warnings:
+            warnings.append("PROJECTION_FUNCTION_EVIDENCE_STORED_ON_OBJECT_ONLY")
     return 0
 
 
@@ -610,6 +704,10 @@ async def persist_projection_functions(
             source_atlas=projection.source_atlas,
             source_version=projection.source_version,
             function_term=fn["function_term"],
+            function_term_cn=fn.get("function_term_cn"),
+            function_domain=fn.get("function_domain"),
+            function_role=fn.get("function_role"),
+            effect_type=fn.get("effect_type") or "unknown",
             function_category=category,
             relation_type=relation,
             confidence=fn.get("confidence"),
@@ -654,7 +752,7 @@ async def run_projection_to_functions_extraction(
     projection_ids: list[uuid.UUID],
     prompt_template_key: str = PROJECTION_TO_FUNCTIONS_TEMPLATE_KEY,
     temperature: float = 0.2,
-    max_tokens: int = 4000,
+    max_tokens: int = 12000,
     dry_run: bool = False,
     max_functions_per_projection: int = DEFAULT_MAX_FUNCTIONS_PER_PROJECTION,
     include_circuit_context: bool = True,
@@ -669,6 +767,7 @@ async def run_projection_to_functions_extraction(
         raise EmptyProjectionsError()
     if len(projection_ids) > MAX_PROJECTIONS:
         raise TooManyProjectionsError(len(projection_ids), MAX_PROJECTIONS)
+    await refresh_vocab_cache(session, ["category", "relation_type"])
 
     provider_key = provider_name.lower()
     if provider_key == "deepseek":
@@ -695,6 +794,30 @@ async def run_projection_to_functions_extraction(
     validate_projections_homogeneous(projections)
 
     all_warnings: list[str] = []
+    original_count = len(projections)
+    existing_stmt = (
+        select(MirrorProjectionFunction.projection_id).where(
+            MirrorProjectionFunction.projection_id.in_([p.id for p in projections])
+        )
+    )
+    existing_rows = (await session.execute(existing_stmt)).scalars().all()
+    existing_ids = set(existing_rows)
+    skipped_existing = original_count - len(projections)
+    if existing_ids:
+        projections = [p for p in projections if p.id not in existing_ids]
+        skipped_existing = original_count - len(projections)
+        all_warnings.append(
+            f"{skipped_existing} projection(s) skipped: functions already exist"
+        )
+    if not projections:
+        return ProjectionToFunctionsResult(
+            task_type=LlmTaskType.projection_to_functions,
+            projection_count=original_count,
+            skipped_projection_count=original_count,
+            status=LlmRunStatus.succeeded,
+            warnings=list(all_warnings),
+        )
+
     for p in projections:
         if not p.source_region_candidate_id or not p.target_region_candidate_id:
             all_warnings.append(
@@ -720,6 +843,7 @@ async def run_projection_to_functions_extraction(
 
     result = ProjectionToFunctionsResult(
         projection_count=len(projections),
+        skipped_projection_count=skipped_existing,
         circuit_context_count=len(circuit_context),
         dry_run=dry_run,
         provider=provider_key,
@@ -795,13 +919,68 @@ async def run_projection_to_functions_extraction(
         return result
 
     provider = get_llm_provider(provider_key)
-    response = await provider.complete_json(
-        model=resolved_model,
-        system_prompt=system_prompt,
-        user_prompt=user_prompt,
-        temperature=temperature,
-        max_tokens=max_tokens,
-    )
+    # Retry once on transport/parse failure: flash sometimes returns reasoning
+    # text instead of JSON. The retry drops json_mode and appends a hard
+    # "JSON only" instruction to stop chain-of-thought output.
+    max_provider_attempts = 2
+    response = None
+    for attempt in range(max_provider_attempts):
+        if attempt == 0:
+            response = await provider.complete_json(
+                model=resolved_model,
+                system_prompt=system_prompt,
+                user_prompt=user_prompt,
+                temperature=temperature,
+                max_tokens=max_tokens,
+            )
+        else:
+            retry_user_prompt = (
+                user_prompt
+                + "\n\nIMPORTANT: Respond with ONLY the raw JSON object "
+                + 'matching the schema. Do NOT include any reasoning, analysis, '
+                + "explanation, or text outside the JSON."
+            )
+            text_result = await provider.complete_text(
+                model=resolved_model,
+                system_prompt=system_prompt,
+                user_prompt=retry_user_prompt,
+                temperature=temperature + 0.1,
+                max_tokens=max_tokens,
+                json_mode=False,
+            )
+            response = LlmProviderResponse(
+                provider=text_result.provider,
+                model=text_result.model,
+                raw_text=text_result.raw_text or "",
+                parsed_json=None,
+                usage=text_result.usage,
+                finish_reason=text_result.finish_reason,
+                request_payload_redacted=text_result.request_payload_redacted,
+                response_payload=text_result.response_payload,
+                latency_ms=text_result.latency_ms,
+                error_message=text_result.error,
+                transport_ok=text_result.transport_ok,
+                response_format=text_result.response_format,
+            )
+        raw_text = response.raw_text or ""
+        if response.parsed_json is None and raw_text:
+            try:
+                response.parsed_json = parse_projection_to_functions_response(raw_text)
+            except (LlmJsonParseError, ValueError):
+                response.parsed_json = None
+        retry_needed = (
+            response.error_message is not None
+            or response.parsed_json is None
+            or not isinstance(response.parsed_json, dict)
+            or not response.parsed_json.get("projection_functions")
+        )
+        if not retry_needed:
+            break
+        if attempt == 0:
+            all_warnings.append(
+                "retry after failed provider attempt: "
+                f"{response.error_message or 'empty/no functions'}"
+            )
 
     if composite_workflow_run_id and is_cancelling(composite_workflow_run_id):
         run.status = LlmRunStatus.cancelled
@@ -920,3 +1099,98 @@ async def run_projection_to_functions_extraction(
     await session.refresh(run)
     await session.refresh(item)
     return result
+
+
+async def run_projection_function_extraction_batch(
+    *,
+    projection_ids: list[uuid.UUID],
+    provider_name: str,
+    model_name: str | None,
+    projections_per_pack: int = 50,
+    concurrency: int = 4,
+    **kwargs: Any,
+) -> dict[str, Any]:
+    """Chunked, concurrent projection-to-function extraction.
+
+    Each chunk runs in its own DB session (safe for parallel asyncio tasks),
+    calls the standard single-group service, and commits independently, so a
+    failure in one chunk never rolls back completed chunks.
+    """
+    from app.database import AsyncSessionLocal
+
+    if AsyncSessionLocal is None:
+        raise RuntimeError("AsyncSessionLocal unavailable")
+    if not projection_ids:
+        raise EmptyProjectionsError()
+
+    pack_size = max(1, min(200, projections_per_pack))
+    workers = max(1, min(8, concurrency))
+    chunks = [
+        projection_ids[i : i + pack_size]
+        for i in range(0, len(projection_ids), pack_size)
+    ]
+    semaphore = asyncio.Semaphore(workers)
+    progress = {"done": 0, "created": 0, "failed": 0}
+
+    async def _run_chunk(
+        chunk: list[uuid.UUID],
+    ) -> tuple[ProjectionToFunctionsResult | None, str | None]:
+        async with semaphore:
+            async with AsyncSessionLocal() as chunk_session:
+                try:
+                    res = await run_projection_to_functions_extraction(
+                        chunk_session,
+                        provider_name=provider_name,
+                        model_name=model_name,
+                        projection_ids=chunk,
+                        **kwargs,
+                    )
+                except Exception as exc:  # noqa: BLE001 - one bad chunk must not kill the batch
+                    progress["done"] += 1
+                    progress["failed"] += 1
+                    if progress["done"] % 25 == 0 or progress["done"] == len(chunks):
+                        logger.info(
+                            "[projection-batch] %s/%s chunks done, created=%s failed=%s",
+                            progress["done"], len(chunks), progress["created"], progress["failed"],
+                        )
+                    return None, f"chunk failed ({len(chunk)} projections): {exc}"
+                progress["done"] += 1
+                progress["created"] += res.mirror_projection_function_created_count or 0
+                if progress["done"] % 25 == 0 or progress["done"] == len(chunks):
+                    logger.info(
+                        "[projection-batch] %s/%s chunks done, created=%s failed=%s",
+                        progress["done"], len(chunks), progress["created"], progress["failed"],
+                    )
+                return res, None
+
+    results = await asyncio.gather(*(_run_chunk(c) for c in chunks))
+
+    summary: dict[str, Any] = {
+        "requested_projection_count": len(projection_ids),
+        "chunk_count": len(chunks),
+        "concurrency": workers,
+        "projections_per_pack": pack_size,
+        "created_count": 0,
+        "skipped_duplicate_count": 0,
+        "skipped_existing_count": 0,
+        "triple_created_count": 0,
+        "evidence_created_count": 0,
+        "failed_chunk_count": 0,
+        "errors": [],
+        "warnings": [],
+    }
+    for res, err in results:
+        if err is not None or res is None:
+            summary["failed_chunk_count"] += 1
+            if err:
+                summary["errors"].append(err)
+            continue
+        summary["created_count"] += res.mirror_projection_function_created_count or 0
+        summary["skipped_duplicate_count"] += (
+            res.mirror_projection_function_skipped_duplicate_count or 0
+        )
+        summary["skipped_existing_count"] += res.skipped_projection_count or 0
+        summary["triple_created_count"] += res.triple_created_count or 0
+        summary["evidence_created_count"] += res.evidence_created_count or 0
+        summary["warnings"].extend(res.warnings or [])
+    return summary

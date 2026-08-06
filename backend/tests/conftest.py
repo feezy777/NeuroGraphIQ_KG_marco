@@ -1,16 +1,29 @@
-"""Shared pytest fixtures — isolate tests from developer-local .env LLM keys."""
+"""Shared pytest fixtures (test-environment compatibility for the ontology cache)."""
 
 from __future__ import annotations
 
+from unittest.mock import AsyncMock
+
 import pytest
+
+from app.services import llm_function_extraction_service as fes
+from app.services import llm_projection_function_extraction_service as pfes
+from app.services import ontology_vocab_cache as vc
 
 
 @pytest.fixture(autouse=True)
-def isolate_llm_env_api_keys(monkeypatch):
-    """Tests must not inherit DeepSeek/Kimi keys from backend/.env unless they override."""
-    from app.config import get_settings
+def _seed_ontology_vocab_cache(monkeypatch):
+    """Seed the in-process vocabulary cache from legacy defaults for tests.
 
-    settings = get_settings()
-    empty_keys = settings.model_copy(update={"deepseek_api_key": "", "kimi_api_key": ""})
-    monkeypatch.setattr("app.config.get_settings", lambda: empty_keys)
-    monkeypatch.setattr("app.services.settings_service.get_settings", lambda: empty_keys)
+    Production extraction paths refresh the cache from the registry at run
+    start; this fixture only keeps deterministic unit tests green without a
+    database.
+    """
+    vc.seed_vocab_cache("category", fes.DEFAULT_ALLOWED_FUNCTION_CATEGORIES)
+    vc.seed_vocab_cache("relation_type", fes.DEFAULT_ALLOWED_RELATION_TYPES)
+    # Unit tests run without a live DB; extraction services refresh the cache
+    # from the registry at run start in production.
+    monkeypatch.setattr(fes, "refresh_vocab_cache", AsyncMock())
+    monkeypatch.setattr(pfes, "refresh_vocab_cache", AsyncMock())
+    yield
+    vc.invalidate_vocab_cache()

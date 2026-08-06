@@ -164,9 +164,11 @@ def test_circuit_step_evidence_empty():
 
 def test_projection_function_ok():
     proj = _projection()
+    term_id = uuid.uuid4()
     pf = MirrorProjectionFunction(
         id=uuid.uuid4(),
         projection_id=proj.id,
+        term_id=term_id,
         source_atlas=proj.source_atlas,
         granularity_level=proj.granularity_level,
         function_term="memory",
@@ -178,7 +180,12 @@ def test_projection_function_ok():
         review_status=MirrorReviewStatus.pending,
         promotion_status="not_promoted",
     )
-    checks = mc.validate_projection_function(pf, projection=proj, duplicate_keys={})
+    checks = mc.validate_projection_function(
+        pf,
+        projection=proj,
+        duplicate_keys={},
+        term_status_map={term_id: "active"},
+    )
     assert not any(c.severity == MirrorValidationSeverity.blocker for c in checks)
 
 
