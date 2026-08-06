@@ -1993,6 +1993,18 @@ export const listMirrorConnections = (p?: {
   offset?: number
 }) => getJson<Paginated<MirrorRegionConnection>>('/api/mirror-kg/connections', p)
 
+export const listMirrorConnectionIds = (p?: {
+  resource_id?: string
+  batch_id?: string
+  source_atlas?: string
+  granularity_level?: string
+  granularity_family?: string
+  llm_run_id?: string
+  llm_item_id?: string
+  limit?: number
+  offset?: number
+}) => getJson<{ ids: string[]; total: number }>('/api/mirror-kg/connections/ids', p)
+
 export const getMirrorConnection = (id: string) =>
   getJson<MirrorRegionConnection>(`/api/mirror-kg/connections/${id}`)
 
@@ -3483,6 +3495,7 @@ export interface SameGranularityConnectionExtractionRequest {
   dry_run?: boolean
   max_candidate_pairs?: number
   pair_strategy?: 'all_pairs' | 'region_centered'
+  pairs_per_pack?: number | null
   center_candidate_id?: string
   allowed_connection_types?: string[]
   create_mirror_records?: boolean
@@ -3625,6 +3638,7 @@ export interface CompositeWorkflowRunRequest {
   explicit_batching_enabled?: boolean
   batch_strategy?: string | null
   batch_size?: number | null
+  pairs_per_pack?: number | null
   notes?: string | null
   debug_single_pack?: boolean
   debug_max_packs?: number | null
@@ -4838,3 +4852,49 @@ export const getValidationCounts = (granularityLevel?: string) => {
   const params = granularityLevel ? `?granularity_level=${encodeURIComponent(granularityLevel)}` : ''
   return getJson<{ total_runs: number; completed_runs: number; pending_review: number }>(`/api/validation/circuit/counts${params}`)
 }
+
+// ──── Ontology (Phase 1) ──────────────────────────────────────────────
+
+export interface OntologyCoverageItem {
+  key: string
+  label: string
+  total: number
+  grounded: number
+  ungrounded: number
+  by_method: Record<string, number>
+}
+
+export interface OntologyCoverage {
+  items: OntologyCoverageItem[]
+  total_terms: number
+  active_terms: number
+  proposed_terms: number
+}
+
+export interface OntologyTerm {
+  id: string
+  term_code: string
+  canonical_term_en: string
+  canonical_term_cn: string | null
+  term_type: string
+  category: string | null
+  domain: string | null
+  role: string | null
+  effect_type: string | null
+  description: string | null
+  status: string
+  created_by: string
+  created_at: string
+  updated_at: string
+}
+
+export interface OntologyTermList {
+  items: OntologyTerm[]
+  total: number
+}
+
+export const getOntologyCoverage = () =>
+  getJson<OntologyCoverage>('/api/ontology/coverage')
+
+export const listOntologyTerms = (p?: { status?: string; q?: string; limit?: number; offset?: number }) =>
+  getJson<OntologyTermList>('/api/ontology/terms', p)
