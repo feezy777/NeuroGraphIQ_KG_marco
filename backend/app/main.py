@@ -13,7 +13,7 @@ import logging
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse
-from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
 from app.config import get_settings
 from app.routers import (
@@ -44,6 +44,7 @@ from app.routers import (
     mirror_promotion,
     mirror_review,
     mirror_validation,
+    ontology,
     promotion,
     raw_parsing,
     resource_files,
@@ -100,6 +101,18 @@ def _db_error_detail(exc: BaseException) -> dict[str, str]:
 @app.exception_handler(SQLAlchemyError)
 async def sqlalchemy_exception_handler(_request: Request, exc: SQLAlchemyError) -> JSONResponse:
     _log.exception("[api][database]")
+    if isinstance(exc, IntegrityError):
+        # Duplicate/constraint conflicts are client-correctable, not an outage.
+        return JSONResponse(
+            status_code=409,
+            content={
+                "detail": {
+                    "code": "INTEGRITY_CONFLICT",
+                    "message": "Data conflict (duplicate or constraint violation).",
+                    "error": str(exc)[:500],
+                }
+            },
+        )
     return JSONResponse(status_code=503, content={"detail": _db_error_detail(exc)})
 
 
@@ -299,6 +312,7 @@ app.include_router(database_admin.router, prefix="/api/database", tags=["Databas
 app.include_router(
     workbench_pipeline.router, prefix="/api/workbench", tags=["Workbench Pipeline"]
 )
+app.include_router(ontology.router, prefix="/api/ontology", tags=["Ontology"])
 app.include_router(
     symptom_query.router, prefix="/api/symptom-query", tags=["Symptom Query"]
 )

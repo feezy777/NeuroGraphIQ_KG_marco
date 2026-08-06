@@ -95,6 +95,18 @@ class GroundingRunRequest(BaseModel):
     limit: int = Field(default=500, ge=1, le=5000)
 
 
+class GroundingListResponse(BaseModel):
+    items: list[GroundingRead]
+    total: int
+
+
+class GroundingRunResponse(BaseModel):
+    target_type: str
+    processed: int
+    grounded: int
+    ungrounded: int
+
+
 class CoverageItem(BaseModel):
     key: str
     label: str

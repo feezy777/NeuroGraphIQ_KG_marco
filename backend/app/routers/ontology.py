@@ -1,0 +1,207 @@
+"""Ontology REST API (Phase 1: quality-control-first)."""
+
+from __future__ import annotations
+
+import uuid
+
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.database import get_db
+from app.schemas.ontology import (
+    CoverageResponse,
+    GroundingListResponse,
+    GroundingRead,
+    GroundingRunRequest,
+    GroundingRunResponse,
+    PanoramaResponse,
+    TermCreateRequest,
+    TermListResponse,
+    TermMergeRequest,
+    TermRead,
+    VocabularyCreateRequest,
+    VocabularyListResponse,
+    VocabularyRead,
+)
+from app.services import ontology_service as svc
+
+router = APIRouter()
+
+
+@router.get("/vocabularies", response_model=VocabularyListResponse)
+async def get_vocabularies(
+    vocab_type: str | None = Query(default=None),
+    status: str | None = Query(default=None),
+    session: AsyncSession = Depends(get_db),
+):
+    try:
+        items = await svc.list_vocabularies(session, vocab_type=vocab_type, status=status)
+        return VocabularyListResponse(
+            items=[VocabularyRead.model_validate(item) for item in items],
+            total=len(items),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail={"code": "INVALID_REQUEST", "message": str(exc)})
+
+
+@router.post("/vocabularies", response_model=VocabularyRead, status_code=201)
+async def create_vocabulary(
+    body: VocabularyCreateRequest,
+    session: AsyncSession = Depends(get_db),
+):
+    try:
+        row = await svc.create_vocabulary(
+            session,
+            code=body.code,
+            vocab_type=body.vocab_type,
+            label_cn=body.label_cn,
+            label_en=body.label_en,
+            description=body.description,
+            seq=body.seq,
+        )
+        await session.commit()
+        return VocabularyRead.model_validate(row)
+    except ValueError as exc:
+        await session.rollback()
+        raise HTTPException(status_code=400, detail={"code": "INVALID_REQUEST", "message": str(exc)})
+
+
+@router.get("/terms", response_model=TermListResponse)
+async def get_terms(
+    status: str | None = Query(default=None),
+    q: str | None = Query(default=None),
+    limit: int = Query(default=100, ge=1, le=1000),
+    offset: int = Query(default=0, ge=0),
+    session: AsyncSession = Depends(get_db),
+):
+    items, total = await svc.list_terms(
+        session, status=status, q=q, limit=limit, offset=offset
+    )
+    return TermListResponse(
+        items=[TermRead.model_validate(item) for item in items],
+        total=total,
+    )
+
+
+@router.post("/terms", response_model=TermRead, status_code=201)
+async def create_term(
+    body: TermCreateRequest,
+    session: AsyncSession = Depends(get_db),
+):
+    try:
+        row = await svc.propose_term(
+            session,
+            canonical_term_en=body.canonical_term_en,
+            canonical_term_cn=body.canonical_term_cn,
+            term_type=body.term_type,
+            category=body.category,
+            domain=body.domain,
+            role=body.role,
+            effect_type=body.effect_type,
+            description=body.description,
+            created_by=body.created_by,
+        )
+        await session.commit()
+        return TermRead.model_validate(row)
+    except ValueError as exc:
+        await session.rollback()
+        raise HTTPException(status_code=400, detail={"code": "INVALID_REQUEST", "message": str(exc)})
+
+
+@router.post("/terms/{term_id}/activate", response_model=TermRead)
+async def activate_term(
+    term_id: uuid.UUID,
+    session: AsyncSession = Depends(get_db),
+):
+    try:
+        row = await svc.activate_term(session, term_id)
+        await session.commit()
+        return TermRead.model_validate(row)
+    except ValueError as exc:
+        await session.rollback()
+        raise HTTPException(status_code=400, detail={"code": "INVALID_REQUEST", "message": str(exc)})
+
+
+@router.post("/terms/{term_id}/deprecate", response_model=TermRead)
+async def deprecate_term(
+    term_id: uuid.UUID,
+    session: AsyncSession = Depends(get_db),
+):
+    try:
+        row = await svc.deprecate_term(session, term_id)
+        await session.commit()
+        return TermRead.model_validate(row)
+    except ValueError as exc:
+        await session.rollback()
+        raise HTTPException(status_code=400, detail={"code": "INVALID_REQUEST", "message": str(exc)})
+
+
+@router.post("/terms/{term_id}/merge", response_model=TermRead)
+async def merge_term(
+    term_id: uuid.UUID,
+    body: TermMergeRequest,
+    session: AsyncSession = Depends(get_db),
+):
+    try:
+        row = await svc.merge_term(session, term_id, body.target_id)
+        await session.commit()
+        return TermRead.model_validate(row)
+    except ValueError as exc:
+        await session.rollback()
+        raise HTTPException(status_code=400, detail={"code": "INVALID_REQUEST", "message": str(exc)})
+
+
+@router.get("/coverage", response_model=CoverageResponse)
+async def get_coverage(session: AsyncSession = Depends(get_db)):
+    data = await svc.coverage(session)
+    return CoverageResponse.model_validate(data)
+
+
+@router.get("/groundings", response_model=GroundingListResponse)
+async def get_groundings(
+    target_type: str | None = Query(default=None),
+    target_id: uuid.UUID | None = Query(default=None),
+    limit: int = Query(default=100, ge=1, le=1000),
+    offset: int = Query(default=0, ge=0),
+    session: AsyncSession = Depends(get_db),
+):
+    items, total = await svc.list_groundings(
+        session,
+        target_type=target_type,
+        target_id=target_id,
+        limit=limit,
+        offset=offset,
+    )
+    return GroundingListResponse(
+        items=[GroundingRead.model_validate(item) for item in items],
+        total=total,
+    )
+
+
+@router.post("/groundings/run", response_model=GroundingRunResponse)
+async def run_deterministic_grounding(
+    body: GroundingRunRequest,
+    session: AsyncSession = Depends(get_db),
+):
+    try:
+        result = await svc.run_deterministic_grounding_batch(
+            session, body.target_type, limit=body.limit
+        )
+        await session.commit()
+        return GroundingRunResponse.model_validate(result)
+    except ValueError as exc:
+        await session.rollback()
+        raise HTTPException(status_code=400, detail={"code": "INVALID_REQUEST", "message": str(exc)})
+
+
+@router.get("/report/term-panorama", response_model=PanoramaResponse)
+async def get_term_panorama(
+    target_type: str = Query(default="projection_function"),
+    limit: int = Query(default=5000, ge=1, le=50000),
+    session: AsyncSession = Depends(get_db),
+):
+    try:
+        data = await svc.term_panorama(session, target_type, limit=limit)
+        return PanoramaResponse.model_validate(data)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail={"code": "INVALID_REQUEST", "message": str(exc)})
