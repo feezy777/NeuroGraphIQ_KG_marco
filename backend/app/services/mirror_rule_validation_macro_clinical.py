@@ -31,6 +31,7 @@ from app.schemas.mirror_macro_clinical import (
 )
 from app.schemas.mirror_kg import ConnectionType
 from app.schemas.mirror_validation import MirrorValidationResultStatus, MirrorValidationSeverity
+from app.services.ontology_validation_rules import build_term_status_checks
 from app.services.mirror_rule_validation_helpers import (
     ValidationCheck,
     build_validation_result,
@@ -356,6 +357,8 @@ def validate_projection_function(
     projection: MirrorRegionConnection | None,
     duplicate_keys: dict[tuple[Any, ...], uuid.UUID],
     vocab: dict[str, set[str]] | None = None,
+    term_status_map: dict[uuid.UUID, str] | None = None,
+    replaced_by_map: dict[uuid.UUID, str] | None = None,
 ) -> list[ValidationCheck]:
     checks = validate_macro_object_status_fields(pf)
 
@@ -403,6 +406,21 @@ def validate_projection_function(
     )
     if check:
         checks.append(check)
+
+    checks.extend(
+        build_term_status_checks(
+            function_term=pf.function_term,
+            term_id=pf.term_id,
+            term_status=(
+                term_status_map.get(pf.term_id)
+                if term_status_map and pf.term_id else None
+            ),
+            replaced_by_term_code=(
+                replaced_by_map.get(pf.term_id)
+                if replaced_by_map and pf.term_id else None
+            ),
+        )
+    )
 
     if projection and term:
         key = (

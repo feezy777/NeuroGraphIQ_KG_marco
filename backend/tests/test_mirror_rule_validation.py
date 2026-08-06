@@ -333,6 +333,29 @@ def test_missing_evidence_warning():
     assert any(c.rule_code == "RULE_COMMON_EVIDENCE_REQUIRED" for c in checks)
 
 
+def test_validate_function_term_status_wiring():
+    fn = _function(term_id=None)
+    checks = mrv.validate_function(
+        fn,
+        candidate_map={},
+        duplicate_keys={},
+        term_status_map={},
+    )
+    assert any(c.rule_code == "ONT_TERM_UNGROUNDED" for c in checks)
+
+
+def test_validate_function_proposed_term_warning():
+    term_id = uuid.uuid4()
+    fn = _function(term_id=term_id)
+    checks = mrv.validate_function(
+        fn,
+        candidate_map={},
+        duplicate_keys={},
+        term_status_map={term_id: "proposed"},
+    )
+    assert any(c.rule_code == "ONT_TERM_NOT_ACTIVE" for c in checks)
+
+
 def test_dry_run_does_not_persist():
     conn = _connection()
     c1, c2 = conn._test_c1, conn._test_c2  # noqa: SLF001

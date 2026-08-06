@@ -24,6 +24,7 @@ from app.models.mirror_kg import (
     MirrorRegionConnection,
     MirrorRegionFunction,
 )
+from app.models.ontology import OntologyTerm
 from app.models.mirror_validation import MirrorRuleValidationResult, MirrorRuleValidationRun
 from app.models.mirror_cross_validation import MirrorCircuitProjectionCrossValidationResult
 from app.models.mirror_macro_clinical import (
@@ -68,6 +69,7 @@ from app.services.mirror_rule_validation_helpers import (
 )
 from app.services import mirror_rule_validation_macro_clinical as mc_rules
 from app.services import ontology_service as ont_svc
+from app.services.ontology_validation_rules import build_term_status_checks
 from app.services.triple_consolidation_service import normalize_triple_key
 
 MAX_VALIDATION_LIMIT = 5000
@@ -394,6 +396,8 @@ def validate_function(
     candidate_map: dict[uuid.UUID, CandidateBrainRegion],
     duplicate_keys: dict[tuple[Any, ...], uuid.UUID],
     vocab: dict[str, set[str]] | None = None,
+    term_status_map: dict[uuid.UUID, str] | None = None,
+    replaced_by_map: dict[uuid.UUID, str] | None = None,
 ) -> list[ValidationCheck]:
     checks = validate_common_fields(fn)
 
@@ -451,6 +455,21 @@ def validate_function(
     )
     if check:
         checks.append(check)
+
+    checks.extend(
+        build_term_status_checks(
+            function_term=fn.function_term,
+            term_id=fn.term_id,
+            term_status=(
+                term_status_map.get(fn.term_id)
+                if term_status_map and fn.term_id else None
+            ),
+            replaced_by_term_code=(
+                replaced_by_map.get(fn.term_id)
+                if replaced_by_map and fn.term_id else None
+            ),
+        )
+    )
 
     if fn.region_candidate_id and term:
         key = (
@@ -1441,6 +1460,34 @@ async def run_mirror_rule_validation(
     )
     vocab = await ont_svc.load_active_vocab_context(session)
 
+    function_term_ids = {
+        fn.term_id for fn in functions if fn.term_id
+    } | {pf.term_id for pf in projection_functions if pf.term_id}
+    term_status_map: dict[uuid.UUID, str] = {}
+    replaced_by_map: dict[uuid.UUID, str] = {}
+    if function_term_ids:
+        term_rows = (
+            await session.execute(
+                select(OntologyTerm).where(OntologyTerm.id.in_(function_term_ids))
+            )
+        ).scalars().all()
+        term_status_map = {term.id: term.status for term in term_rows}
+        replacement_ids = {
+            term.replaced_by_term_id for term in term_rows if term.replaced_by_term_id
+        }
+        if replacement_ids:
+            replacement_rows = (
+                await session.execute(
+                    select(OntologyTerm).where(OntologyTerm.id.in_(replacement_ids))
+                )
+            ).scalars().all()
+            code_by_id = {term.id: term.term_code for term in replacement_rows}
+            replaced_by_map = {
+                term.id: code_by_id.get(term.replaced_by_term_id)
+                for term in term_rows
+                if term.replaced_by_term_id
+            }
+
     regions_by_circuit: dict[uuid.UUID, list[MirrorCircuitRegion]] = {}
     for cr in circuit_regions:
         regions_by_circuit.setdefault(cr.circuit_id, []).append(cr)
@@ -1469,7 +1516,12 @@ async def run_mirror_rule_validation(
 
     for fn in functions:
         checks = validate_function(
-            fn, candidate_map=candidate_map, duplicate_keys=fn_dup, vocab=vocab
+            fn,
+            candidate_map=candidate_map,
+            duplicate_keys=fn_dup,
+            vocab=vocab,
+            term_status_map=term_status_map,
+            replaced_by_map=replaced_by_map,
         )
         outcomes.append(ValidationOutcome(
             target_type="function", target_id=fn.id, checks=checks,
@@ -1545,6 +1597,8 @@ async def run_mirror_rule_validation(
         checks = mc_rules.validate_projection_function(
             pf, projection=projection_map.get(pf.projection_id), duplicate_keys=pf_dup,
             vocab=vocab,
+            term_status_map=term_status_map,
+            replaced_by_map=replaced_by_map,
         )
         outcomes.append(ValidationOutcome(
             target_type="projection_function", target_id=pf.id, checks=checks,

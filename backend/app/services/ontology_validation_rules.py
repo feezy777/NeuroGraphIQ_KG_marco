@@ -95,3 +95,51 @@ def build_region_alignment_checks(
             )
         ]
     return []
+
+
+def build_term_status_checks(
+    *,
+    function_term: str | None,
+    term_id,
+    term_status: str | None,
+    replaced_by_term_code: str | None = None,
+) -> list[OntologyCheck]:
+    """ONT_* checks based on the term anchor status of a function record."""
+    term = (function_term or "").strip()
+    if not term:
+        return []
+    if term_id is None or term_status is None:
+        return [
+            OntologyCheck(
+                rule_code="ONT_TERM_UNGROUNDED",
+                severity="blocker",
+                status="blocked",
+                message="function_term is not anchored to any ontology term",
+                details={"function_term": term},
+            )
+        ]
+    if term_status == "proposed":
+        return [
+            OntologyCheck(
+                rule_code="ONT_TERM_NOT_ACTIVE",
+                severity="warning",
+                status="warning",
+                message="function_term anchored to a proposed term; activate before promotion",
+                details={"term_id": str(term_id), "term_status": term_status},
+            )
+        ]
+    if term_status in ("deprecated", "merged"):
+        return [
+            OntologyCheck(
+                rule_code="ONT_TERM_DEPRECATED",
+                severity="blocker",
+                status="blocked",
+                message=f"function_term anchored to a {term_status} term",
+                details={
+                    "term_id": str(term_id),
+                    "term_status": term_status,
+                    "replaced_by_term_code": replaced_by_term_code,
+                },
+            )
+        ]
+    return []
