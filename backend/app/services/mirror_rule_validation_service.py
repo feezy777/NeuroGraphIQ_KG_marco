@@ -67,6 +67,7 @@ from app.services.mirror_rule_validation_helpers import (
     VALID_REVIEW_STATUSES,
 )
 from app.services import mirror_rule_validation_macro_clinical as mc_rules
+from app.services import ontology_service as ont_svc
 from app.services.triple_consolidation_service import normalize_triple_key
 
 MAX_VALIDATION_LIMIT = 5000
@@ -260,11 +261,42 @@ def _connection_pair_key(conn: MirrorRegionConnection) -> tuple[Any, ...]:
     )
 
 
+def _enum_check(
+    rule_code: str,
+    field: str,
+    value: Any,
+    vocab: dict[str, set[str]] | None,
+    key: str,
+    default: frozenset[str],
+    ont_code: str = "ONT_ENUM_INVALID",
+) -> ValidationCheck | None:
+    allowed = (vocab or {}).get(key)
+    if allowed is not None:
+        if value not in allowed:
+            return build_validation_result(
+                ont_code,
+                severity=MirrorValidationSeverity.blocker,
+                status=MirrorValidationResultStatus.blocked,
+                message=f"invalid {field} for ontology vocabulary: {value}",
+                details={"field": field, "value": value},
+            )
+        return None
+    if value not in default:
+        return build_validation_result(
+            rule_code,
+            severity=MirrorValidationSeverity.blocker,
+            status=MirrorValidationResultStatus.blocked,
+            message=f"invalid {field}: {value}",
+        )
+    return None
+
+
 def validate_connection(
     conn: MirrorRegionConnection,
     *,
     candidate_map: dict[uuid.UUID, CandidateBrainRegion],
     duplicate_keys: dict[tuple[Any, ...], uuid.UUID],
+    vocab: dict[str, set[str]] | None = None,
 ) -> list[ValidationCheck]:
     checks = validate_common_fields(conn)
 
@@ -326,20 +358,18 @@ def validate_connection(
                 message=f"{label} candidate granularity mismatch",
             ))
 
-    if conn.connection_type not in VALID_CONNECTION_TYPES:
-        checks.append(build_validation_result(
-            "RULE_CONNECTION_TYPE_VALID",
-            severity=MirrorValidationSeverity.blocker,
-            status=MirrorValidationResultStatus.blocked,
-            message=f"invalid connection_type: {conn.connection_type}",
-        ))
-    if conn.directionality not in VALID_DIRECTIONALITIES:
-        checks.append(build_validation_result(
-            "RULE_CONNECTION_DIRECTIONALITY_VALID",
-            severity=MirrorValidationSeverity.blocker,
-            status=MirrorValidationResultStatus.blocked,
-            message=f"invalid directionality: {conn.directionality}",
-        ))
+    check = _enum_check(
+        "RULE_CONNECTION_TYPE_VALID", "connection_type", conn.connection_type,
+        vocab, "connection_type", VALID_CONNECTION_TYPES,
+    )
+    if check:
+        checks.append(check)
+    check = _enum_check(
+        "RULE_CONNECTION_DIRECTIONALITY_VALID", "directionality", conn.directionality,
+        vocab, "directionality", VALID_DIRECTIONALITIES,
+    )
+    if check:
+        checks.append(check)
 
     if conn.source_region_candidate_id and conn.target_region_candidate_id:
         key = _connection_pair_key(conn)
@@ -363,6 +393,7 @@ def validate_function(
     *,
     candidate_map: dict[uuid.UUID, CandidateBrainRegion],
     duplicate_keys: dict[tuple[Any, ...], uuid.UUID],
+    vocab: dict[str, set[str]] | None = None,
 ) -> list[ValidationCheck]:
     checks = validate_common_fields(fn)
 
@@ -408,20 +439,18 @@ def validate_function(
             message="function_term is required",
         ))
 
-    if fn.function_category not in VALID_FUNCTION_CATEGORIES:
-        checks.append(build_validation_result(
-            "RULE_FUNCTION_CATEGORY_VALID",
-            severity=MirrorValidationSeverity.blocker,
-            status=MirrorValidationResultStatus.blocked,
-            message=f"invalid function_category: {fn.function_category}",
-        ))
-    if fn.relation_type not in VALID_RELATION_TYPES:
-        checks.append(build_validation_result(
-            "RULE_FUNCTION_RELATION_TYPE_VALID",
-            severity=MirrorValidationSeverity.blocker,
-            status=MirrorValidationResultStatus.blocked,
-            message=f"invalid relation_type: {fn.relation_type}",
-        ))
+    check = _enum_check(
+        "RULE_FUNCTION_CATEGORY_VALID", "function_category", fn.function_category,
+        vocab, "category", VALID_FUNCTION_CATEGORIES,
+    )
+    if check:
+        checks.append(check)
+    check = _enum_check(
+        "RULE_FUNCTION_RELATION_TYPE_VALID", "relation_type", fn.relation_type,
+        vocab, "relation_type", VALID_RELATION_TYPES, ont_code="ONT_PREDICATE_UNKNOWN",
+    )
+    if check:
+        checks.append(check)
 
     if fn.region_candidate_id and term:
         key = (
@@ -456,6 +485,7 @@ def validate_circuit(
     circuit_regions: list[MirrorCircuitRegion],
     candidate_map: dict[uuid.UUID, CandidateBrainRegion],
     duplicate_keys: dict[tuple[Any, ...], uuid.UUID],
+    vocab: dict[str, set[str]] | None = None,
 ) -> list[ValidationCheck]:
     checks = validate_common_fields(circuit)
 
@@ -468,13 +498,12 @@ def validate_circuit(
             message="circuit_name is required",
         ))
 
-    if circuit.circuit_type not in VALID_CIRCUIT_TYPES:
-        checks.append(build_validation_result(
-            "RULE_CIRCUIT_TYPE_VALID",
-            severity=MirrorValidationSeverity.blocker,
-            status=MirrorValidationResultStatus.blocked,
-            message=f"invalid circuit_type: {circuit.circuit_type}",
-        ))
+    check = _enum_check(
+        "RULE_CIRCUIT_TYPE_VALID", "circuit_type", circuit.circuit_type,
+        vocab, "circuit_type", VALID_CIRCUIT_TYPES,
+    )
+    if check:
+        checks.append(check)
 
     valid_regions = [cr for cr in circuit_regions if cr.region_candidate_id]
     if len(valid_regions) < 2:
@@ -513,13 +542,14 @@ def validate_circuit(
                     status=MirrorValidationResultStatus.blocked,
                     message="circuit region granularity mismatch",
                 ))
-        if cr.role not in VALID_CIRCUIT_ROLES:
-            checks.append(build_validation_result(
-                "RULE_CIRCUIT_ROLE_VALID",
-                severity=MirrorValidationSeverity.warning,
-                status=MirrorValidationResultStatus.warning,
-                message=f"invalid circuit region role: {cr.role}",
-            ))
+        check = _enum_check(
+            "RULE_CIRCUIT_ROLE_VALID", "circuit_region_role", cr.role,
+            vocab, "circuit_region_role", VALID_CIRCUIT_ROLES,
+        )
+        if check:
+            check.severity = MirrorValidationSeverity.warning
+            check.status = MirrorValidationResultStatus.warning
+            checks.append(check)
 
     if name and len(region_ids) >= 2:
         key = (
@@ -562,6 +592,7 @@ def validate_triple(
     function_map: dict[uuid.UUID, MirrorRegionFunction],
     circuit_map: dict[uuid.UUID, MirrorRegionCircuit],
     duplicate_keys: dict[tuple[Any, ...], uuid.UUID],
+    vocab: dict[str, set[str]] | None = None,
 ) -> list[ValidationCheck]:
     checks = validate_common_fields(triple)
 
@@ -586,27 +617,24 @@ def validate_triple(
             status=MirrorValidationResultStatus.blocked,
             message="predicate is required",
         ))
-    if triple.triple_scope not in VALID_TRIPLE_SCOPES:
-        checks.append(build_validation_result(
-            "RULE_TRIPLE_SCOPE_VALID",
-            severity=MirrorValidationSeverity.blocker,
-            status=MirrorValidationResultStatus.blocked,
-            message=f"invalid triple_scope: {triple.triple_scope}",
-        ))
-    if triple.subject_type not in VALID_SUBJECT_TYPES:
-        checks.append(build_validation_result(
-            "RULE_TRIPLE_SUBJECT_TYPE_VALID",
-            severity=MirrorValidationSeverity.blocker,
-            status=MirrorValidationResultStatus.blocked,
-            message=f"invalid subject_type: {triple.subject_type}",
-        ))
-    if triple.object_type not in VALID_OBJECT_TYPES:
-        checks.append(build_validation_result(
-            "RULE_TRIPLE_OBJECT_TYPE_VALID",
-            severity=MirrorValidationSeverity.blocker,
-            status=MirrorValidationResultStatus.blocked,
-            message=f"invalid object_type: {triple.object_type}",
-        ))
+    check = _enum_check(
+        "RULE_TRIPLE_SCOPE_VALID", "triple_scope", triple.triple_scope,
+        vocab, "triple_scope", VALID_TRIPLE_SCOPES,
+    )
+    if check:
+        checks.append(check)
+    check = _enum_check(
+        "RULE_TRIPLE_SUBJECT_TYPE_VALID", "subject_type", triple.subject_type,
+        vocab, "triple_subject_type", VALID_SUBJECT_TYPES,
+    )
+    if check:
+        checks.append(check)
+    check = _enum_check(
+        "RULE_TRIPLE_OBJECT_TYPE_VALID", "object_type", triple.object_type,
+        vocab, "triple_object_type", VALID_OBJECT_TYPES,
+    )
+    if check:
+        checks.append(check)
 
     has_source = bool(
         triple.source_mirror_connection_id
@@ -1411,6 +1439,7 @@ async def run_mirror_rule_validation(
     dual_conflicts_by_circuit = await _count_dual_conflicts_for_object(
         session, "circuit", {c.id for c in circuits}
     )
+    vocab = await ont_svc.load_active_vocab_context(session)
 
     regions_by_circuit: dict[uuid.UUID, list[MirrorCircuitRegion]] = {}
     for cr in circuit_regions:
@@ -1428,7 +1457,9 @@ async def run_mirror_rule_validation(
     outcomes: list[ValidationOutcome] = []
 
     for conn in connections:
-        checks = validate_connection(conn, candidate_map=candidate_map, duplicate_keys=conn_dup)
+        checks = validate_connection(
+            conn, candidate_map=candidate_map, duplicate_keys=conn_dup, vocab=vocab
+        )
         outcomes.append(ValidationOutcome(
             target_type="connection", target_id=conn.id, checks=checks,
             resource_id=conn.resource_id, batch_id=conn.batch_id,
@@ -1437,7 +1468,9 @@ async def run_mirror_rule_validation(
         ))
 
     for fn in functions:
-        checks = validate_function(fn, candidate_map=candidate_map, duplicate_keys=fn_dup)
+        checks = validate_function(
+            fn, candidate_map=candidate_map, duplicate_keys=fn_dup, vocab=vocab
+        )
         outcomes.append(ValidationOutcome(
             target_type="function", target_id=fn.id, checks=checks,
             resource_id=fn.resource_id, batch_id=fn.batch_id,
@@ -1449,6 +1482,7 @@ async def run_mirror_rule_validation(
         crs = regions_by_circuit.get(circuit.id, [])
         checks = validate_circuit(
             circuit, circuit_regions=crs, candidate_map=candidate_map, duplicate_keys=circ_dup,
+            vocab=vocab,
         )
         checks.extend(mc_rules.supplement_circuit_macro_clinical(
             circuit,
@@ -1467,7 +1501,7 @@ async def run_mirror_rule_validation(
     for triple in triples:
         checks = validate_triple(
             triple, connection_map=conn_map, function_map=fn_map, circuit_map=circ_map,
-            duplicate_keys=triple_dup,
+            duplicate_keys=triple_dup, vocab=vocab,
         )
         checks.extend(mc_rules.supplement_triple_macro_clinical(triple))
         outcomes.append(ValidationOutcome(
@@ -1483,6 +1517,7 @@ async def run_mirror_rule_validation(
             candidate_map=candidate_map,
             membership_count=membership_count_by_projection.get(proj.id, 0),
             duplicate_keys=proj_dup,
+            vocab=vocab,
         )
         outcomes.append(ValidationOutcome(
             target_type="projection", target_id=proj.id, checks=checks,
@@ -1497,6 +1532,7 @@ async def run_mirror_rule_validation(
             circuit=circuit_map.get(step.circuit_id),
             candidate_map=candidate_map,
             order_dup=step_order_dup,
+            vocab=vocab,
         )
         outcomes.append(ValidationOutcome(
             target_type="circuit_step", target_id=step.id, checks=checks,
@@ -1508,6 +1544,7 @@ async def run_mirror_rule_validation(
     for pf in projection_functions:
         checks = mc_rules.validate_projection_function(
             pf, projection=projection_map.get(pf.projection_id), duplicate_keys=pf_dup,
+            vocab=vocab,
         )
         outcomes.append(ValidationOutcome(
             target_type="projection_function", target_id=pf.id, checks=checks,
@@ -1525,6 +1562,7 @@ async def run_mirror_rule_validation(
             step_map=step_map,
             cross_results=cross_list,
             duplicate_keys=mem_dup,
+            vocab=vocab,
         )
         outcomes.append(ValidationOutcome(
             target_type="circuit_projection_membership", target_id=m.id, checks=checks,

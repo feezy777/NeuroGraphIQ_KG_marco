@@ -148,6 +148,44 @@ HIGH_REVIEW_RULE_SUFFIXES = (
     "CONSENSUS_REJECTED",
 )
 
+VALID_PROJECTION_ROLES = frozenset({
+    "main_path", "feedback", "feedforward", "modulatory", "relay",
+    "parallel_branch", "unknown",
+})
+
+
+def _enum_check_mc(
+    rule_code: str,
+    field: str,
+    value: Any,
+    vocab: dict[str, set[str]] | None,
+    key: str,
+    default: frozenset[str],
+    *,
+    default_severity: str = MirrorValidationSeverity.error,
+    default_status: str = MirrorValidationResultStatus.failed,
+    ont_code: str = "ONT_ENUM_INVALID",
+) -> ValidationCheck | None:
+    allowed = (vocab or {}).get(key)
+    if allowed is not None:
+        if value not in allowed:
+            return build_validation_result(
+                ont_code,
+                severity=MirrorValidationSeverity.blocker,
+                status=MirrorValidationResultStatus.blocked,
+                message=f"invalid {field} for ontology vocabulary: {value}",
+                details={"field": field, "value": value},
+            )
+        return None
+    if value not in default:
+        return build_validation_result(
+            rule_code,
+            severity=default_severity,
+            status=default_status,
+            message=f"invalid {field}: {value}",
+        )
+    return None
+
 
 def is_high_review_check(check: ValidationCheck) -> bool:
     if check.severity != MirrorValidationSeverity.warning:
@@ -197,6 +235,7 @@ def validate_circuit_step(
     circuit: MirrorRegionCircuit | None,
     candidate_map: dict[uuid.UUID, CandidateBrainRegion],
     order_dup: dict[tuple[uuid.UUID, int], uuid.UUID],
+    vocab: dict[str, set[str]] | None = None,
 ) -> list[ValidationCheck]:
     checks = validate_macro_object_status_fields(step)
 
@@ -245,21 +284,18 @@ def validate_circuit_step(
             message="step_name is required",
         ))
 
-    if step.step_type not in VALID_STEP_TYPES:
-        checks.append(build_validation_result(
-            "CIRCUIT_STEP_TYPE_INVALID",
-            severity=MirrorValidationSeverity.error,
-            status=MirrorValidationResultStatus.failed,
-            message=f"invalid step_type: {step.step_type}",
-        ))
-
-    if step.role not in VALID_STEP_ROLES:
-        checks.append(build_validation_result(
-            "CIRCUIT_STEP_ROLE_INVALID",
-            severity=MirrorValidationSeverity.error,
-            status=MirrorValidationResultStatus.failed,
-            message=f"invalid role: {step.role}",
-        ))
+    check = _enum_check_mc(
+        "CIRCUIT_STEP_TYPE_INVALID", "step_type", step.step_type,
+        vocab, "step_type", VALID_STEP_TYPES,
+    )
+    if check:
+        checks.append(check)
+    check = _enum_check_mc(
+        "CIRCUIT_STEP_ROLE_INVALID", "step_role", step.role,
+        vocab, "step_role", VALID_STEP_ROLES,
+    )
+    if check:
+        checks.append(check)
 
     if step.step_type == MirrorCircuitStepType.region and not step.region_candidate_id:
         checks.append(build_validation_result(
@@ -319,6 +355,7 @@ def validate_projection_function(
     *,
     projection: MirrorRegionConnection | None,
     duplicate_keys: dict[tuple[Any, ...], uuid.UUID],
+    vocab: dict[str, set[str]] | None = None,
 ) -> list[ValidationCheck]:
     checks = validate_macro_object_status_fields(pf)
 
@@ -354,21 +391,18 @@ def validate_projection_function(
             message="function_term is required",
         ))
 
-    if pf.function_category not in VALID_FUNCTION_CATEGORIES:
-        checks.append(build_validation_result(
-            "PROJECTION_FUNCTION_CATEGORY_INVALID",
-            severity=MirrorValidationSeverity.error,
-            status=MirrorValidationResultStatus.failed,
-            message=f"invalid function_category: {pf.function_category}",
-        ))
-
-    if pf.relation_type not in VALID_RELATION_TYPES:
-        checks.append(build_validation_result(
-            "PROJECTION_FUNCTION_RELATION_INVALID",
-            severity=MirrorValidationSeverity.error,
-            status=MirrorValidationResultStatus.failed,
-            message=f"invalid relation_type: {pf.relation_type}",
-        ))
+    check = _enum_check_mc(
+        "PROJECTION_FUNCTION_CATEGORY_INVALID", "function_category", pf.function_category,
+        vocab, "category", VALID_FUNCTION_CATEGORIES,
+    )
+    if check:
+        checks.append(check)
+    check = _enum_check_mc(
+        "PROJECTION_FUNCTION_RELATION_INVALID", "relation_type", pf.relation_type,
+        vocab, "relation_type", VALID_RELATION_TYPES, ont_code="ONT_PREDICATE_UNKNOWN",
+    )
+    if check:
+        checks.append(check)
 
     if projection and term:
         key = (
@@ -417,8 +451,16 @@ def validate_circuit_projection_membership(
     step_map: dict[uuid.UUID, MirrorCircuitStep],
     cross_results: list[MirrorCircuitProjectionCrossValidationResult],
     duplicate_keys: dict[tuple[Any, ...], uuid.UUID],
+    vocab: dict[str, set[str]] | None = None,
 ) -> list[ValidationCheck]:
     checks = validate_macro_object_status_fields(m)
+
+    check = _enum_check_mc(
+        "MEMBERSHIP_ROLE_INVALID", "projection_role", m.role_in_circuit,
+        vocab, "projection_role", VALID_PROJECTION_ROLES,
+    )
+    if check:
+        checks.append(check)
 
     if circuit is None:
         checks.append(build_validation_result(
@@ -879,6 +921,7 @@ def validate_projection_macro(
     candidate_map: dict[uuid.UUID, CandidateBrainRegion],
     membership_count: int,
     duplicate_keys: dict[tuple[Any, ...], uuid.UUID],
+    vocab: dict[str, set[str]] | None = None,
 ) -> list[ValidationCheck]:
     checks = validate_common_fields(conn)
 
@@ -930,20 +973,18 @@ def validate_projection_macro(
             message="self-loop projection",
         ))
 
-    if conn.connection_type not in VALID_CONNECTION_TYPES:
-        checks.append(build_validation_result(
-            "PROJECTION_TYPE_INVALID",
-            severity=MirrorValidationSeverity.error,
-            status=MirrorValidationResultStatus.failed,
-            message=f"invalid connection_type: {conn.connection_type}",
-        ))
-    if conn.directionality not in VALID_DIRECTIONALITIES:
-        checks.append(build_validation_result(
-            "PROJECTION_DIRECTIONALITY_INVALID",
-            severity=MirrorValidationSeverity.error,
-            status=MirrorValidationResultStatus.failed,
-            message=f"invalid directionality: {conn.directionality}",
-        ))
+    check = _enum_check_mc(
+        "PROJECTION_TYPE_INVALID", "connection_type", conn.connection_type,
+        vocab, "connection_type", VALID_CONNECTION_TYPES,
+    )
+    if check:
+        checks.append(check)
+    check = _enum_check_mc(
+        "PROJECTION_DIRECTIONALITY_INVALID", "directionality", conn.directionality,
+        vocab, "directionality", VALID_DIRECTIONALITIES,
+    )
+    if check:
+        checks.append(check)
 
     norm = conn.normalized_payload_json or {}
     if norm.get("macro_clinical_semantic_type") == "projection":

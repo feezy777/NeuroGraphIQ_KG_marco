@@ -174,6 +174,21 @@ async def get_active_codes(session: AsyncSession, vocab_type: str) -> list[str]:
     return list((await session.execute(query)).scalars().all())
 
 
+async def load_active_vocab_context(session: AsyncSession) -> dict[str, set[str]]:
+    """Load all active vocabulary codes grouped by vocab_type (one query)."""
+    rows = (
+        await session.execute(
+            select(OntologyVocabulary.code, OntologyVocabulary.vocab_type).where(
+                OntologyVocabulary.status == "active"
+            )
+        )
+    ).all()
+    context: dict[str, set[str]] = {}
+    for code, vocab_type in rows:
+        context.setdefault(vocab_type, set()).add(code)
+    return context
+
+
 # ---- Terms ----
 
 

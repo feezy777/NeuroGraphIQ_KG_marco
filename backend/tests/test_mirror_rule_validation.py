@@ -338,11 +338,12 @@ def test_dry_run_does_not_persist():
     c1, c2 = conn._test_c1, conn._test_c2  # noqa: SLF001
     session = AsyncMock()
     session.execute = AsyncMock(
-        side_effect=[
-            MagicMock(scalars=MagicMock(return_value=MagicMock(all=MagicMock(return_value=[conn])))),
-            MagicMock(scalars=MagicMock(return_value=MagicMock(all=MagicMock(return_value=[c1, c2])))),
-        ]
-    )
+            side_effect=[
+                MagicMock(scalars=MagicMock(return_value=MagicMock(all=MagicMock(return_value=[conn])))),
+                MagicMock(scalars=MagicMock(return_value=MagicMock(all=MagicMock(return_value=[c1, c2])))),
+                MagicMock(all=MagicMock(return_value=[])),
+            ]
+        )
     session.get = AsyncMock(return_value=None)
     session.add = MagicMock()
     session.commit = AsyncMock()
@@ -428,11 +429,12 @@ def test_dry_run_false_persists_run():
     c1, c2 = conn._test_c1, conn._test_c2  # noqa: SLF001
     session = AsyncMock()
     session.execute = AsyncMock(
-        side_effect=[
-            MagicMock(scalars=MagicMock(return_value=MagicMock(all=MagicMock(return_value=[conn])))),
-            MagicMock(scalars=MagicMock(return_value=MagicMock(all=MagicMock(return_value=[c1, c2])))),
-        ]
-    )
+            side_effect=[
+                MagicMock(scalars=MagicMock(return_value=MagicMock(all=MagicMock(return_value=[conn])))),
+                MagicMock(scalars=MagicMock(return_value=MagicMock(all=MagicMock(return_value=[c1, c2])))),
+                MagicMock(all=MagicMock(return_value=[])),
+            ]
+        )
     session.get = AsyncMock(return_value=None)
 
     async def _flush():
