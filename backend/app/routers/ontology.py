@@ -9,11 +9,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.schemas.ontology import (
+    AlignmentReviewRequest,
+    BatchActivateRequest,
+    BatchGroundingByTextRequest,
     CoverageResponse,
+    EnumReplaceRequest,
     GroundingListResponse,
     GroundingRead,
     GroundingRunRequest,
     GroundingRunResponse,
+    ManualGroundingRequest,
     PanoramaResponse,
     TermCreateRequest,
     TermListResponse,
@@ -25,6 +30,7 @@ from app.schemas.ontology import (
     VocabularyRead,
 )
 from app.services import ontology_service as svc
+from app.services import ontology_governance_service as gov
 
 router = APIRouter()
 
@@ -244,3 +250,272 @@ async def get_region_alignment(
     return await svc.region_alignment_summary(
         session, granularity_level=granularity_level, limit=limit
     )
+
+
+# ---- Governance workbench ----
+
+
+@router.get("/governance/dashboard")
+async def governance_dashboard(
+    granularity_level: str | None = Query(default=None),
+    session: AsyncSession = Depends(get_db),
+):
+    return await gov.dashboard(session, granularity_level=granularity_level)
+
+
+@router.get("/governance/issues")
+async def governance_issues(
+    granularity_level: str | None = Query(default=None),
+    session: AsyncSession = Depends(get_db),
+):
+    return await gov.issues_summary(session, granularity_level=granularity_level)
+
+
+@router.get("/governance/ungrounded-records")
+async def governance_ungrounded_records(
+    granularity_level: str | None = Query(default=None),
+    target_type: str | None = Query(default=None),
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+    session: AsyncSession = Depends(get_db),
+):
+    return await gov.ungrounded_records(
+        session,
+        granularity_level=granularity_level,
+        target_type=target_type,
+        limit=limit,
+        offset=offset,
+    )
+
+
+@router.get("/terms/{term_id}/detail")
+async def governance_term_detail(
+    term_id: uuid.UUID,
+    session: AsyncSession = Depends(get_db),
+):
+    try:
+        return await gov.term_detail(session, term_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail={"code": "INVALID_REQUEST", "message": str(exc)})
+
+
+@router.get("/terms/{term_id}/references")
+async def governance_term_references(
+    term_id: uuid.UUID,
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+    session: AsyncSession = Depends(get_db),
+):
+    return await gov.term_references(session, term_id, limit=limit, offset=offset)
+
+
+@router.post("/terms/{source_id}/merge-preview")
+async def governance_merge_preview(
+    source_id: uuid.UUID,
+    body: TermMergeRequest,
+    session: AsyncSession = Depends(get_db),
+):
+    try:
+        return await gov.merge_preview(session, source_id, body.target_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail={"code": "INVALID_REQUEST", "message": str(exc)})
+
+
+@router.post("/terms/batch-activate")
+async def governance_batch_activate(
+    body: BatchActivateRequest,
+    session: AsyncSession = Depends(get_db),
+):
+    try:
+        result = await gov.batch_activate(
+            session, body.term_ids, operator_id=None, reason=body.reason
+        )
+        await session.commit()
+        return result
+    except ValueError as exc:
+        await session.rollback()
+        raise HTTPException(status_code=400, detail={"code": "INVALID_REQUEST", "message": str(exc)})
+
+
+@router.post("/groundings/manual")
+async def governance_manual_grounding(
+    body: ManualGroundingRequest,
+    session: AsyncSession = Depends(get_db),
+):
+    try:
+        result = await gov.manual_grounding(
+            session,
+            target_type=body.target_type,
+            target_id=body.target_id,
+            term_id=body.term_id,
+            reason=body.reason,
+        )
+        await session.commit()
+        return result
+    except ValueError as exc:
+        await session.rollback()
+        raise HTTPException(status_code=400, detail={"code": "INVALID_REQUEST", "message": str(exc)})
+
+
+@router.post("/groundings/batch-by-text")
+async def governance_batch_grounding_by_text(
+    body: BatchGroundingByTextRequest,
+    session: AsyncSession = Depends(get_db),
+):
+    try:
+        result = await gov.batch_grounding_by_text(
+            session,
+            target_type=body.target_type,
+            term_text=body.term_text,
+            term_id=body.term_id,
+        )
+        await session.commit()
+        return result
+    except ValueError as exc:
+        await session.rollback()
+        raise HTTPException(status_code=400, detail={"code": "INVALID_REQUEST", "message": str(exc)})
+
+
+@router.get("/vocabularies/usage")
+async def governance_vocabulary_usage(
+    vocab_type: str | None = Query(default=None),
+    session: AsyncSession = Depends(get_db),
+):
+    return await gov.vocabulary_usage(session, vocab_type=vocab_type)
+
+
+@router.get("/enum-anomalies")
+async def governance_enum_anomalies(
+    field: str = Query(...),
+    granularity_level: str | None = Query(default=None),
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+    session: AsyncSession = Depends(get_db),
+):
+    try:
+        return await gov.list_enum_anomalies(
+            session,
+            field=field,
+            granularity_level=granularity_level,
+            limit=limit,
+            offset=offset,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail={"code": "INVALID_REQUEST", "message": str(exc)})
+
+
+@router.post("/enum-anomalies/replace")
+async def governance_replace_enum_values(
+    body: EnumReplaceRequest,
+    session: AsyncSession = Depends(get_db),
+):
+    try:
+        result = await gov.replace_enum_values(
+            session,
+            field=body.field,
+            old_value=body.old_value,
+            new_code=body.new_code,
+            reason=body.reason,
+        )
+        await session.commit()
+        return result
+    except ValueError as exc:
+        await session.rollback()
+        raise HTTPException(status_code=400, detail={"code": "INVALID_REQUEST", "message": str(exc)})
+
+
+@router.get("/terms/duplicates")
+async def governance_duplicate_terms(
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+    session: AsyncSession = Depends(get_db),
+):
+    return await gov.duplicate_terms(session, limit=limit, offset=offset)
+
+
+@router.get("/alignment/candidates")
+async def governance_alignment_candidates(
+    status: str | None = Query(default=None),
+    granularity_level: str | None = Query(default=None),
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+    session: AsyncSession = Depends(get_db),
+):
+    return await gov.list_alignment_candidates(
+        session,
+        status=status,
+        granularity_level=granularity_level,
+        limit=limit,
+        offset=offset,
+    )
+
+
+@router.post("/alignment/candidates/{candidate_id}/review")
+async def governance_review_alignment_candidate(
+    candidate_id: uuid.UUID,
+    body: AlignmentReviewRequest,
+    session: AsyncSession = Depends(get_db),
+):
+    try:
+        result = await gov.review_alignment_candidate(
+            session,
+            candidate_id,
+            action=body.action,
+            reason=body.reason,
+            external_iri=body.external_iri,
+            external_label=body.external_label,
+        )
+        await session.commit()
+        return result
+    except ValueError as exc:
+        await session.rollback()
+        raise HTTPException(status_code=400, detail={"code": "INVALID_REQUEST", "message": str(exc)})
+
+
+@router.post("/alignment/candidates/batch-accept-exact")
+async def governance_batch_accept_exact(
+    session: AsyncSession = Depends(get_db),
+):
+    result = await gov.batch_accept_exact_candidates(session)
+    await session.commit()
+    return result
+
+
+@router.get("/change-logs")
+async def governance_change_logs(
+    entity_type: str | None = Query(default=None),
+    entity_id: uuid.UUID | None = Query(default=None),
+    action_type: str | None = Query(default=None),
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+    session: AsyncSession = Depends(get_db),
+):
+    return await gov.list_change_logs(
+        session,
+        entity_type=entity_type,
+        entity_id=entity_id,
+        action_type=action_type,
+        limit=limit,
+        offset=offset,
+    )
+
+
+@router.post("/audit/run")
+async def governance_audit_run(
+    granularity_level: str | None = Query(default=None),
+    session: AsyncSession = Depends(get_db),
+):
+    result = await gov.run_audit(
+        session, granularity_level=granularity_level, created_by="system"
+    )
+    await session.commit()
+    return result
+
+
+@router.get("/audit/runs")
+async def governance_audit_runs(
+    limit: int = Query(default=20, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+    session: AsyncSession = Depends(get_db),
+):
+    return await gov.list_audit_runs(session, limit=limit, offset=offset)

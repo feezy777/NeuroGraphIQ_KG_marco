@@ -10,6 +10,7 @@ from fastapi.testclient import TestClient
 
 from app.main import app
 from app.models.ontology import OntologyTerm, OntologyVocabulary
+from app.services import ontology_governance_service as gov
 from app.services import ontology_service as svc
 
 
@@ -65,6 +66,11 @@ def test_openapi_registers_ontology_routes(client):
     assert "/api/ontology/terms" in paths
     assert "/api/ontology/coverage" in paths
     assert "/api/ontology/report/term-panorama" in paths
+    assert "/api/ontology/governance/dashboard" in paths
+    assert "/api/ontology/governance/ungrounded-records" in paths
+    assert "/api/ontology/terms/{term_id}/detail" in paths
+    assert "/api/ontology/alignment/candidates" in paths
+    assert "/api/ontology/audit/runs" in paths
 
 
 def test_get_vocabularies_returns_items(monkeypatch, client):
@@ -172,3 +178,48 @@ def test_get_term_panorama(monkeypatch, client):
 
     assert resp.status_code == 200
     assert resp.json()["items"][0]["count"] == 42
+
+
+def test_governance_dashboard(monkeypatch, client):
+    async def _dashboard(*args, **kwargs):
+        return {
+            "function_anchor_rate": 0.96,
+            "function_total": 114110,
+            "function_grounded": 109789,
+            "proposed_terms": 4988,
+            "ungrounded_records": 4321,
+            "region_unaligned": 96,
+            "enum_anomalies": 0,
+            "last_audit_at": None,
+        }
+
+    monkeypatch.setattr(gov, "dashboard", _dashboard)
+    resp = client.get("/api/ontology/governance/dashboard?granularity_level=macro")
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["function_anchor_rate"] == 0.96
+    assert body["proposed_terms"] == 4988
+
+
+def test_governance_ungrounded_records(monkeypatch, client):
+    async def _ungrounded(*args, **kwargs):
+        return {
+            "items": [
+                {
+                    "target_type": "projection_function",
+                    "target_id": "00000000-0000-0000-0000-000000000001",
+                    "function_term": "weird phrase",
+                    "granularity_level": "molecular_attr",
+                    "reason": "no matching active ontology term",
+                    "recommendations": [],
+                }
+            ],
+            "total": 1,
+        }
+
+    monkeypatch.setattr(gov, "ungrounded_records", _ungrounded)
+    resp = client.get("/api/ontology/governance/ungrounded-records?limit=10")
+
+    assert resp.status_code == 200
+    assert resp.json()["total"] == 1

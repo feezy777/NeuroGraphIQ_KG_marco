@@ -83,6 +83,38 @@ class TermSynonymCreateRequest(BaseModel):
     match_type: str = "synonym"
 
 
+class BatchActivateRequest(BaseModel):
+    term_ids: list[uuid.UUID]
+    reason: str | None = None
+
+
+class ManualGroundingRequest(BaseModel):
+    target_type: str
+    target_id: uuid.UUID
+    term_id: uuid.UUID
+    reason: str | None = None
+
+
+class BatchGroundingByTextRequest(BaseModel):
+    target_type: str
+    term_text: str
+    term_id: uuid.UUID
+
+
+class EnumReplaceRequest(BaseModel):
+    field: str
+    old_value: str
+    new_code: str
+    reason: str | None = None
+
+
+class AlignmentReviewRequest(BaseModel):
+    action: str
+    reason: str | None = None
+    external_iri: str | None = None
+    external_label: str | None = None
+
+
 class GroundingRead(BaseModel):
     id: uuid.UUID
     target_type: str
