@@ -1296,6 +1296,8 @@ async def extract_passage(*, term: str, title: str, abstract: str, fulltext: str
     parse_status = "provider_error"
     retry_count = 0
     raw_response = ""
+    resp = None
+    text_result = None
     for attempt in range(3):
         retry_count = attempt
         try:
@@ -1348,6 +1350,7 @@ async def extract_passage(*, term: str, title: str, abstract: str, fulltext: str
         raise ValueError(
             f"passage extraction failed: {parse_status} after {retry_count + 1} attempt(s){hint}"
         )
+    llm_model = getattr(resp, "model", None) or getattr(text_result, "model", None) or ""
     passages = []
     for item in parsed.passages:
         verified, method, para_idx, locator = verify_and_locate_passage(
@@ -1375,6 +1378,7 @@ async def extract_passage(*, term: str, title: str, abstract: str, fulltext: str
         "parse_status": parse_status,
         "retry_count": retry_count,
         "raw_response": raw_response[:1000],
+        "llm_model": llm_model,
     }
 
 
@@ -2415,6 +2419,7 @@ async def execute_paper_evidence_batch_background(task_id: str) -> None:
     if AsyncSessionLocal is None:
         return
     try:
+        await materialize_task_items_background(task_id)
         async with AsyncSessionLocal() as session:
             await _run_batch_loop(session, task_id)
     except Exception:  # noqa: BLE001
@@ -2501,7 +2506,8 @@ async def resume_batch_task(session: AsyncSession, task_id: str, operator_id: st
 async def cancel_batch_task(session: AsyncSession, task_id: str, operator_id: str | None = None) -> dict:
     result = await session.execute(
         text(
-            "UPDATE paper_evidence_tasks SET status='cancelled', cancelled_at=now() "
+            "UPDATE paper_evidence_tasks SET status='cancelled', cancelled_at=now(), "
+            "materialization_status='cancelled' "
             "WHERE id::text=:tid AND status IN ('pending','running','paused')"
         ),
         {"tid": task_id},
@@ -2574,7 +2580,8 @@ async def list_paper_evidence_tasks(
                 f"SELECT id::text, target_type, scope, mode, max_papers_per_object, status, "
                 f"total_items, processed_items, awaiting_review_items, failed_items, summary, "
                 f"created_by, created_at, started_at, finished_at, error_message, "
-                f"review_status, name, granularity_level "
+                f"review_status, name, granularity_level, materialization_status, "
+                f"estimated_target_count, materialized_target_count "
                 f"FROM paper_evidence_tasks {where} ORDER BY created_at DESC LIMIT :lim OFFSET :off"
             ),
             params,
@@ -2605,6 +2612,9 @@ async def list_paper_evidence_tasks(
                 "review_status": r[16],
                 "name": r[17],
                 "granularity_level": r[18],
+                "materialization_status": r[19],
+                "estimated_target_count": r[20],
+                "materialized_target_count": r[21],
             }
             for r in rows
         ],
@@ -2619,7 +2629,9 @@ async def get_batch_task(session: AsyncSession, task_id: str) -> dict:
                 "SELECT id::text, target_type, scope, mode, max_papers_per_object, status, summary, "
                 "total_items, processed_items, awaiting_review_items, failed_items, created_by, "
                 "created_at, started_at, finished_at, error_message, review_status, name, "
-                "granularity_level, only_oa, confidence_lt, stop_after_strong_support "
+                "granularity_level, only_oa, confidence_lt, stop_after_strong_support, "
+                "scope_type, filter_snapshot, estimated_target_count, materialized_target_count, "
+                "materialization_status, materialization_cursor, materialization_error "
                 "FROM paper_evidence_tasks WHERE id::text = :tid"
             ),
             {"tid": task_id},
@@ -2641,6 +2653,17 @@ async def get_batch_task(session: AsyncSession, task_id: str) -> dict:
         status_map.get(s, 0)
         for s in ("awaiting_review", "completed", "skipped", "failed")
     )
+    versions = (
+        await session.execute(
+            text(
+                "SELECT preprocessing_version, retrieval_version, prompt_version, llm_model "
+                "FROM paper_evidence_task_items WHERE task_id::text=:tid "
+                "AND preprocessing_version IS NOT NULL "
+                "ORDER BY updated_at DESC LIMIT 1"
+            ),
+            {"tid": task_id},
+        )
+    ).first()
     return {
         "task": {
             "id": task[0],
@@ -2665,6 +2688,19 @@ async def get_batch_task(session: AsyncSession, task_id: str) -> dict:
             "only_oa": task[19],
             "confidence_lt": float(task[20]) if task[20] is not None else None,
             "stop_after_strong_support": task[21],
+            "scope_type": task[22],
+            "filter_snapshot": task[23],
+            "estimated_target_count": task[24],
+            "materialized_target_count": task[25],
+            "materialization_status": task[26],
+            "materialization_cursor": str(task[27]) if task[27] else None,
+            "materialization_error": task[28],
+            "versions": {
+                "preprocessing_version": versions[0] if versions else None,
+                "retrieval_version": versions[1] if versions else None,
+                "prompt_version": versions[2] if versions else None,
+                "llm_model": versions[3] if versions else None,
+            },
         },
         "counts": status_map,
         "processed": processed,
@@ -2681,7 +2717,8 @@ async def list_batch_items(
                 "direction, confidence, evidence_id::text, error_message, updated_at, label, "
                 "current_confidence, passages_json, last_error, retry_count, attempt_count, "
                 "last_error_code, last_error_message, preprocess_outcome, paper_id::text, model_direction, "
-                "candidate_papers, review_draft, claim_text_snapshot, claim_components_snapshot "
+                "candidate_papers, review_draft, claim_text_snapshot, claim_components_snapshot, "
+                "retrieval_version, draft_revision "
                 "FROM paper_evidence_task_items WHERE task_id::text = :tid "
                 "ORDER BY created_at LIMIT :lim OFFSET :off"
             ),
@@ -2718,6 +2755,8 @@ async def list_batch_items(
                 "review_draft": r[24],
                 "claim_text_snapshot": r[25],
                 "claim_components_snapshot": r[26],
+                "retrieval_version": r[27],
+                "draft_revision": r[28],
             }
             for r in rows
         ]
@@ -3195,6 +3234,7 @@ async def _process_batch_item_v2(
             ranked = _rank_papers(papers, context)
             selected = ranked[:max_papers]
             candidates: list[dict] = []
+            last_llm_model: str | None = None
             for paper in selected:
                 pmid = (paper.get("pmid") or "").strip()
                 if not pmid:
@@ -3254,6 +3294,7 @@ async def _process_batch_item_v2(
                         title=meta.get("title") or paper.get("title") or "",
                         windows=windows,
                     )
+                last_llm_model = extraction.get("llm_model")
                 stage = "verify"
                 await _set_item_stage(session, item_id, "verifying")
                 coverage = compute_coverage_summary(
@@ -3312,6 +3353,10 @@ async def _process_batch_item_v2(
                 last_error_at=None if verified_any else "SQL:now()",
                 finished_preprocessing_at="SQL:now()",
                 paper_id=uuid.UUID(candidates[0]["paper_id"]) if candidates else None,
+                preprocessing_version=PAPER_EVIDENCE_PREPROCESS_VERSION,
+                retrieval_version=PAPER_PASSAGE_RETRIEVAL_VERSION,
+                prompt_version=PAPER_EVIDENCE_EXTRACTION_PROMPT_VERSION,
+                llm_model=last_llm_model,
             )
         except Exception as exc:  # noqa: BLE001
             code = _classify_error(exc, stage)
@@ -3438,20 +3483,26 @@ async def get_task_item_draft(session: AsyncSession, item_id: str) -> dict:
 
 
 async def save_task_item_draft(
-    session: AsyncSession, item_id: str, draft: dict, operator_id: str | None = None
+    session: AsyncSession,
+    item_id: str,
+    draft: dict,
+    operator_id: str | None = None,
+    revision: int = 0,
 ) -> dict:
     row = (
         await session.execute(
             text(
-                "UPDATE paper_evidence_task_items SET review_draft=CAST(:d AS jsonb), updated_at=now() "
-                "WHERE id::text=:iid RETURNING id::text"
+                "UPDATE paper_evidence_task_items SET review_draft=CAST(:d AS jsonb), "
+                "draft_revision=:rev, updated_at=now() "
+                "WHERE id::text=:iid AND (draft_revision IS NULL OR draft_revision <= :rev) "
+                "RETURNING id::text"
             ),
-            {"iid": item_id, "d": json.dumps(draft, ensure_ascii=False)},
+            {"iid": item_id, "d": json.dumps(draft, ensure_ascii=False), "rev": revision},
         )
     ).first()
     await session.commit()
     if row is None:
-        raise ValueError("task item not found")
+        raise ValueError("stale draft revision rejected (a newer draft already saved)")
     await _write_audit(
         session,
         action_type="EVIDENCE_REVIEW_DRAFT_SAVED",
@@ -3462,7 +3513,7 @@ async def save_task_item_draft(
         reason="review draft saved",
     )
     await session.commit()
-    return {"item_id": item_id, "saved": True}
+    return {"item_id": item_id, "saved": True, "server_revision": revision}
 
 
 async def validate_passage_selection(
@@ -3495,4 +3546,389 @@ async def validate_passage_selection(
         "normalized_selection": re.sub(r"\s+", " ", selected_text).strip(),
         "char_start": char_start if char_start >= 0 else None,
         "char_end": char_start + len(selected_text) if char_start >= 0 else None,
+    }
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# Phase 4 closure: filter snapshot, async materializer, version metadata,
+# draft optimistic concurrency.
+# ════════════════════════════════════════════════════════════════════════════
+
+PAPER_EVIDENCE_PREPROCESS_VERSION = "paper_evidence_preprocess_v1"
+PAPER_PASSAGE_RETRIEVAL_VERSION = "paper_passage_retrieval_v1"
+PAPER_EVIDENCE_EXTRACTION_PROMPT_VERSION = "paper_evidence_extract_v2"
+
+
+def _build_filter_clause(target_type: str, snapshot: dict | None) -> tuple[str, dict]:
+    table = TARGET_MODELS.get(target_type)
+    if table is None:
+        raise ValueError(f"unsupported target_type: {target_type}")
+    where = ["1=1"]
+    params: dict = {}
+    snapshot = snapshot or {}
+    conf = snapshot.get("confidence_lt")
+    if conf is not None:
+        where.append("confidence < :conf")
+        params["conf"] = float(conf)
+    gran = snapshot.get("granularity_level")
+    if gran:
+        where.append("granularity_level = :gran")
+        params["gran"] = gran
+    search = snapshot.get("search")
+    if search:
+        where.append("(source_region_name_en ILIKE :q OR target_region_name_en ILIKE :q OR function_term ILIKE :q)")
+        params["q"] = f"%{search}%"
+    return " AND ".join(where), params
+
+
+async def count_scope_targets(
+    session: AsyncSession, target_type: str, filter_snapshot: dict | None
+) -> int:
+    table = TARGET_MODELS.get(target_type)
+    if table is None:
+        raise ValueError(f"unsupported target_type: {target_type}")
+    where, params = _build_filter_clause(target_type, filter_snapshot)
+    return int(
+        (
+            await session.execute(
+                text(f"SELECT COUNT(*) FROM {table.__tablename__} WHERE {where}"),
+                params,
+            )
+        ).scalar_one()
+    )
+
+
+async def preview_batch_scope(
+    session: AsyncSession,
+    *,
+    target_type: str,
+    filter_snapshot: dict | None = None,
+    scope: str = "filter",
+    selected_ids: list[str] | None = None,
+) -> dict:
+    cfg = get_settings()
+    if scope == "selected":
+        estimate = len(selected_ids or [])
+    else:
+        estimate = await count_scope_targets(session, target_type, filter_snapshot)
+    max_items = cfg.paper_evidence_max_task_items
+    return {
+        "estimated_target_count": estimate,
+        "max_task_items": max_items,
+        "over_limit": estimate > max_items,
+        "message": (
+            f"当前筛选结果共 {estimate} 条，单任务最大 {max_items} 条，请进一步筛选或拆分任务。"
+            if estimate > max_items
+            else None
+        ),
+    }
+
+
+async def _materialize_page(
+    session: AsyncSession,
+    *,
+    task_id: str,
+    target_type: str,
+    filter_snapshot: dict | None,
+    cursor: uuid.UUID | None,
+    batch_size: int,
+    selected_ids: list[str] | None = None,
+) -> tuple[int, uuid.UUID | None]:
+    """Materialize one keyset page; returns (inserted_count, next_cursor)."""
+    table = TARGET_MODELS.get(target_type)
+    if table is None:
+        raise ValueError(f"unsupported target_type: {target_type}")
+    if selected_ids is not None:
+        rows = (
+            await session.execute(
+                text(
+                    f"SELECT id FROM {table.__tablename__} WHERE id::text = ANY(:ids) "
+                    "ORDER BY id LIMIT :lim"
+                ),
+                {"ids": selected_ids, "lim": batch_size},
+            )
+        ).all()
+        page_ids = [r[0] for r in rows]
+        next_cursor = None
+    else:
+        where, params = _build_filter_clause(target_type, filter_snapshot)
+        if cursor is not None:
+            where += " AND id > :cur"
+            params["cur"] = cursor
+        params["lim"] = batch_size
+        rows = (
+            await session.execute(
+                text(
+                    f"SELECT id FROM {table.__tablename__} WHERE {where} "
+                    "ORDER BY id LIMIT :lim"
+                ),
+                params,
+            )
+        ).all()
+        page_ids = [r[0] for r in rows]
+        next_cursor = page_ids[-1] if page_ids else None
+    if not page_ids:
+        return 0, next_cursor
+    inserted = 0
+    for oid in page_ids:
+        result = await session.execute(
+            text(
+                "INSERT INTO paper_evidence_task_items "
+                "(task_id, target_type, target_id, label, current_confidence, status) "
+                "SELECT CAST(:tid AS uuid), CAST(:tt AS varchar), t.id, CAST(:lbl AS varchar), :conf, 'pending' "
+                "FROM unnest(ARRAY[:oid]::uuid[]) t(id) "
+                "WHERE NOT EXISTS ("
+                "  SELECT 1 FROM paper_evidence_task_items a "
+                "  WHERE a.target_type = CAST(:tt AS varchar) AND a.target_id=t.id "
+                "  AND a.status NOT IN ('completed','skipped','failed','cancelled')"
+                ") "
+                "ON CONFLICT (task_id, target_type, target_id) DO NOTHING"
+            ),
+            {
+                "tid": task_id,
+                "tt": target_type,
+                "oid": oid,
+                "lbl": str(oid),
+                "conf": None,
+            },
+        )
+        inserted += result.rowcount or 0
+    return inserted, next_cursor
+
+
+async def materialize_task_items_background(task_id: str) -> None:
+    from app.database import AsyncSessionLocal
+
+    if AsyncSessionLocal is None:
+        return
+    cfg = get_settings()
+    async with AsyncSessionLocal() as session:
+        try:
+            task = (
+                await session.execute(
+                    text(
+                        "SELECT target_type, scope, scope_type, filter_snapshot, materialization_status, "
+                        "materialization_cursor, materialized_target_count "
+                        "FROM paper_evidence_tasks WHERE id::text=:tid"
+                    ),
+                    {"tid": task_id},
+                )
+            ).first()
+            if task is None:
+                return
+            if task[4] == "completed":
+                return
+            state = (
+                await session.execute(
+                    text("SELECT status FROM paper_evidence_tasks WHERE id::text=:tid"),
+                    {"tid": task_id},
+                )
+            ).scalar_one_or_none()
+            if state == "cancelled":
+                await session.execute(
+                    text(
+                        "UPDATE paper_evidence_tasks SET materialization_status='cancelled' "
+                        "WHERE id::text=:tid"
+                    ),
+                    {"tid": task_id},
+                )
+                await session.commit()
+                return
+            await session.execute(
+                text(
+                    "UPDATE paper_evidence_tasks SET materialization_status='running', "
+                    "materialized_target_count=COALESCE(materialized_target_count,0) WHERE id::text=:tid"
+                ),
+                {"tid": task_id},
+            )
+            await session.commit()
+            target_type = task[0]
+            snapshot = task[3]
+            cursor = task[5]
+            selected_ids = None
+            if task[2] == "selected":
+                selected_ids = (snapshot or {}).get("target_ids") or []
+            while True:
+                state = (
+                    await session.execute(
+                        text("SELECT status FROM paper_evidence_tasks WHERE id::text=:tid"),
+                        {"tid": task_id},
+                    )
+                ).scalar_one_or_none()
+                if state in ("cancelled", "paused"):
+                    break
+                inserted, next_cursor = await _materialize_page(
+                    session,
+                    task_id=task_id,
+                    target_type=target_type,
+                    filter_snapshot=snapshot,
+                    cursor=cursor,
+                    batch_size=cfg.paper_evidence_materialize_batch_size,
+                    selected_ids=selected_ids,
+                )
+                if next_cursor is None and selected_ids is None:
+                    await session.execute(
+                        text(
+                            "UPDATE paper_evidence_tasks SET materialization_status='completed', "
+                            "materialization_cursor=NULL, "
+                            "materialized_target_count=(SELECT COUNT(*) FROM paper_evidence_task_items "
+                            "WHERE task_id::text=:tid) WHERE id::text=:tid"
+                        ),
+                        {"tid": task_id},
+                    )
+                    await session.commit()
+                    break
+                if inserted == 0 and next_cursor == cursor and selected_ids is None:
+                    await session.execute(
+                        text(
+                            "UPDATE paper_evidence_tasks SET materialization_status='completed', "
+                            "materialization_cursor=NULL WHERE id::text=:tid"
+                        ),
+                        {"tid": task_id},
+                    )
+                    await session.commit()
+                    break
+                cursor = next_cursor
+                await session.execute(
+                    text(
+                        "UPDATE paper_evidence_tasks SET materialization_cursor=:cur, "
+                        "materialized_target_count=materialized_target_count + :inc, "
+                        "materialization_status=CASE WHEN :sel THEN 'completed' ELSE 'running' END "
+                        "WHERE id::text=:tid"
+                    ),
+                    {
+                        "tid": task_id,
+                        "cur": cursor,
+                        "inc": inserted,
+                        "sel": selected_ids is not None,
+                    },
+                )
+                await session.commit()
+        except Exception as exc:  # noqa: BLE001
+            try:
+                await session.execute(
+                    text(
+                        "UPDATE paper_evidence_tasks SET materialization_status='failed', "
+                        "materialization_error=:err WHERE id::text=:tid"
+                    ),
+                    {"tid": task_id, "err": str(exc)[:500]},
+                )
+                await session.commit()
+            except Exception:  # noqa: BLE001
+                await session.rollback()
+
+
+async def create_batch_task(
+    session: AsyncSession,
+    *,
+    target_type: str,
+    scope: str,
+    mode: str,
+    max_papers_per_object: int,
+    created_by: str | None = None,
+    limit: int = 200,
+    start_paused: bool = False,
+    name: str | None = None,
+    granularity_level: str | None = None,
+    only_oa: bool = False,
+    confidence_lt: float | None = None,
+    stop_after_strong_support: bool = False,
+    target_ids: list[str] | None = None,
+    filter_snapshot: dict | None = None,
+) -> dict:
+    """Create task + structured scope snapshot. Items materialized async (small sync)."""
+    if target_type not in TARGET_MODELS:
+        raise ValueError(f"unsupported target_type: {target_type}")
+    cfg = get_settings()
+    scope_type = "selected" if scope == "selected" else "filter"
+    if scope == "selected":
+        snapshot = {
+            "target_type": target_type,
+            "granularity_level": granularity_level,
+            "target_ids": target_ids or [],
+        }
+        estimate = len(target_ids or [])
+        if target_ids:
+            active = set(
+                (
+                    await session.execute(
+                        text(
+                            "SELECT target_id::text FROM paper_evidence_task_items "
+                            "WHERE target_type=:tt AND target_id::text = ANY(:ids) "
+                            "AND status IN ('pending','searching','fetching','retrieving','extracting','verifying','awaiting_review')"
+                        ),
+                        {"tt": target_type, "ids": target_ids},
+                    )
+                ).scalars().all()
+            )
+            if active and active == set(target_ids):
+                raise ValueError("all matched targets already have an active evidence task")
+    else:
+        snapshot = filter_snapshot or {
+            "target_type": target_type,
+            "granularity_level": granularity_level,
+            "confidence_lt": confidence_lt if scope == "low_confidence" else None,
+        }
+        estimate = await count_scope_targets(session, target_type, snapshot)
+    if estimate > cfg.paper_evidence_max_task_items:
+        raise ValueError(
+            f"当前筛选结果共 {estimate} 条，单任务最大 {cfg.paper_evidence_max_task_items} 条，"
+            "请进一步筛选或拆分任务。"
+        )
+    task_id = (
+        await session.execute(
+            text(
+                "INSERT INTO paper_evidence_tasks "
+                "(target_type, scope, scope_type, mode, max_papers_per_object, status, created_by, "
+                "total_items, config, name, granularity_level, only_oa, confidence_lt, "
+                "stop_after_strong_support, review_status, filter_snapshot, estimated_target_count, "
+                "materialization_status) "
+                "VALUES (:tt, :scope, :scope_type, :mode, :maxp, :status, :cb, :total, CAST(:cfg AS jsonb), "
+                ":name, :gl, :only_oa, :clt, :stop, 'not_started', CAST(:fs AS jsonb), :est, 'pending') "
+                "RETURNING id::text"
+            ),
+            {
+                "tt": target_type,
+                "scope": scope,
+                "scope_type": scope_type,
+                "mode": mode,
+                "maxp": max_papers_per_object,
+                "status": "paused" if start_paused else "pending",
+                "cb": created_by,
+                "total": estimate,
+                "cfg": json.dumps(
+                    {"deepseek_concurrency": DEEPSEEK_CONCURRENCY, "europepmc_concurrency": EUROPE_PMC_CONCURRENCY},
+                    ensure_ascii=False,
+                ),
+                "name": name,
+                "gl": granularity_level,
+                "only_oa": only_oa,
+                "clt": confidence_lt,
+                "stop": stop_after_strong_support,
+                "fs": json.dumps(snapshot, ensure_ascii=False),
+                "est": estimate,
+            },
+        )
+    ).scalar_one()
+    await session.commit()
+    await _write_audit(
+        session,
+        action_type="EVIDENCE_TASK_CREATE",
+        entity_type="evidence_task",
+        entity_id=uuid.UUID(task_id),
+        after_data={
+            "target_type": target_type,
+            "scope_type": scope_type,
+            "estimated_target_count": estimate,
+            "filter_snapshot": snapshot,
+        },
+        operator_id=created_by,
+        reason="batch evidence task created",
+    )
+    await session.commit()
+    return {
+        "task_id": task_id,
+        "target_count": estimate,
+        "skipped_active_targets": 0,
+        "auto_started": not start_paused,
     }

@@ -19,6 +19,7 @@ import {
 import { FormalObjectTableSection } from './FormalObjectTableSection'
 import { FormalObjectDetailDrawer } from './FormalObjectDetailDrawer'
 import { EvidenceReviewModal } from './EvidenceReviewModal'
+import { CreateBatchTaskDialog } from './evidence-workbench/CreateBatchTaskDialog'
 import { FieldCompletionModal } from './FieldCompletionModal'
 import { MultiTargetFieldCompletionModal } from './MultiTargetFieldCompletionModal'
 import { resolveCircuitBundleFromCircuitIds } from './circuitBundleUtils'
@@ -95,6 +96,8 @@ export function MirrorKgPanel({
   const [pendingSource, setPendingSource] = useState<{ type: string; id: string } | null>(null)
   const [evidenceCategory, setEvidenceCategory] = useState<'region' | 'connection' | 'circuit' | 'other'>('connection')
   const [reviewOpen, setReviewOpen] = useState(false)
+  const [batchOpen, setBatchOpen] = useState(false)
+  const [batchTargetIds, setBatchTargetIds] = useState<string[]>([])
   const [reviewItems, setReviewItems] = useState<Array<{ target_type: string; target_id: string; label: string; confidence: number | null }>>([])
   const categoryTypes = useMemo(() => {
     if (mirrorTab !== 'evidence') return undefined
@@ -294,6 +297,10 @@ export function MirrorKgPanel({
             }))
             setReviewOpen(true)
           }}
+          onBatchPaperEvidence={(rows) => {
+            setBatchTargetIds(rows.map(r => String(r.id)))
+            setBatchOpen(true)
+          }}
         />
       )}
 
@@ -342,6 +349,13 @@ export function MirrorKgPanel({
         }}
       />
       <EvidenceReviewModal open={reviewOpen} onClose={() => setReviewOpen(false)} initialItems={reviewItems} />
+      <CreateBatchTaskDialog
+        open={batchOpen}
+        granularity={granularityLevel}
+        selectedIds={batchTargetIds}
+        onClose={() => setBatchOpen(false)}
+        onCreated={() => setBatchOpen(false)}
+      />
 
       {mapping && selected && mirrorTab !== 'circuits' && (
         <FieldCompletionModal

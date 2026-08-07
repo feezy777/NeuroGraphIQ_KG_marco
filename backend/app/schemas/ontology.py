@@ -234,6 +234,7 @@ class BatchTaskCreateRequest(BaseModel):
     confidence_lt: float | None = Field(default=None, ge=0.0, le=1.0)
     stop_after_strong_support: bool = False
     target_ids: list[str] | None = None
+    filter_snapshot: dict | None = None
 
 
 class PassageSelectionRequest(BaseModel):
@@ -243,6 +244,7 @@ class PassageSelectionRequest(BaseModel):
 
 class TaskItemDraftRequest(BaseModel):
     draft: dict
+    revision: int = 0
 
 
 class EvidenceAuditRequest(BaseModel):

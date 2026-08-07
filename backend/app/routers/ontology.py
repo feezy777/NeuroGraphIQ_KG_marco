@@ -858,7 +858,9 @@ async def paper_evidence_batch_create(
             confidence_lt=body.confidence_lt,
             stop_after_strong_support=body.stop_after_strong_support,
             target_ids=body.target_ids,
+            filter_snapshot=body.filter_snapshot,
         )
+        background_tasks.add_task(pes.materialize_task_items_background, result["task_id"])
         if not body.start_paused:
             background_tasks.add_task(pes.execute_paper_evidence_batch_background, result["task_id"])
         return {**result, "auto_started": not body.start_paused}
@@ -874,6 +876,31 @@ async def paper_evidence_batch_list(
     session: AsyncSession = Depends(get_db),
 ):
     return await pes.list_paper_evidence_tasks(session, limit=limit, offset=offset, status=status)
+
+
+@router.get("/evidence/batch/preview")
+async def paper_evidence_batch_preview(
+    target_type: str = Query(...),
+    scope: str = Query(default="filter"),
+    confidence_lt: float | None = Query(default=None),
+    granularity_level: str | None = Query(default=None),
+    search: str | None = Query(default=None),
+    selected_ids: str | None = Query(default=None),
+    session: AsyncSession = Depends(get_db),
+):
+    snapshot = {
+        "target_type": target_type,
+        "granularity_level": granularity_level,
+        "confidence_lt": confidence_lt,
+        "search": search,
+    }
+    return await pes.preview_batch_scope(
+        session,
+        target_type=target_type,
+        filter_snapshot=snapshot,
+        scope=scope,
+        selected_ids=(selected_ids or "").split(",") if selected_ids else None,
+    )
 
 
 @router.post("/evidence/batch/{task_id}/pause")
@@ -987,7 +1014,7 @@ async def paper_evidence_batch_item_draft_put(
     _auth: str = Depends(require_role("reviewer")),
 ):
     try:
-        return await pes.save_task_item_draft(session, item_id, body.draft)
+        return await pes.save_task_item_draft(session, item_id, body.draft, revision=body.revision)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail={"code": "INVALID_REQUEST", "message": str(exc)})
 

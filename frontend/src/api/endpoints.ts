@@ -5511,6 +5511,13 @@ export interface PaperEvidenceTask {
   review_status: string | null
   name: string | null
   granularity_level: string | null
+  scope_type: string | null
+  filter_snapshot: Record<string, unknown> | null
+  estimated_target_count: number | null
+  materialized_target_count: number | null
+  materialization_status: string | null
+  materialization_error: string | null
+  versions: Record<string, string | null> | null
   summary: Record<string, unknown> | null
   created_by: string | null
   created_at: string | null
@@ -5532,6 +5539,7 @@ export const createPaperEvidenceBatch = (body: {
   confidence_lt?: number | null
   stop_after_strong_support?: boolean
   target_ids?: string[] | null
+  filter_snapshot?: Record<string, unknown> | null
 }) => postJson<{ task_id: string; target_count: number; skipped_active_targets: number; auto_started: boolean }>(
   '/api/ontology/evidence/batch',
   body,
@@ -5574,8 +5582,25 @@ export const getTaskItemDraft = (itemId: string) =>
     candidate_papers: Array<Record<string, unknown>> | null
   }>(`/api/ontology/evidence/batch/items/${itemId}/draft`)
 
-export const saveTaskItemDraft = (itemId: string, draft: Record<string, unknown>) =>
-  postJson<{ item_id: string; saved: boolean }>(`/api/ontology/evidence/batch/items/${itemId}/draft`, { draft })
+export const saveTaskItemDraft = (itemId: string, draft: Record<string, unknown>, revision = 0) =>
+  postJson<{ item_id: string; saved: boolean; server_revision: number }>(
+    `/api/ontology/evidence/batch/items/${itemId}/draft`,
+    { draft, revision },
+  )
+
+export const previewEvidenceBatchScope = (p: {
+  target_type: string
+  scope?: string
+  confidence_lt?: number | null
+  granularity_level?: string | null
+  search?: string | null
+  selected_ids?: string | null
+}) => getJson<{
+  estimated_target_count: number
+  max_task_items: number
+  over_limit: boolean
+  message: string | null
+}>('/api/ontology/evidence/batch/preview', p)
 
 export const validatePassageSelection = (body: { paper_passage_id: string; selected_text: string }) =>
   postJson<{

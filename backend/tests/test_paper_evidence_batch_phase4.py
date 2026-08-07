@@ -87,11 +87,29 @@ async def _make_task(ids, scope="low_confidence", limit=10):
         patch.object(pes, "_batch_scope_label", new=AsyncMock(side_effect=lambda s, tt, oid: (f"t-{oid}", 0.2))),
     ):
         async with AsyncSessionLocal() as s:
-            return await pes.create_batch_task(
+            result = await pes.create_batch_task(
                 s, target_type="connection", scope=scope, mode="function",
                 max_papers_per_object=3, created_by="test", limit=limit, name="Phase4 task",
                 granularity_level="macro", confidence_lt=0.5,
+                target_ids=ids if scope == "selected" else None,
             )
+            for oid in ids:
+                await s.execute(
+                    text(
+                        "INSERT INTO paper_evidence_task_items "
+                        "(task_id, target_type, target_id, label, current_confidence, status) "
+                        "SELECT :tid, 'connection', :oid, :lbl, 0.2, 'pending' "
+                        "WHERE NOT EXISTS ("
+                        "  SELECT 1 FROM paper_evidence_task_items a "
+                        "  WHERE a.target_type='connection' AND a.target_id=:oid "
+                        "  AND a.status NOT IN ('completed','skipped','failed','cancelled')"
+                        ") "
+                        "ON CONFLICT (task_id, target_type, target_id) DO NOTHING"
+                    ),
+                    {"tid": result["task_id"], "oid": uuid.UUID(oid), "lbl": f"t-{oid}"},
+                )
+            await s.commit()
+            return result
 
 
 async def _run_task(task_id):

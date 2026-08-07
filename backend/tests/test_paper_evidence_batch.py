@@ -91,12 +91,14 @@ class TestBatchStateMachine:
                 new=AsyncMock(side_effect=lambda s, tt, oid: (f"target-{oid}", 0.4)),
             ),
         ):
-            return _run(
+            result = _run(
                 _make_task_inner(
                     target_ids=target_ids,
                     start_paused=start_paused,
                 )
             )
+            _run(_seed_items(result["task_id"], target_ids))
+            return result
 
     def test_create_task_creates_items_with_labels(self):
         ids = _ids(2)
@@ -223,13 +225,34 @@ async def _make_task_inner(*, target_ids, start_paused):
         return await pes.create_batch_task(
             session,
             target_type="connection",
-            scope="low_confidence",
             mode="function",
             max_papers_per_object=3,
             created_by="test",
             limit=20,
             start_paused=start_paused,
+            target_ids=target_ids,
+            scope="selected",
         )
+
+
+async def _seed_items(task_id, ids):
+    async with AsyncSessionLocal() as s:
+        for oid in ids:
+            await s.execute(
+                text(
+                    "INSERT INTO paper_evidence_task_items "
+                    "(task_id, target_type, target_id, label, current_confidence, status) "
+                    "SELECT :tid, 'connection', :oid, :lbl, 0.4, 'pending' "
+                    "WHERE NOT EXISTS ("
+                    "  SELECT 1 FROM paper_evidence_task_items a "
+                    "  WHERE a.target_type='connection' AND a.target_id=:oid "
+                    "  AND a.status NOT IN ('completed','skipped','failed','cancelled')"
+                    ") "
+                    "ON CONFLICT (task_id, target_type, target_id) DO NOTHING"
+                ),
+                {"tid": task_id, "oid": uuid.UUID(oid), "lbl": f"target-{oid}"},
+            )
+        await s.commit()
 
 
 async def _read_task_row(task_id):

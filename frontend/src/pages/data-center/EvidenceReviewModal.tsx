@@ -115,11 +115,14 @@ export function EvidenceReviewModal({ open, onClose, initialItems, initialTaskId
   const [dirty, setDirty] = useState(false)
   const [closeConfirm, setCloseConfirm] = useState(false)
   const [showContextHash, setShowContextHash] = useState<string | null>(null)
+  const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
+  const [serverDraftConfirm, setServerDraftConfirm] = useState(false)
 
   const taskIdRef = useRef<string | null>(null)
   const abortRef = useRef<AbortController | null>(null)
   const targetRef = useRef<string | null>(null)
   const autosaveRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const revisionRef = useRef(0)
   const draftRef = useRef<WorkbenchDraft>({ ...DEFAULT_DRAFT })
   const queueRef = useRef<QueueEntry[]>([])
   queueRef.current = queue
@@ -207,6 +210,8 @@ export function EvidenceReviewModal({ open, onClose, initialItems, initialTaskId
     setPreview(null)
     setConfirmOpen(false)
     setDirty(false)
+    setSaveState('idle')
+    revisionRef.current = 0
     draftRef.current = { ...draft }
   }, [])
 
@@ -581,7 +586,11 @@ export function EvidenceReviewModal({ open, onClose, initialItems, initialTaskId
     if (autosaveRef.current) clearTimeout(autosaveRef.current)
     autosaveRef.current = setTimeout(() => {
       syncDraft()
-      void saveTaskItemDraft(current.taskItemId!, draftRef.current as unknown as Record<string, unknown>).catch(() => { /* best-effort */ })
+      setSaveState('saving')
+      const rev = revisionRef.current + 1
+      void saveTaskItemDraft(current.taskItemId!, draftRef.current as unknown as Record<string, unknown>, rev)
+        .then(r => { revisionRef.current = r.server_revision; setSaveState('saved') })
+        .catch(() => setSaveState('error'))
     }, 500)
     return () => { if (autosaveRef.current) clearTimeout(autosaveRef.current) }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -641,10 +650,23 @@ export function EvidenceReviewModal({ open, onClose, initialItems, initialTaskId
   const saveDraft = useCallback(() => {
     saveCurrentDraft(idx)
     persist(queueRef.current, idx)
-    setMessage('草稿已保存到本地，关闭后可恢复')
-  }, [saveCurrentDraft, idx, persist])
+    if (taskIdRef.current && current?.taskItemId) {
+      if (autosaveRef.current) clearTimeout(autosaveRef.current)
+      setSaveState('saving')
+      const rev = revisionRef.current + 1
+      void saveTaskItemDraft(current.taskItemId, draftRef.current as unknown as Record<string, unknown>, rev)
+        .then(r => { revisionRef.current = r.server_revision; setSaveState('saved'); setMessage('草稿已保存到服务器') })
+        .catch(() => { setSaveState('error'); setMessage('草稿保存到服务器失败') })
+    } else {
+      setMessage('草稿已保存到本地，关闭后可恢复')
+    }
+  }, [saveCurrentDraft, idx, persist, current])
 
   const handleClose = useCallback(() => {
+    if (saveState === 'error') {
+      setServerDraftConfirm(true)
+      return
+    }
     if (dirty) {
       setCloseConfirm(true)
       return
@@ -652,7 +674,24 @@ export function EvidenceReviewModal({ open, onClose, initialItems, initialTaskId
     saveCurrentDraft(idx)
     persist(queueRef.current, idx)
     onClose()
-  }, [dirty, saveCurrentDraft, idx, persist, onClose])
+  }, [dirty, saveState, saveCurrentDraft, idx, persist, onClose])
+
+  const retrySaveAndClose = useCallback(() => {
+    if (autosaveRef.current) clearTimeout(autosaveRef.current)
+    syncDraft()
+    setSaveState('saving')
+    const rev = revisionRef.current + 1
+    void saveTaskItemDraft(current?.taskItemId ?? '', draftRef.current as unknown as Record<string, unknown>, rev)
+      .then(r => {
+        revisionRef.current = r.server_revision
+        setSaveState('saved')
+        setServerDraftConfirm(false)
+        saveCurrentDraft(idx)
+        persist(queueRef.current, idx)
+        onClose()
+      })
+      .catch(() => setSaveState('error'))
+  }, [current, syncDraft, saveCurrentDraft, idx, persist, onClose])
 
   const skip = useCallback(() => {
     saveCurrentDraft(idx)
@@ -900,6 +939,14 @@ export function EvidenceReviewModal({ open, onClose, initialItems, initialTaskId
         <button type="button" className="btn btn-sm" disabled={!current} onClick={skip}>跳过</button>
         <button type="button" className="btn btn-sm" disabled={!current} onClick={saveDraft}>保存草稿</button>
         <button type="button" className="btn btn-sm" disabled={idx + 1 >= queue.length} onClick={() => goto(idx + 1)}>下一条</button>
+        {saveState === 'saving' && <span className="ew-meta">保存中…</span>}
+        {saveState === 'saved' && <span className="ew-ok">已保存</span>}
+        {saveState === 'error' && (
+          <>
+            <span className="ew-bad">保存失败</span>
+            <button type="button" className="btn btn-xs" onClick={() => saveDraft()}>重试保存</button>
+          </>
+        )}
         <span className="ew-meta" title={attachDisabledReason}>{attachDisabled ? `ⓘ ${attachDisabledReason}` : '确认论文证据'}</span>
         <button type="button" data-testid="ew-attach" className="btn btn-primary btn-sm" disabled={attachDisabled} onClick={() => setConfirmOpen(true)}>确认论文证据</button>
       </div>
@@ -928,6 +975,19 @@ export function EvidenceReviewModal({ open, onClose, initialItems, initialTaskId
         }}
         onCancel={() => setCloseConfirm(false)}
         confirmLabel="保存并关闭"
+      />
+      <ConfirmDialog
+        open={serverDraftConfirm}
+        title="最新审核草稿尚未保存到服务器"
+        message="草稿保存失败，关闭将丢失最新修改。"
+        onConfirm={retrySaveAndClose}
+        onCancel={() => {
+          setServerDraftConfirm(false)
+          saveCurrentDraft(idx)
+          persist(queueRef.current, idx)
+          onClose()
+        }}
+        confirmLabel="重试保存并关闭"
       />
     </div>
   )

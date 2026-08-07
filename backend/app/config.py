@@ -33,6 +33,8 @@ class Settings(BaseSettings):
     paper_search_concurrency: int = 3
     paper_fetch_concurrency: int = 4
     evidence_batch_max_retries: int = 3
+    paper_evidence_materialize_batch_size: int = 1000
+    paper_evidence_max_task_items: int = 50000
 
     # Database components — align with backend/.env.example and docs/dbeaver_postgres_connection.md
     postgres_host: str = "127.0.0.1"

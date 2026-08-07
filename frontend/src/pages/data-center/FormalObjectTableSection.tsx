@@ -34,6 +34,7 @@ interface Props {
   hideFieldCompletion?: boolean
   onValidateSelected?: (ids: string[]) => void
   onPaperEvidence?: (rows: FormalRow[]) => void
+  onBatchPaperEvidence?: (rows: FormalRow[]) => void
   /** Current granularity level for schema display in FormalAlignmentCard */
   granularityLevel?: string
   autoOpenId?: string | null
@@ -55,6 +56,7 @@ export function FormalObjectTableSection({
   hideFieldCompletion,
   onValidateSelected,
   onPaperEvidence,
+  onBatchPaperEvidence,
   onOpenDetail,
   onRefresh,
   onDeleteSelected,
@@ -330,6 +332,11 @@ export function FormalObjectTableSection({
           {onPaperEvidence && (
             <button className="fab-btn" onClick={() => onPaperEvidence(items.filter(r => effectiveSelected.has(r.id)))}>
               论文佐证
+            </button>
+          )}
+          {onBatchPaperEvidence && (
+            <button className="fab-btn" onClick={() => onBatchPaperEvidence(items.filter(r => effectiveSelected.has(r.id)))}>
+              批量论文佐证
             </button>
           )}
           <span className="fab-divider" />
