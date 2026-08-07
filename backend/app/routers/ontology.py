@@ -714,6 +714,18 @@ async def paper_evidence_list(
     )
 
 
+@router.get("/evidence/target/{target_type}/{target_id}")
+async def paper_evidence_target_dto(
+    target_type: str,
+    target_id: uuid.UUID,
+    session: AsyncSession = Depends(get_db),
+):
+    try:
+        return await pes.build_target_dto(session, target_type, target_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail={"code": "INVALID_REQUEST", "message": str(exc)})
+
+
 @router.post("/evidence/extract", response_model=EvidenceExtractResponse)
 async def paper_evidence_extract(
     body: EvidenceExtractRequest,

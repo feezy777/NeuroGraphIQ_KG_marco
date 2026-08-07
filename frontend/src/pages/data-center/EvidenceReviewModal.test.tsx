@@ -14,6 +14,7 @@ vi.mock('../../api/endpoints', () => ({
   completePaperEvidenceTaskItem: vi.fn(),
   listPaperEvidenceTaskItems: vi.fn(),
   writeEvidenceAudit: vi.fn(),
+  getEvidenceTarget: vi.fn(),
 }))
 
 const ITEM_A = {
@@ -63,23 +64,35 @@ const EXTRACT_OK = {
       source_scope: 'abstract' as const,
       section_title: null,
       paragraph_index: 0,
+      paragraph_id: 'abstract_p001',
       passage: 'A real abstract sentence about connectivity and function.',
+      translation_zh: null,
       direction: 'supports' as const,
+      evidence_level: 'direct' as const,
       reason: 'explicitly mentions the function',
       confidence: 0.8,
+      semantic_confidence: 0.8,
       source_locator: 'abstract:0',
       source_verified: true,
+      source_verification_method: 'exact',
+      supported_components: ['source_region', 'target_region', 'relation', 'direction'],
     },
     {
       source_scope: 'abstract' as const,
       section_title: null,
       paragraph_index: 9,
+      paragraph_id: 'abstract_p002',
       passage: 'A fabricated sentence that never appeared.',
+      translation_zh: null,
       direction: 'supports' as const,
+      evidence_level: 'background' as const,
       reason: 'hallucinated',
       confidence: 0.15,
+      semantic_confidence: 0.15,
       source_locator: null,
       source_verified: false,
+      source_verification_method: null,
+      supported_components: [],
     },
   ],
   parse_status: 'ok',
@@ -154,6 +167,31 @@ describe('EvidenceReviewModal 论文佐证工作台', () => {
     vi.mocked(endpoints.writeEvidenceAudit).mockResolvedValue({ ok: true, action_type: 'x' })
     vi.mocked(endpoints.completePaperEvidenceTaskItem).mockResolvedValue({ task_id: 't', item_id: 'i', status: 'completed' })
     vi.mocked(endpoints.listPaperEvidenceTaskItems).mockResolvedValue({ items: [] })
+    vi.mocked(endpoints.getEvidenceTarget).mockResolvedValue({
+      target_type: 'connection',
+      target_id: ITEM_A.target_id,
+      granularity: 'macro',
+      display_name: '连接 A',
+      source_region: 'BLA',
+      target_region: 'infralimbic cortex',
+      canonical_terms: ['fear extinction'],
+      relation: 'projection',
+      directionality: 'BLA -> IL',
+      circuit_context: '',
+      function_context: '',
+      current_confidence: 0.42,
+      existing_evidence: 0,
+      structured_claim: {},
+      claim_text: 'BLA 到 infralimbic cortex 存在投射，并参与 fear extinction。',
+      claim_components: [
+        { component_type: 'source_region', statement: '源脑区为 BLA', required: true, metadata: {} },
+        { component_type: 'target_region', statement: '靶脑区为 infralimbic cortex', required: true, metadata: {} },
+        { component_type: 'relation', statement: 'BLA -> IL 投射', required: true, metadata: {} },
+        { component_type: 'direction', statement: 'BLA -> IL', required: true, metadata: {} },
+        { component_type: 'function', statement: 'participates in fear extinction', required: true, metadata: {} },
+      ],
+      claim_version: 'claim_v1',
+    })
   })
 
   it('渲染单条/多条对象队列与 Stepper，并自动开始第一条检索', async () => {
@@ -180,7 +218,7 @@ describe('EvidenceReviewModal 论文佐证工作台', () => {
     fireEvent.change(screen.getByPlaceholderText('Europe PMC 检索式（可编辑）'), {
       target: { value: 'custom AND term' },
     })
-    fireEvent.click(screen.getByText('重新检索'))
+    fireEvent.click(screen.getByText('重新搜索'))
     await waitFor(() => expect(vi.mocked(endpoints.searchPaperEvidence)).toHaveBeenCalledTimes(2))
     expect(vi.mocked(endpoints.searchPaperEvidence).mock.calls[1][0].query_override).toBe('custom AND term')
     expect(vi.mocked(endpoints.writeEvidenceAudit)).toHaveBeenCalledWith(
@@ -194,7 +232,7 @@ describe('EvidenceReviewModal 论文佐证工作台', () => {
       .map(el => el.querySelector('input[type="checkbox"]') as HTMLInputElement)
     expect(boxes[0].checked).toBe(true)
     expect(boxes[1].disabled).toBe(true)
-    expect(screen.getByText('1/2 个片段通过原文校验')).toBeTruthy()
+    expect(screen.getByText(/1 个已通过原文核验，1 个未通过核验/)).toBeTruthy()
     expect((screen.getByTestId('ew-attach') as HTMLButtonElement).disabled).toBe(false)
   })
 
@@ -207,13 +245,13 @@ describe('EvidenceReviewModal 论文佐证工作台', () => {
   it('入库成功后自动进入下一条未处理对象', async () => {
     await runToExtracted()
     fireEvent.click(screen.getByTestId('ew-attach'))
-    await waitFor(() => expect(screen.getByText('确认')).toBeTruthy())
+    await waitFor(() => expect(screen.getByTestId('ew-confirm-attach')).toBeTruthy())
     await waitFor(
       () => expect((screen.getByTestId('ew-confirm-attach') as HTMLButtonElement).disabled).toBe(false),
       { timeout: 4000 },
     )
     fireEvent.click(screen.getByTestId('ew-confirm-attach'))
-    await waitFor(() => expect(screen.getByText(/入库成功/)).toBeTruthy())
+    await waitFor(() => expect(screen.getByText(/已添加 1 篇论文证据/)).toBeTruthy())
     expect(vi.mocked(endpoints.attachPaperEvidence)).toHaveBeenCalledWith(
       expect.objectContaining({
         target_id: ITEM_A.target_id,
@@ -264,14 +302,14 @@ describe('EvidenceReviewModal 论文佐证工作台', () => {
   it('候选为空时展示具体原因并可修改关键词', async () => {
     vi.mocked(endpoints.searchPaperEvidence).mockResolvedValue({ ...SEARCH_OK, papers: [] })
     renderWorkbench([ITEM_A])
-    await waitFor(() => expect(screen.getByText('没有可用论文，请调整关键词后重新检索')).toBeTruthy())
+    await waitFor(() => expect(screen.getByText(/没有找到符合当前检索式的论文/)).toBeTruthy())
     expect(screen.getByPlaceholderText('Europe PMC 检索式（可编辑）')).toBeTruthy()
   })
 
   it('OA Only 筛选与排除候选生效', async () => {
     renderWorkbench([ITEM_A])
     await waitFor(() => expect(screen.getByText('Paper A')).toBeTruthy())
-    fireEvent.click(screen.getByText('排除候选'))
+    fireEvent.click(screen.getByText('排除此候选'))
     await waitFor(() => expect(screen.getByText('当前筛选/排除后无论文，请调整筛选条件')).toBeTruthy())
     fireEvent.click(screen.getByText('恢复排除'))
     await waitFor(() => expect(screen.getByText('Paper A')).toBeTruthy())
@@ -283,7 +321,7 @@ describe('EvidenceReviewModal 论文佐证工作台', () => {
     const alertSpy = vi.spyOn(window, 'alert').mockImplementation(() => undefined)
     await runToExtracted()
     fireEvent.click(screen.getByTestId('ew-attach'))
-    await waitFor(() => expect(screen.getByText('确认')).toBeTruthy())
+    await waitFor(() => expect(screen.getByTestId('ew-confirm-attach')).toBeTruthy())
     expect(promptSpy).not.toHaveBeenCalled()
     expect(confirmSpy).not.toHaveBeenCalled()
     expect(alertSpy).not.toHaveBeenCalled()
@@ -335,7 +373,7 @@ describe('EvidenceReviewModal 论文佐证工作台', () => {
       { timeout: 4000 },
     )
     fireEvent.click(screen.getByTestId('ew-confirm-attach'))
-    await waitFor(() => expect(screen.getByText(/入库成功/)).toBeTruthy())
+    await waitFor(() => expect(screen.getByText(/已添加 1 篇论文证据/)).toBeTruthy())
     expect(vi.mocked(endpoints.completePaperEvidenceTaskItem)).toHaveBeenCalledWith('task-1', 'item-1')
   })
 
@@ -361,5 +399,61 @@ describe('EvidenceReviewModal 论文佐证工作台', () => {
     fireEvent.click(screen.getByText('Paper A'))
     fireEvent.click(screen.getByText('AI 提取原文'))
     await waitFor(() => expect(screen.getByText(/「Paper A」提取解析失败/)).toBeTruthy())
+  })
+
+  it('展示 Claim 与 Claim Components', async () => {
+    renderWorkbench([ITEM_A])
+    await waitFor(() => expect(screen.getByTestId('ew-claim-panel')).toBeTruthy())
+    expect(screen.getByText('BLA 到 infralimbic cortex 存在投射，并参与 fear extinction。')).toBeTruthy()
+    expect(screen.getByText('源脑区')).toBeTruthy()
+    expect(screen.getByText('功能')).toBeTruthy()
+  })
+
+  it('Passage 展示本段佐证并支持人工调整 supported_components，coverage 联动', async () => {
+    await runToExtracted()
+    // default: function is not covered by passage 1
+    expect(screen.getAllByTestId('ew-passage')[0].textContent).toContain('本段佐证')
+    // coverage panel appears with 4/5 (function missing)
+    await waitFor(() => expect(screen.getByTestId('ew-coverage-panel')).toBeTruthy())
+    expect(screen.getByText(/4 \/ 5 已覆盖/)).toBeTruthy()
+    // manually enable function on passage 1 -> coverage 5/5
+    const passage1 = screen.getAllByTestId('ew-passage')[0]
+    fireEvent.click(passage1.querySelectorAll('.ew-comp-check input')[4])
+    await waitFor(() => expect(screen.getByText(/5 \/ 5 已覆盖/)).toBeTruthy())
+  })
+
+  it('人工修改 evidence_level 与 reviewer direction（含混合）', async () => {
+    await runToExtracted()
+    const passage1 = screen.getAllByTestId('ew-passage')[0]
+    fireEvent.change(passage1.querySelector('select')!, { target: { value: 'interpretive' } })
+    expect((passage1.querySelector('select') as HTMLSelectElement).value).toBe('interpretive')
+    fireEvent.click(screen.getByLabelText('混合证据'))
+    expect((screen.getByLabelText('混合证据') as HTMLInputElement).checked).toBe(true)
+    expect((screen.getByTestId('ew-attach') as HTMLButtonElement).disabled).toBe(false)
+  })
+
+  it('关闭时有未保存审核内容则弹出保存草稿 Dialog', async () => {
+    await runToExtracted()
+    fireEvent.change(screen.getByPlaceholderText('中文翻译（可编辑）'), { target: { value: '人工翻译' } })
+    fireEvent.click(screen.getByText('关闭'))
+    await waitFor(() => expect(screen.getByText('未保存的审核内容')).toBeTruthy())
+    fireEvent.click(screen.getByText('保存并关闭'))
+  })
+
+  it('API race：切换对象后旧 extract 响应不会覆盖新对象', async () => {
+    let resolveOld!: (v: unknown) => void
+    vi.mocked(endpoints.extractPaperPassage).mockReturnValueOnce(new Promise(res => { resolveOld = res }))
+    renderWorkbench([ITEM_A, ITEM_B])
+    await waitFor(() => expect(screen.getAllByTestId('ew-queue-item')).toHaveLength(2))
+    await waitFor(() => expect(screen.getByText('Paper A')).toBeTruthy())
+    fireEvent.click(screen.getByText('Paper A'))
+    fireEvent.click(screen.getByText('AI 提取原文'))
+    // switch to item B before old extract resolves
+    fireEvent.click(screen.getAllByTestId('ew-queue-item')[1])
+    await waitFor(() => expect(screen.getAllByText('连接 B').length).toBeGreaterThan(0))
+    resolveOld(EXTRACT_OK)
+    await new Promise(r => setTimeout(r, 100))
+    // new object must NOT show old passages
+    expect(screen.queryAllByTestId('ew-passage')).toHaveLength(0)
   })
 })

@@ -5256,6 +5256,7 @@ export interface PaperEvidenceItem {
   evidence_id: string
   evidence_text: string
   direction: string | null
+  evidence_level: string | null
   verification_status: string | null
   pmid: string | null
   doi: string | null
@@ -5283,8 +5284,38 @@ export interface PaperEvidencePassageDetail {
   confidence: number | null
   source_locator: string | null
   source_verified: boolean
+  source_verification_method: string | null
+  supported_components: string[]
   is_selected: boolean
 }
+
+export interface EvidenceTargetDto {
+  target_type: string
+  target_id: string
+  granularity: string
+  display_name: string
+  source_region: string
+  target_region: string
+  canonical_terms: string[]
+  relation: string
+  directionality: string
+  circuit_context: string
+  function_context: string
+  current_confidence: number | null
+  existing_evidence: number
+  structured_claim: Record<string, unknown>
+  claim_text: string
+  claim_components: Array<{
+    component_type: string
+    statement: string
+    required: boolean
+    metadata: Record<string, unknown>
+  }>
+  claim_version: string
+}
+
+export const getEvidenceTarget = (targetType: string, targetId: string) =>
+  getJson<EvidenceTargetDto>(`/api/ontology/evidence/target/${targetType}/${targetId}`)
 
 export const searchPaperEvidence = (body: { target_type: string; target_id: string; mode?: string; limit?: number; query_override?: string }, signal?: AbortSignal) =>
   postJson<PaperSearchResponse>('/api/ontology/evidence/search', body, undefined, signal)
@@ -5331,6 +5362,7 @@ export const extractPaperPassage = (body: {
     source_locator: string | null
     source_verified: boolean
     source_verification_method: string | null
+    supported_components: string[]
   }>
   parse_status: string
   retry_count: number

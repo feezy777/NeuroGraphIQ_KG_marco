@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import {
   attachPaperEvidence,
   extractPaperPassage,
+  getEvidenceTarget,
   listPaperEvidence,
   rollbackPaperEvidence,
   searchPaperEvidence,
@@ -9,8 +10,11 @@ import {
   type EvidencePassageInput,
   type PaperEvidenceItem,
   type PaperSearchResponse,
+  type EvidenceTargetDto,
 } from '../../api/endpoints'
 import { ConfirmDialog } from '../../components/ConfirmDialog'
+import { computeTmpCoverage } from './evidence-workbench/claimCoverage'
+import { COMPONENT_LABEL, LEVEL_LABEL } from './evidence-workbench/types'
 
 type Direction = 'supports' | 'partial' | 'contradicts' | 'mixed' | 'not_found'
 
@@ -40,6 +44,7 @@ export function PaperEvidenceColumn({ targetType, targetId }: { targetType: stri
   const [detail, setDetail] = useState<PaperEvidenceItem | null>(null)
   const [rollbackTarget, setRollbackTarget] = useState<PaperEvidenceItem | null>(null)
   const [rollbackReason, setRollbackReason] = useState('')
+  const [targetDto, setTargetDto] = useState<EvidenceTargetDto | null>(null)
 
   const refreshList = useCallback(async () => {
     try {
@@ -178,6 +183,40 @@ export function PaperEvidenceColumn({ targetType, targetId }: { targetType: stri
     }
   }, [rollbackTarget, rollbackReason, refreshList])
 
+  const openDetail = useCallback(async (ev: PaperEvidenceItem) => {
+    setDetail(ev)
+    try {
+      const dto = await getEvidenceTarget(targetType, targetId)
+      setTargetDto(dto)
+    } catch {
+      setTargetDto(null)
+    }
+  }, [targetType, targetId])
+
+  const detailCoverage = detail && targetDto
+    ? computeTmpCoverage(
+        targetDto.claim_components,
+        (detail.passages ?? []).map(p => ({
+          hash: p.id,
+          source_scope: p.source_scope,
+          section_title: p.section_title,
+          paragraph_index: p.paragraph_index,
+          paragraph_id: null,
+          passage: p.passage,
+          translation_zh: p.translation_zh,
+          direction: p.direction === 'contradicts' ? 'contradicts' : 'supports',
+          evidence_level: 'indirect',
+          reason: p.reason ?? '',
+          confidence: p.confidence ?? 0,
+          semantic_confidence: p.confidence,
+          source_locator: p.source_locator,
+          source_verified: p.source_verified,
+          source_verification_method: p.source_verification_method,
+          supported_components: p.supported_components,
+        })),
+      )
+    : null
+
   return (
     <div className="pe-column">
       <div className="ontology-card-header">
@@ -210,7 +249,7 @@ export function PaperEvidenceColumn({ targetType, targetId }: { targetType: stri
           ))}
           <h4>已有证据（{existing.length}）</h4>
           {existing.map(ev => (
-            <div key={ev.evidence_id} className="ontology-preview" style={{ cursor: 'pointer' }} onClick={() => setDetail(ev)}>
+            <div key={ev.evidence_id} className="ontology-preview" style={{ cursor: 'pointer' }} onClick={() => openDetail(ev)}>
               <strong>{ev.title ?? '未命名文献'}</strong>
               <div>{ev.direction ?? '—'} · {ev.verification_status ?? '—'} · 段落 {ev.passage_count ?? 0}</div>
               {ev.pmid && <a href={ev.links.pubmed ?? '#'} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()}>PubMed {ev.pmid}</a>}
@@ -286,10 +325,25 @@ export function PaperEvidenceColumn({ targetType, targetId }: { targetType: stri
               <div className="ontology-detail-row"><span>PMID</span><span>{detail.pmid ?? '—'}</span></div>
               <div className="ontology-detail-row"><span>DOI</span><span>{detail.doi ?? '—'}</span></div>
               <div className="ontology-detail-row"><span>方向</span><span>{detail.direction ?? '—'}</span></div>
+              <div className="ontology-detail-row"><span>证据等级</span><span>{detail.evidence_level ? (LEVEL_LABEL[detail.evidence_level as keyof typeof LEVEL_LABEL] ?? detail.evidence_level) : '—'}</span></div>
               <div className="ontology-detail-row"><span>验证状态</span><span>{detail.verification_status ?? '—'}</span></div>
               <div className="ontology-detail-row"><span>审核人</span><span>{detail.verification_by ?? '—'}</span></div>
               <div className="ontology-detail-row"><span>入库时间</span><span>{detail.created_at ? new Date(detail.created_at).toLocaleString() : '—'}</span></div>
               <div className="ontology-detail-row"><span>建议置信度</span><span>{detail.suggested_confidence ?? '—'}（{detail.confidence_adjustment_status ?? '—'}）</span></div>
+              {targetDto && (
+                <>
+                  <div className="ontology-detail-row"><span>Claim</span><strong>{targetDto.claim_text}</strong></div>
+                  {detailCoverage && (
+                    <div className="ontology-detail-row">
+                      <span>Coverage</span>
+                      <span>
+                        {detailCoverage.supported_components.length}/{detailCoverage.required_components.length} 已覆盖
+                        {detailCoverage.has_conflict ? ' · 存在冲突' : ''}
+                      </span>
+                    </div>
+                  )}
+                </>
+              )}
               <div className="ontology-detail-row"><span>链接</span>
                 <span>{detail.pmid && <a href={detail.links.pubmed ?? '#'} target="_blank" rel="noreferrer">PubMed</a>} {detail.doi && <a href={detail.links.doi ?? '#'} target="_blank" rel="noreferrer">DOI</a>}</span>
               </div>
@@ -298,6 +352,10 @@ export function PaperEvidenceColumn({ targetType, targetId }: { targetType: stri
                 {(detail.passages ?? []).filter(p => p.is_selected).map(p => (
                   <div key={p.id} className="ew-passage">
                     <span className="ew-meta">{p.source_scope}{p.section_title ? ` · ${p.section_title}` : ''}{p.paragraph_index != null ? ` · ¶${p.paragraph_index}` : ''} · {p.direction} · {p.confidence}</span>
+                    <span className="ew-meta">核验：{p.source_verified ? (p.source_verification_method ?? 'exact') : '未通过'}</span>
+                    {p.supported_components && p.supported_components.length > 0 && (
+                      <span className="ew-meta">本段{p.direction === 'contradicts' ? '反驳' : '佐证'}：{p.supported_components.map(c => COMPONENT_LABEL[c] ?? c).join('、')}</span>
+                    )}
                     <p className="ew-passage-en">{p.passage}</p>
                     {p.translation_zh && <p className="ew-passage-zh">{p.translation_zh}</p>}
                     {p.reason && <p className="ew-meta">理由：{p.reason}</p>}

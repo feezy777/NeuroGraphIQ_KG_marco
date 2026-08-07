@@ -752,6 +752,7 @@ async def attach_evidence(
                 passage_hash=p["passage_hash"],
                 source_verified=True,
                 source_verification_method=p.get("source_verification_method"),
+                supported_components=list(p.get("supported_components") or []),
             )
         )
     # 6) confidence adjustment + log
@@ -1189,6 +1190,7 @@ async def list_paper_evidence(
                         "source_locator": p.source_locator,
                         "source_verified": p.source_verified,
                         "source_verification_method": p.source_verification_method,
+                        "supported_components": p.supported_components or [],
                         "is_selected": p.is_selected,
                     }
                     for p in passages_by_evidence.get(r.id, [])
