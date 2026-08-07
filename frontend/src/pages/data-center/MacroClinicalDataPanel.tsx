@@ -35,6 +35,7 @@ import { DataObjectDetailDrawer } from './DataObjectDetailDrawer'
 import { DataCenterTableRegion } from './DataCenterTableRegion'
 
 import { FormalObjectTableSection } from './FormalObjectTableSection'
+import { EvidenceReviewModal } from './EvidenceReviewModal'
 
 import { FormalObjectDetailDrawer } from './FormalObjectDetailDrawer'
 
@@ -155,6 +156,27 @@ export function MacroClinicalDataPanel({
   const [tick, setTick] = useState(0)
 
   const [selected, setSelected] = useState<MacroRow | null>(null)
+  const [reviewOpen, setReviewOpen] = useState(false)
+  const [reviewItems, setReviewItems] = useState<Array<{ target_type: string; target_id: string; label: string; confidence: number | null }>>([])
+
+  const handlePaperEvidence = useCallback((rows: MacroRow[]) => {
+    const targetType = macroTab === 'circuit_steps' ? 'circuit_step'
+      : macroTab === 'projection_functions' ? 'projection_function'
+      : macroTab === 'circuit_functions' ? 'circuit_function'
+      : null
+    if (!targetType) return
+    const labelKeys = ['label', 'name', 'circuit_name', 'function_term', 'step_name', 'source_region_name_en', 'title']
+    setReviewItems(rows.map(r => {
+      const labelKey = labelKeys.find(k => r[k] != null)
+      return {
+        target_type: targetType,
+        target_id: String(r.id),
+        label: labelKey ? String(r[labelKey]) : String(r.id),
+        confidence: typeof r.confidence === 'number' ? r.confidence : null,
+      }
+    }))
+    setReviewOpen(true)
+  }, [macroTab])
 
   const [legacySelected, setLegacySelected] = useState<MacroRow | null>(null)
 
@@ -491,6 +513,7 @@ export function MacroClinicalDataPanel({
           resetKeys={resetKeys}
 
           loading={formalTabState.circuit_steps.loading}
+          onPaperEvidence={handlePaperEvidence}
           autoOpenId={autoOpenId}
           onAutoOpenHandled={onAutoOpenHandled}
 
@@ -520,6 +543,7 @@ export function MacroClinicalDataPanel({
           resetKeys={resetKeys}
 
           loading={formalTabState.projection_functions.loading}
+          onPaperEvidence={handlePaperEvidence}
           autoOpenId={autoOpenId}
           onAutoOpenHandled={onAutoOpenHandled}
 
@@ -601,6 +625,7 @@ export function MacroClinicalDataPanel({
           resetKeys={resetKeys}
 
           loading={formalTabState.circuit_functions.loading}
+          onPaperEvidence={handlePaperEvidence}
           autoOpenId={autoOpenId}
           onAutoOpenHandled={onAutoOpenHandled}
 
@@ -689,6 +714,8 @@ export function MacroClinicalDataPanel({
       />
 
 
+
+      <EvidenceReviewModal open={reviewOpen} onClose={() => setReviewOpen(false)} initialItems={reviewItems} />
 
       {formalMapping && selected && (
 
