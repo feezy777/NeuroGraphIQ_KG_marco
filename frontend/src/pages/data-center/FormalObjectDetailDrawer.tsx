@@ -4,7 +4,7 @@ import { StatusBadge } from '../../components/StatusBadge'
 import { useI18n } from '../../i18n-context'
 import { ConfirmDialog } from '../../components/ConfirmDialog'
 import { MissingFieldsBadge } from './MissingFieldsBadge'
-import { PaperEvidenceSection } from './PaperEvidenceSection'
+import { PaperEvidenceColumn } from './PaperEvidenceColumn'
 import {
   type FormalFieldMapping,
   computeMissingFields,
@@ -92,7 +92,7 @@ export function FormalObjectDetailDrawer({
   return (
     <>
       <div className="drawer-overlay" onClick={onClose}>
-        <div className="drawer" onClick={e => e.stopPropagation()}>
+        <div className={`drawer${evidenceTargetType ? ' drawer-wide' : ''}`} onClick={e => e.stopPropagation()}>
           <div className="drawer-header">
             <h3>{mapping.label} <span className="drawer-subtitle">Detail</span></h3>
             <div className="drawer-header-actions">
@@ -110,7 +110,8 @@ export function FormalObjectDetailDrawer({
               <button className="btn btn-sm" onClick={onClose}>✕</button>
             </div>
           </div>
-          <div className="drawer-body">
+          <div className="drawer-body drawer-body-split">
+            <div className="drawer-body-left">
             {mapping.columns.map(col => {
               const raw = row[col.key]
               const val = renderFieldValue(raw)
@@ -163,8 +164,11 @@ export function FormalObjectDetailDrawer({
                 </div>
               )
             })}
+            </div>
             {row && evidenceTargetType && typeof row.id === 'string' && (
-              <PaperEvidenceSection targetType={evidenceTargetType} targetId={row.id} />
+              <div className="drawer-body-right">
+                <PaperEvidenceColumn targetType={evidenceTargetType} targetId={row.id} />
+              </div>
             )}
           </div>
         </div>

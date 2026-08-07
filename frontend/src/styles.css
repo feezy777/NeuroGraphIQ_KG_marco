@@ -11254,3 +11254,17 @@ input[type="range"]::-webkit-slider-thumb {
 .ontology-anomaly-value { color: var(--danger); font-weight: 600; }
 .ontology-constraints { display: flex; flex-direction: column; gap: 10px; }
 .ontology-constraint-item { padding: 12px 14px; background: #f8fafc; border: 1px solid var(--border); border-radius: 10px; display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--text); }
+
+/* Evidence drawer: two-column object + evidence */
+.drawer.drawer-wide { width: min(1280px, 96vw); }
+.drawer-body-split { display: grid; grid-template-columns: minmax(420px, 1fr) minmax(500px, 1.2fr); gap: 18px; }
+.drawer-body-left { overflow-y: auto; padding-right: 8px; }
+.drawer-body-right { border-left: 1px solid var(--border); padding-left: 16px; overflow-y: auto; }
+.pe-column { display: flex; flex-direction: column; gap: 8px; }
+.pe-split { display: grid; grid-template-columns: minmax(240px, 0.9fr) minmax(280px, 1.1fr); gap: 12px; }
+.pe-list, .pe-detail { display: flex; flex-direction: column; gap: 8px; }
+.pe-list h4, .pe-detail h4 { margin: 0; font-size: 13px; }
+.pe-links { display: flex; gap: 10px; }
+.pe-abstract { font-size: 12px; color: var(--text); background: #f8fafc; padding: 8px; border-radius: 8px; margin: 4px 0; max-height: 160px; overflow-y: auto; }
+.pe-excerpt { min-height: 110px; width: 100%; font-size: 12px; }
+.ontology-preview-selected { border-color: var(--primary); box-shadow: 0 0 0 1px var(--primary); }

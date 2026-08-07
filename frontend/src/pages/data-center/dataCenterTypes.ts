@@ -6,7 +6,6 @@ export type DataCenterTabId =
   | 'macro'
   | 'final'
   | 'exports'
-  | 'evidence'
 
 export type RawDataSubTab = 'aal3' | 'macro96'
 export type MirrorKgSubTab = 'connections' | 'functions' | 'circuits' | 'triples' | 'evidence'
@@ -74,7 +73,6 @@ export const DATA_CENTER_TABS: DataCenterTabId[] = [
   'macro',
   'final',
   'exports',
-  'evidence',
 ]
 
 export const DEFAULT_NAV: DataCenterNavState = {
