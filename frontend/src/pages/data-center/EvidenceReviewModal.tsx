@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
 import {
   attachPaperEvidence,
   attachPaperEvidencePreview,
@@ -95,6 +95,7 @@ export function EvidenceReviewModal({ open, onClose, initialItems }: {
   const [oaOnly, setOaOnly] = useState(false)
   const [yearFilter, setYearFilter] = useState('')
   const [usedPmids, setUsedPmids] = useState<Set<string>>(new Set())
+  const [evidenceText, setEvidenceText] = useState('')
   const bodyRef = useRef<HTMLDivElement | null>(null)
 
   const current = queue[idx]
@@ -121,9 +122,10 @@ export function EvidenceReviewModal({ open, onClose, initialItems }: {
       return {
         count: r.items.length,
         pmids: new Set(r.items.map(it => it.pmid).filter((p): p is string => Boolean(p))),
+        evidenceText: r.items[0]?.evidence_text ?? '',
       }
     } catch {
-      return { count: 0, pmids: new Set<string>() }
+      return { count: 0, pmids: new Set<string>(), evidenceText: '' }
     }
   }, [])
 
@@ -178,6 +180,7 @@ export function EvidenceReviewModal({ open, onClose, initialItems }: {
     setOaOnly(false)
     setYearFilter('')
     setUsedPmids(metas[0]?.pmids ?? new Set<string>())
+    setEvidenceText(metas[0]?.evidenceText ?? '')
     persist(enriched, 0)
     if (enriched[0]) void startCurrent(0, enriched[0], '')
   }, [loadEvidenceMeta, persist, startCurrent])
@@ -230,6 +233,7 @@ export function EvidenceReviewModal({ open, onClose, initialItems }: {
     setMessage(null)
     const meta = await loadEvidenceMeta(target)
     setUsedPmids(meta.pmids)
+    setEvidenceText(meta.evidenceText)
     setQueue(q => q.map((e, j) => j === i ? { ...e, evidenceCount: meta.count } : e))
     if (target.status === 'pending' || target.status === 'failed') {
       void startCurrent(i, target, '')
@@ -366,6 +370,7 @@ export function EvidenceReviewModal({ open, onClose, initialItems }: {
       })
       const meta = await loadEvidenceMeta(current)
       setQueue(q => q.map((e, j) => j === idx ? { ...e, status: 'completed' as const, evidenceCount: meta.count } : e))
+      setEvidenceText(meta.evidenceText)
       setConfirmOpen(false)
       const next = queue.findIndex((e, j) => j > idx && e.status === 'pending')
       if (next >= 0) await goto(next)
@@ -414,6 +419,20 @@ export function EvidenceReviewModal({ open, onClose, initialItems }: {
     return () => window.removeEventListener('keydown', onKey)
   }, [open, minimized, queue, idx, goto, direction, selectedHashes.size, busy])
 
+  const startResize = useCallback((e: ReactPointerEvent<HTMLDivElement>) => {
+    e.preventDefault()
+    const onMove = (ev: PointerEvent) => {
+      const next = Math.min(92, Math.max(45, Math.round(((window.innerHeight - ev.clientY) / window.innerHeight) * 100)))
+      setHeightPct(next)
+    }
+    const onUp = () => {
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerup', onUp)
+    }
+    window.addEventListener('pointermove', onMove)
+    window.addEventListener('pointerup', onUp)
+  }, [])
+
   if (!open) return null
 
   const visibleQueue = onlyPending ? queue.filter(e => e.status === 'pending') : queue
@@ -427,6 +446,7 @@ export function EvidenceReviewModal({ open, onClose, initialItems }: {
 
   return (
     <div className="evidence-workbench" style={{ height: `${heightPct}vh` }} data-testid="ew-workbench">
+      <div className="ew-resize" onPointerDown={startResize} title="拖动调整高度" />
       <div className="ew-header">
         <div>
           <strong>{current?.label ?? '论文佐证工作台'}</strong>
@@ -470,6 +490,19 @@ export function EvidenceReviewModal({ open, onClose, initialItems }: {
             {message && <div className="ontology-page-message">{message}</div>}
             {busy && <div className="ew-busy">处理中：{busy}</div>}
             {allDone && <div className="ew-done-banner">当前队列已处理完成</div>}
+
+            <div className="ew-section ew-object-info">
+              <h4>确认对象</h4>
+              <div className="ew-meta">
+                {current?.target_type} · 功能术语 {result?.target_info.function_term ?? '—'} · 颗粒度 {String(result?.target_info.info.granularity_level ?? '—')} · 来源图谱 {String(result?.target_info.info.source_atlas ?? '—')} · 置信度 {current?.confidence ?? '—'} · 已有论文证据 {current?.evidenceCount ?? 0}
+              </div>
+              {evidenceText && (
+                <details>
+                  <summary>当前 evidence_text</summary>
+                  <p className="ew-meta">{evidenceText}</p>
+                </details>
+              )}
+            </div>
 
             <div className="ew-section">
               <h4>检索关键词</h4>

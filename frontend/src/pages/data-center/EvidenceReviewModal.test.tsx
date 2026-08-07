@@ -152,7 +152,7 @@ describe('EvidenceReviewModal 论文佐证工作台', () => {
     renderWorkbench([ITEM_A, ITEM_B])
     await waitFor(() => expect(screen.getAllByTestId('ew-queue-item')).toHaveLength(2))
     expect(screen.getByTestId('ew-stepper').children).toHaveLength(5)
-    expect(screen.getByText('确认对象')).toBeTruthy()
+    expect(screen.getAllByText('确认对象').length).toBeGreaterThan(0)
     expect(screen.getAllByText('连接 A').length).toBeGreaterThan(0)
     await waitFor(() => expect(screen.getByTestId('ew-step-label').textContent).toContain('步骤 2/5'))
     expect(vi.mocked(endpoints.searchPaperEvidence)).toHaveBeenCalledWith({
