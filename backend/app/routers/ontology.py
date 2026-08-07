@@ -678,8 +678,9 @@ async def paper_evidence_extract(
         if not abstract:
             paper = await pes.verify_paper(body.pmid)
             abstract = (paper or {}).get("abstract") or ""
+        fulltext = await pes.fetch_fulltext(body.pmid)
         result = await pes.extract_passage(
-            term=info["function_term"], title=body.title, abstract=abstract
+            term=info["function_term"], title=body.title, abstract=abstract, fulltext=fulltext
         )
         result["links"] = {
             "pubmed": f"https://pubmed.ncbi.nlm.nih.gov/{body.pmid}/" if body.pmid else None,

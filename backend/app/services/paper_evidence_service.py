@@ -98,10 +98,29 @@ async def _search(query: str, limit: int) -> list[dict]:
                 "year": item.get("pubYear") or "",
                 "authors": item.get("authorString") or "",
                 "abstract": (item.get("abstractText") or "")[:2000],
+                "is_open_access": str(item.get("isOpenAccess") or "").lower() == "y",
                 "source": "europepmc",
             }
         )
     return papers
+
+
+async def fetch_fulltext(pmid: str) -> str:
+    """Fetch OA full text XML from Europe PMC; returns plain text (limited)."""
+    if not pmid:
+        return ""
+    url = f"https://www.ebi.ac.uk/europepmc/webservices/rest/MED/{pmid}/fullTextXML"
+    try:
+        async with httpx.AsyncClient(trust_env=False, timeout=SEARCH_TIMEOUT) as client:
+            resp = await client.get(url)
+            if resp.status_code != 200:
+                return ""
+            text_xml = resp.text
+    except httpx.HTTPError:
+        return ""
+    plain = re.sub(r"<[^>]+>", " ", text_xml)
+    plain = re.sub(r"\s+", " ", plain).strip()
+    return plain[:8000]
 
 
 async def verify_paper(pmid: str) -> dict | None:
@@ -309,16 +328,18 @@ async def list_paper_evidence(
     }
 
 
-async def extract_passage(*, term: str, title: str, abstract: str) -> dict:
+async def extract_passage(*, term: str, title: str, abstract: str, fulltext: str = "") -> dict:
     cfg = get_settings()
     provider = get_llm_provider("deepseek")
     system = "You are a strict JSON API. Reply only with the requested JSON object. Never explain."
+    source = (fulltext or abstract or "").strip()
+    source_type = "full text" if fulltext.strip() else "abstract"
     user = (
         f'Find the passage most relevant to the neuroscience claim "{term}". '
         "Determine the direction (supports / partial / contradicts / not_found) and confidence 0-1. "
         'Return JSON exactly like: {"direction": "supports", "passage": "<original passage>", '
         '"reason": "<one sentence>", "confidence": 0.9}. '
-        f"Paper title: {title}\nAbstract: {abstract[:6000]}"
+        f"Paper title: {title}\nSource ({source_type}): {source[:6000]}"
     )
     parsed = None
     parse_status = "provider_error"

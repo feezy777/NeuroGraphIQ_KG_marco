@@ -18,7 +18,6 @@ import {
 } from '../../api/endpoints'
 import { FormalObjectTableSection } from './FormalObjectTableSection'
 import { FormalObjectDetailDrawer } from './FormalObjectDetailDrawer'
-import { PaperEvidencePanel } from './PaperEvidencePanel'
 import { EvidenceReviewModal } from './EvidenceReviewModal'
 import { FieldCompletionModal } from './FieldCompletionModal'
 import { MultiTargetFieldCompletionModal } from './MultiTargetFieldCompletionModal'
@@ -96,6 +95,7 @@ export function MirrorKgPanel({
   const [pendingSource, setPendingSource] = useState<{ type: string; id: string } | null>(null)
   const [evidenceCategory, setEvidenceCategory] = useState<'region' | 'connection' | 'circuit' | 'other'>('connection')
   const [reviewOpen, setReviewOpen] = useState(false)
+  const [reviewItems, setReviewItems] = useState<Array<{ target_type: string; target_id: string; label: string; confidence: number | null }>>([])
   const categoryTypes = useMemo(() => {
     if (mirrorTab !== 'evidence') return undefined
     if (evidenceCategory === 'region') return ['mirror_function', 'region_function']
@@ -283,15 +283,17 @@ export function MirrorKgPanel({
           onDeleteSelected={handleBulkDelete}
           onFetchAll={handleFetchAll}
           granularityLevel={granularityLevel}
-          extraToolbarButtons={mirrorTab === 'evidence' ? (
-            <>
-              <button type="button" className="btn btn-sm" onClick={() => setReviewOpen(true)}>论文佐证审核</button>
-              <details>
-                <summary className="btn btn-sm">论文检索工具栏</summary>
-                <PaperEvidencePanel />
-              </details>
-            </>
-          ) : undefined}
+          onPaperEvidence={(rows) => {
+            const labelKeys = ['label', 'name', 'circuit_name', 'function_term', 'step_name', 'source_region_name_en', 'title']
+            setReviewItems(rows.map(r => {
+              const targetType = mirrorTab === 'evidence' && typeof r.evidence_target_type === 'string'
+                ? r.evidence_target_type as string
+                : (mapping?.targetType as string) || 'connection'
+              const labelKey = labelKeys.find(k => r[k] != null)
+              return { target_type: targetType, target_id: String(r.id), label: labelKey ? String(r[labelKey]) : String(r.id), confidence: typeof r.confidence === 'number' ? r.confidence : null }
+            }))
+            setReviewOpen(true)
+          }}
         />
       )}
 
@@ -339,7 +341,7 @@ export function MirrorKgPanel({
           setDetailCompletionOpen(true)
         }}
       />
-      <EvidenceReviewModal open={reviewOpen} onClose={() => setReviewOpen(false)} />
+      <EvidenceReviewModal open={reviewOpen} onClose={() => setReviewOpen(false)} initialItems={reviewItems} />
 
       {mapping && selected && mirrorTab !== 'circuits' && (
         <FieldCompletionModal

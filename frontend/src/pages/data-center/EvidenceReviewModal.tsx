@@ -15,7 +15,11 @@ interface QueueItem {
   confidence: number | null
 }
 
-export function EvidenceReviewModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+export function EvidenceReviewModal({ open, onClose, initialItems }: {
+  open: boolean
+  onClose: () => void
+  initialItems?: QueueItem[]
+}) {
   const [targetType, setTargetType] = useState('connection')
   const [scope, setScope] = useState('low_confidence')
   const [queue, setQueue] = useState<QueueItem[]>([])
@@ -29,6 +33,14 @@ export function EvidenceReviewModal({ open, onClose }: { open: boolean; onClose:
   const [message, setMessage] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [doneCount, setDoneCount] = useState(0)
+
+  useEffect(() => {
+    if (open && initialItems && initialItems.length > 0) {
+      setQueue(initialItems)
+      setIdx(0)
+      setDoneCount(0)
+    }
+  }, [open, initialItems])
 
   const current = queue[idx]
 

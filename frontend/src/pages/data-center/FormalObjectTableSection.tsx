@@ -33,6 +33,7 @@ interface Props {
   extraToolbarButtons?: React.ReactNode
   hideFieldCompletion?: boolean
   onValidateSelected?: (ids: string[]) => void
+  onPaperEvidence?: (rows: FormalRow[]) => void
   /** Current granularity level for schema display in FormalAlignmentCard */
   granularityLevel?: string
   autoOpenId?: string | null
