@@ -4,6 +4,7 @@ import { StatusBadge } from '../../components/StatusBadge'
 import { useI18n } from '../../i18n-context'
 import { ConfirmDialog } from '../../components/ConfirmDialog'
 import { MissingFieldsBadge } from './MissingFieldsBadge'
+import { PaperEvidenceSection } from './PaperEvidenceSection'
 import {
   type FormalFieldMapping,
   computeMissingFields,
@@ -18,6 +19,7 @@ interface Props {
   onSave?: (rowId: string, field: string, value: unknown) => Promise<void>
   onDelete?: (rowId: string) => Promise<void>
   onRefresh?: () => void
+  evidenceTargetType?: string
 }
 
 function renderFieldValue(value: unknown): string {
@@ -43,6 +45,7 @@ export function FormalObjectDetailDrawer({
   onSave,
   onDelete,
   onRefresh,
+  evidenceTargetType,
 }: Props) {
   const { t } = useI18n()
   const [editingField, setEditingField] = useState<string | null>(null)
@@ -160,6 +163,9 @@ export function FormalObjectDetailDrawer({
                 </div>
               )
             })}
+            {row && evidenceTargetType && typeof row.id === 'string' && (
+              <PaperEvidenceSection targetType={evidenceTargetType} targetId={row.id} />
+            )}
           </div>
         </div>
       </div>

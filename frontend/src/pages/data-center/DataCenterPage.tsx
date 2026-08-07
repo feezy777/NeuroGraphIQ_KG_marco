@@ -11,6 +11,7 @@ import { MirrorKgPanel } from './MirrorKgPanel'
 import { MacroClinicalDataPanel } from './MacroClinicalDataPanel'
 import { FinalKgDataPanel } from './FinalKgDataPanel'
 import { ExportPackagesPanel } from './ExportPackagesPanel'
+import { PaperEvidencePanel } from './PaperEvidencePanel'
 import { useDataCenterCounts } from './useDataCenterCounts'
 import {
   DATA_CENTER_TABS,
@@ -133,6 +134,8 @@ export function DataCenterPage() {
         )
       case 'exports':
         return <ExportPackagesPanel />
+      case 'evidence':
+        return <PaperEvidencePanel />
       default:
         return <DataCenterOverview counts={counts} loading={loading} onNavigate={setTab} onRefresh={refresh} />
     }

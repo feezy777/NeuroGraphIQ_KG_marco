@@ -9,6 +9,7 @@ const TAB_KEYS: Record<DataCenterTabId, string> = {
   macro: 'dataCenter.macroClinical',
   final: 'dataCenter.finalKg',
   exports: 'dataCenter.exports',
+  evidence: 'dataCenter.evidence',
 }
 
 interface Props {

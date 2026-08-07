@@ -251,6 +251,12 @@ export function MirrorKgPanel({
         onSave={handleSaveField}
         onDelete={handleDeleteRow}
         onRefresh={refresh}
+        evidenceTargetType={
+          mirrorTab === 'connections' ? 'connection'
+            : mirrorTab === 'functions' ? 'region_function'
+            : mirrorTab === 'circuits' ? 'circuit'
+            : undefined
+        }
         onFieldCompletion={() => {
           if (mirrorTab === 'circuits' && selected) {
             setBundleOpen(true)

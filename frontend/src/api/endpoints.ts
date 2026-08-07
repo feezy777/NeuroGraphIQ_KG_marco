@@ -5211,3 +5211,49 @@ export const listAuditRuns = (p?: { limit?: number; offset?: number }) =>
 
 export const listChangeLogs = (p?: { entity_type?: string; entity_id?: string; action_type?: string; limit?: number; offset?: number }) =>
   getJson<{ items: ChangeLogItem[]; total: number }>('/api/ontology/change-logs', p)
+
+// ──── Paper Evidence (Phase B) ────────────────────────────────────────
+
+export interface PaperSearchResult {
+  pmid: string
+  doi: string
+  title: string
+  journal: string
+  year: string
+  authors: string
+  abstract: string
+  source: string
+}
+
+export interface PaperSearchResponse {
+  target_info: {
+    target_type: string
+    target_id: string
+    function_term: string
+    mode: string
+    query: string
+    info: Record<string, unknown>
+  }
+  papers: PaperSearchResult[]
+}
+
+export interface PaperAttachResponse {
+  evidence_id: string
+  confidence: number | null
+  verification_status: string
+  confidence_adjustment_status: string
+  paper: { links: { pubmed: string | null; doi: string | null } }
+}
+
+export const searchPaperEvidence = (body: { target_type: string; target_id: string; mode?: string; limit?: number }) =>
+  postJson<PaperSearchResponse>('/api/ontology/evidence/search', body)
+
+export const attachPaperEvidence = (body: {
+  target_type: string
+  target_id: string
+  pmid: string
+  excerpt: string
+  direction?: string
+  mode?: string
+  suggested_confidence?: number
+}) => postJson<PaperAttachResponse>('/api/ontology/evidence/attach', body)
