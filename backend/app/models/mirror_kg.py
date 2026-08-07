@@ -273,4 +273,18 @@ class MirrorEvidenceRecord(Base):
     citation_json: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
     confidence: Mapped[float | None] = mapped_column(Numeric, nullable=True)
     uncertainty_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    evidence_direction: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    verification_status: Mapped[str] = mapped_column(String(16), nullable=False, default="pending")
+    paper_source: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    paper_pmid: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    paper_doi: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    paper_title: Mapped[str | None] = mapped_column(Text, nullable=True)
+    paper_journal: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    paper_year: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    suggested_confidence: Mapped[float | None] = mapped_column(Numeric, nullable=True)
+    confidence_adjustment_status: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="none"
+    )
+    verification_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    verification_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

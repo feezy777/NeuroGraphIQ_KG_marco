@@ -18,6 +18,7 @@ import {
 } from '../../api/endpoints'
 import { FormalObjectTableSection } from './FormalObjectTableSection'
 import { FormalObjectDetailDrawer } from './FormalObjectDetailDrawer'
+import { PaperEvidencePanel } from './PaperEvidencePanel'
 import { FieldCompletionModal } from './FieldCompletionModal'
 import { MultiTargetFieldCompletionModal } from './MultiTargetFieldCompletionModal'
 import { resolveCircuitBundleFromCircuitIds } from './circuitBundleUtils'
@@ -250,6 +251,12 @@ export function MirrorKgPanel({
           onDeleteSelected={handleBulkDelete}
           onFetchAll={handleFetchAll}
           granularityLevel={granularityLevel}
+          extraToolbarButtons={mirrorTab === 'evidence' ? (
+            <details>
+              <summary className="btn btn-sm">论文检索工具栏</summary>
+              <PaperEvidencePanel />
+            </details>
+          ) : undefined}
         />
       )}
 
@@ -262,7 +269,9 @@ export function MirrorKgPanel({
         onDelete={handleDeleteRow}
         onRefresh={refresh}
         evidenceTargetType={
-          mirrorTab === 'connections' ? 'connection'
+          mirrorTab === 'evidence' && selected && typeof selected.evidence_target_type === 'string'
+            ? selected.evidence_target_type as string
+            : mirrorTab === 'connections' ? 'connection'
             : mirrorTab === 'functions' ? 'region_function'
             : mirrorTab === 'circuits' ? 'circuit'
             : undefined

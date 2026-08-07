@@ -5245,6 +5245,20 @@ export interface PaperAttachResponse {
   paper: { links: { pubmed: string | null; doi: string | null } }
 }
 
+export interface PaperEvidenceItem {
+  evidence_id: string
+  evidence_text: string
+  direction: string | null
+  verification_status: string | null
+  pmid: string | null
+  doi: string | null
+  title: string | null
+  journal: string | null
+  year: number | null
+  created_at: string | null
+  links: { pubmed: string | null; doi: string | null }
+}
+
 export const searchPaperEvidence = (body: { target_type: string; target_id: string; mode?: string; limit?: number }) =>
   postJson<PaperSearchResponse>('/api/ontology/evidence/search', body)
 
@@ -5257,3 +5271,6 @@ export const attachPaperEvidence = (body: {
   mode?: string
   suggested_confidence?: number
 }) => postJson<PaperAttachResponse>('/api/ontology/evidence/attach', body)
+
+export const listPaperEvidence = (p: { target_type: string; target_id: string; limit?: number }) =>
+  getJson<{ items: PaperEvidenceItem[] }>('/api/ontology/evidence/list', p)

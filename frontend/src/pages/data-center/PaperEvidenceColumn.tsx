@@ -1,7 +1,9 @@
-import { useCallback, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import {
   attachPaperEvidence,
+  listPaperEvidence,
   searchPaperEvidence,
+  type PaperEvidenceItem,
   type PaperSearchResponse,
 } from '../../api/endpoints'
 
@@ -14,6 +16,14 @@ export function PaperEvidenceColumn({ targetType, targetId }: { targetType: stri
   const [confidence, setConfidence] = useState('0.8')
   const [message, setMessage] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const [existing, setExisting] = useState<PaperEvidenceItem[]>([])
+  const [detail, setDetail] = useState<PaperEvidenceItem | null>(null)
+
+  useEffect(() => {
+    listPaperEvidence({ target_type: targetType, target_id: targetId })
+      .then(r => setExisting(r.items))
+      .catch(() => setExisting([]))
+  }, [targetType, targetId])
 
   const search = useCallback(async () => {
     setMessage(null)
@@ -73,7 +83,7 @@ export function PaperEvidenceColumn({ targetType, targetId }: { targetType: stri
       {message && <div className="ontology-page-message">{message}</div>}
       <div className="pe-split">
         <div className="pe-list">
-          <h4>检索结果 / 已有证据</h4>
+          <h4>检索结果</h4>
           {result && result.papers.length === 0 && <div className="ontology-empty">未检索到论文</div>}
           {result?.papers.map(paper => (
             <div key={paper.pmid} className={`ontology-preview ${selected?.pmid === paper.pmid ? 'ontology-preview-selected' : ''}`} style={{ cursor: 'pointer' }} onClick={() => pick(paper)}>
@@ -85,6 +95,15 @@ export function PaperEvidenceColumn({ targetType, targetId }: { targetType: stri
               </div>
             </div>
           ))}
+          <h4>已有证据（{existing.length}）</h4>
+          {existing.map(ev => (
+            <div key={ev.evidence_id} className="ontology-preview" style={{ cursor: 'pointer' }} onClick={() => setDetail(ev)}>
+              <strong>{ev.title ?? '未命名文献'}</strong>
+              <div>{ev.direction ?? '—'} · {ev.verification_status ?? '—'}</div>
+              {ev.pmid && <a href={ev.links.pubmed ?? '#'} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()}>PubMed {ev.pmid}</a>}
+            </div>
+          ))}
+          {existing.length === 0 && <div className="ontology-empty">暂无证据</div>}
         </div>
         <div className="pe-detail">
           <h4>论文详情</h4>
@@ -116,6 +135,29 @@ export function PaperEvidenceColumn({ targetType, targetId }: { targetType: stri
           )}
         </div>
       </div>
+      {detail && (
+        <div className="ontology-drawer-overlay" onClick={() => setDetail(null)}>
+          <aside className="ontology-drawer" style={{ width: 'min(480px, 94vw)' }} onClick={e => e.stopPropagation()}>
+            <div className="ontology-drawer-header">
+              <span className="ontology-card-title">证据详情</span>
+              <button type="button" className="btn btn-xs" onClick={() => setDetail(null)}>关闭</button>
+            </div>
+            <div className="ontology-drawer-body">
+              <div className="ontology-detail-row"><span>标题</span><strong>{detail.title ?? '—'}</strong></div>
+              <div className="ontology-detail-row"><span>期刊/年份</span><span>{detail.journal ?? '—'} / {detail.year ?? '—'}</span></div>
+              <div className="ontology-detail-row"><span>方向</span><span>{detail.direction ?? '—'}</span></div>
+              <div className="ontology-detail-row"><span>验证状态</span><span>{detail.verification_status ?? '—'}</span></div>
+              <div className="ontology-detail-row"><span>链接</span>
+                <span>{detail.pmid && <a href={detail.links.pubmed ?? '#'} target="_blank" rel="noreferrer">PubMed</a>} {detail.doi && <a href={detail.links.doi ?? '#'} target="_blank" rel="noreferrer">DOI</a>}</span>
+              </div>
+              <section className="ontology-detail-section">
+                <h4>证据段落</h4>
+                <p style={{ fontSize: 12 }}>{detail.evidence_text}</p>
+              </section>
+            </div>
+          </aside>
+        </div>
+      )}
     </div>
   )
 }

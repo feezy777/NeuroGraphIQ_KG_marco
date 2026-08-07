@@ -649,3 +649,15 @@ async def paper_evidence_attach(
     except httpx.HTTPError as exc:
         await session.rollback()
         raise HTTPException(status_code=502, detail={"code": "PAPER_API_ERROR", "message": str(exc)})
+
+
+@router.get("/evidence/list")
+async def paper_evidence_list(
+    target_type: str = Query(...),
+    target_id: uuid.UUID = Query(...),
+    limit: int = Query(default=20, ge=1, le=100),
+    session: AsyncSession = Depends(get_db),
+):
+    return await pes.list_paper_evidence(
+        session, target_type=target_type, target_id=target_id, limit=limit
+    )

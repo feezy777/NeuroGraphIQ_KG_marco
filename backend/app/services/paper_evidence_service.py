@@ -258,3 +258,45 @@ async def attach_evidence(
             },
         },
     }
+
+
+async def list_paper_evidence(
+    session: AsyncSession,
+    *,
+    target_type: str,
+    target_id: uuid.UUID,
+    limit: int = 20,
+) -> dict:
+    rows = (
+        await session.execute(
+            select(MirrorEvidenceRecord)
+            .where(
+                MirrorEvidenceRecord.evidence_target_type == target_type,
+                MirrorEvidenceRecord.evidence_target_id == target_id,
+                MirrorEvidenceRecord.evidence_type == "paper_verification",
+            )
+            .order_by(MirrorEvidenceRecord.created_at.desc())
+            .limit(limit)
+        )
+    ).scalars().all()
+    return {
+        "items": [
+            {
+                "evidence_id": str(r.id),
+                "evidence_text": r.evidence_text,
+                "direction": r.evidence_direction,
+                "verification_status": r.verification_status,
+                "pmid": r.paper_pmid,
+                "doi": r.paper_doi,
+                "title": r.paper_title,
+                "journal": r.paper_journal,
+                "year": r.paper_year,
+                "created_at": r.created_at.isoformat() if r.created_at else None,
+                "links": {
+                    "pubmed": f"https://pubmed.ncbi.nlm.nih.gov/{r.paper_pmid}/" if r.paper_pmid else None,
+                    "doi": f"https://doi.org/{r.paper_doi}" if r.paper_doi else None,
+                },
+            }
+            for r in rows
+        ]
+    }
