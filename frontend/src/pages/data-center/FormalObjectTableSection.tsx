@@ -54,6 +54,7 @@ export function FormalObjectTableSection({
   extraToolbarButtons,
   hideFieldCompletion,
   onValidateSelected,
+  onPaperEvidence,
   onOpenDetail,
   onRefresh,
   onDeleteSelected,
@@ -324,6 +325,11 @@ export function FormalObjectTableSection({
           {onDeleteSelected && (
             <button className="fab-btn fab-btn-danger" onClick={() => setDeleteConfirmOpen(true)}>
               🗑 删除
+            </button>
+          )}
+          {onPaperEvidence && (
+            <button className="fab-btn" onClick={() => onPaperEvidence(items.filter(r => effectiveSelected.has(r.id)))}>
+              论文佐证
             </button>
           )}
           <span className="fab-divider" />
