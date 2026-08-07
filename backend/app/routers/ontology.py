@@ -16,6 +16,7 @@ from app.schemas.ontology import (
     BatchGroundingByTextRequest,
     CoverageResponse,
     EnumReplaceRequest,
+    EvidenceExtractRequest,
     EvidenceAttachRequest,
     GroundingListResponse,
     GroundingRead,
@@ -661,3 +662,24 @@ async def paper_evidence_list(
     return await pes.list_paper_evidence(
         session, target_type=target_type, target_id=target_id, limit=limit
     )
+
+
+@router.post("/evidence/extract")
+async def paper_evidence_extract(
+    body: EvidenceExtractRequest,
+    session: AsyncSession = Depends(get_db),
+    _auth: str = Depends(require_role("reviewer")),
+):
+    try:
+        info = await pes.pack_target_info(session, body.target_type, body.target_id)
+        result = await pes.extract_passage(
+            term=info["function_term"], title=body.title, abstract=body.abstract
+        )
+        result["links"] = {
+            "pubmed": f"https://pubmed.ncbi.nlm.nih.gov/{body.pmid}/" if body.pmid else None,
+        }
+        return result
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail={"code": "INVALID_REQUEST", "message": str(exc)})
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=502, detail={"code": "PAPER_API_ERROR", "message": str(exc)})

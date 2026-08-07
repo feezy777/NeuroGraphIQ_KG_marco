@@ -69,7 +69,13 @@ const SUB_ITEM_DEFS: Record<MirrorKgSubTab, { key: string; label: string; type: 
     { key: 'self', label: '三元组自身', type: 'triple', listApi: listMirrorTriples },
   ],
   evidence: [
-    { key: 'self', label: '证据自身', type: 'evidence', listApi: listMirrorEvidence },
+    { key: 'paper_verification', label: '论文证据', type: 'evidence', listApi: (p: any) => listMirrorEvidence({ ...p, evidence_type: 'paper_verification' }) },
+    { key: 'llm_explanation', label: 'LLM 解释', type: 'evidence', listApi: (p: any) => listMirrorEvidence({ ...p, evidence_type: 'llm_explanation' }) },
+    { key: 'literature', label: '文献', type: 'evidence', listApi: (p: any) => listMirrorEvidence({ ...p, evidence_type: 'literature' }) },
+    { key: 'rule_validation', label: '规则校验', type: 'evidence', listApi: (p: any) => listMirrorEvidence({ ...p, evidence_type: 'rule_validation' }) },
+    { key: 'manual_note', label: '人工备注', type: 'evidence', listApi: (p: any) => listMirrorEvidence({ ...p, evidence_type: 'manual_note' }) },
+    { key: 'curated_database', label: '数据库', type: 'evidence', listApi: (p: any) => listMirrorEvidence({ ...p, evidence_type: 'curated_database' }) },
+    { key: 'unknown', label: '其他', type: 'evidence', listApi: (p: any) => listMirrorEvidence({ ...p, evidence_type: 'unknown' }) },
   ],
 }
 

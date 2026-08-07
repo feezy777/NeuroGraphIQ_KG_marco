@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import {
   attachPaperEvidence,
+  extractPaperPassage,
   listPaperEvidence,
   searchPaperEvidence,
   type PaperEvidenceItem,
@@ -67,6 +68,29 @@ export function PaperEvidenceColumn({ targetType, targetId }: { targetType: stri
     }
   }, [selected, targetType, targetId, excerpt, direction, mode, confidence])
 
+  const extract = useCallback(async () => {
+    if (!selected) return
+    setBusy(true)
+    setMessage(null)
+    try {
+      const r = await extractPaperPassage({
+        target_type: targetType,
+        target_id: targetId,
+        pmid: selected.pmid,
+        title: selected.title,
+        abstract: selected.abstract,
+      })
+      setDirection(r.direction)
+      setExcerpt(r.passage)
+      setConfidence(String(r.confidence))
+      setMessage(`已截取段落（${r.direction}，置信度 ${r.confidence}）：${r.reason}`)
+    } catch (err) {
+      setMessage(`截取失败：${err instanceof Error ? err.message : String(err)}`)
+    } finally {
+      setBusy(false)
+    }
+  }, [selected, targetType, targetId])
+
   return (
     <div className="pe-column">
       <div className="ontology-card-header">
@@ -121,6 +145,7 @@ export function PaperEvidenceColumn({ targetType, targetId }: { targetType: stri
                 <p className="pe-abstract">{selected.abstract || '无摘要'}</p>
               </details>
               <textarea className="filter-input pe-excerpt" value={excerpt} onChange={e => setExcerpt(e.target.value)} placeholder="证据段落（可编辑）" />
+              <button type="button" className="btn btn-sm" disabled={busy} onClick={extract}>AI 截取段落</button>
               <div className="ontology-form-row">
                 <select className="filter-select" value={direction} onChange={e => setDirection(e.target.value)}>
                   <option value="supports">支持</option>

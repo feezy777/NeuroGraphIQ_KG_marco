@@ -424,6 +424,43 @@ async def list_mirror_connections(
     return list(rows), total
 
 
+async def list_mirror_connection_ids(
+    session: AsyncSession,
+    *,
+    resource_id: uuid.UUID | None = None,
+    batch_id: uuid.UUID | None = None,
+    source_atlas: str | None = None,
+    granularity_level: str | None = None,
+    granularity_family: str | None = None,
+    llm_run_id: uuid.UUID | None = None,
+    llm_item_id: uuid.UUID | None = None,
+    limit: int = 10000,
+    offset: int = 0,
+) -> list[uuid.UUID]:
+    """Lightweight id-only projection resolver (no ORM row / JSONB materialization)."""
+    base = select(MirrorRegionConnection.id)
+    if resource_id:
+        base = base.where(MirrorRegionConnection.resource_id == resource_id)
+    if batch_id:
+        base = base.where(MirrorRegionConnection.batch_id == batch_id)
+    if source_atlas:
+        base = base.where(MirrorRegionConnection.source_atlas == source_atlas)
+    if granularity_level:
+        base = base.where(MirrorRegionConnection.granularity_level == granularity_level)
+    if granularity_family:
+        base = base.where(MirrorRegionConnection.granularity_family == granularity_family)
+    if llm_run_id:
+        base = base.where(MirrorRegionConnection.llm_run_id == llm_run_id)
+    if llm_item_id:
+        base = base.where(MirrorRegionConnection.llm_item_id == llm_item_id)
+    rows = (
+        await session.execute(
+            base.order_by(MirrorRegionConnection.created_at.desc()).limit(limit).offset(offset)
+        )
+    ).scalars().all()
+    return list(rows)
+
+
 async def get_mirror_connection(
     session: AsyncSession, connection_id: uuid.UUID
 ) -> MirrorRegionConnection:
@@ -852,6 +889,43 @@ async def list_mirror_circuits(
     return list(rows), total
 
 
+async def list_mirror_circuit_ids(
+    session: AsyncSession,
+    *,
+    resource_id: uuid.UUID | None = None,
+    batch_id: uuid.UUID | None = None,
+    source_atlas: str | None = None,
+    granularity_level: str | None = None,
+    granularity_family: str | None = None,
+    llm_run_id: uuid.UUID | None = None,
+    llm_item_id: uuid.UUID | None = None,
+    limit: int = 10000,
+    offset: int = 0,
+) -> list[uuid.UUID]:
+    """Lightweight id-only circuit resolver (no ORM row / JSONB materialization)."""
+    base = select(MirrorRegionCircuit.id)
+    if resource_id:
+        base = base.where(MirrorRegionCircuit.resource_id == resource_id)
+    if batch_id:
+        base = base.where(MirrorRegionCircuit.batch_id == batch_id)
+    if source_atlas:
+        base = base.where(MirrorRegionCircuit.source_atlas == source_atlas)
+    if granularity_level:
+        base = base.where(MirrorRegionCircuit.granularity_level == granularity_level)
+    if granularity_family:
+        base = base.where(MirrorRegionCircuit.granularity_family == granularity_family)
+    if llm_run_id:
+        base = base.where(MirrorRegionCircuit.llm_run_id == llm_run_id)
+    if llm_item_id:
+        base = base.where(MirrorRegionCircuit.llm_item_id == llm_item_id)
+    rows = (
+        await session.execute(
+            base.order_by(MirrorRegionCircuit.created_at.desc()).limit(limit).offset(offset)
+        )
+    ).scalars().all()
+    return list(rows)
+
+
 async def get_mirror_circuit(
     session: AsyncSession, circuit_id: uuid.UUID
 ) -> tuple[MirrorRegionCircuit, list[MirrorCircuitRegion]]:
@@ -1068,6 +1142,7 @@ async def list_mirror_evidence(
     llm_run_id: uuid.UUID | None = None,
     llm_item_id: uuid.UUID | None = None,
     granularity_level: str | None = None,
+    evidence_type: str | None = None,
     search: str | None = None,
     limit: int = 50,
     offset: int = 0,
@@ -1087,6 +1162,8 @@ async def list_mirror_evidence(
         base = base.where(MirrorEvidenceRecord.llm_item_id == llm_item_id)
     if granularity_level:
         base = base.where(MirrorEvidenceRecord.granularity_level == granularity_level)
+    if evidence_type:
+        base = base.where(MirrorEvidenceRecord.evidence_type == evidence_type)
     base = _apply_search(base, MirrorEvidenceRecord, search)
     count_q = select(func.count()).select_from(base.subquery())
     total = int((await session.execute(count_q)).scalar_one())

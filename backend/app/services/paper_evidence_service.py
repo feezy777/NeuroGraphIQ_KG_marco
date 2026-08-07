@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
-import uuid
+import asyncio
+import json
 import re
+import uuid
 
 import httpx
+from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -21,6 +24,9 @@ from app.models.mirror_macro_clinical import (
     MirrorProjectionFunction,
 )
 from app.services.ontology_service import TERM_TABLE_BY_TYPE
+from app.config import get_settings
+from app.services.llm_providers.factory import get_llm_provider
+from app.services.ontology_residual_schemas import PaperPassageExtraction
 
 EUROPE_PMC_SEARCH = "https://www.ebi.ac.uk/europepmc/webservices/rest/search"
 SEARCH_TIMEOUT = 25
@@ -299,4 +305,70 @@ async def list_paper_evidence(
             }
             for r in rows
         ]
+    }
+
+
+async def extract_passage(*, term: str, title: str, abstract: str) -> dict:
+    cfg = get_settings()
+    provider = get_llm_provider("deepseek")
+    system = "You are a strict JSON API. Reply only with the requested JSON object. Never explain."
+    user = (
+        f'Find the passage most relevant to the neuroscience claim "{term}". '
+        "Determine the direction (supports / partial / contradicts / not_found) and confidence 0-1. "
+        'Return JSON exactly like: {"direction": "supports", "passage": "<original passage>", '
+        '"reason": "<one sentence>", "confidence": 0.9}. '
+        f"Paper title: {title}\nAbstract: {abstract[:6000]}"
+    )
+    parsed = None
+    parse_status = "provider_error"
+    retry_count = 0
+    raw_response = ""
+    for attempt in range(2):
+        retry_count = attempt
+        try:
+            if attempt == 0:
+                resp = await provider.complete_json(
+                    model=cfg.ontology_residual_model,
+                    system_prompt=system,
+                    user_prompt=user,
+                    temperature=0.1,
+                    max_tokens=cfg.ontology_residual_max_tokens,
+                )
+                raw_response = resp.raw_text or ""
+                if resp.parsed_json is not None:
+                    parsed = PaperPassageExtraction.model_validate(resp.parsed_json)
+                else:
+                    text_value = (raw_response or "").strip()
+                    fence = re.search(r"```(?:json|JSON)?\s*(.*?)```", text_value, re.DOTALL)
+                    if fence:
+                        text_value = fence.group(1).strip()
+                    parsed = PaperPassageExtraction.model_validate(json.loads(text_value))
+            else:
+                text_result = await provider.complete_text(
+                    model=cfg.ontology_residual_model,
+                    system_prompt=system,
+                    user_prompt=user + "\n\nIMPORTANT: Respond with ONLY the raw JSON object.",
+                    temperature=0.2,
+                    max_tokens=cfg.ontology_residual_max_tokens,
+                    json_mode=False,
+                )
+                raw_response = text_result.raw_text or ""
+                text_value = (raw_response or "").strip()
+                fence = re.search(r"```(?:json|JSON)?\s*(.*?)```", text_value, re.DOTALL)
+                if fence:
+                    text_value = fence.group(1).strip()
+                parsed = PaperPassageExtraction.model_validate(json.loads(text_value))
+            parse_status = "ok"
+            break
+        except (ValidationError, ValueError, json.JSONDecodeError):
+            parse_status = "parse_error"
+            if attempt == 0:
+                await asyncio.sleep(cfg.ontology_residual_backoff_seconds)
+    if parsed is None:
+        raise ValueError(f"passage extraction failed: {parse_status}")
+    return {
+        **parsed.model_dump(),
+        "parse_status": parse_status,
+        "retry_count": retry_count,
+        "raw_response": raw_response[:1000],
     }

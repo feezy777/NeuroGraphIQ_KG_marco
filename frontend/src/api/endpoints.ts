@@ -3468,6 +3468,7 @@ export const listMirrorEvidence = (p?: {
   evidence_target_id?: string
   llm_run_id?: string
   granularity_level?: string
+  evidence_type?: string
   limit?: number
   offset?: number
 }) => getJson<Paginated<MirrorEvidenceRecord>>('/api/mirror-kg/evidence', p)
@@ -5274,3 +5275,19 @@ export const attachPaperEvidence = (body: {
 
 export const listPaperEvidence = (p: { target_type: string; target_id: string; limit?: number }) =>
   getJson<{ items: PaperEvidenceItem[] }>('/api/ontology/evidence/list', p)
+
+export const extractPaperPassage = (body: {
+  target_type: string
+  target_id: string
+  pmid: string
+  title: string
+  abstract: string
+}) => postJson<{
+  direction: 'supports' | 'partial' | 'contradicts' | 'not_found'
+  passage: string
+  reason: string
+  confidence: number
+  parse_status: string
+  retry_count: number
+  links?: { pubmed: string | null }
+}>('/api/ontology/evidence/extract', body)

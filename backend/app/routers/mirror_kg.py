@@ -12,6 +12,7 @@ from app.schemas.mirror_kg import (
     MirrorEvidenceRecordCreate,
     MirrorEvidenceRecordListResponse,
     MirrorEvidenceRecordRead,
+    MirrorRegionConnectionIdsResponse,
     MirrorKgTripleCreate,
     MirrorKgTripleListResponse,
     MirrorKgTripleRead,
@@ -58,7 +59,7 @@ async def list_connections(
     llm_item_id: uuid.UUID | None = None,
     candidate_id: uuid.UUID | None = None,
     search: str | None = None,
-    limit: int = Query(default=100, ge=0, le=100000, description="0 = unlimited"),
+    limit: int = Query(default=100, ge=0, le=500000, description="0 = unlimited"),
     offset: int = Query(default=0, ge=0),
     session: AsyncSession = Depends(get_db),
 ):
@@ -86,6 +87,35 @@ async def list_connections(
         limit=limit,
         offset=offset,
     )
+
+
+@router.get("/connections/ids", response_model=MirrorRegionConnectionIdsResponse)
+async def list_connection_ids(
+    resource_id: uuid.UUID | None = None,
+    batch_id: uuid.UUID | None = None,
+    source_atlas: str | None = None,
+    granularity_level: str | None = None,
+    granularity_family: str | None = None,
+    llm_run_id: uuid.UUID | None = None,
+    llm_item_id: uuid.UUID | None = None,
+    limit: int = Query(default=500000, ge=1, le=500000),
+    offset: int = Query(default=0, ge=0),
+    session: AsyncSession = Depends(get_db),
+):
+    """Lightweight id-only projection list for full-corpus pool selection."""
+    ids = await mirror_kg_service.list_mirror_connection_ids(
+        session,
+        resource_id=resource_id,
+        batch_id=batch_id,
+        source_atlas=source_atlas,
+        granularity_level=granularity_level,
+        granularity_family=granularity_family,
+        llm_run_id=llm_run_id,
+        llm_item_id=llm_item_id,
+        limit=limit,
+        offset=offset,
+    )
+    return MirrorRegionConnectionIdsResponse(ids=ids, total=len(ids))
 
 
 @router.post("/connections", response_model=MirrorRegionConnectionRead, status_code=201)
@@ -162,7 +192,7 @@ async def list_functions(
     llm_item_id: uuid.UUID | None = None,
     candidate_id: uuid.UUID | None = None,
     search: str | None = None,
-    limit: int = Query(default=100, ge=0, le=100000, description="0 = unlimited"),
+    limit: int = Query(default=100, ge=0, le=500000, description="0 = unlimited"),
     offset: int = Query(default=0, ge=0),
     session: AsyncSession = Depends(get_db),
 ):
@@ -257,7 +287,7 @@ async def list_circuits(
     llm_run_id: uuid.UUID | None = None,
     llm_item_id: uuid.UUID | None = None,
     search: str | None = None,
-    limit: int = Query(default=100, ge=0, le=100000, description="0 = unlimited"),
+    limit: int = Query(default=100, ge=0, le=500000, description="0 = unlimited"),
     offset: int = Query(default=0, ge=0),
     session: AsyncSession = Depends(get_db),
 ):
@@ -354,7 +384,7 @@ async def list_triples(
     llm_item_id: uuid.UUID | None = None,
     predicate: str | None = None,
     search: str | None = None,
-    limit: int = Query(default=100, ge=0, le=100000, description="0 = unlimited"),
+    limit: int = Query(default=100, ge=0, le=500000, description="0 = unlimited"),
     offset: int = Query(default=0, ge=0),
     session: AsyncSession = Depends(get_db),
 ):
@@ -497,8 +527,9 @@ async def list_evidence(
     llm_run_id: uuid.UUID | None = None,
     llm_item_id: uuid.UUID | None = None,
     granularity_level: str | None = None,
+    evidence_type: str | None = None,
     search: str | None = None,
-    limit: int = Query(default=100, ge=0, le=100000, description="0 = unlimited"),
+    limit: int = Query(default=100, ge=0, le=500000, description="0 = unlimited"),
     offset: int = Query(default=0, ge=0),
     session: AsyncSession = Depends(get_db),
 ):
@@ -512,6 +543,7 @@ async def list_evidence(
         llm_run_id=llm_run_id,
         llm_item_id=llm_item_id,
         granularity_level=granularity_level,
+        evidence_type=evidence_type,
         search=search,
         limit=_limit,
         offset=offset,

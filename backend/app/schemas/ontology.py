@@ -138,6 +138,14 @@ class EvidenceAttachRequest(BaseModel):
     suggested_confidence: float | None = Field(default=None, ge=0.0, le=1.0)
 
 
+class EvidenceExtractRequest(BaseModel):
+    target_type: str
+    target_id: uuid.UUID
+    pmid: str
+    title: str
+    abstract: str
+
+
 class GroundingRead(BaseModel):
     id: uuid.UUID
     target_type: str
