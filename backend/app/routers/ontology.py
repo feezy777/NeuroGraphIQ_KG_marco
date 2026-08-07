@@ -301,6 +301,17 @@ async def governance_issues(
     return await gov.issues_summary(session, granularity_level=granularity_level)
 
 
+@router.get("/governance/entity-summary")
+async def governance_entity_summary(
+    entity: str = Query(...),
+    session: AsyncSession = Depends(get_db),
+):
+    try:
+        return await gov.entity_summary(session, entity)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail={"code": "INVALID_REQUEST", "message": str(exc)})
+
+
 @router.get("/governance/ungrounded-records")
 async def governance_ungrounded_records(
     granularity_level: str | None = Query(default=None),

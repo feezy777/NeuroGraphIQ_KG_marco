@@ -60,6 +60,12 @@ TARGETS = {
         "source_col": "canonical_term_en",
         "cn_col": "canonical_term_cn",
     },
+    "vocab": {
+        "table": "ontology_vocabularies",
+        "id_col": "id",
+        "source_col": "COALESCE(label_en, code)",
+        "cn_col": "label_cn",
+    },
 }
 
 
@@ -238,10 +244,11 @@ async def main(scope: str) -> None:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--scope", choices=["circuits", "terms", "all"], default="all")
+    parser.add_argument("--scope", choices=["circuits", "terms", "vocab", "all"], default="all")
     args = parser.parse_args()
     if args.scope == "all":
         asyncio.run(main("circuits"))
         asyncio.run(main("terms"))
+        asyncio.run(main("vocab"))
     else:
         asyncio.run(main(args.scope))

@@ -4995,6 +4995,16 @@ export interface GovernanceIssues {
   total: number
 }
 
+export interface EntitySummary {
+  entity: string
+  total: number
+  anomalies: number
+  by_type?: Array<{ value: string; count: number }>
+  by_direction?: Array<{ value: string; count: number }>
+  by_step_type?: Array<{ value: string; count: number }>
+  by_step_role?: Array<{ value: string; count: number }>
+}
+
 export interface UngroundedRecord {
   target_type: string
   target_id: string
@@ -5108,6 +5118,9 @@ export const getGovernanceDashboard = (p?: { granularity_level?: string }) =>
 
 export const getGovernanceIssues = (p?: { granularity_level?: string }) =>
   getJson<GovernanceIssues>('/api/ontology/governance/issues', p)
+
+export const getEntitySummary = (entity: 'connection' | 'circuit') =>
+  getJson<EntitySummary>(`/api/ontology/governance/entity-summary?entity=${entity}`)
 
 export const getOntologyRole = () =>
   getJson<{ role: 'viewer' | 'reviewer' | 'ontology_admin' }>('/api/ontology/governance/role')

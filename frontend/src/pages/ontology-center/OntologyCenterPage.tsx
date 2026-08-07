@@ -9,6 +9,7 @@ import {
   deprecateOntologyTerm,
   getAlignmentStats,
   getGovernanceDashboard,
+  getEntitySummary,
   getMergePreview,
   getOntologyRole,
   getTermDetail,
@@ -30,6 +31,7 @@ import {
   type AlignmentCandidateItem,
   type AlignmentStats,
   type GovernanceDashboard,
+  type EntitySummary,
   type MergePreview,
   type OntologyTerm,
   type TermDetail,
@@ -60,7 +62,7 @@ export function OntologyCenterPage() {
           {(
             [
               ['functions', '功能'],
-              ['regions', '脑区'],
+              ['regions', '实体'],
               ['relations', '关系'],
             ] as Array<[TabId, string]>
           ).map(([key, label]) => (
@@ -787,6 +789,28 @@ function DuplicatesSubView() {
 }
 
 function RegionsTab({ granularity, role }: { granularity: string; role: string }) {
+  const [entityView, setEntityView] = useState<'regions' | 'connections' | 'circuits'>('regions')
+  return (
+    <div>
+      <div className="ontology-subview-tabs">
+        {(
+          [
+            ['regions', '脑区'],
+            ['connections', '连接'],
+            ['circuits', '回路'],
+          ] as Array<['regions' | 'connections' | 'circuits', string]>
+        ).map(([key, label]) => (
+          <button key={key} type="button" className={`ontology-subview-tab ${entityView === key ? 'ontology-subview-tab-active' : ''}`} onClick={() => setEntityView(key)}>{label}</button>
+        ))}
+      </div>
+      {entityView === 'regions' && <RegionCandidates granularity={granularity} role={role} />}
+      {entityView === 'connections' && <EntityView entity="connection" />}
+      {entityView === 'circuits' && <EntityView entity="circuit" />}
+    </div>
+  )
+}
+
+function RegionCandidates({ granularity, role }: { granularity: string; role: string }) {
   const [status, setStatus] = useState('pending')
   const [stats, setStats] = useState<AlignmentStats | null>(null)
   const [items, setItems] = useState<AlignmentCandidateItem[]>([])
@@ -892,6 +916,48 @@ function RegionsTab({ granularity, role }: { granularity: string; role: string }
         <span>{offset + 1}-{Math.min(offset + pageSize, total)} / {total}</span>
         <button type="button" className="btn btn-xs" disabled={offset + pageSize >= total} onClick={() => setOffset(offset + pageSize)}>下一页</button>
       </div>
+    </div>
+  )
+}
+
+function EntityView({ entity }: { entity: 'connection' | 'circuit' }) {
+  const [data, setData] = useState<EntitySummary | null>(null)
+  useEffect(() => {
+    getEntitySummary(entity).then(setData).catch(() => setData(null))
+  }, [entity])
+  const distributions: Array<[string, Array<{ value: string; count: number }> | undefined]> =
+    entity === 'connection'
+      ? [['连接类型', data?.by_type], ['方向性', data?.by_direction]]
+      : [['回路类型', data?.by_type], ['步骤类型', data?.by_step_type], ['步骤角色', data?.by_step_role]]
+  return (
+    <div className="card ontology-card">
+      <div className="ontology-card-header">
+        <span className="ontology-card-title">{entity === 'connection' ? '连接本体视图' : '回路本体视图'}</span>
+        <span className="ontology-card-sub">类型与角色分布（只读）</span>
+      </div>
+      {!data && <div className="ontology-empty">加载中…</div>}
+      {data && (
+        <div>
+          <div className="ontology-overview-grid" style={{ marginBottom: 12 }}>
+            <div className="ontology-stat-card"><span className="ontology-stat-label">总数</span><span className="ontology-stat-value">{data.total}</span></div>
+            <div className="ontology-stat-card"><span className="ontology-stat-label">枚举异常</span><span className="ontology-stat-value">{data.anomalies}</span></div>
+          </div>
+          {distributions.map(([label, rows]) => (
+            <details key={label} className="ontology-vocab-group" open>
+              <summary>{label}（{rows?.length ?? 0}）</summary>
+              <table className="data-table ontology-term-table">
+                <thead><tr><th>值</th><th>数量</th></tr></thead>
+                <tbody>
+                  {(rows ?? []).map(row => (
+                    <tr key={row.value}><td>{row.value}</td><td>{row.count}</td></tr>
+                  ))}
+                  {(rows ?? []).length === 0 && <tr><td colSpan={2} className="ontology-empty">暂无数据</td></tr>}
+                </tbody>
+              </table>
+            </details>
+          ))}
+        </div>
+      )}
     </div>
   )
 }

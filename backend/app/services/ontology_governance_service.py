@@ -212,6 +212,103 @@ async def issues_summary(
     }
 
 
+async def entity_summary(session: AsyncSession, entity: str) -> dict:
+    """Ontology-relevant summary for connection / circuit entities."""
+    vocab = await _active_vocab(session)
+    if entity == "connection":
+        total = (
+            await session.execute(select(func.count()).select_from(MirrorRegionConnection))
+        ).scalar_one()
+        by_type_rows = (
+            await session.execute(
+                select(MirrorRegionConnection.connection_type, func.count())
+                .group_by(MirrorRegionConnection.connection_type)
+                .order_by(func.count().desc())
+            )
+        ).all()
+        by_dir_rows = (
+            await session.execute(
+                select(MirrorRegionConnection.directionality, func.count())
+                .group_by(MirrorRegionConnection.directionality)
+                .order_by(func.count().desc())
+            )
+        ).all()
+        allowed_type = vocab.get("connection_type", set())
+        allowed_dir = vocab.get("directionality", set())
+        anomalies = 0
+        if allowed_type:
+            anomalies += (
+                await session.execute(
+                    select(func.count())
+                    .select_from(MirrorRegionConnection)
+                    .where(MirrorRegionConnection.connection_type.notin_(list(allowed_type)))
+                )
+            ).scalar_one()
+        if allowed_dir:
+            anomalies += (
+                await session.execute(
+                    select(func.count())
+                    .select_from(MirrorRegionConnection)
+                    .where(MirrorRegionConnection.directionality.notin_(list(allowed_dir)))
+                )
+            ).scalar_one()
+        return {
+            "entity": "connection",
+            "total": total,
+            "anomalies": anomalies,
+            "by_type": [{"value": r[0], "count": r[1]} for r in by_type_rows],
+            "by_direction": [{"value": r[0], "count": r[1]} for r in by_dir_rows],
+        }
+    if entity == "circuit":
+        total = (
+            await session.execute(select(func.count()).select_from(MirrorRegionCircuit))
+        ).scalar_one()
+        by_type_rows = (
+            await session.execute(
+                select(MirrorRegionCircuit.circuit_type, func.count())
+                .group_by(MirrorRegionCircuit.circuit_type)
+                .order_by(func.count().desc())
+            )
+        ).all()
+        step_type_rows = (
+            await session.execute(
+                select(MirrorCircuitStep.step_type, func.count())
+                .group_by(MirrorCircuitStep.step_type)
+                .order_by(func.count().desc())
+            )
+        ).all()
+        step_role_rows = (
+            await session.execute(
+                select(MirrorCircuitStep.role, func.count())
+                .group_by(MirrorCircuitStep.role)
+                .order_by(func.count().desc())
+            )
+        ).all()
+        anomalies = 0
+        for field in ("circuit_type", "step_type", "step_role", "circuit_region_role", "projection_role"):
+            pair = ENUM_FIELD_MAP.get(field)
+            allowed = vocab.get(_FIELD_VOCAB_TYPE.get(field, ""), set())
+            if pair is None or not allowed:
+                continue
+            model, column = pair
+            anomalies += (
+                await session.execute(
+                    select(func.count())
+                    .select_from(model)
+                    .where(getattr(model, column).notin_(list(allowed)))
+                )
+            ).scalar_one()
+        return {
+            "entity": "circuit",
+            "total": total,
+            "anomalies": anomalies,
+            "by_type": [{"value": r[0], "count": r[1]} for r in by_type_rows],
+            "by_step_type": [{"value": r[0], "count": r[1]} for r in step_type_rows],
+            "by_step_role": [{"value": r[0], "count": r[1]} for r in step_role_rows],
+        }
+    raise ValueError(f"unsupported entity: {entity}")
+
+
 async def ungrounded_records(
     session: AsyncSession,
     *,
