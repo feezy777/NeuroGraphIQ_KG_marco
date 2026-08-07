@@ -44,7 +44,11 @@ from app.services.confidence_rules import (
 from app.services.evidence_target_adapter import (
     TARGET_MODELS as ADAPTER_TARGET_MODELS,
     build_target_dto,
+    build_retrieval_context,
 )
+from app.services.paragraph_retrieval import build_windows, score_paragraphs
+from app.services import oa_xml_parser
+from app.services import paper_fetch_service as pfs
 
 EUROPE_PMC_SEARCH = "https://www.ebi.ac.uk/europepmc/webservices/rest/search"
 SEARCH_TIMEOUT = 25
@@ -454,6 +458,32 @@ async def recall_candidate_passages(
         }
         for pid in selected_ids
         if pid in by_id
+    ]
+
+
+async def load_paper_passages(session: AsyncSession, paper_id: uuid.UUID) -> list[dict]:
+    """Load all structured paragraphs of a paper (ordered by index)."""
+    rows = (
+        await session.execute(
+            select(PaperPassage)
+            .where(PaperPassage.paper_id == paper_id)
+            .order_by(PaperPassage.paragraph_index)
+        )
+    ).scalars().all()
+    return [
+        {
+            "id": str(r.id),
+            "paragraph_id": r.paragraph_id,
+            "section_title": r.section_title,
+            "section_title_raw": None,
+            "paragraph_index": r.paragraph_index,
+            "passage_text": r.passage_text,
+            "source_scope": r.source_scope,
+            "locator": r.locator,
+            "char_start": r.char_start,
+            "char_end": r.char_end,
+        }
+        for r in rows
     ]
 
 
@@ -1287,35 +1317,135 @@ async def extract_passage(*, term: str, title: str, abstract: str, fulltext: str
     }
 
 
+def _verify_extraction_passages(
+    passages: list[dict],
+    paragraph_map: dict[str, dict],
+) -> list[dict]:
+    """Strict backend verification: paragraph_id must exist and passage must match.
+
+    Only exact / normalized whitespace / normalized Unicode punctuation pass.
+    If paragraph_id is missing or unknown → source_verified=false (no fallback).
+    """
+    verified_out: list[dict] = []
+    for item in passages:
+        para_id = (item.get("paragraph_id") or "").strip()
+        candidate = paragraph_map.get(para_id)
+        source_text = (candidate or {}).get("passage_text") or ""
+        ok, method = (
+            verify_passage_against_source(item.get("passage") or "", source_text)
+            if source_text
+            else (False, None)
+        )
+        verified_out.append(
+            {
+                **item,
+                "source_scope": (candidate or {}).get("source_scope") or "fulltext",
+                "section_title": (candidate or {}).get("section_title") or item.get("section"),
+                "paragraph_index": (candidate or {}).get("paragraph_index"),
+                "source_locator": (candidate or {}).get("locator") if ok else None,
+                "source_verified": ok,
+                "source_verification_method": method if ok else None,
+                "passage_hash": passage_hash(item.get("passage") or ""),
+            }
+        )
+    return verified_out
+
+
+def _dedupe_extraction_passages(passages: list[dict]) -> list[dict]:
+    """Drop duplicate paragraphs / overlapping same-text passages.
+
+    * same paragraph_id + same normalized text → keep once;
+    * same paragraph + different direction (support vs contradict) → keep both;
+    * overlapping same-text candidates → keep the longer, more complete one.
+    """
+    groups: dict[str, dict[str, dict]] = {}
+    for p in passages:
+        para_key = p.get("paragraph_id") or ""
+        dir_key = p.get("direction") or "unknown"
+        existing = groups.setdefault(para_key, {}).get(dir_key)
+        if existing is None:
+            groups[para_key][dir_key] = p
+            continue
+        # same paragraph + same direction: keep the longer, more complete one
+        if len(p.get("passage") or "") > len(existing.get("passage") or ""):
+            groups[para_key][dir_key] = p
+    return [p for by_dir in groups.values() for p in by_dir.values()]
+
+
+def _combine_overall_direction(parsed: PaperMultiPassageExtraction) -> str:
+    directions = {p.direction for p in parsed.passages}
+    if not directions:
+        return "not_found"
+    if "supports" in directions and "contradicts" in directions:
+        return "partial"
+    if "contradicts" in directions:
+        return "contradicts"
+    if "supports" in directions:
+        return "supports"
+    if "partial" in directions:
+        return "partial"
+    return parsed.overall_direction
+
+
 async def extract_passage_from_paper(
     *,
     claim: dict,
     title: str,
-    candidates: list[dict],
+    windows: list[dict],
+    max_input_chars: int = 24000,
 ) -> dict:
-    """DeepSeek judgment over recalled candidate paragraphs (paragraph_id-aware)."""
+    """DeepSeek judgment over recalled paragraph windows (paragraph_id-aware)."""
     cfg = get_settings()
     provider = get_llm_provider("deepseek")
-    blocks = []
-    for c in candidates:
-        prefix = f"[{c['paragraph_id']}]"
-        if c.get("section_title"):
-            prefix += f" ({c['section_title']})"
-        blocks.append(f"{prefix} {c['passage_text']}")
+    blocks: list[str] = []
+    truncated = False
+    budget = max_input_chars
+    for w in windows:
+        focus = w.get("focus_paragraph_id") or ""
+        section = w.get("section_title") or ""
+        focus_idx = w.get("paragraph_index")
+        block = f"[focus:{focus}]" + (f" ({section})" if section else "")
+        for p in w.get("context") or []:
+            if p.get("paragraph_id") == focus:
+                role_label = "current"
+            elif focus_idx is not None and (p.get("paragraph_index") or 0) < focus_idx:
+                role_label = "previous"
+            else:
+                role_label = "next"
+            block += f"\n<{role_label} id={p.get('paragraph_id')}>\n{p.get('passage_text') or ''}\n</{role_label}>"
+        if budget - len(block) <= 0:
+            truncated = True
+            break
+        blocks.append(block)
+        budget -= len(block)
     joined = "\n\n".join(blocks)
-    system = "You are a strict JSON API. Reply only with the requested JSON object. Never explain."
+    system = (
+        "You are a strict JSON API for neuroscience evidence judgment. "
+        "Reply only with the requested JSON object. Never explain."
+    )
     user = (
         f'Knowledge claim to verify: "{claim.get("claim_text") or claim.get("function_term") or ""}"\n'
-        "For each relevant paragraph, output the ORIGINAL passage verbatim (copy exactly from the given "
-        "paragraph; do NOT summarize, rewrite, or invent sentences). "
-        "You MUST reuse the exact paragraph_id from the bracket prefix; never invent a paragraph_id. "
-        "Return ONLY one raw JSON object. Do NOT use markdown, code fences, bullet lists, trailing commas, "
-        "or any text outside the JSON object. "
-        'JSON shape: {"overall_direction": "supports", "paper_relevance": "<one sentence>", '
-        '"passages": [{"paragraph_id": "<id>", "section": "<section>", "passage": "<verbatim original>", '
+        "Structured claim (relation direction matters): "
+        f"{claim.get('structured_claim') or claim.get('claim_text') or ''}\n"
+        "Rules:\n"
+        "1. Use ONLY the given paragraphs; never add model knowledge.\n"
+        "2. Output passages verbatim (copy exactly); never rewrite or invent sentences.\n"
+        "3. Reuse the exact paragraph ids from the <id=...> markers; never invent ids.\n"
+        "4. If no paragraph truly supports or contradicts the claim, return not_found with passages=[] (do NOT fabricate weak evidence).\n"
+        "5. Search for BOTH supporting and contradicting evidence; you may return 1-8 passages.\n"
+        "6. Distinguish experimental Results (direct) from author interpretation (interpretive) and background (background).\n"
+        "7. Keyword co-occurrence is NOT evidence: 'A and B both participate in X' does not mean 'A projects to B'.\n"
+        "8. Direction matters: 'B -> A' does not support 'A -> B'; functional connectivity is not an anatomical projection.\n"
+        "9. evidence_level: direct (experiment proves the claim/core relation), indirect (needs reasonable inference), "
+        "interpretive (author explanation in Discussion/Conclusion), background (Introduction/review-like).\n"
+        "10. overall_direction must reflect ALL returned passages (support+contradict -> partial).\n"
+        "Return ONLY one raw JSON object (no markdown, no code fences, no trailing commas):\n"
+        '{"overall_direction": "supports", "paper_relevance": 0.9, '
+        '"assessment": "<one or two sentences summarizing the judgment>", '
+        '"passages": [{"paragraph_id": "<id>", "section": "<section>", "passage": "<verbatim>", '
         '"direction": "supports", "evidence_level": "direct|indirect|interpretive|background", '
         '"reason": "<one sentence>", "confidence": 0.9, "semantic_confidence": 0.9}]}\n'
-        f"Paper title: {title}\nCandidate paragraphs:\n{joined[:24000]}"
+        f"Paper title: {title}\nCandidate paragraph windows:\n{joined}"
     )
     parsed = None
     parse_status = "provider_error"
@@ -1369,45 +1499,44 @@ async def extract_passage_from_paper(
         raise ValueError(
             f"passage extraction failed: {parse_status} after {retry_count + 1} attempt(s){hint}"
         )
-    by_id = {c["paragraph_id"]: c for c in candidates}
-    passages = []
-    for item in parsed.passages:
-        para_id = (item.paragraph_id or "").strip()
-        candidate = by_id.get(para_id)
-        source_text = (candidate or {}).get("passage_text") or ""
-        verified, method = verify_passage_against_source(item.passage, source_text) if source_text else (False, None)
-        if not verified:
-            # fallback: match against any recalled paragraph (LLM may omit/typo the id)
-            for c in candidates:
-                ok, m = verify_passage_against_source(item.passage, c["passage_text"])
-                if ok:
-                    verified, method, candidate, para_id = True, m, c, c["paragraph_id"]
-                    break
-        passages.append(
-            {
-                "source_scope": (candidate or {}).get("source_scope") or "fulltext",
-                "section_title": (candidate or {}).get("section_title") or item.section,
-                "paragraph_index": (candidate or {}).get("paragraph_index"),
-                "paragraph_id": para_id or None,
-                "passage": item.passage,
-                "direction": item.direction,
-                "evidence_level": item.evidence_level,
-                "reason": item.reason,
-                "confidence": item.confidence,
-                "semantic_confidence": item.semantic_confidence
-                if item.semantic_confidence is not None
-                else item.confidence,
-                "source_locator": (candidate or {}).get("locator") if verified else None,
-                "source_verified": verified,
-                "source_verification_method": method if verified else None,
-                "passage_hash": passage_hash(item.passage),
-            }
-        )
+    paragraph_map: dict[str, dict] = {}
+    for w in windows:
+        for p in w.get("context") or []:
+            if p.get("paragraph_id"):
+                paragraph_map.setdefault(p["paragraph_id"], p)
+    raw_items = [
+        {
+            "paragraph_id": item.paragraph_id,
+            "section": item.section,
+            "passage": item.passage,
+            "direction": item.direction,
+            "evidence_level": item.evidence_level,
+            "reason": item.reason,
+            "confidence": item.confidence,
+            "semantic_confidence": item.semantic_confidence or item.confidence,
+        }
+        for item in parsed.passages
+    ]
+    verified_passages = _verify_extraction_passages(raw_items, paragraph_map)
+    deduped = _dedupe_extraction_passages(verified_passages)
+    overall = _combine_overall_direction(parsed)
+    source_type = (
+        "fulltext"
+        if any((p.get("source_scope") == "fulltext") for p in paragraph_map.values())
+        else "abstract"
+    )
     return {
-        "overall_direction": parsed.overall_direction,
+        "overall_direction": overall,
         "paper_relevance": parsed.paper_relevance,
-        "source_type": "fulltext" if any(c.get("source_scope") == "fulltext" for c in candidates) else "abstract",
-        "passages": passages,
+        "assessment": parsed.assessment,
+        "source_type": source_type,
+        "passages": deduped,
+        "retrieval_summary": {
+            "candidate_windows": len(windows),
+            "input_truncated": truncated,
+            "verified_count": sum(1 for p in deduped if p.get("source_verified")),
+            "unverified_count": sum(1 for p in deduped if not p.get("source_verified")),
+        },
         "parse_status": parse_status,
         "retry_count": retry_count,
         "raw_response": raw_response[:1000],
@@ -1846,7 +1975,7 @@ async def _process_batch_item(
             await session.commit()
             async with sem_epmc:
                 info = await pack_target_info(session, target_type, uuid.UUID(target_id), mode=mode)
-                claim = await build_target_dto(session, target_type, uuid.UUID(target_id))
+                context = await build_retrieval_context(session, target_type, uuid.UUID(target_id))
                 papers = await _search_with_retry(info["query"], limit=max_papers)
             if not papers:
                 await session.execute(
@@ -1876,13 +2005,13 @@ async def _process_batch_item(
                 used_paper = paper
                 async with sem_epmc:
                     verified_meta = await _verify_paper_with_retry(pmid)
-                    fulltext = await fetch_fulltext(pmid)
+                    xml_text = await pfs.fetch_oa_fulltext_xml(pmid=pmid)
                 if verified_meta is None:
                     continue
                 abstract = (verified_meta.get("abstract") or "").strip()
                 paper_source = await ensure_paper_source(
                     session,
-                    {**verified_meta, "abstract": abstract, "fulltext": fulltext},
+                    {**verified_meta, "abstract": abstract, "fulltext": ""},
                 )
                 paper_id = paper_source.id
                 paragraphs: list[dict] = []
@@ -1898,18 +2027,27 @@ async def _process_batch_item(
                             "locator": "abstract:paragraph:0",
                         }
                     )
-                if fulltext.strip():
-                    paragraphs.extend(await parse_fulltext_paragraphs(fulltext))
+                if xml_text.strip():
+                    paragraphs.extend(oa_xml_parser.parse_oa_xml(xml_text))
                 await ensure_paper_passages(session, paper_source.id, paragraphs)
                 await session.commit()
-                candidates = await recall_candidate_passages(
-                    session, paper_source.id, claim["claim_text"], limit=30
+                all_paragraphs = await load_paper_passages(session, paper_source.id)
+                ranked = score_paragraphs(
+                    all_paragraphs,
+                    source_region=context.get("source_region") or "",
+                    target_region=context.get("target_region") or "",
+                    source_region_synonyms=context.get("source_region_synonyms") or [],
+                    target_region_synonyms=context.get("target_region_synonyms") or [],
+                    function_terms=context.get("function_terms") or [],
+                    function_synonyms=context.get("function_synonyms") or [],
+                    relation_keywords=context.get("relation_keywords") or [],
                 )
+                windows = build_windows(ranked, all_paragraphs, top_k=20, window=1)
                 async with sem_deepseek:
                     extraction = await _extract_from_paper_with_retry(
-                        claim=claim,
+                        claim=context,
                         title=verified_meta.get("title") or paper.get("title") or "",
-                        candidates=candidates,
+                        windows=windows,
                     )
                 if any(p["source_verified"] for p in extraction["passages"]):
                     break
@@ -1995,11 +2133,11 @@ async def _verify_paper_with_retry(pmid: str) -> dict | None:
     raise last_exc or RuntimeError("paper verification failed")
 
 
-async def _extract_from_paper_with_retry(*, claim: dict, title: str, candidates: list[dict]) -> dict:
+async def _extract_from_paper_with_retry(*, claim: dict, title: str, windows: list[dict]) -> dict:
     last_exc: Exception | None = None
     for attempt in range(BATCH_ITEM_RETRIES):
         try:
-            return await extract_passage_from_paper(claim=claim, title=title, candidates=candidates)
+            return await extract_passage_from_paper(claim=claim, title=title, windows=windows)
         except (ValueError, ValidationError, httpx.HTTPError) as exc:
             last_exc = exc
             if attempt < BATCH_ITEM_RETRIES - 1:

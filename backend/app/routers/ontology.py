@@ -46,6 +46,9 @@ from app.schemas.ontology import (
 from app.services import ontology_service as svc
 from app.services import ontology_governance_service as gov
 from app.services import paper_evidence_service as pes
+from app.services import paper_fetch_service as pfs
+from app.services import oa_xml_parser
+from app.services.paragraph_retrieval import build_windows, score_paragraphs
 
 router = APIRouter()
 
@@ -718,15 +721,31 @@ async def paper_evidence_extract(
     _auth: str = Depends(require_role("reviewer")),
 ):
     try:
-        claim = await pes.build_target_dto(session, body.target_type, body.target_id)
-        paper = await pes.verify_paper(body.pmid)
-        if paper is None:
-            raise ValueError("paper not found or invalid PMID")
-        abstract = (body.abstract or "").strip() or (paper.get("abstract") or "").strip()
-        fulltext = await pes.fetch_fulltext(body.pmid)
-        paper_source = await pes.ensure_paper_source(
-            session,
-            {**paper, "abstract": abstract, "fulltext": fulltext},
+        context = await pes.build_retrieval_context(session, body.target_type, body.target_id)
+        cached, metadata = await pfs.ensure_paper_cached(session, pmid=body.pmid)
+        if metadata is not None:
+            paper = metadata
+            paper_source = await pes.ensure_paper_source(
+                session,
+                {**paper, "abstract": (body.abstract or "").strip(), "fulltext": ""},
+            )
+        else:
+            paper_source = cached
+            meta = paper_source.metadata_json or {}
+            paper = {
+                "pmid": paper_source.pmid or body.pmid,
+                "pmcid": paper_source.pmcid,
+                "doi": paper_source.doi or "",
+                "title": paper_source.title or body.title or "",
+                "journal": paper_source.journal,
+                "year": str(paper_source.publication_year or ""),
+                "authors": meta.get("authors", ""),
+                "source": paper_source.source,
+            }
+        abstract = (body.abstract or "").strip()
+        xml_text = await pfs.fetch_oa_fulltext_xml(
+            pmid=paper.get("pmid") or body.pmid,
+            pmcid=paper.get("pmcid") or "",
         )
         paragraphs: list[dict] = []
         if abstract:
@@ -741,18 +760,50 @@ async def paper_evidence_extract(
                     "locator": "abstract:paragraph:0",
                 }
             )
-        if fulltext.strip():
-            paragraphs.extend(await pes.parse_fulltext_paragraphs(fulltext))
+        if xml_text.strip():
+            paragraphs.extend(oa_xml_parser.parse_oa_xml(xml_text))
         saved = await pes.ensure_paper_passages(session, paper_source.id, paragraphs)
-        candidates = await pes.recall_candidate_passages(
-            session, paper_source.id, claim["claim_text"], limit=30
+        await session.commit()
+        all_paragraphs = await pes.load_paper_passages(session, paper_source.id)
+        ranked = score_paragraphs(
+            all_paragraphs,
+            source_region=context.get("source_region") or "",
+            target_region=context.get("target_region") or "",
+            source_region_synonyms=context.get("source_region_synonyms") or [],
+            target_region_synonyms=context.get("target_region_synonyms") or [],
+            function_terms=context.get("function_terms") or [],
+            function_synonyms=context.get("function_synonyms") or [],
+            relation_keywords=context.get("relation_keywords") or [],
         )
+        windows = build_windows(ranked, all_paragraphs, top_k=20, window=1)
         result = await pes.extract_passage_from_paper(
-            claim=claim,
+            claim=context,
             title=paper.get("title") or body.title or "",
-            candidates=candidates,
+            windows=windows,
         )
         result["paper_id"] = str(paper_source.id)
+        result["paper"] = {
+            "pmid": paper.get("pmid") or "",
+            "pmcid": paper.get("pmcid") or "",
+            "doi": paper.get("doi") or "",
+            "title": paper.get("title") or "",
+            "journal": paper.get("journal") or "",
+            "year": paper.get("year") or "",
+            "authors": paper.get("authors") or "",
+            "source": paper.get("source") or "europepmc",
+        }
+        result["claim"] = {
+            "claim_text": context.get("claim_text") or "",
+            "structured_claim": context.get("structured_claim") or {},
+            "object_type": context.get("object_type") or "",
+            "granularity": context.get("granularity") or "",
+        }
+        result["retrieval_summary"] = {
+            **result.get("retrieval_summary", {}),
+            "total_paragraphs": len(all_paragraphs),
+            "top_k": len(windows),
+            "parsed_paragraphs": len(saved),
+        }
         if saved:
             result["source_type"] = "fulltext" if any(p.get("source_scope") == "fulltext" for p in saved) else "abstract"
         result["links"] = {

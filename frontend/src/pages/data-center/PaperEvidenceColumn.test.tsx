@@ -65,7 +65,8 @@ const EXISTING = {
 
 const EXTRACT_OK = {
   overall_direction: 'supports' as const,
-  paper_relevance: 'relevant',
+  paper_relevance: 0.9,
+  assessment: 'relevant',
   source_type: 'abstract' as const,
   passages: [
     {

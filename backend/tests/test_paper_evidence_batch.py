@@ -43,7 +43,8 @@ def _paper(pmid="10001"):
 def _extraction():
     return {
         "overall_direction": "supports",
-        "paper_relevance": "relevant",
+        "paper_relevance": 0.9,
+        "assessment": "relevant",
         "source_type": "abstract",
         "passages": [
             {
@@ -122,9 +123,18 @@ class TestBatchStateMachine:
                     "query": '"memory consolidation"',
                     "info": {},
                 })),
-                patch.object(pes, "build_target_dto", new=AsyncMock(return_value={
+                patch.object(pes, "build_retrieval_context", new=AsyncMock(return_value={
                     "claim_text": "memory consolidation",
-                    "function_term": "memory consolidation",
+                    "structured_claim": {},
+                    "object_type": "connection",
+                    "granularity": "macro",
+                    "source_region": "Hippocampus",
+                    "target_region": "Prefrontal cortex",
+                    "source_region_synonyms": [],
+                    "target_region_synonyms": [],
+                    "function_terms": ["memory consolidation"],
+                    "function_synonyms": [],
+                    "relation_keywords": ["projection"],
                 })),
                 patch.object(pes, "search_papers", new=AsyncMock(return_value=[_paper()])),
                 patch.object(pes, "fetch_fulltext", new=AsyncMock(return_value="")),

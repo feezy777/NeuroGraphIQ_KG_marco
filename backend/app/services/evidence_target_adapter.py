@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import uuid
 
-from sqlalchemy import func, select, text
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.mirror_kg import (
@@ -98,6 +98,7 @@ def _connection_dto(row: MirrorRegionConnection) -> dict:
             ]
         ),
         "relation": "投射连接" if getattr(row, "connection_type", "") else "连接",
+        "connection_type": _clean(getattr(row, "connection_type", "")),
         "directionality": _clean(getattr(row, "directionality", "")),
         "circuit_context": "",
         "function_context": "",
@@ -260,6 +261,84 @@ async def _count_evidence(session: AsyncSession, target_type: str, target_id: uu
             )
         ).scalar_one()
     )
+
+
+async def load_synonyms_for_terms(session: AsyncSession, terms: list[str]) -> dict[str, list[str]]:
+    """Load canonical term + active synonyms from the ontology registry.
+
+    Source of truth is ontology_terms / ontology_term_synonyms — no hard-coded
+    brain-region or function synonym tables are introduced.
+    """
+    clean = [t for t in terms if t and len(t) <= 120]
+    if not clean:
+        return {}
+    rows = (
+        await session.execute(
+            text(
+                "SELECT t.canonical_term_en, s.synonym_text FROM ontology_terms t "
+                "JOIN ontology_term_synonyms s ON s.term_id = t.id "
+                "WHERE t.status='active' AND s.status='active' "
+                "AND (t.canonical_term_en = ANY(:terms) OR s.synonym_text = ANY(:terms))"
+            ),
+            {"terms": clean},
+        )
+    ).all()
+    result: dict[str, list[str]] = {}
+    for canonical, synonym in rows:
+        result.setdefault(canonical, [canonical])
+        if synonym and synonym not in result[canonical]:
+            result[canonical].append(synonym)
+    for term in clean:
+        result.setdefault(term, [term])
+    return result
+
+
+async def build_retrieval_context(
+    session: AsyncSession, target_type: str, target_id: uuid.UUID
+) -> dict:
+    """Build the unified retrieval context from an Evidence Target DTO + ontology."""
+    dto = await build_target_dto(session, target_type, target_id)
+    canonical = dto.get("canonical_terms") or []
+    source = dto.get("source_region") or ""
+    target = dto.get("target_region") or ""
+    fn_terms = [t for t in canonical if t not in (source, target)]
+    synonym_map = await load_synonyms_for_terms(
+        session, [t for t in [source, target] + fn_terms if t]
+    )
+
+    def synonyms_for(term: str) -> list[str]:
+        if not term:
+            return []
+        return [s for s in synonym_map.get(term, [term]) if s != term]
+
+    relation = dto.get("relation") or ""
+    relation_keywords: list[str] = []
+    if relation:
+        relation_keywords.append(relation)
+    if dto.get("directionality") and dto["directionality"] not in ("unknown", ""):
+        relation_keywords.append(dto["directionality"])
+    connection_type = dto.get("connection_type") or ""
+    if connection_type and connection_type not in ("unknown", ""):
+        relation_keywords.append(connection_type)
+
+    return {
+        "claim_text": dto.get("claim_text") or "",
+        "structured_claim": dto.get("structured_claim") or {},
+        "object_type": target_type,
+        "granularity": dto.get("granularity") or "",
+        "source_region": source,
+        "target_region": target,
+        "source_region_synonyms": synonyms_for(source),
+        "target_region_synonyms": synonyms_for(target),
+        "function_terms": fn_terms,
+        "function_synonyms": [s for t in fn_terms for s in synonyms_for(t)],
+        "relation": relation,
+        "relation_keywords": relation_keywords,
+        "directionality": dto.get("directionality") or "",
+        "circuit_context": dto.get("circuit_context") or "",
+        "current_confidence": dto.get("current_confidence"),
+        "existing_evidence": dto.get("existing_evidence", 0),
+    }
 
 
 async def build_search_query(session: AsyncSession, target_type: str, target_id: uuid.UUID) -> str:

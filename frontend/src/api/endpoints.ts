@@ -5308,19 +5308,29 @@ export const extractPaperPassage = (body: {
   title: string
   abstract: string
 }, signal?: AbortSignal) => postJson<{
+  paper_id: string | null
+  paper?: Record<string, unknown> | null
+  claim?: Record<string, unknown> | null
+  retrieval_summary?: Record<string, unknown> | null
   overall_direction: 'supports' | 'partial' | 'contradicts' | 'not_found'
-  paper_relevance: string
+  paper_relevance: number
+  assessment: string | null
   source_type: 'abstract' | 'fulltext' | 'none'
   passages: Array<{
     source_scope: 'abstract' | 'fulltext'
     section_title: string | null
     paragraph_index: number | null
+    paragraph_id: string | null
     passage: string
+    translation_zh: string | null
     direction: 'supports' | 'partial' | 'contradicts' | 'not_found'
+    evidence_level: 'direct' | 'indirect' | 'interpretive' | 'background'
     reason: string
     confidence: number
+    semantic_confidence: number | null
     source_locator: string | null
     source_verified: boolean
+    source_verification_method: string | null
   }>
   parse_status: string
   retry_count: number

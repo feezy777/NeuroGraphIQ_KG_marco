@@ -80,7 +80,8 @@ def test_not_found_rejected():
 def test_multi_passage_schema_valid():
     payload = {
         "overall_direction": "supports",
-        "paper_relevance": "Study directly supports the claim.",
+        "paper_relevance": 0.9,
+        "assessment": "Study directly supports the claim.",
         "passages": [
             {"passage": "The hippocampus is critical for memory consolidation.", "direction": "supports", "reason": "Direct statement", "confidence": 0.9}
         ],
@@ -92,7 +93,7 @@ def test_multi_passage_schema_valid():
 def test_multi_passage_schema_rejects_bad_direction():
     payload = {
         "overall_direction": "supports",
-        "paper_relevance": "x",
+        "paper_relevance": 0.5,
         "passages": [{"passage": "a", "direction": "maybe", "reason": "r", "confidence": 0.5}],
     }
     with pytest.raises(ValidationError):
@@ -102,7 +103,7 @@ def test_multi_passage_schema_rejects_bad_direction():
 def test_parse_multi_tolerates_code_fence_and_prose():
     raw = (
         'Here is the extracted evidence:\n```json\n'
-        '{"overall_direction": "supports", "paper_relevance": "r", '
+        '{"overall_direction": "supports", "paper_relevance": 0.9, "assessment": "r", '
         '"passages": [{"passage": "The hippocampus is critical for memory consolidation.", '
         '"direction": "supports", "reason": "direct", "confidence": 0.9}]}\n```\nHope this helps.'
     )
@@ -113,7 +114,7 @@ def test_parse_multi_tolerates_code_fence_and_prose():
 
 def test_parse_multi_tolerates_trailing_commas():
     raw = (
-        '{"overall_direction": "partial", "paper_relevance": "r", '
+        '{"overall_direction": "partial", "paper_relevance": 0.7, "assessment": "r", '
         '"passages": [{"passage": "a", "direction": "partial", "reason": "r", "confidence": 0.6,},],}'
     )
     model = _parse_multi(raw)
@@ -123,7 +124,7 @@ def test_parse_multi_tolerates_trailing_commas():
 
 def test_parse_multi_extracts_json_object_from_noise():
     raw = (
-        'prefix text {"overall_direction": "contradicts", "paper_relevance": "r", '
+        'prefix text {"overall_direction": "contradicts", "paper_relevance": 0.4, "assessment": "r", '
         '"passages": [{"passage": "a", "direction": "contradicts", "reason": "r", "confidence": 0.4}]} '
         'suffix text'
     )
