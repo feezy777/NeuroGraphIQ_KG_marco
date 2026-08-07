@@ -5292,3 +5292,12 @@ export const extractPaperPassage = (body: {
   retry_count: number
   links?: { pubmed: string | null }
 }>('/api/ontology/evidence/extract', body)
+
+export const getEvidenceQueue = (p: { target_type: string; scope?: string; limit?: number }) =>
+  getJson<{ items: Array<{ target_type: string; target_id: string; label: string; confidence: number | null }> }>(
+    '/api/ontology/evidence/queue',
+    p,
+  )
+
+export const translateEvidenceText = (body: { text: string }) =>
+  postJson<{ translated: string }>('/api/ontology/evidence/translate', body)

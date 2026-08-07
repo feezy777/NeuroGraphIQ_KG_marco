@@ -19,6 +19,7 @@ import {
 import { FormalObjectTableSection } from './FormalObjectTableSection'
 import { FormalObjectDetailDrawer } from './FormalObjectDetailDrawer'
 import { PaperEvidencePanel } from './PaperEvidencePanel'
+import { EvidenceReviewModal } from './EvidenceReviewModal'
 import { FieldCompletionModal } from './FieldCompletionModal'
 import { MultiTargetFieldCompletionModal } from './MultiTargetFieldCompletionModal'
 import { resolveCircuitBundleFromCircuitIds } from './circuitBundleUtils'
@@ -94,6 +95,7 @@ export function MirrorKgPanel({
   const [selected, setSelected] = useState<FormalRow | null>(null)
   const [pendingSource, setPendingSource] = useState<{ type: string; id: string } | null>(null)
   const [evidenceCategory, setEvidenceCategory] = useState<'region' | 'connection' | 'circuit' | 'other'>('connection')
+  const [reviewOpen, setReviewOpen] = useState(false)
   const categoryTypes = useMemo(() => {
     if (mirrorTab !== 'evidence') return undefined
     if (evidenceCategory === 'region') return ['mirror_function', 'region_function']
@@ -282,10 +284,13 @@ export function MirrorKgPanel({
           onFetchAll={handleFetchAll}
           granularityLevel={granularityLevel}
           extraToolbarButtons={mirrorTab === 'evidence' ? (
-            <details>
-              <summary className="btn btn-sm">论文检索工具栏</summary>
-              <PaperEvidencePanel />
-            </details>
+            <>
+              <button type="button" className="btn btn-sm" onClick={() => setReviewOpen(true)}>论文佐证审核</button>
+              <details>
+                <summary className="btn btn-sm">论文检索工具栏</summary>
+                <PaperEvidencePanel />
+              </details>
+            </>
           ) : undefined}
         />
       )}
@@ -334,6 +339,7 @@ export function MirrorKgPanel({
           setDetailCompletionOpen(true)
         }}
       />
+      <EvidenceReviewModal open={reviewOpen} onClose={() => setReviewOpen(false)} />
 
       {mapping && selected && mirrorTab !== 'circuits' && (
         <FieldCompletionModal

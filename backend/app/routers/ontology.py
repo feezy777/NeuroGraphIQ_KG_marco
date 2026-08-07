@@ -19,6 +19,7 @@ from app.schemas.ontology import (
     EvidenceExtractRequest,
     EvidenceAttachRequest,
     BatchTaskCreateRequest,
+    TranslateRequest,
     GroundingListResponse,
     GroundingRead,
     GroundingRunRequest,
@@ -742,3 +743,24 @@ async def paper_evidence_batch_items(
     session: AsyncSession = Depends(get_db),
 ):
     return await pes.list_batch_items(session, task_id, limit=limit, offset=offset)
+
+
+@router.post("/evidence/translate")
+async def paper_evidence_translate(
+    body: TranslateRequest,
+    _auth: str = Depends(require_role("reviewer")),
+):
+    return await pes.translate_text(body.text)
+
+
+@router.get("/evidence/queue")
+async def paper_evidence_queue(
+    target_type: str = Query(...),
+    scope: str = Query(default="low_confidence"),
+    limit: int = Query(default=50, ge=1, le=200),
+    session: AsyncSession = Depends(get_db),
+):
+    try:
+        return await pes.queue_targets(session, target_type, scope, limit)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail={"code": "INVALID_REQUEST", "message": str(exc)})

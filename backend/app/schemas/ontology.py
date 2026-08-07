@@ -154,6 +154,10 @@ class BatchTaskCreateRequest(BaseModel):
     limit: int = Field(default=500, ge=1, le=5000)
 
 
+class TranslateRequest(BaseModel):
+    text: str = Field(min_length=1, max_length=4000)
+
+
 class GroundingRead(BaseModel):
     id: uuid.UUID
     target_type: str

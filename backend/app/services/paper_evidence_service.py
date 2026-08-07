@@ -375,6 +375,42 @@ async def extract_passage(*, term: str, title: str, abstract: str) -> dict:
     }
 
 
+async def translate_text(text: str) -> dict:
+    cfg = get_settings()
+    provider = get_llm_provider("deepseek")
+    system = "You are a professional neuroscience translator. Reply with only the simplified Chinese translation."
+    user = f"Translate the following English passage into simplified Chinese:\n\n{text[:3000]}"
+    result = await provider.complete_text(
+        model=cfg.ontology_residual_model,
+        system_prompt=system,
+        user_prompt=user,
+        temperature=0.1,
+        max_tokens=cfg.ontology_residual_max_tokens,
+        json_mode=False,
+    )
+    return {"translated": (result.raw_text or "").strip()}
+
+
+async def queue_targets(
+    session: AsyncSession, target_type: str, scope: str, limit: int
+) -> dict:
+    ids = await _resolve_scope_ids(session, target_type, scope, limit)
+    model = TARGET_MODELS.get(target_type)
+    items = []
+    for target_id in ids:
+        row = await session.get(model, uuid.UUID(target_id))
+        label = _name_parts(target_type, row)[0] if row is not None else target_id
+        items.append(
+            {
+                "target_type": target_type,
+                "target_id": target_id,
+                "label": label,
+                "confidence": float(row.confidence) if row is not None and getattr(row, "confidence", None) is not None else None,
+            }
+        )
+    return {"items": items}
+
+
 # ---- Batch evidence tasks ----
 
 
