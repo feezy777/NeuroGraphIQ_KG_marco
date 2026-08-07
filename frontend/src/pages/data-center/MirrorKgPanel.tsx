@@ -42,9 +42,9 @@ interface Props {
 }
 
 function sourceTabFor(targetType: string): MirrorKgSubTab | null {
-  if (targetType === 'connection' || targetType === 'projection') return 'connections'
-  if (targetType === 'circuit') return 'circuits'
-  if (targetType === 'region_function') return 'functions'
+  if (targetType === 'connection' || targetType === 'projection' || targetType === 'mirror_connection') return 'connections'
+  if (targetType === 'circuit' || targetType === 'mirror_circuit') return 'circuits'
+  if (targetType === 'region_function' || targetType === 'mirror_function') return 'functions'
   return null
 }
 

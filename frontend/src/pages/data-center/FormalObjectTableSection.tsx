@@ -78,8 +78,18 @@ export function FormalObjectTableSection({
     if (found) {
       onOpenDetail(found)
       onAutoOpenHandled?.()
+      return
     }
-  }, [autoOpenId, items, onOpenDetail, onAutoOpenHandled])
+    if (onFetchAll) {
+      void onFetchAll().then(allRows => {
+        const row = allRows.find(r => String(r.id) === autoOpenId)
+        if (row) {
+          onOpenDetail(row)
+          onAutoOpenHandled?.()
+        }
+      })
+    }
+  }, [autoOpenId, items, onFetchAll, onOpenDetail, onAutoOpenHandled])
 
   const isCircuitBundle = mapping.targetType === 'circuit'
   const isServerPaged = serverTotal != null
