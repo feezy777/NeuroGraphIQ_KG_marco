@@ -93,6 +93,14 @@ export function MirrorKgPanel({
   const [tick, setTick] = useState(0)
   const [selected, setSelected] = useState<FormalRow | null>(null)
   const [pendingSource, setPendingSource] = useState<{ type: string; id: string } | null>(null)
+  const [evidenceCategory, setEvidenceCategory] = useState<'region' | 'connection' | 'circuit' | 'other'>('connection')
+  const categoryTypes = useMemo(() => {
+    if (mirrorTab !== 'evidence') return undefined
+    if (evidenceCategory === 'region') return ['mirror_function', 'region_function']
+    if (evidenceCategory === 'connection') return ['mirror_connection', 'connection', 'projection']
+    if (evidenceCategory === 'circuit') return ['mirror_circuit', 'circuit']
+    return ['mirror_triple', 'triple', 'circuit_step', 'projection_function', 'circuit_function', 'unknown']
+  }, [mirrorTab, evidenceCategory])
   const [detailCompletionOpen, setDetailCompletionOpen] = useState(false)
   const [bundleOpen, setBundleOpen] = useState(false)
   const [bundleLoading, setBundleLoading] = useState(false)
@@ -139,7 +147,7 @@ export function MirrorKgPanel({
   const handleFetchAll = useCallback(async (): Promise<FormalRow[]> => {
     // Preserve the active granularity filter so "select all" covers the SAME filtered
     // set the user sees (e.g. only molecular) — not all granularities. limit 5000 covers max.
-    const params: Record<string, any> = { granularity_level: granularityLevel || undefined, limit: 5000, offset: 0 }
+    const params: Record<string, any> = { granularity_level: granularityLevel || undefined, limit: 5000, offset: 0, evidence_target_types: categoryTypes?.join(',') }
     const result = await activeSub.listApi(params)
     const items = result?.items ?? []
     return items.map((item: any) => ({ ...item, id: item.id ?? '' }))
@@ -174,7 +182,8 @@ export function MirrorKgPanel({
     limit: pageSize,
     offset,
     granularity_level: granularityLevel || undefined,
-  }), [pageSize, offset, granularityLevel])
+    evidence_target_types: categoryTypes?.join(','),
+  }), [pageSize, offset, granularityLevel, categoryTypes])
 
   // Data key changes when sub-tab or page or tick changes
   const dataKey = useMemo(
@@ -227,6 +236,19 @@ export function MirrorKgPanel({
           </button>
         ))}
       </div>
+
+      {/* Evidence category tabs */}
+      {mirrorTab === 'evidence' && (
+        <div className="data-center-subtabbar" style={{ marginTop: 4 }}>
+          {(['region', 'connection', 'circuit', 'other'] as const).map(c => (
+            <button key={c} type="button"
+              className={`data-center-tab${evidenceCategory === c ? ' data-center-tab-active' : ''}`}
+              onClick={() => { setEvidenceCategory(c); setSubIdx(0); setPage(1); }}>
+              {c === 'region' ? '脑区' : c === 'connection' ? '连接' : c === 'circuit' ? '回路' : '其他'}
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* Sub-sub-tabs */}
       <div className="data-center-subtabbar" style={{ marginTop: 4 }}>

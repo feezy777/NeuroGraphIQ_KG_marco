@@ -522,6 +522,7 @@ async def get_triple(
 async def list_evidence(
     evidence_target_type: str | None = None,
     evidence_target_id: uuid.UUID | None = None,
+    evidence_target_types: str | None = Query(default=None),
     resource_id: uuid.UUID | None = None,
     batch_id: uuid.UUID | None = None,
     llm_run_id: uuid.UUID | None = None,
@@ -534,10 +535,12 @@ async def list_evidence(
     session: AsyncSession = Depends(get_db),
 ):
     _limit = None if limit == 0 else limit
+    target_types = [t.strip() for t in (evidence_target_types or "").split(",") if t.strip()] or None
     items, total = await mirror_kg_service.list_mirror_evidence(
         session,
         evidence_target_type=evidence_target_type,
         evidence_target_id=evidence_target_id,
+        evidence_target_types=target_types,
         resource_id=resource_id,
         batch_id=batch_id,
         llm_run_id=llm_run_id,

@@ -3466,6 +3466,7 @@ export const listFinalTriples = (p?: Record<string, string | number | undefined>
 export const listMirrorEvidence = (p?: {
   evidence_target_type?: string
   evidence_target_id?: string
+  evidence_target_types?: string
   llm_run_id?: string
   granularity_level?: string
   evidence_type?: string

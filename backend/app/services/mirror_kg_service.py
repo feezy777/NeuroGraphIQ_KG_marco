@@ -1137,6 +1137,7 @@ async def list_mirror_evidence(
     *,
     evidence_target_type: str | None = None,
     evidence_target_id: uuid.UUID | None = None,
+    evidence_target_types: list[str] | None = None,
     resource_id: uuid.UUID | None = None,
     batch_id: uuid.UUID | None = None,
     llm_run_id: uuid.UUID | None = None,
@@ -1152,6 +1153,8 @@ async def list_mirror_evidence(
         base = base.where(MirrorEvidenceRecord.evidence_target_type == evidence_target_type)
     if evidence_target_id:
         base = base.where(MirrorEvidenceRecord.evidence_target_id == evidence_target_id)
+    if evidence_target_types:
+        base = base.where(MirrorEvidenceRecord.evidence_target_type.in_(evidence_target_types))
     if resource_id:
         base = base.where(MirrorEvidenceRecord.resource_id == resource_id)
     if batch_id:
