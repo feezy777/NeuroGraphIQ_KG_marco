@@ -18,6 +18,7 @@ from app.schemas.ontology import (
     EnumReplaceRequest,
     EvidenceExtractRequest,
     EvidenceAttachRequest,
+    BatchTaskCreateRequest,
     GroundingListResponse,
     GroundingRead,
     GroundingRunRequest,
@@ -683,3 +684,57 @@ async def paper_evidence_extract(
         raise HTTPException(status_code=400, detail={"code": "INVALID_REQUEST", "message": str(exc)})
     except httpx.HTTPError as exc:
         raise HTTPException(status_code=502, detail={"code": "PAPER_API_ERROR", "message": str(exc)})
+
+
+@router.post("/evidence/batch")
+async def paper_evidence_batch_create(
+    body: BatchTaskCreateRequest,
+    session: AsyncSession = Depends(get_db),
+    _auth: str = Depends(require_role("reviewer")),
+):
+    try:
+        return await pes.create_batch_task(
+            session,
+            target_type=body.target_type,
+            scope=body.scope,
+            mode=body.mode,
+            max_papers_per_object=body.max_papers_per_object,
+            created_by=None,
+            limit=body.limit,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail={"code": "INVALID_REQUEST", "message": str(exc)})
+
+
+@router.post("/evidence/batch/{task_id}/run")
+async def paper_evidence_batch_run(
+    task_id: str,
+    limit: int = Query(default=20, ge=1, le=100),
+    session: AsyncSession = Depends(get_db),
+    _auth: str = Depends(require_role("reviewer")),
+):
+    try:
+        return await pes.run_batch_step(session, task_id, limit=limit)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail={"code": "INVALID_REQUEST", "message": str(exc)})
+
+
+@router.get("/evidence/batch/{task_id}")
+async def paper_evidence_batch_get(
+    task_id: str,
+    session: AsyncSession = Depends(get_db),
+):
+    try:
+        return await pes.get_batch_task(session, task_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail={"code": "INVALID_REQUEST", "message": str(exc)})
+
+
+@router.get("/evidence/batch/{task_id}/items")
+async def paper_evidence_batch_items(
+    task_id: str,
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+    session: AsyncSession = Depends(get_db),
+):
+    return await pes.list_batch_items(session, task_id, limit=limit, offset=offset)

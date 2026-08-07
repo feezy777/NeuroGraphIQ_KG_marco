@@ -11,6 +11,7 @@ import httpx
 from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import text
 
 from app.models.mirror_kg import (
     MirrorEvidenceRecord,
@@ -323,7 +324,7 @@ async def extract_passage(*, term: str, title: str, abstract: str) -> dict:
     parse_status = "provider_error"
     retry_count = 0
     raw_response = ""
-    for attempt in range(2):
+    for attempt in range(3):
         retry_count = attempt
         try:
             if attempt == 0:
@@ -362,7 +363,7 @@ async def extract_passage(*, term: str, title: str, abstract: str) -> dict:
             break
         except (ValidationError, ValueError, json.JSONDecodeError):
             parse_status = "parse_error"
-            if attempt == 0:
+            if attempt < 2:
                 await asyncio.sleep(cfg.ontology_residual_backoff_seconds)
     if parsed is None:
         raise ValueError(f"passage extraction failed: {parse_status}")
@@ -371,4 +372,235 @@ async def extract_passage(*, term: str, title: str, abstract: str) -> dict:
         "parse_status": parse_status,
         "retry_count": retry_count,
         "raw_response": raw_response[:1000],
+    }
+
+
+# ---- Batch evidence tasks ----
+
+
+async def _resolve_scope_ids(
+    session: AsyncSession, target_type: str, scope: str, limit: int
+) -> list[str]:
+    table = TARGET_MODELS.get(target_type)
+    if table is None:
+        raise ValueError(f"unsupported target_type: {target_type}")
+    table_name = table.__tablename__
+    where = ""
+    if scope == "low_confidence":
+        where = "WHERE confidence < 0.5"
+    elif scope == "all_ungrounded":
+        where = "WHERE term_id IS NULL"
+    rows = (
+        await session.execute(
+            text(f"SELECT id::text FROM {table_name} {where} ORDER BY created_at DESC LIMIT :lim"),
+            {"lim": limit},
+        )
+    ).all()
+    return [str(r[0]) for r in rows]
+
+
+async def create_batch_task(
+    session: AsyncSession,
+    *,
+    target_type: str,
+    scope: str,
+    mode: str,
+    max_papers_per_object: int,
+    created_by: str | None = None,
+    limit: int = 500,
+) -> dict:
+    ids = await _resolve_scope_ids(session, target_type, scope, limit)
+    task_id = (
+        await session.execute(
+            text(
+                "INSERT INTO paper_evidence_tasks "
+                "(target_type, scope, mode, max_papers_per_object, status, created_by) "
+                "VALUES (:tt, :scope, :mode, :maxp, 'pending', :cb) RETURNING id::text"
+            ),
+            {"tt": target_type, "scope": scope, "mode": mode, "maxp": max_papers_per_object, "cb": created_by},
+        )
+    ).scalar_one()
+    for target_id in ids:
+        await session.execute(
+            text(
+                "INSERT INTO paper_evidence_task_items (task_id, target_type, target_id) "
+                "VALUES (:tid, :tt, :oid)"
+            ),
+            {"tid": task_id, "tt": target_type, "oid": target_id},
+        )
+    await session.commit()
+    return {"task_id": task_id, "target_count": len(ids)}
+
+
+async def run_batch_step(
+    session: AsyncSession, task_id: str, limit: int = 20
+) -> dict:
+    task = (
+        await session.execute(
+            text(
+                "SELECT target_type, mode, max_papers_per_object FROM paper_evidence_tasks "
+                "WHERE id::text = :tid"
+            ),
+            {"tid": task_id},
+        )
+    ).first()
+    if task is None:
+        raise ValueError("task not found")
+    target_type, mode, max_papers = task[0], task[1], task[2]
+    rows = (
+        await session.execute(
+            text(
+                "SELECT id::text, target_id::text FROM paper_evidence_task_items "
+                "WHERE task_id::text = :tid AND status = 'pending' LIMIT :lim"
+            ),
+            {"tid": task_id, "lim": limit},
+        )
+    ).all()
+    processed = done = failed = evidence_created = 0
+    for item_id, target_id in rows:
+        processed += 1
+        try:
+            info = await pack_target_info(
+                session, target_type, uuid.UUID(target_id), mode=mode
+            )
+            papers = await search_papers(info["query"], limit=max_papers)
+            if not papers:
+                done += 1
+                await session.execute(
+                    text(
+                        "UPDATE paper_evidence_task_items SET status='no_paper', updated_at=now() "
+                        "WHERE id::text = :iid"
+                    ),
+                    {"iid": item_id},
+                )
+                continue
+            paper = papers[0]
+            abstract = paper.get("abstract") or ""
+            extraction = await extract_passage(
+                term=info["function_term"], title=paper.get("title") or "", abstract=abstract
+            )
+            if extraction["direction"] == "not_found":
+                done += 1
+                await session.execute(
+                    text(
+                        "UPDATE paper_evidence_task_items SET status='no_evidence', pmid=:pmid, "
+                        "title=:title, abstract=:abstract, passage=:passage, direction=:dir, "
+                        "confidence=:conf, updated_at=now() WHERE id::text = :iid"
+                    ),
+                    {"iid": item_id, "pmid": paper.get("pmid") or "", "title": paper.get("title") or "",
+                     "abstract": abstract, "passage": extraction["passage"],
+                     "dir": extraction["direction"], "conf": extraction["confidence"]},
+                )
+                continue
+            attached = await attach_evidence(
+                session,
+                target_type=target_type,
+                target_id=uuid.UUID(target_id),
+                pmid=paper.get("pmid") or "",
+                excerpt=extraction["passage"],
+                direction=extraction["direction"],
+                mode=mode,
+                suggested_confidence=extraction["confidence"],
+                operator_id="batch",
+            )
+            evidence_created += 1
+            done += 1
+            await session.execute(
+                text(
+                    "UPDATE paper_evidence_task_items SET status='done', pmid=:pmid, title=:title, "
+                    "abstract=:abstract, passage=:passage, direction=:dir, confidence=:conf, "
+                    "evidence_id=:eid, updated_at=now() WHERE id::text = :iid"
+                ),
+                {"iid": item_id, "pmid": paper.get("pmid") or "", "title": paper.get("title") or "",
+                 "abstract": abstract, "passage": extraction["passage"], "dir": extraction["direction"],
+                 "conf": extraction["confidence"], "eid": attached["evidence_id"]},
+            )
+        except Exception as exc:  # noqa: BLE001
+            failed += 1
+            await session.execute(
+                text(
+                    "UPDATE paper_evidence_task_items SET status='failed', error_message=:err, "
+                    "updated_at=now() WHERE id::text = :iid"
+                ),
+                {"iid": item_id, "err": str(exc)[:500]},
+            )
+        await session.commit()
+    return {
+        "task_id": task_id,
+        "processed": processed,
+        "done": done,
+        "failed": failed,
+        "evidence_created": evidence_created,
+    }
+
+
+async def get_batch_task(session: AsyncSession, task_id: str) -> dict:
+    task = (
+        await session.execute(
+            text(
+                "SELECT id::text, target_type, scope, mode, max_papers_per_object, status, summary, "
+                "created_at, started_at, finished_at, error_message FROM paper_evidence_tasks "
+                "WHERE id::text = :tid"
+            ),
+            {"tid": task_id},
+        )
+    ).first()
+    if task is None:
+        raise ValueError("task not found")
+    counts = (
+        await session.execute(
+            text(
+                "SELECT status, COUNT(*) FROM paper_evidence_task_items "
+                "WHERE task_id::text = :tid GROUP BY 1"
+            ),
+            {"tid": task_id},
+        )
+    ).all()
+    return {
+        "task": {
+            "id": task[0],
+            "target_type": task[1],
+            "scope": task[2],
+            "mode": task[3],
+            "max_papers_per_object": task[4],
+            "status": task[5],
+            "summary": task[6],
+            "created_at": task[7].isoformat() if task[7] else None,
+        },
+        "counts": {r[0]: r[1] for r in counts},
+    }
+
+
+async def list_batch_items(
+    session: AsyncSession, task_id: str, limit: int = 50, offset: int = 0
+) -> dict:
+    rows = (
+        await session.execute(
+            text(
+                "SELECT id::text, target_type, target_id::text, status, pmid, title, passage, "
+                "direction, confidence, evidence_id::text, error_message, updated_at "
+                "FROM paper_evidence_task_items WHERE task_id::text = :tid "
+                "ORDER BY updated_at DESC LIMIT :lim OFFSET :off"
+            ),
+            {"tid": task_id, "lim": limit, "off": offset},
+        )
+    ).all()
+    return {
+        "items": [
+            {
+                "id": r[0],
+                "target_type": r[1],
+                "target_id": r[2],
+                "status": r[3],
+                "pmid": r[4],
+                "title": r[5],
+                "passage": r[6],
+                "direction": r[7],
+                "confidence": float(r[8]) if r[8] is not None else None,
+                "evidence_id": r[9],
+                "error_message": r[10],
+                "updated_at": r[11].isoformat() if r[11] else None,
+            }
+            for r in rows
+        ]
     }

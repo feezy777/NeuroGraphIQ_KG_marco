@@ -146,6 +146,14 @@ class EvidenceExtractRequest(BaseModel):
     abstract: str
 
 
+class BatchTaskCreateRequest(BaseModel):
+    target_type: str
+    scope: str = "all"
+    mode: str = "function"
+    max_papers_per_object: int = Field(default=3, ge=1, le=10)
+    limit: int = Field(default=500, ge=1, le=5000)
+
+
 class GroundingRead(BaseModel):
     id: uuid.UUID
     target_type: str
