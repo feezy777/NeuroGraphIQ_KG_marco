@@ -56,9 +56,17 @@ function navToQuery(nav: DataCenterNavState): Record<string, string | undefined>
   }
 }
 
+function macroTabFor(targetType: string): MacroClinicalSubTab | null {
+  if (targetType === 'projection_function') return 'projection_functions'
+  if (targetType === 'circuit_function') return 'circuit_functions'
+  if (targetType === 'circuit_step') return 'circuit_steps'
+  return null
+}
+
 export function DataCenterPage() {
   const { t } = useI18n()
   const [nav, setNav] = useState<DataCenterNavState>(() => parseNavFromUrl())
+  const [pendingMacroId, setPendingMacroId] = useState<string | null>(null)
   const { granularity } = useGlobalGranularity()
   const { counts, loading, refresh } = useDataCenterCounts(granularity)
 
@@ -100,6 +108,12 @@ export function DataCenterPage() {
             resourceId={nav.resourceId}
             sourceAtlas={nav.sourceAtlas}
             granularityLevel={granularity}
+            onJumpToMacro={(targetType, targetId) => {
+              const macroTab = macroTabFor(targetType)
+              if (!macroTab) return
+              updateNav({ tab: 'macro', macroTab })
+              setPendingMacroId(targetId)
+            }}
             onFilterChange={patch => updateNav({
               batchId: patch.batchId ?? nav.batchId,
               resourceId: patch.resourceId ?? nav.resourceId,
@@ -116,6 +130,8 @@ export function DataCenterPage() {
             resourceId={nav.resourceId}
             sourceAtlas={nav.sourceAtlas}
             granularityLevel={granularity}
+            autoOpenId={pendingMacroId}
+            onAutoOpenHandled={() => setPendingMacroId(null)}
             onFilterChange={patch => updateNav({
               batchId: patch.batchId ?? nav.batchId,
               resourceId: patch.resourceId ?? nav.resourceId,

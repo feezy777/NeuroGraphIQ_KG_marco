@@ -73,6 +73,8 @@ interface Props {
   sourceAtlas: string
 
   granularityLevel: string
+  autoOpenId?: string | null
+  onAutoOpenHandled?: () => void
 
   onFilterChange: (patch: Partial<{ batchId: string; resourceId: string; sourceAtlas: string; granularityLevel: string }>) => void
 
@@ -141,6 +143,8 @@ export function MacroClinicalDataPanel({
   sourceAtlas,
 
   granularityLevel,
+  autoOpenId,
+  onAutoOpenHandled,
 
   onFilterChange,
 
@@ -487,6 +491,8 @@ export function MacroClinicalDataPanel({
           resetKeys={resetKeys}
 
           loading={formalTabState.circuit_steps.loading}
+          autoOpenId={autoOpenId}
+          onAutoOpenHandled={onAutoOpenHandled}
 
           error={formalTabState.circuit_steps.error}
 
@@ -514,6 +520,8 @@ export function MacroClinicalDataPanel({
           resetKeys={resetKeys}
 
           loading={formalTabState.projection_functions.loading}
+          autoOpenId={autoOpenId}
+          onAutoOpenHandled={onAutoOpenHandled}
 
           error={formalTabState.projection_functions.error}
 
@@ -541,6 +549,8 @@ export function MacroClinicalDataPanel({
           resetKeys={resetKeys}
 
           loading={formalTabState.memberships.loading}
+          autoOpenId={autoOpenId}
+          onAutoOpenHandled={onAutoOpenHandled}
 
           error={formalTabState.memberships.error}
 
@@ -591,6 +601,8 @@ export function MacroClinicalDataPanel({
           resetKeys={resetKeys}
 
           loading={formalTabState.circuit_functions.loading}
+          autoOpenId={autoOpenId}
+          onAutoOpenHandled={onAutoOpenHandled}
 
           error={formalTabState.circuit_functions.error}
 

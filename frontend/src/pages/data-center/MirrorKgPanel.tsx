@@ -35,6 +35,7 @@ import type { MirrorKgSubTab } from './dataCenterTypes'
 interface Props {
   mirrorTab: MirrorKgSubTab
   onMirrorTabChange: (tab: MirrorKgSubTab) => void
+  onJumpToMacro?: (targetType: string, targetId: string) => void
   batchId: string
   resourceId: string
   sourceAtlas: string
@@ -75,6 +76,7 @@ const SUB_ITEM_DEFS: Record<MirrorKgSubTab, { key: string; label: string; type: 
 export function MirrorKgPanel({
   mirrorTab,
   onMirrorTabChange,
+  onJumpToMacro,
   batchId,
   resourceId,
   sourceAtlas,
@@ -278,9 +280,14 @@ export function MirrorKgPanel({
         }
         onOpenSource={(targetType, targetId) => {
           const tab = sourceTabFor(targetType)
-          if (!tab) return
-          onMirrorTabChange(tab)
-          setPendingSource({ type: targetType, id: targetId })
+          if (tab) {
+            onMirrorTabChange(tab)
+            setPendingSource({ type: targetType, id: targetId })
+            return
+          }
+          if (onJumpToMacro && ['projection_function', 'circuit_function', 'circuit_step'].includes(targetType)) {
+            onJumpToMacro(targetType, targetId)
+          }
         }}
         onFieldCompletion={() => {
           if (mirrorTab === 'circuits' && selected) {
