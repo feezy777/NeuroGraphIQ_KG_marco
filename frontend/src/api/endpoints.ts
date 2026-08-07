@@ -5257,6 +5257,28 @@ export interface PaperEvidenceItem {
   evidence_text: string
   direction: string | null
   evidence_level: string | null
+  model_direction: string | null
+  model_assessment: string | null
+  reviewer_note: string | null
+  claim_version: string | null
+  claim_text_snapshot: string | null
+  claim_components_snapshot: Array<{
+    component_type: string
+    statement: string
+    required: boolean
+    metadata: Record<string, unknown>
+  }> | null
+  coverage_summary_snapshot: {
+    required_components: string[]
+    supported_components: string[]
+    contradicted_components: string[]
+    uncovered_components: string[]
+    coverage_ratio: number
+    has_conflict: boolean
+    full_claim_supported: boolean
+    overall_direction: string
+  } | null
+  coverage_formula_version: string | null
   verification_status: string | null
   pmid: string | null
   doi: string | null
@@ -5325,6 +5347,10 @@ export const attachPaperEvidence = (body: {
   target_id: string
   pmid: string
   direction: 'supports' | 'partial' | 'contradicts' | 'mixed' | 'not_found'
+  evidence_level: 'direct' | 'indirect' | 'interpretive' | 'background'
+  model_direction?: 'supports' | 'partial' | 'contradicts' | 'mixed' | 'not_found' | null
+  model_assessment?: string | null
+  reviewer_note?: string | null
   reviewer_confidence: number
   passages: EvidencePassageInput[]
 }) => postJson<PaperAttachResponse>('/api/ontology/evidence/attach', body)

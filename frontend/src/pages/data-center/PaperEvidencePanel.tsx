@@ -57,6 +57,7 @@ export function PaperEvidencePanel() {
         target_id: targetId.trim(),
         pmid: selectedPmid,
         direction: direction as 'supports' | 'partial' | 'contradicts' | 'not_found',
+        evidence_level: 'indirect',
         reviewer_confidence: parseFloat(confidence) || 0,
         passages: [{
           source_scope: 'abstract' as const,

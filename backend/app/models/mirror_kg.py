@@ -288,6 +288,14 @@ class MirrorEvidenceRecord(Base):
     uncertainty_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     evidence_direction: Mapped[str | None] = mapped_column(String(16), nullable=True)
     evidence_level: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    model_direction: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    model_assessment: Mapped[str | None] = mapped_column(Text, nullable=True)
+    reviewer_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    claim_version: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    claim_text_snapshot: Mapped[str | None] = mapped_column(Text, nullable=True)
+    claim_components_snapshot: Mapped[list[dict] | None] = mapped_column(JSONB, nullable=True)
+    coverage_summary_snapshot: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+    coverage_formula_version: Mapped[str | None] = mapped_column(String(64), nullable=True)
     verification_status: Mapped[str] = mapped_column(String(16), nullable=False, default="pending")
     paper_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),

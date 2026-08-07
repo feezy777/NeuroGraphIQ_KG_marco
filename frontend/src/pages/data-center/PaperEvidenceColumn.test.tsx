@@ -33,6 +33,26 @@ const EXISTING = {
   evidence_id: 'e1',
   evidence_text: '[论文证据:e1] Paper A | 12345 | 10.1000/xyz | supports | A real abstract sentence…',
   direction: 'supports',
+  model_direction: 'mixed',
+  model_assessment: 'model saw conflict',
+  reviewer_note: 'human overrides model',
+  claim_version: 'claim_v1',
+  claim_text_snapshot: '历史审核时的 Claim 快照',
+  claim_components_snapshot: [
+    { component_type: 'source_region', statement: 'BLA', required: true, metadata: {} },
+    { component_type: 'function', statement: 'fear extinction', required: true, metadata: {} },
+  ],
+  coverage_summary_snapshot: {
+    required_components: ['source_region', 'function'],
+    supported_components: ['source_region'],
+    contradicted_components: ['function'],
+    uncovered_components: ['function'],
+    coverage_ratio: 0.5,
+    has_conflict: true,
+    full_claim_supported: false,
+    overall_direction: 'mixed',
+  },
+  coverage_formula_version: 'paper_evidence_coverage_v1',
   verification_status: 'human_verified',
   pmid: '12345',
   doi: '10.1000/xyz',
@@ -144,6 +164,10 @@ describe('PaperEvidenceColumn 对象抽屉证据列', () => {
     expect(screen.getByText('关于连接和功能的真实摘要句。')).toBeTruthy()
     expect(screen.getByText('A real abstract sentence about connectivity and function.')).toBeTruthy()
     expect(screen.getByText('reviewer-1')).toBeTruthy()
+    expect(screen.getByText('历史审核时的 Claim 快照')).toBeTruthy()
+    expect(screen.getByText(/人工调整了 AI 初判/)).toBeTruthy()
+    expect(screen.getByText(/人工覆盖了系统 Coverage 判断/)).toBeTruthy()
+    expect(screen.getByText('human overrides model')).toBeTruthy()
   })
 
   it('撤销证据使用确认对话框并调用回滚接口，随后刷新列表', async () => {

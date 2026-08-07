@@ -185,6 +185,10 @@ class EvidenceAttachRequest(BaseModel):
     target_id: uuid.UUID
     pmid: str
     direction: Literal["supports", "partial", "contradicts", "mixed", "not_found"]
+    evidence_level: Literal["direct", "indirect", "interpretive", "background"] = "indirect"
+    model_direction: Literal["supports", "partial", "contradicts", "mixed", "not_found"] | None = None
+    model_assessment: str | None = None
+    reviewer_note: str | None = None
     reviewer_confidence: float = Field(ge=0.0, le=1.0)
     passages: list[EvidencePassageItem]
 

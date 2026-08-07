@@ -646,6 +646,10 @@ async def attach_evidence(
     mode: str = "function",
     operator_id: str | None = None,
     verification_status: str = "human_verified",
+    evidence_level: str | None = None,
+    model_direction: str | None = None,
+    model_assessment: str | None = None,
+    reviewer_note: str | None = None,
 ) -> dict:
     # 1) verify paper metadata
     paper = await verify_paper(pmid)
@@ -659,6 +663,11 @@ async def attach_evidence(
     row = await session.get(model, target_id)
     if row is None:
         raise ValueError("target not found")
+    # backend-authoritative claim snapshot (never trusts client claim_text)
+    claim = await build_target_dto(session, target_type, target_id)
+    claim_components = claim.get("claim_components") or []
+    claim_version = claim.get("claim_version") or "claim_v1"
+    claim_text = claim.get("claim_text") or ""
     # 2) re-verify passages against source (backend never trusts the client)
     source, source_scope = await _load_source(pmid)
     if not source:
@@ -680,6 +689,24 @@ async def attach_evidence(
         paper_passage_ids = {r.text_hash: r.id for r in hash_rows}
     for p in verified:
         p["paper_passage_id"] = paper_passage_ids.get(p["passage_hash"])
+        allowed = {c["component_type"] for c in claim_components}
+        declared = p.get("supported_components") or []
+        if not declared:
+            # legacy clients without component annotations: treat as supporting the whole claim
+            declared = [c["component_type"] for c in claim_components]
+        p["supported_components"] = [
+            c for c in declared if c in allowed
+        ]
+    # backend-authoritative coverage snapshot from human-final passages
+    coverage = compute_coverage_summary(claim_components, verified)
+    coverage_overall = aggregate_overall_direction(coverage, verified)
+    coverage_snapshot = {**coverage, "overall_direction": coverage_overall}
+    if verification_status == "human_verified":
+        if direction != coverage_overall and not (reviewer_note or "").strip():
+            raise ValueError(
+                f"reviewer direction ({direction}) differs from coverage overall "
+                f"({coverage_overall}); reviewer_note is required for manual override"
+            )
     hashes = [p["passage_hash"] for p in verified]
     duplicate_count = await _count_duplicate_hashes(session, target_type, target_id, hashes)
     if duplicate_count:
@@ -700,7 +727,16 @@ async def attach_evidence(
         evidence_type="paper_verification",
         evidence_text="",
         evidence_direction=direction,
-        evidence_level=next((p.get("evidence_level") for p in verified if p.get("evidence_level")), "indirect"),
+        evidence_level=evidence_level
+        or next((p.get("evidence_level") for p in verified if p.get("evidence_level")), "indirect"),
+        model_direction=model_direction,
+        model_assessment=model_assessment,
+        reviewer_note=reviewer_note,
+        claim_version=claim_version,
+        claim_text_snapshot=claim_text,
+        claim_components_snapshot=claim_components,
+        coverage_summary_snapshot=coverage_snapshot,
+        coverage_formula_version="paper_evidence_coverage_v1",
         verification_status=verification_status,
         paper_id=paper_id,
         paper_source=paper["source"],
@@ -792,12 +828,20 @@ async def attach_evidence(
             after_data={
                 "confidence": float(row.confidence) if getattr(row, "confidence", None) is not None else None,
                 "direction": direction,
+                "evidence_level": record.evidence_level,
+                "model_direction": model_direction,
                 "reviewer_confidence": reviewer_confidence,
                 "passage_count": len(verified),
                 "verification_status": record.verification_status,
+                "claim_version": claim_version,
+                "coverage": coverage_snapshot,
+                "override": direction != coverage_overall,
             },
             operator_id=operator_id,
-            reason="paper evidence attached after human review",
+            reason=(
+                f"paper evidence attached after human review"
+                + (f"; override reason: {reviewer_note}" if direction != coverage_overall else "")
+            ),
         )
         await _write_validation_record(
             session,
@@ -1149,6 +1193,14 @@ async def list_paper_evidence(
                 "evidence_text": r.evidence_text,
                 "direction": r.evidence_direction,
                 "evidence_level": r.evidence_level,
+                "model_direction": r.model_direction,
+                "model_assessment": r.model_assessment,
+                "reviewer_note": r.reviewer_note,
+                "claim_version": r.claim_version,
+                "claim_text_snapshot": r.claim_text_snapshot,
+                "claim_components_snapshot": r.claim_components_snapshot,
+                "coverage_summary_snapshot": r.coverage_summary_snapshot,
+                "coverage_formula_version": r.coverage_formula_version,
                 "verification_status": r.verification_status,
                 "paper_id": str(r.paper_id) if r.paper_id else None,
                 "pmid": r.paper_pmid,
@@ -1449,9 +1501,9 @@ def aggregate_overall_direction(coverage: dict, passages: list[dict]) -> str:
     supported = set(coverage.get("supported_components") or [])
     contradicted = set(coverage.get("contradicted_components") or [])
     if required <= supported:
-        return "support"
+        return "supports"
     if contradicted and contradicted >= required and not supported:
-        return "contradict"
+        return "contradicts"
     if supported or contradicted:
         return "partial"
     return "not_found"

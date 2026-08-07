@@ -103,6 +103,8 @@ export function EvidenceReviewModal({ open, onClose, initialItems, initialTaskId
   const [selectedHashes, setSelectedHashes] = useState<Set<string>>(new Set())
   const [translations, setTranslations] = useState<Record<string, string>>({})
   const [direction, setDirection] = useState<Direction>('supports')
+  const [modelDirection, setModelDirection] = useState<Direction | null>(null)
+  const [modelAssessment, setModelAssessment] = useState<string | null>(null)
   const [evidenceLevel, setEvidenceLevel] = useState<EvidenceLevel>('indirect')
   const [confidence, setConfidence] = useState('0.8')
   const [note, setNote] = useState('')
@@ -437,6 +439,9 @@ export function EvidenceReviewModal({ open, onClose, initialItems, initialTaskId
       }))
       setPassages(mapped)
       setSelectedHashes(new Set(mapped.filter(p => p.source_verified).map(p => p.hash)))
+      setModelDirection(r.overall_direction)
+      setModelAssessment(r.assessment)
+      setDirection(r.overall_direction)
       setStep(3)
       const verified = mapped.filter(p => p.source_verified).length
       setMessage(`找到 ${mapped.length} 个候选证据片段：${verified} 个已通过原文核验，${mapped.length - verified} 个未通过核验`)
@@ -555,6 +560,10 @@ export function EvidenceReviewModal({ open, onClose, initialItems, initialTaskId
         target_id: current.target_id,
         pmid: selectedPmid,
         direction,
+        evidence_level: evidenceLevel,
+        model_direction: modelDirection,
+        model_assessment: modelAssessment,
+        reviewer_note: note || null,
         reviewer_confidence: parseFloat(confidence) || 0,
         passages: body,
       })
@@ -578,7 +587,7 @@ export function EvidenceReviewModal({ open, onClose, initialItems, initialTaskId
     } finally {
       setBusy(null)
     }
-  }, [current, selectedPmid, selectedPassages, direction, confidence, preview, queue, idx, autoNext, loadEvidenceMeta, goto])
+  }, [current, selectedPmid, selectedPassages, direction, evidenceLevel, modelDirection, modelAssessment, note, confidence, preview, queue, idx, autoNext, loadEvidenceMeta, goto])
 
   const saveDraft = useCallback(() => {
     saveCurrentDraft(idx)
@@ -819,7 +828,7 @@ export function EvidenceReviewModal({ open, onClose, initialItems, initialTaskId
           <div className="ew-right">
             <ReviewerPanel
               direction={direction}
-              modelDirection={result ? tmpDirection : null}
+              modelDirection={modelDirection}
               onDirectionChange={d => { setDirection(d); setDirty(true); audit('EVIDENCE_DIRECTION_EDIT', { direction: d }) }}
               evidenceLevel={evidenceLevel}
               onEvidenceLevelChange={l => { setEvidenceLevel(l); setDirty(true) }}

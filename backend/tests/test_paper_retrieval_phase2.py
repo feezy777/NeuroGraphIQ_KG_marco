@@ -389,7 +389,7 @@ def test_controlled_e2e_retrieval_and_judgment(monkeypatch):
                     title=paper["title"],
                     windows=windows,
                 )
-                assert result["overall_direction"] == "support"
+                assert result["overall_direction"] == "supports"
                 assert result["paper_relevance"] == pytest.approx(0.9)
                 assert result["assessment"]
                 assert len(result["passages"]) >= 2

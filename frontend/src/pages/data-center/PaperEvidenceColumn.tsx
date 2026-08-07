@@ -154,6 +154,7 @@ export function PaperEvidenceColumn({ targetType, targetId }: { targetType: stri
         target_id: targetId,
         pmid: selected.pmid,
         direction,
+        evidence_level: 'indirect',
         reviewer_confidence: parseFloat(confidence) || 0,
         passages: body,
       })
@@ -216,6 +217,16 @@ export function PaperEvidenceColumn({ targetType, targetId }: { targetType: stri
         })),
       )
     : null
+
+  // historical snapshot takes priority over live re-computation
+  const snapshotClaimText = detail?.claim_text_snapshot
+  const snapshotComponents = detail?.claim_components_snapshot
+  const snapshotCoverage = detail?.coverage_summary_snapshot
+  const displayClaimText = snapshotClaimText ?? targetDto?.claim_text ?? null
+  const displayComponents = snapshotComponents ?? targetDto?.claim_components ?? []
+  const displayCoverage = (snapshotCoverage ?? detailCoverage) as (typeof detailCoverage & { overall_direction?: string }) | null
+  const modelVsReviewer = detail?.model_direction && detail?.model_direction !== detail?.direction
+  const coverageVsReviewer = displayCoverage && detail?.direction && displayCoverage.overall_direction !== detail.direction
 
   return (
     <div className="pe-column">
@@ -330,15 +341,24 @@ export function PaperEvidenceColumn({ targetType, targetId }: { targetType: stri
               <div className="ontology-detail-row"><span>审核人</span><span>{detail.verification_by ?? '—'}</span></div>
               <div className="ontology-detail-row"><span>入库时间</span><span>{detail.created_at ? new Date(detail.created_at).toLocaleString() : '—'}</span></div>
               <div className="ontology-detail-row"><span>建议置信度</span><span>{detail.suggested_confidence ?? '—'}（{detail.confidence_adjustment_status ?? '—'}）</span></div>
-              {targetDto && (
+              {modelVsReviewer && (
+                <div className="ew-bad">人工调整了 AI 初判：AI 初判 {detail?.model_direction} / 人工结论 {detail?.direction}</div>
+              )}
+              {coverageVsReviewer && (
+                <div className="ew-bad">人工覆盖了系统 Coverage 判断（Coverage：{displayCoverage?.overall_direction} → 人工：{detail?.direction}）</div>
+              )}
+              {detail?.reviewer_note && (
+                <div className="ontology-detail-row"><span>审核备注</span><span>{detail.reviewer_note}</span></div>
+              )}
+              {displayClaimText && (
                 <>
-                  <div className="ontology-detail-row"><span>Claim</span><strong>{targetDto.claim_text}</strong></div>
-                  {detailCoverage && (
+                  <div className="ontology-detail-row"><span>Claim（{detail?.claim_version ?? '审核时快照'}）</span><strong>{displayClaimText}</strong></div>
+                  {displayCoverage && (
                     <div className="ontology-detail-row">
-                      <span>Coverage</span>
+                      <span>Coverage（{detail?.coverage_formula_version ?? 'paper_evidence_coverage_v1'}）</span>
                       <span>
-                        {detailCoverage.supported_components.length}/{detailCoverage.required_components.length} 已覆盖
-                        {detailCoverage.has_conflict ? ' · 存在冲突' : ''}
+                        {displayCoverage.supported_components.length}/{displayCoverage.required_components.length} 已覆盖
+                        {displayCoverage.has_conflict ? ' · 存在冲突' : ''}
                       </span>
                     </div>
                   )}

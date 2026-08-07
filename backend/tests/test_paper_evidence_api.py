@@ -53,6 +53,9 @@ class _FakeResult:
     def scalars(self):
         return _FakeScalars()
 
+    def scalar_one(self):
+        return 0
+
 
 class _FakeScalarOne:
     def __init__(self, value):
