@@ -4,7 +4,8 @@ import { useTaskDetailModal } from '../components/TaskDetailModal'
 import { StatusBadge } from '../components/StatusBadge'
 import { ModelBadge } from '../components/ModelBadge'
 import { CancelConfirmDialog } from '../components/CancelConfirmDialog'
-import { getTaskDef, cancelTask, TASK_TYPE_OPTIONS } from '../services/taskRegistry'
+import { getTaskDef, cancelTask, pauseTask, resumeTask, retryTask, TASK_TYPE_OPTIONS } from '../services/taskRegistry'
+import { EvidenceReviewModal } from './data-center/EvidenceReviewModal'
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -37,7 +38,7 @@ const STATUS_FILTERS: { key: StatusFilter; label: string; color: string; states:
   { key: 'pending', label: '排队中', color: '#d97706', states: ['pending', 'queued'] },
   { key: 'paused', label: '已暂停', color: '#eab308', states: ['paused', 'pause_requested'] },
   { key: 'succeeded', label: '已完成', color: '#16a34a', states: ['succeeded'] },
-  { key: 'partial', label: '部分失败', color: '#f59e0b', states: ['partially_succeeded'] },
+  { key: 'partial', label: '部分失败', color: '#f59e0b', states: ['partially_succeeded', 'partially_failed'] },
   { key: 'failed', label: '失败', color: '#dc2626', states: ['failed', 'cleanup_failed'] },
   { key: 'cancelled', label: '已取消', color: '#9ca3af', states: ['cancelled'] },
 ]
@@ -78,6 +79,7 @@ export function BackgroundTaskCenterPage() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [bulkCancelling, setBulkCancelling] = useState(false)
   const [bulkResult, setBulkResult] = useState<string | null>(null)
+  const [workbenchTaskId, setWorkbenchTaskId] = useState<string | null>(null)
 
   // Filter + sort
   const filtered = useMemo(() => {
@@ -278,6 +280,10 @@ export function BackgroundTaskCenterPage() {
                   const next = new Set(prev); checked ? next.add(id) : next.delete(id); return next
                 })}
                 onClick={() => openTask(task)}
+                onPause={() => { void pauseTask(task) }}
+                onResume={() => { void resumeTask(task) }}
+                onRetry={() => { void retryTask(task) }}
+                onOpenWorkbench={() => setWorkbenchTaskId(task.id)}
                 onViewDrawer={() => setDrawerTask(task)}
                 onCancel={() => setCancelTarget(task)} />
             ))
@@ -299,6 +305,11 @@ export function BackgroundTaskCenterPage() {
       {cancelTarget && (
         <CancelConfirmDialog task={cancelTarget} onClose={() => setCancelTarget(null)} />
       )}
+      <EvidenceReviewModal
+        open={workbenchTaskId !== null}
+        initialTaskId={workbenchTaskId ?? undefined}
+        onClose={() => setWorkbenchTaskId(null)}
+      />
     </div>
   )
 }
@@ -316,8 +327,9 @@ function FilterGroup({ title, children }: { title: string; children: React.React
 
 // ── Task Card ───────────────────────────────────────────────────────────────
 
-function TaskCard({ task, onClick, onViewDrawer, onCancel, selected, onSelect }: {
+function TaskCard({ task, onClick, onViewDrawer, onCancel, onPause, onResume, onRetry, onOpenWorkbench, selected, onSelect }: {
   task: BgTask; onClick: () => void; onViewDrawer: () => void; onCancel: () => void
+  onPause?: () => void; onResume?: () => void; onRetry?: () => void; onOpenWorkbench?: () => void
   selected?: boolean; onSelect?: (id: string, checked: boolean) => void
 }) {
   const taskDef = getTaskDef(task.type)
@@ -325,7 +337,7 @@ function TaskCard({ task, onClick, onViewDrawer, onCancel, selected, onSelect }:
   const isPending = task.status === 'pending' || task.status === 'queued'
   const isPaused = task.status === 'paused' || task.status === 'pause_requested'
   const isFailed = task.status === 'failed' || task.status === 'cleanup_failed'
-  const isPartial = task.status === 'partially_succeeded'
+  const isPartial = task.status === 'partially_succeeded' || task.status === 'partially_failed'
   const isDone = task.status === 'succeeded'
 
   const edgeColor = isRunning || isPending ? '#2563eb'
@@ -386,6 +398,26 @@ function TaskCard({ task, onClick, onViewDrawer, onCancel, selected, onSelect }:
         <button className="btn btn-primary btn-sm" onClick={e => { e.stopPropagation(); onViewDrawer() }}>
           详情
         </button>
+        {taskDef.opensWorkbench && onOpenWorkbench && (
+          <button className="btn btn-sm" onClick={e => { e.stopPropagation(); onOpenWorkbench() }}>
+            打开佐证工作台
+          </button>
+        )}
+        {(isRunning || isPending) && taskDef.canPause && onPause && (
+          <button className="btn btn-sm" onClick={e => { e.stopPropagation(); onPause() }}>
+            暂停
+          </button>
+        )}
+        {isPaused && onResume && (
+          <button className="btn btn-sm" onClick={e => { e.stopPropagation(); onResume() }}>
+            继续
+          </button>
+        )}
+        {(isFailed || isPartial) && onRetry && (
+          <button className="btn btn-sm" onClick={e => { e.stopPropagation(); onRetry() }}>
+            重试失败项
+          </button>
+        )}
         {(isRunning || isPending) && (
           <button className="btn btn-sm" style={{ color: '#dc2626' }} onClick={e => { e.stopPropagation(); onCancel() }}>
             取消

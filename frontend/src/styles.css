@@ -11302,6 +11302,15 @@ input[type="range"]::-webkit-slider-thumb {
 .ew-resize { height: 6px; cursor: ns-resize; background: linear-gradient(180deg, rgba(26, 96, 178, 0.25), rgba(26, 96, 178, 0.05)); touch-action: none; flex: none; }
 .ew-resize:hover { background: linear-gradient(180deg, rgba(26, 96, 178, 0.55), rgba(26, 96, 178, 0.12)); }
 .ew-object-info { border-left: 3px solid var(--primary); background: rgba(26, 96, 178, 0.04); }
+.dc-evidence-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; }
+.dc-evidence-stat { background: #f8fafc; border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; display: flex; flex-direction: column; gap: 2px; }
+.dc-evidence-stat strong { font-size: 18px; color: var(--primary); }
+.dc-evidence-stat span { font-size: 11px; color: var(--muted); }
+.pev-panel { padding: 12px; display: flex; flex-direction: column; gap: 10px; overflow-y: auto; }
+.pev-list { display: flex; flex-direction: column; gap: 6px; }
+.pev-item { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; cursor: pointer; font-size: 12px; }
+.pev-item:hover { border-color: var(--primary); background: #eff6ff; }
+.pev-adjust { display: flex; flex-direction: column; gap: 2px; padding: 6px 8px; border: 1px solid var(--border); border-radius: 6px; margin-bottom: 6px; font-size: 12px; }
 .ew-meta { font-size: 11px; color: var(--muted); }
 .ew-progress { font-size: 12px; font-weight: 600; }
 .ew-step-label { font-size: 12px; color: var(--primary); }
@@ -11334,6 +11343,7 @@ input[type="range"]::-webkit-slider-thumb {
 .ew-passage { border: 1px solid var(--border); border-radius: 8px; padding: 8px; margin-bottom: 8px; }
 .ew-passage-invalid { border-color: var(--danger); background: #fff1f0; }
 .ew-passage-en { font-size: 12px; background: #f8fafc; padding: 6px; border-radius: 6px; margin: 6px 0; }
+.ew-passage-zh { font-size: 12px; color: #334155; background: #f0f9ff; padding: 6px; border-radius: 6px; margin: 4px 0; }
 .ew-trans { width: 100%; min-height: 54px; font-size: 12px; }
 .ew-ok { color: var(--success); font-weight: 600; font-size: 11px; }
 .ew-bad { color: var(--danger); font-weight: 600; font-size: 11px; }

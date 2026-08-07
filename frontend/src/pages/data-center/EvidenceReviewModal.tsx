@@ -2,11 +2,14 @@ import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as
 import {
   attachPaperEvidence,
   attachPaperEvidencePreview,
+  completePaperEvidenceTaskItem,
   extractPaperPassage,
   getEvidenceQueue,
   listPaperEvidence,
+  listPaperEvidenceTaskItems,
   searchPaperEvidence,
   translateEvidenceText,
+  writeEvidenceAudit,
   type AttachPreviewResponse,
   type EvidencePassageInput,
   type PaperSearchResponse,
@@ -25,6 +28,20 @@ interface QueueItem {
 interface QueueEntry extends QueueItem {
   status: QueueStatus
   evidenceCount: number
+  taskItemId?: string
+  draftPmid?: string
+  draftPassages?: Array<{
+    source_scope: 'abstract' | 'fulltext'
+    section_title: string | null
+    paragraph_index: number | null
+    passage: string
+    direction: Direction
+    reason: string
+    confidence: number
+    source_locator: string | null
+    source_verified: boolean
+  }>
+  draftDirection?: Direction
 }
 
 const STORAGE_KEY = 'neurographiq.evidenceWorkbench.queue.v1'
@@ -55,10 +72,11 @@ function loadSaved(): { queue: QueueEntry[]; idx: number } | null {
   }
 }
 
-export function EvidenceReviewModal({ open, onClose, initialItems }: {
+export function EvidenceReviewModal({ open, onClose, initialItems, initialTaskId }: {
   open: boolean
   onClose: () => void
   initialItems?: QueueItem[]
+  initialTaskId?: string
 }) {
   const [queue, setQueue] = useState<QueueEntry[]>([])
   const [idx, setIdx] = useState(0)
@@ -97,8 +115,22 @@ export function EvidenceReviewModal({ open, onClose, initialItems }: {
   const [usedPmids, setUsedPmids] = useState<Set<string>>(new Set())
   const [evidenceText, setEvidenceText] = useState('')
   const bodyRef = useRef<HTMLDivElement | null>(null)
+  const taskIdRef = useRef<string | null>(null)
+  const abortRef = useRef<AbortController | null>(null)
 
   const current = queue[idx]
+
+  const audit = useCallback((actionType: string, afterData: Record<string, unknown>, entityId?: string) => {
+    const eid = entityId ?? current?.target_id
+    if (!eid) return
+    void writeEvidenceAudit({
+      action_type: actionType,
+      entity_type: 'evidence',
+      entity_id: eid,
+      after_data: afterData,
+      reason: 'workbench interaction',
+    }).catch(() => { /* audit is best-effort */ })
+  }, [current])
 
   const persist = useCallback((q: QueueEntry[], i: number) => {
     try {
@@ -131,6 +163,8 @@ export function EvidenceReviewModal({ open, onClose, initialItems }: {
 
   const searchForCurrent = useCallback(async (item: QueueEntry, q: string, itemIdx: number) => {
     if (!item) return false
+    abortRef.current?.abort()
+    abortRef.current = new AbortController()
     setBusy('search')
     setMessage(null)
     try {
@@ -139,7 +173,7 @@ export function EvidenceReviewModal({ open, onClose, initialItems }: {
         target_id: item.target_id,
         limit: 10,
         query_override: q.trim() || undefined,
-      })
+      }, abortRef.current.signal)
       setResult(resp)
       setQuery(q || resp.target_info.query)
       setChips((resp.target_info.query || '').split(' AND ').filter(Boolean))
@@ -164,9 +198,17 @@ export function EvidenceReviewModal({ open, onClose, initialItems }: {
     return searchForCurrent(item, q, i)
   }, [mark, searchForCurrent])
 
-  const initQueue = useCallback(async (items: QueueItem[]) => {
+  const initQueue = useCallback(async (items: Array<QueueItem & { taskItemId?: string; draftPmid?: string; draftPassages?: QueueEntry['draftPassages']; draftDirection?: Direction }>) => {
     const metas = await Promise.all(items.map(loadEvidenceMeta))
-    const enriched = items.map((it, i) => ({ ...it, status: 'pending' as const, evidenceCount: metas[i].count }))
+    const enriched = items.map((it, i) => ({
+      ...it,
+      status: 'pending' as const,
+      evidenceCount: metas[i].count,
+      taskItemId: it.taskItemId,
+      draftPmid: it.draftPmid,
+      draftPassages: it.draftPassages,
+      draftDirection: it.draftDirection,
+    }))
     setQueue(enriched)
     setIdx(0)
     setStep(0)
@@ -182,11 +224,69 @@ export function EvidenceReviewModal({ open, onClose, initialItems }: {
     setUsedPmids(metas[0]?.pmids ?? new Set<string>())
     setEvidenceText(metas[0]?.evidenceText ?? '')
     persist(enriched, 0)
-    if (enriched[0]) void startCurrent(0, enriched[0], '')
+    const first = enriched[0]
+    if (first) {
+      if (first.draftPassages && first.draftPassages.length > 0) {
+        setPassages(first.draftPassages.map((p, k) => ({ ...p, hash: `${p.passage}-${k}` })))
+        setSelectedHashes(new Set(first.draftPassages.map((p, k) => `${p.passage}-${k}`)))
+        setSelectedPmid(first.draftPmid ?? '')
+        setDirection(first.draftDirection ?? 'supports')
+        setStep(2)
+      } else {
+        void startCurrent(0, first, '')
+      }
+    }
   }, [loadEvidenceMeta, persist, startCurrent])
+
+  const loadTaskQueue = useCallback(async (taskId: string) => {
+    setBusy('loading')
+    setMessage(null)
+    try {
+      taskIdRef.current = taskId
+      const r = await listPaperEvidenceTaskItems(taskId, { limit: 200 })
+      const items: Array<QueueItem & { taskItemId: string; draftPmid?: string; draftPassages?: QueueEntry['draftPassages']; draftDirection?: Direction }> = []
+      for (const it of r.items) {
+        const draftPassages = (it.passages_json?.passages ?? [])
+          .filter((p): p is Record<string, unknown> & { passage: string; source_verified: boolean } => Boolean(p.passage))
+          .map(p => ({
+            source_scope: (p.source_scope === 'fulltext' ? 'fulltext' : 'abstract') as 'abstract' | 'fulltext',
+            section_title: (p.section_title as string | null) ?? null,
+            paragraph_index: (p.paragraph_index as number | null) ?? null,
+            passage: p.passage,
+            direction: (['supports', 'partial', 'contradicts', 'not_found'] as const).includes(p.direction as Direction)
+              ? (p.direction as Direction)
+              : 'supports',
+            reason: String(p.reason ?? ''),
+            confidence: Number(p.confidence ?? 0),
+            source_locator: (p.source_locator as string | null) ?? null,
+            source_verified: Boolean(p.source_verified),
+          }))
+        items.push({
+          target_type: it.target_type,
+          target_id: it.target_id,
+          label: it.label || it.target_id,
+          confidence: it.current_confidence,
+          taskItemId: it.id,
+          draftPmid: it.pmid ?? undefined,
+          draftPassages,
+          draftDirection: it.direction as Direction | undefined,
+        })
+      }
+      await initQueue(items)
+      setMessage(`已恢复批量任务，共 ${items.length} 条待审核草稿`)
+    } catch (err) {
+      setMessage(`加载批量任务失败：${err instanceof Error ? err.message : String(err)}`)
+    } finally {
+      setBusy(null)
+    }
+  }, [initQueue])
 
   useEffect(() => {
     if (!open) return
+    if (initialTaskId) {
+      void loadTaskQueue(initialTaskId)
+      return
+    }
     if (initialItems && initialItems.length > 0) {
       void initQueue(initialItems)
       return
@@ -204,7 +304,7 @@ export function EvidenceReviewModal({ open, onClose, initialItems }: {
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, startCurrent])
+  }, [open, startCurrent, initialTaskId, loadTaskQueue])
 
   const loadScopeQueue = useCallback(async (targetType: string, scope: string) => {
     setBusy('loading')
@@ -235,7 +335,14 @@ export function EvidenceReviewModal({ open, onClose, initialItems }: {
     setUsedPmids(meta.pmids)
     setEvidenceText(meta.evidenceText)
     setQueue(q => q.map((e, j) => j === i ? { ...e, evidenceCount: meta.count } : e))
-    if (target.status === 'pending' || target.status === 'failed') {
+    if (target.draftPassages && target.draftPassages.length > 0) {
+      setPassages(target.draftPassages.map((p, k) => ({ ...p, hash: `${p.passage}-${k}` })))
+      setSelectedHashes(new Set(target.draftPassages.map((p, k) => `${p.passage}-${k}`)))
+      setSelectedPmid(target.draftPmid ?? '')
+      setDirection(target.draftDirection ?? 'supports')
+      setStep(2)
+      setMessage('已加载批量提取草稿，请人工审核后入库')
+    } else if (target.status === 'pending' || target.status === 'failed') {
       void startCurrent(i, target, '')
     }
   }, [queue, loadEvidenceMeta, startCurrent])
@@ -244,6 +351,8 @@ export function EvidenceReviewModal({ open, onClose, initialItems }: {
 
   const extract = useCallback(async () => {
     if (!current || !selectedPaper) return
+    abortRef.current?.abort()
+    abortRef.current = new AbortController()
     setBusy('extract')
     setMessage(null)
     try {
@@ -253,7 +362,7 @@ export function EvidenceReviewModal({ open, onClose, initialItems }: {
         pmid: selectedPaper.pmid,
         title: selectedPaper.title,
         abstract: selectedPaper.abstract,
-      })
+      }, abortRef.current.signal)
       const mapped = r.passages.map((p, i) => ({
         ...p,
         source_scope: p.source_scope,
@@ -274,9 +383,11 @@ export function EvidenceReviewModal({ open, onClose, initialItems }: {
   }, [current, selectedPaper, idx, mark])
 
   const translatePassage = useCallback(async (hash: string, text: string) => {
+    abortRef.current?.abort()
+    abortRef.current = new AbortController()
     setBusy('translate')
     try {
-      const r = await translateEvidenceText({ text })
+      const r = await translateEvidenceText({ text }, abortRef.current.signal)
       setTranslations(t => ({ ...t, [hash]: r.translated }))
     } catch (err) {
       setMessage(`翻译失败：${err instanceof Error ? err.message : String(err)}`)
@@ -286,11 +397,13 @@ export function EvidenceReviewModal({ open, onClose, initialItems }: {
   }, [])
 
   const translateAll = useCallback(async () => {
+    abortRef.current?.abort()
+    abortRef.current = new AbortController()
     setBusy('translate')
     try {
       const texts = passages.filter(p => selectedHashes.has(p.hash) && p.source_verified)
       for (const p of texts) {
-        const r = await translateEvidenceText({ text: p.passage })
+        const r = await translateEvidenceText({ text: p.passage }, abortRef.current.signal)
         setTranslations(t => ({ ...t, [p.hash]: r.translated }))
       }
     } catch (err) {
@@ -311,6 +424,8 @@ export function EvidenceReviewModal({ open, onClose, initialItems }: {
       setPreview(null)
       return
     }
+    abortRef.current?.abort()
+    abortRef.current = new AbortController()
     setBusy('preview')
     try {
       const r = await attachPaperEvidencePreview({
@@ -329,7 +444,7 @@ export function EvidenceReviewModal({ open, onClose, initialItems }: {
           source_locator: p.source_locator,
           source_verified: true,
         })),
-      })
+      }, abortRef.current.signal)
       setPreview(r)
     } catch (err) {
       setMessage(`预览失败：${err instanceof Error ? err.message : String(err)}`)
@@ -372,6 +487,13 @@ export function EvidenceReviewModal({ open, onClose, initialItems }: {
       setQueue(q => q.map((e, j) => j === idx ? { ...e, status: 'completed' as const, evidenceCount: meta.count } : e))
       setEvidenceText(meta.evidenceText)
       setConfirmOpen(false)
+      if (taskIdRef.current && current.taskItemId) {
+        try {
+          await completePaperEvidenceTaskItem(taskIdRef.current, current.taskItemId)
+        } catch {
+          // 标记失败不影响入库结果；任务项保持 awaiting_review，可稍后重试
+        }
+      }
       const next = queue.findIndex((e, j) => j > idx && e.status === 'pending')
       if (next >= 0) await goto(next)
       setMessage(`入库成功（${resp.passage_count} 段，置信度 ${resp.confidence ?? '不变'}），自动进入下一条`)
@@ -418,6 +540,10 @@ export function EvidenceReviewModal({ open, onClose, initialItems }: {
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [open, minimized, queue, idx, goto, direction, selectedHashes.size, busy])
+
+  useEffect(() => {
+    return () => { abortRef.current?.abort() }
+  }, [])
 
   const startResize = useCallback((e: ReactPointerEvent<HTMLDivElement>) => {
     e.preventDefault()
@@ -508,7 +634,7 @@ export function EvidenceReviewModal({ open, onClose, initialItems }: {
               <h4>检索关键词</h4>
               <div className="ontology-form-row">
                 <input className="filter-input" value={query} onChange={e => setQuery(e.target.value)} placeholder="Europe PMC 检索式（可编辑）" />
-                <button type="button" className="btn btn-sm" disabled={!current || busy !== null} onClick={() => searchForCurrent(current!, query, idx)}>重新检索</button>
+                <button type="button" className="btn btn-sm" disabled={!current || busy !== null} onClick={() => { audit('EVIDENCE_QUERY_EDIT', { query }); void searchForCurrent(current!, query, idx) }}>重新检索</button>
                 <button type="button" className="btn btn-xs" onClick={() => setChips([])}>清空</button>
               </div>
               <div className="ew-chips">
@@ -535,7 +661,7 @@ export function EvidenceReviewModal({ open, onClose, initialItems }: {
                 <div className="ontology-empty">当前筛选/排除后无论文，请调整筛选条件</div>
               )}
               {visiblePapers.map(p => (
-                <div key={p.pmid} className={`ew-paper ${selectedPmid === p.pmid ? 'ew-paper-active' : ''}`} data-testid="ew-paper" onClick={() => { setSelectedPmid(p.pmid); setPassages([]); setStep(2) }}>
+                <div key={p.pmid} className={`ew-paper ${selectedPmid === p.pmid ? 'ew-paper-active' : ''}`} data-testid="ew-paper" onClick={() => { setSelectedPmid(p.pmid); setPassages([]); setStep(2); audit('EVIDENCE_PAPER_SELECT', { pmid: p.pmid, title: p.title }) }}>
                   <strong>{p.title}</strong>
                   <div>{p.authors}（{p.year}）· {p.journal}</div>
                   <div className="ontology-form-row">
@@ -550,7 +676,7 @@ export function EvidenceReviewModal({ open, onClose, initialItems }: {
               ))}
             </div>
 
-            {selectedPaper && (
+            {(selectedPaper || (current?.draftPassages?.length ?? 0) > 0) && (
               <div className="ew-section">
                 <h4>原文片段（{passages.length}）</h4>
                 <div className="ontology-form-row">
@@ -564,7 +690,10 @@ export function EvidenceReviewModal({ open, onClose, initialItems }: {
                     <div key={p.hash} className={`ew-passage ${!p.source_verified ? 'ew-passage-invalid' : ''}`} data-testid="ew-passage">
                       <label>
                         <input type="checkbox" checked={selected} disabled={!p.source_verified}
-                          onChange={e => setSelectedHashes(prev => { const n = new Set(prev); if (e.target.checked) n.add(p.hash); else n.delete(p.hash); return n })} />
+                          onChange={e => {
+                            setSelectedHashes(prev => { const n = new Set(prev); if (e.target.checked) n.add(p.hash); else n.delete(p.hash); return n })
+                            audit('EVIDENCE_PASSAGE_SELECT', { passage: p.passage.slice(0, 120), selected: e.target.checked })
+                          }} />
                         选择片段
                       </label>
                       <span className="ew-meta">{p.source_scope}{p.section_title ? ` · ${p.section_title}` : ''}{p.paragraph_index != null ? ` · ¶${p.paragraph_index}` : ''} · {DIRECTION_LABEL[p.direction]} · {p.confidence}</span>
@@ -574,7 +703,10 @@ export function EvidenceReviewModal({ open, onClose, initialItems }: {
                       {p.source_locator && <p className="ew-meta">定位：{p.source_locator}</p>}
                       {p.source_verified && (
                         <div className="ontology-form-row">
-                          <textarea className="filter-input ew-trans" value={translations[p.hash] ?? ''} onChange={e => setTranslations(t => ({ ...t, [p.hash]: e.target.value }))} placeholder="中文翻译（可编辑）" />
+                          <textarea className="filter-input ew-trans" value={translations[p.hash] ?? ''}
+                            onChange={e => setTranslations(t => ({ ...t, [p.hash]: e.target.value }))}
+                            onBlur={e => audit('EVIDENCE_TRANSLATION_EDIT', { passage: p.passage.slice(0, 120), translation: e.target.value })}
+                            placeholder="中文翻译（可编辑）" />
                           <button type="button" className="btn btn-xs" onClick={() => translatePassage(p.hash, p.passage)}>翻译</button>
                         </div>
                       )}
@@ -589,12 +721,12 @@ export function EvidenceReviewModal({ open, onClose, initialItems }: {
             <div className="ew-field">
               <label>论文整体方向</label>
               {(['supports', 'partial', 'contradicts', 'not_found'] as const).map(d => (
-                <label key={d} className="ew-radio"><input type="radio" name="dir" checked={direction === d} onChange={() => setDirection(d)} /> {DIRECTION_LABEL[d]}</label>
+                <label key={d} className="ew-radio"><input type="radio" name="dir" checked={direction === d} onChange={() => { setDirection(d); audit('EVIDENCE_DIRECTION_EDIT', { direction: d }) }} /> {DIRECTION_LABEL[d]}</label>
               ))}
             </div>
             <div className="ew-field">
               <label>人工推荐置信度</label>
-              <input className="filter-input" value={confidence} onChange={e => setConfidence(e.target.value)} />
+              <input className="filter-input" value={confidence} onChange={e => setConfidence(e.target.value)} onBlur={() => audit('EVIDENCE_CONFIDENCE_EDIT', { reviewer_confidence: parseFloat(confidence) || 0 })} />
             </div>
             <div className="ew-field">
               <label>人工备注</label>

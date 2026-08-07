@@ -1,4 +1,4 @@
-import React, { memo } from 'react'
+import React, { memo, useState } from 'react'
 import {
   LayoutDashboard,
   Database,
@@ -19,6 +19,7 @@ import { useWorkbenchLog } from '../logging/useWorkbenchLog'
 import { GranularitySwitcher } from '../components/GranularitySwitcher'
 import { BottomLogConsole } from '../components/BottomLogConsole'
 import { TaskCenterDropdown } from '../components/TaskCenterDropdown'
+import { EvidenceReviewModal } from '../pages/data-center/EvidenceReviewModal'
 import { useTaskDetailModal } from '../components/TaskDetailModal'
 
 const NAV_ITEMS = [
@@ -48,6 +49,7 @@ export function WorkbenchLayout({ currentPath, children }: WorkbenchLayoutProps)
   const { expanded } = useWorkbenchLog()
   const navigate = (path: string) => { window.location.hash = `#${path}` }
   const { openTask } = useTaskDetailModal()
+  const [workbenchTaskId, setWorkbenchTaskId] = useState<string | null>(null)
 
   return (
     <div className={`layout${expanded ? ' log-console-expanded' : ' log-console-collapsed'}`}>
@@ -58,6 +60,7 @@ export function WorkbenchLayout({ currentPath, children }: WorkbenchLayoutProps)
           <TaskCenterDropdown
             onViewAll={() => navigate('/task-center')}
             onViewTask={openTask}
+            onOpenEvidenceWorkbench={(task) => setWorkbenchTaskId(task.id)}
           />
           <GranularitySwitcher />
           <span className="topbar-version">v3.2.9-mvp1</span>
@@ -69,6 +72,11 @@ export function WorkbenchLayout({ currentPath, children }: WorkbenchLayoutProps)
 
       <MainContent activePath={activePath}>{children}</MainContent>
       <BottomLogConsole />
+      <EvidenceReviewModal
+        open={workbenchTaskId !== null}
+        initialTaskId={workbenchTaskId ?? undefined}
+        onClose={() => setWorkbenchTaskId(null)}
+      />
     </div>
   )
 }

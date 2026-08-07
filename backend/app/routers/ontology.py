@@ -5,7 +5,7 @@ from __future__ import annotations
 import uuid
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
@@ -23,7 +23,9 @@ from app.schemas.ontology import (
     EvidenceAttachRequest,
     EvidenceRollbackRequest,
     BatchTaskCreateRequest,
+    EvidenceAuditRequest,
     TranslateRequest,
+    ReviewResolveRequest,
     GroundingListResponse,
     GroundingRead,
     GroundingRunRequest,
@@ -738,11 +740,12 @@ async def paper_evidence_extract(
 @router.post("/evidence/batch")
 async def paper_evidence_batch_create(
     body: BatchTaskCreateRequest,
+    background_tasks: BackgroundTasks,
     session: AsyncSession = Depends(get_db),
     _auth: str = Depends(require_role("reviewer")),
 ):
     try:
-        return await pes.create_batch_task(
+        result = await pes.create_batch_task(
             session,
             target_type=body.target_type,
             scope=body.scope,
@@ -750,20 +753,76 @@ async def paper_evidence_batch_create(
             max_papers_per_object=body.max_papers_per_object,
             created_by=None,
             limit=body.limit,
+            start_paused=body.start_paused,
         )
+        if not body.start_paused:
+            background_tasks.add_task(pes.execute_paper_evidence_batch_background, result["task_id"])
+        return {**result, "auto_started": not body.start_paused}
     except ValueError as exc:
         raise HTTPException(status_code=400, detail={"code": "INVALID_REQUEST", "message": str(exc)})
 
 
-@router.post("/evidence/batch/{task_id}/run")
-async def paper_evidence_batch_run(
+@router.get("/evidence/batch")
+async def paper_evidence_batch_list(
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+    status: str | None = Query(default=None),
+    session: AsyncSession = Depends(get_db),
+):
+    return await pes.list_paper_evidence_tasks(session, limit=limit, offset=offset, status=status)
+
+
+@router.post("/evidence/batch/{task_id}/pause")
+async def paper_evidence_batch_pause(
     task_id: str,
-    limit: int = Query(default=20, ge=1, le=100),
     session: AsyncSession = Depends(get_db),
     _auth: str = Depends(require_role("reviewer")),
 ):
     try:
-        return await pes.run_batch_step(session, task_id, limit=limit)
+        return await pes.pause_batch_task(session, task_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail={"code": "INVALID_REQUEST", "message": str(exc)})
+
+
+@router.post("/evidence/batch/{task_id}/resume")
+async def paper_evidence_batch_resume(
+    task_id: str,
+    background_tasks: BackgroundTasks,
+    session: AsyncSession = Depends(get_db),
+    _auth: str = Depends(require_role("reviewer")),
+):
+    try:
+        result = await pes.resume_batch_task(session, task_id)
+        background_tasks.add_task(pes.execute_paper_evidence_batch_background, task_id)
+        return result
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail={"code": "INVALID_REQUEST", "message": str(exc)})
+
+
+@router.post("/evidence/batch/{task_id}/cancel")
+async def paper_evidence_batch_cancel(
+    task_id: str,
+    session: AsyncSession = Depends(get_db),
+    _auth: str = Depends(require_role("reviewer")),
+):
+    try:
+        return await pes.cancel_batch_task(session, task_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail={"code": "INVALID_REQUEST", "message": str(exc)})
+
+
+@router.post("/evidence/batch/{task_id}/retry-failed")
+async def paper_evidence_batch_retry(
+    task_id: str,
+    background_tasks: BackgroundTasks,
+    session: AsyncSession = Depends(get_db),
+    _auth: str = Depends(require_role("reviewer")),
+):
+    try:
+        result = await pes.retry_failed_batch_items(session, task_id)
+        if result["retried"] > 0:
+            background_tasks.add_task(pes.execute_paper_evidence_batch_background, task_id)
+        return result
     except ValueError as exc:
         raise HTTPException(status_code=400, detail={"code": "INVALID_REQUEST", "message": str(exc)})
 
@@ -787,6 +846,81 @@ async def paper_evidence_batch_items(
     session: AsyncSession = Depends(get_db),
 ):
     return await pes.list_batch_items(session, task_id, limit=limit, offset=offset)
+
+
+@router.post("/evidence/batch/{task_id}/items/{item_id}/reviewed")
+async def paper_evidence_batch_item_reviewed(
+    task_id: str,
+    item_id: str,
+    session: AsyncSession = Depends(get_db),
+    _auth: str = Depends(require_role("reviewer")),
+):
+    try:
+        return await pes.complete_batch_item_reviewed(session, task_id, item_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail={"code": "INVALID_REQUEST", "message": str(exc)})
+
+
+@router.get("/evidence/stats")
+async def paper_evidence_stats(
+    target_types: str | None = Query(default=None, description="comma-separated target types"),
+    session: AsyncSession = Depends(get_db),
+):
+    types = [t.strip() for t in (target_types or "").split(",") if t.strip()] or None
+    return await pes.paper_evidence_stats(session, target_types=types)
+
+
+@router.post("/evidence/audit")
+async def paper_evidence_audit(
+    body: EvidenceAuditRequest,
+    session: AsyncSession = Depends(get_db),
+    _auth: str = Depends(require_role("reviewer")),
+):
+    return await pes.write_evidence_audit_event(
+        session,
+        action_type=body.action_type,
+        entity_type=body.entity_type,
+        entity_id=body.entity_id,
+        before_data=body.before_data,
+        after_data=body.after_data,
+        operator_id=None,
+        reason=body.reason,
+    )
+
+
+@router.get("/evidence/review-queue")
+async def paper_evidence_review_queue(
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+    status: str = Query(default="pending"),
+    session: AsyncSession = Depends(get_db),
+):
+    return await pes.list_evidence_review_queue(session, limit=limit, offset=offset, status=status)
+
+
+@router.get("/evidence/adjustments")
+async def paper_evidence_adjustments(
+    target_type: str = Query(...),
+    target_id: uuid.UUID = Query(...),
+    limit: int = Query(default=50, ge=1, le=200),
+    session: AsyncSession = Depends(get_db),
+):
+    return await pes.list_confidence_adjustments(
+        session, target_type=target_type, target_id=target_id, limit=limit
+    )
+
+
+@router.post("/evidence/review-queue/{record_id}/resolve")
+async def paper_evidence_review_resolve(
+    record_id: uuid.UUID,
+    body: ReviewResolveRequest,
+    session: AsyncSession = Depends(get_db),
+    _auth: str = Depends(require_role("reviewer")),
+):
+    try:
+        return await pes.resolve_evidence_review_record(session, record_id, note=body.note)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail={"code": "INVALID_REQUEST", "message": str(exc)})
 
 
 @router.post("/evidence/translate")

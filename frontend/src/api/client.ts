@@ -73,20 +73,25 @@ async function handleError(
     // ignore read errors
   }
 
-  emitWorkbenchLog({
-    level: res.status >= 500 ? 'error' : 'warning',
-    source: 'api',
-    title: `${ctx.method} ${res.status} ${ctx.url}`,
-    message: detailStr,
-    method: ctx.method,
-    url: ctx.url,
-    status: res.status,
-    statusText: res.statusText,
-    requestBodyPreview: ctx.requestBodyPreview,
-    responseBody,
-    detail: responseBody,
-    tags: ['api', `http-${res.status}`],
-  })
+  // Health polls routinely fail while the backend is restarting; don't spam
+  // the workbench log with 5xx noise during the short outage window.
+  const isHealthPoll = ctx.url.includes('/api/health')
+  if (!isHealthPoll) {
+    emitWorkbenchLog({
+      level: res.status >= 500 ? 'error' : 'warning',
+      source: 'api',
+      title: `${ctx.method} ${res.status} ${ctx.url}`,
+      message: detailStr,
+      method: ctx.method,
+      url: ctx.url,
+      status: res.status,
+      statusText: res.statusText,
+      requestBodyPreview: ctx.requestBodyPreview,
+      responseBody,
+      detail: responseBody,
+      tags: ['api', `http-${res.status}`],
+    })
+  }
 
   throw new ApiError(res.status, `HTTP ${res.status}: ${detailStr}`, {
     url: ctx.url,
@@ -97,19 +102,20 @@ async function handleError(
   })
 }
 
-export async function getJson<T>(path: string, params?: QueryParams): Promise<T> {
+export async function getJson<T>(path: string, params?: QueryParams, signal?: AbortSignal): Promise<T> {
   const url = buildUrl(path, params)
-  const res = await fetch(url, { headers: { Accept: 'application/json' } })
+  const res = await fetch(url, { headers: { Accept: 'application/json' }, signal })
   if (!res.ok) return handleError(res, { url, method: 'GET' })
   return res.json() as Promise<T>
 }
 
-export async function postJson<T>(path: string, body?: unknown, params?: QueryParams): Promise<T> {
+export async function postJson<T>(path: string, body?: unknown, params?: QueryParams, signal?: AbortSignal): Promise<T> {
   const url = buildUrl(path, params)
   const res = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
     body: body !== undefined ? JSON.stringify(body) : undefined,
+    signal,
   })
   if (!res.ok) return handleError(res, { url, method: 'POST', requestBodyPreview: previewBody(body) })
   if (res.status === 204) return undefined as T

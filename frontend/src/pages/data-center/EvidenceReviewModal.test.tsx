@@ -11,6 +11,9 @@ vi.mock('../../api/endpoints', () => ({
   listPaperEvidence: vi.fn(),
   translateEvidenceText: vi.fn(),
   getEvidenceQueue: vi.fn(),
+  completePaperEvidenceTaskItem: vi.fn(),
+  listPaperEvidenceTaskItems: vi.fn(),
+  writeEvidenceAudit: vi.fn(),
 }))
 
 const ITEM_A = {
@@ -115,11 +118,12 @@ const ATTACH_OK = {
   },
 }
 
-function renderWorkbench(initialItems?: typeof ITEM_A[]) {
+function renderWorkbench(initialItems?: typeof ITEM_A[], initialTaskId?: string) {
   return render(
     <EvidenceReviewModal
       open
       initialItems={initialItems}
+      initialTaskId={initialTaskId}
       onClose={vi.fn()}
     />,
   )
@@ -146,6 +150,9 @@ describe('EvidenceReviewModal 论文佐证工作台', () => {
     vi.mocked(endpoints.attachPaperEvidence).mockResolvedValue(ATTACH_OK)
     vi.mocked(endpoints.translateEvidenceText).mockResolvedValue({ translated: '中文翻译' })
     vi.mocked(endpoints.getEvidenceQueue).mockResolvedValue({ items: [] })
+    vi.mocked(endpoints.writeEvidenceAudit).mockResolvedValue({ ok: true, action_type: 'x' })
+    vi.mocked(endpoints.completePaperEvidenceTaskItem).mockResolvedValue({ task_id: 't', item_id: 'i', status: 'completed' })
+    vi.mocked(endpoints.listPaperEvidenceTaskItems).mockResolvedValue({ items: [] })
   })
 
   it('渲染单条/多条对象队列与 Stepper，并自动开始第一条检索', async () => {
@@ -155,12 +162,15 @@ describe('EvidenceReviewModal 论文佐证工作台', () => {
     expect(screen.getAllByText('确认对象').length).toBeGreaterThan(0)
     expect(screen.getAllByText('连接 A').length).toBeGreaterThan(0)
     await waitFor(() => expect(screen.getByTestId('ew-step-label').textContent).toContain('步骤 2/5'))
-    expect(vi.mocked(endpoints.searchPaperEvidence)).toHaveBeenCalledWith({
-      target_type: ITEM_A.target_type,
-      target_id: ITEM_A.target_id,
-      limit: 10,
-      query_override: undefined,
-    })
+    expect(vi.mocked(endpoints.searchPaperEvidence)).toHaveBeenCalledWith(
+      expect.objectContaining({
+        target_type: ITEM_A.target_type,
+        target_id: ITEM_A.target_id,
+        limit: 10,
+        query_override: undefined,
+      }),
+      expect.any(AbortSignal),
+    )
   })
 
   it('支持编辑检索式并通过 query_override 重新检索', async () => {
@@ -172,6 +182,9 @@ describe('EvidenceReviewModal 论文佐证工作台', () => {
     fireEvent.click(screen.getByText('重新检索'))
     await waitFor(() => expect(vi.mocked(endpoints.searchPaperEvidence)).toHaveBeenCalledTimes(2))
     expect(vi.mocked(endpoints.searchPaperEvidence).mock.calls[1][0].query_override).toBe('custom AND term')
+    expect(vi.mocked(endpoints.writeEvidenceAudit)).toHaveBeenCalledWith(
+      expect.objectContaining({ action_type: 'EVIDENCE_QUERY_EDIT' }),
+    )
   })
 
   it('多片段提取：通过校验的自动选中，未校验片段禁选', async () => {
@@ -273,5 +286,55 @@ describe('EvidenceReviewModal 论文佐证工作台', () => {
     expect(promptSpy).not.toHaveBeenCalled()
     expect(confirmSpy).not.toHaveBeenCalled()
     expect(alertSpy).not.toHaveBeenCalled()
+  })
+
+  it('从批量任务恢复草稿队列：加载片段、审核入库并标记任务项完成', async () => {
+    const item = {
+      id: 'item-1',
+      target_type: 'connection',
+      target_id: ITEM_A.target_id,
+      status: 'awaiting_review',
+      pmid: '12345',
+      title: 'Paper A',
+      passage: null,
+      direction: 'supports',
+      confidence: 0.82,
+      evidence_id: null,
+      error_message: null,
+      updated_at: '2026-08-07T00:00:00Z',
+      label: '连接 A',
+      current_confidence: 0.42,
+      passages_json: {
+        papers: [PAPER],
+        passages: [
+          {
+            source_scope: 'abstract',
+            section_title: null,
+            paragraph_index: 0,
+            passage: 'A real abstract sentence about connectivity and function.',
+            direction: 'supports',
+            reason: 'explicit',
+            confidence: 0.82,
+            source_locator: 'abstract:0',
+            source_verified: true,
+          },
+        ],
+      },
+      last_error: null,
+      retry_count: 0,
+    }
+    vi.mocked(endpoints.listPaperEvidenceTaskItems).mockResolvedValue({ items: [item] })
+    renderWorkbench(undefined, 'task-1')
+    await waitFor(() => expect(screen.getByText('已恢复批量任务，共 1 条待审核草稿')).toBeTruthy())
+    await waitFor(() => expect(screen.getAllByTestId('ew-passage')).toHaveLength(1))
+    expect(screen.getByTestId('ew-step-label').textContent).toContain('步骤 3/5')
+    fireEvent.click(screen.getByTestId('ew-attach'))
+    await waitFor(
+      () => expect((screen.getByTestId('ew-confirm-attach') as HTMLButtonElement).disabled).toBe(false),
+      { timeout: 4000 },
+    )
+    fireEvent.click(screen.getByTestId('ew-confirm-attach'))
+    await waitFor(() => expect(screen.getByText(/入库成功/)).toBeTruthy())
+    expect(vi.mocked(endpoints.completePaperEvidenceTaskItem)).toHaveBeenCalledWith('task-1', 'item-1')
   })
 })

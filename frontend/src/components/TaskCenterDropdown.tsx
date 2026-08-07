@@ -9,6 +9,7 @@ import type { BgTask } from '../hooks/useBackgroundTasks'
 interface Props {
   onViewAll: () => void
   onViewTask: (task: BgTask) => void
+  onOpenEvidenceWorkbench?: (task: BgTask) => void
 }
 
 function elapsed(createdAt: string): string {
@@ -22,7 +23,7 @@ function elapsed(createdAt: string): string {
  * Header bell-dropdown — fetch-on-open only, NO background polling.
  * Only the full task center page runs continuous polling.
  */
-export function TaskCenterDropdown({ onViewAll, onViewTask }: Props) {
+export function TaskCenterDropdown({ onViewAll, onViewTask, onOpenEvidenceWorkbench }: Props) {
   const [open, setOpen] = useState(false)
   const [cancelTarget, setCancelTarget] = useState<BgTask | null>(null)
   const [tasks, setTasks] = useState<BgTask[]>([])
@@ -97,6 +98,12 @@ export function TaskCenterDropdown({ onViewAll, onViewTask }: Props) {
                         <button className="btn btn-xs" style={{ color: '#dc2626', fontSize: 11, padding: '2px 6px' }}
                           onClick={(e) => { e.stopPropagation(); setCancelTarget(task) }}>
                           ✕
+                        </button>
+                      )}
+                      {def.opensWorkbench && onOpenEvidenceWorkbench && (
+                        <button className="btn btn-xs" style={{ fontSize: 11, padding: '2px 6px' }}
+                          onClick={(e) => { e.stopPropagation(); setOpen(false); onOpenEvidenceWorkbench(task) }}>
+                          佐证工作台
                         </button>
                       )}
                     </div>

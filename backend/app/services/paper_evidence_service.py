@@ -28,6 +28,7 @@ from app.models.mirror_macro_clinical import (
     MirrorCircuitStep,
     MirrorProjectionFunction,
 )
+from app.models.ontology import OntologyChangeLog
 from app.services.ontology_service import TERM_TABLE_BY_TYPE
 from app.config import get_settings
 from app.services.llm_providers.factory import get_llm_provider
@@ -51,6 +52,70 @@ TARGET_MODELS = {
     "circuit": MirrorRegionCircuit,
     "circuit_step": MirrorCircuitStep,
 }
+
+# Batch execution tuning (independent concurrency for DeepSeek vs Europe PMC)
+DEEPSEEK_CONCURRENCY = 2
+EUROPE_PMC_CONCURRENCY = 4
+BATCH_ITEM_RETRIES = 3
+BATCH_BACKOFF_SECONDS = (1.0, 2.0, 4.0)
+
+
+async def _write_audit(
+    session: AsyncSession,
+    *,
+    action_type: str,
+    entity_type: str,
+    entity_id: uuid.UUID,
+    before_data: dict | None = None,
+    after_data: dict | None = None,
+    operator_id: str | None = None,
+    reason: str | None = None,
+) -> None:
+    session.add(
+        OntologyChangeLog(
+            action_type=action_type,
+            entity_type=entity_type,
+            entity_id=entity_id,
+            before_data=before_data or {},
+            after_data=after_data or {},
+            operator_id=operator_id,
+            reason=reason,
+        )
+    )
+
+
+async def _write_validation_record(
+    session: AsyncSession,
+    *,
+    evidence_id: uuid.UUID,
+    rule_code: str,
+    target_type: str,
+    target_id: uuid.UUID,
+    direction: str | None,
+    paper_snapshot: dict | None = None,
+    detail: dict | None = None,
+    task_id: str | None = None,
+    created_by: str | None = None,
+) -> None:
+    await session.execute(
+        text(
+            "INSERT INTO evidence_validation_records "
+            "(evidence_id, task_id, rule_code, status, target_type, target_id, direction, "
+            "paper_snapshot, detail, created_by) "
+            "VALUES (:eid, :tid, :rule, 'pending', :tt, :oid, :dir, CAST(:ps AS jsonb), CAST(:det AS jsonb), :cb)"
+        ),
+        {
+            "eid": evidence_id,
+            "tid": uuid.UUID(task_id) if task_id else None,
+            "rule": rule_code,
+            "tt": target_type,
+            "oid": target_id,
+            "dir": direction,
+            "ps": json.dumps(paper_snapshot or {}, ensure_ascii=False),
+            "det": json.dumps(detail or {}, ensure_ascii=False),
+            "cb": created_by,
+        },
+    )
 
 
 # ---- Passage verification (pure functions) ----
@@ -368,6 +433,70 @@ async def attach_evidence(
     # 7) rebuild evidence_text from valid records
     row.evidence_text = await rebuild_evidence_text(session, target_type, target_id)
     await session.flush()
+    # 8) validation-center records + audit (human_verified only)
+    if verification_status == "human_verified":
+        await _write_audit(
+            session,
+            action_type="EVIDENCE_ATTACH",
+            entity_type="evidence",
+            entity_id=record.id,
+            before_data={"confidence": current, "evidence_text": getattr(row, "evidence_text", "") or ""},
+            after_data={
+                "confidence": float(row.confidence) if getattr(row, "confidence", None) is not None else None,
+                "direction": direction,
+                "reviewer_confidence": reviewer_confidence,
+                "passage_count": len(verified),
+                "verification_status": record.verification_status,
+            },
+            operator_id=operator_id,
+            reason="paper evidence attached after human review",
+        )
+        await _write_validation_record(
+            session,
+            evidence_id=record.id,
+            rule_code=(
+                "EV_PAPER_EVIDENCE_CONTRADICTORY"
+                if direction == "contradicts"
+                else "EV_PAPER_EVIDENCE_ATTACHED"
+            ),
+            target_type=target_type,
+            target_id=target_id,
+            direction=direction,
+            paper_snapshot={
+                "pmid": paper["pmid"],
+                "doi": paper["doi"],
+                "title": paper["title"],
+                "journal": paper["journal"],
+                "year": paper["year"],
+            },
+            detail={
+                "reviewer_confidence": reviewer_confidence,
+                "final_confidence": final_confidence,
+                "status": "pending_review" if direction == "contradicts" else "resolved_by_attach",
+            },
+            created_by=operator_id,
+        )
+        if adjustment and not adjustment.apply and direction == "contradicts":
+            await _write_validation_record(
+                session,
+                evidence_id=record.id,
+                rule_code="EV_CONFIDENCE_ADJUSTMENT_PENDING",
+                target_type=target_type,
+                target_id=target_id,
+                direction=direction,
+                paper_snapshot={
+                    "pmid": paper["pmid"],
+                    "doi": paper["doi"],
+                    "title": paper["title"],
+                },
+                detail={
+                    "before_confidence": current,
+                    "suggested_confidence": reviewer_confidence,
+                    "formula_version": adjustment.formula_version,
+                    "status": "pending",
+                },
+                created_by=operator_id,
+            )
     return {
         "evidence_id": str(record.id),
         "target_type": target_type,
@@ -429,9 +558,9 @@ async def _count_duplicate_hashes(
                 "SELECT COUNT(*) FROM mirror_evidence_passages p "
                 "JOIN mirror_evidence_records e ON e.id = p.evidence_id "
                 "WHERE e.evidence_target_type = :tt AND e.evidence_target_id = :tid "
-                "AND p.passage_hash IN :hashes"
+                "AND p.passage_hash = ANY(:hashes)"
             ),
-            {"tt": target_type, "tid": target_id, "hashes": tuple(hashes)},
+            {"tt": target_type, "tid": target_id, "hashes": hashes},
         )
     ).scalar_one()
     return int(rows)
@@ -586,6 +715,36 @@ async def rollback_evidence(
         row.confidence = max(candidates) if candidates else None
         row.evidence_text = await rebuild_evidence_text(session, target_type, target_id)
     await session.flush()
+    await _write_audit(
+        session,
+        action_type="EVIDENCE_ROLLBACK",
+        entity_type="evidence",
+        entity_id=evidence_id,
+        before_data={
+            "status": "human_verified" if log is not None else record.verification_status,
+            "confidence": float(row.confidence) if row is not None and getattr(row, "confidence", None) is not None else None,
+        },
+        after_data={"status": "invalidated", "rollback_reason": reason},
+        operator_id=operator_id,
+        reason=reason,
+    )
+    await _write_validation_record(
+        session,
+        evidence_id=evidence_id,
+        rule_code="EV_PAPER_EVIDENCE_INVALIDATED",
+        target_type=target_type,
+        target_id=target_id,
+        direction=record.evidence_direction,
+        paper_snapshot={
+            "pmid": record.paper_pmid,
+            "doi": record.paper_doi,
+            "title": record.paper_title,
+            "journal": record.paper_journal,
+            "year": record.paper_year,
+        },
+        detail={"reason": reason, "confidence": float(row.confidence) if row is not None and getattr(row, "confidence", None) is not None else None},
+        created_by=operator_id,
+    )
     return {
         "evidence_id": str(evidence_id),
         "status": "invalidated",
@@ -1032,3 +1191,911 @@ async def list_batch_items(
             for r in rows
         ]
     }
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# Phase C: batch pre-processing state machine (overrides legacy batch helpers)
+# ════════════════════════════════════════════════════════════════════════════
+
+_TASK_STATUS = {"pending", "running", "paused", "completed", "partially_failed", "cancelled", "failed"}
+_ITEM_ACTIVE_STATUS = {"pending", "searching", "paper_found", "extracting", "awaiting_review"}
+
+
+async def _batch_scope_label(session: AsyncSession, target_type: str, target_id: uuid.UUID) -> tuple[str, float | None]:
+    model = TARGET_MODELS.get(target_type)
+    if model is None:
+        return target_id, None
+    row = await session.get(model, target_id)
+    if row is None:
+        return target_id, None
+    parts = _name_parts(target_type, row)
+    label = " · ".join(parts[:3]) if parts else target_id
+    conf = float(row.confidence) if getattr(row, "confidence", None) is not None else None
+    return label, conf
+
+
+async def create_batch_task(
+    session: AsyncSession,
+    *,
+    target_type: str,
+    scope: str,
+    mode: str,
+    max_papers_per_object: int,
+    created_by: str | None = None,
+    limit: int = 200,
+    start_paused: bool = False,
+) -> dict:
+    """Create a pre-processing task. Never writes formal evidence."""
+    if target_type not in TARGET_MODELS:
+        raise ValueError(f"unsupported target_type: {target_type}")
+    ids = await _resolve_scope_ids(session, target_type, scope, limit)
+    if not ids:
+        raise ValueError("no targets matched scope")
+    # skip targets already covered by an active task item
+    busy = set(
+        (
+            await session.execute(
+                text(
+                    "SELECT target_id::text FROM paper_evidence_task_items "
+                    "WHERE target_type = :tt AND target_id::text = ANY(:ids) "
+                    "AND status IN ('pending','searching','paper_found','extracting','awaiting_review')"
+                ),
+                {"tt": target_type, "ids": ids},
+            )
+        ).scalars().all()
+    )
+    fresh_ids = [oid for oid in ids if oid not in busy]
+    if not fresh_ids:
+        raise ValueError("all matched targets already have an active evidence task")
+    labels: list[tuple[str, float | None]] = []
+    for oid in fresh_ids:
+        labels.append(await _batch_scope_label(session, target_type, uuid.UUID(oid)))
+    task_id = (
+        await session.execute(
+            text(
+                "INSERT INTO paper_evidence_tasks "
+                "(target_type, scope, mode, max_papers_per_object, status, created_by, total_items, config) "
+                "VALUES (:tt, :scope, :mode, :maxp, :status, :cb, :total, CAST(:cfg AS jsonb)) RETURNING id::text"
+            ),
+            {
+                "tt": target_type,
+                "scope": scope,
+                "mode": mode,
+                "maxp": max_papers_per_object,
+                "status": "paused" if start_paused else "pending",
+                "cb": created_by,
+                "total": len(fresh_ids),
+                "cfg": json.dumps(
+                    {"deepseek_concurrency": DEEPSEEK_CONCURRENCY, "europepmc_concurrency": EUROPE_PMC_CONCURRENCY},
+                    ensure_ascii=False,
+                ),
+            },
+        )
+    ).scalar_one()
+    await session.execute(
+        text(
+            "INSERT INTO paper_evidence_task_items "
+            "(task_id, target_type, target_id, label, current_confidence, status) "
+            "VALUES (:tid, :tt, :oid, :label, :conf, 'pending')"
+        ),
+        [
+            {
+                "tid": task_id,
+                "tt": target_type,
+                "oid": uuid.UUID(oid),
+                "label": label,
+                "conf": conf,
+            }
+            for oid, (label, conf) in zip(fresh_ids, labels)
+        ],
+    )
+    await session.commit()
+    await _write_audit(
+        session,
+        action_type="EVIDENCE_TASK_CREATE",
+        entity_type="evidence_task",
+        entity_id=uuid.UUID(task_id),
+        after_data={"target_type": target_type, "scope": scope, "mode": mode, "target_count": len(fresh_ids), "skipped_active": len(busy)},
+        operator_id=created_by,
+        reason="batch evidence pre-processing task created",
+    )
+    await session.commit()
+    return {"task_id": task_id, "target_count": len(fresh_ids), "skipped_active_targets": len(busy)}
+
+
+async def _update_task_totals(session: AsyncSession, task_id: str) -> None:
+    counts = (
+        await session.execute(
+            text(
+                "SELECT status, COUNT(*) FROM paper_evidence_task_items "
+                "WHERE task_id::text = :tid GROUP BY 1"
+            ),
+            {"tid": task_id},
+        )
+    ).all()
+    status_map = {r[0]: r[1] for r in counts}
+    done = sum(status_map.get(s, 0) for s in ("completed", "skipped", "failed", "cancelled"))
+    awaiting = status_map.get("awaiting_review", 0)
+    failed = status_map.get("failed", 0)
+    await session.execute(
+        text(
+            "UPDATE paper_evidence_tasks SET processed_items = :done, "
+            "awaiting_review_items = :aw, failed_items = :fail, "
+            "summary = jsonb_build_object('counts', CAST(:counts AS jsonb)) WHERE id::text = :tid"
+        ),
+        {
+            "tid": task_id,
+            "done": done,
+            "aw": awaiting,
+            "fail": failed,
+            "counts": json.dumps(status_map, ensure_ascii=False),
+        },
+    )
+
+
+async def _process_batch_item(
+    *,
+    task_id: str,
+    item_id: str,
+    target_type: str,
+    target_id: str,
+    mode: str,
+    max_papers: int,
+    sem_epmc: asyncio.Semaphore,
+    sem_deepseek: asyncio.Semaphore,
+) -> None:
+    from app.database import AsyncSessionLocal
+
+    if AsyncSessionLocal is None:
+        return
+    async with AsyncSessionLocal() as session:
+        try:
+            await session.execute(
+                text("UPDATE paper_evidence_task_items SET status='searching', updated_at=now() WHERE id::text=:iid"),
+                {"iid": item_id},
+            )
+            await session.commit()
+            async with sem_epmc:
+                info = await pack_target_info(session, target_type, uuid.UUID(target_id), mode=mode)
+                papers = await _search_with_retry(info["query"], limit=max_papers)
+            if not papers:
+                await session.execute(
+                    text(
+                        "UPDATE paper_evidence_task_items SET status='skipped', last_error='no_paper', "
+                        "paper_json=CAST(:pj AS jsonb), updated_at=now() WHERE id::text=:iid"
+                    ),
+                    {"iid": item_id, "pj": json.dumps({"papers": [], "reason": "no results from Europe PMC"}, ensure_ascii=False)},
+                )
+                await session.commit()
+                return
+            await session.execute(
+                text(
+                    "UPDATE paper_evidence_task_items SET status='paper_found', "
+                    "paper_json=CAST(:pj AS jsonb), updated_at=now() WHERE id::text=:iid"
+                ),
+                {"iid": item_id, "pj": json.dumps({"papers": papers}, ensure_ascii=False)},
+            )
+            await session.commit()
+            async with sem_deepseek:
+                extraction = None
+                used_paper = None
+                for paper in papers[:max_papers]:
+                    pmid = (paper.get("pmid") or "").strip()
+                    if not pmid:
+                        continue
+                    abstract = (paper.get("abstract") or "").strip()
+                    fulltext = await fetch_fulltext(pmid)
+                    extraction = await _extract_with_retry(
+                        term=info["function_term"],
+                        title=paper.get("title") or "",
+                        abstract=abstract,
+                        fulltext=fulltext,
+                    )
+                    used_paper = paper
+                    if any(p["source_verified"] for p in extraction["passages"]):
+                        break
+                if extraction is None:
+                    extraction = {"passages": [], "overall_direction": "not_found", "parse_status": "no_candidate", "retry_count": 0, "raw_response": ""}
+            verified = [p for p in extraction["passages"] if p["source_verified"]]
+            source_text = (used_paper or {}).get("abstract") or ""
+            source_hash = hashlib.sha256((source_text or "").encode("utf-8")).hexdigest()[:64]
+            status = "awaiting_review" if verified else "skipped"
+            last_error = None if verified else "no_verified_passages"
+            await session.execute(
+                text(
+                    "UPDATE paper_evidence_task_items SET status=:st, last_error=:err, "
+                    "pmid=:pmid, title=:title, abstract=:abs, direction=:dir, confidence=:conf, "
+                    "passages_json=CAST(:pj AS jsonb), raw_response=:raw, source_text_hash=:hash, parse_status=:ps, "
+                    "retry_count=retry_count+1, updated_at=now() WHERE id::text=:iid"
+                ),
+                {
+                    "iid": item_id,
+                    "st": status,
+                    "err": last_error,
+                    "pmid": (used_paper or {}).get("pmid") or "",
+                    "title": (used_paper or {}).get("title") or "",
+                    "abs": source_text,
+                    "dir": extraction.get("overall_direction") or "not_found",
+                    "conf": max((p["confidence"] for p in verified), default=0.0) if verified else None,
+                    "pj": json.dumps({"papers": papers, "passages": extraction["passages"]}, ensure_ascii=False),
+                    "raw": (extraction.get("raw_response") or "")[:4000],
+                    "hash": source_hash,
+                    "ps": extraction.get("parse_status") or "ok",
+                },
+            )
+            await session.commit()
+        except Exception as exc:  # noqa: BLE001
+            try:
+                await session.execute(
+                    text(
+                        "UPDATE paper_evidence_task_items SET retry_count=retry_count+1, last_error=:err, "
+                        "status=CASE WHEN retry_count >= :maxr THEN 'failed' ELSE 'pending' END, "
+                        "updated_at=now() WHERE id::text=:iid"
+                    ),
+                    {"iid": item_id, "err": str(exc)[:500], "maxr": BATCH_ITEM_RETRIES},
+                )
+                await session.commit()
+            except Exception:  # noqa: BLE001
+                await session.rollback()
+
+
+async def _search_with_retry(query: str, limit: int) -> list[dict]:
+    last_exc: Exception | None = None
+    for attempt in range(BATCH_ITEM_RETRIES):
+        try:
+            return await search_papers(query, limit=limit)
+        except (httpx.HTTPStatusError, httpx.TransportError) as exc:
+            last_exc = exc
+            if attempt < BATCH_ITEM_RETRIES - 1:
+                await asyncio.sleep(BATCH_BACKOFF_SECONDS[min(attempt, len(BATCH_BACKOFF_SECONDS) - 1)])
+    raise last_exc or RuntimeError("search failed")
+
+
+async def _extract_with_retry(*, term: str, title: str, abstract: str, fulltext: str) -> dict:
+    last_exc: Exception | None = None
+    for attempt in range(BATCH_ITEM_RETRIES):
+        try:
+            return await extract_passage(term=term, title=title, abstract=abstract, fulltext=fulltext)
+        except (ValueError, ValidationError, httpx.HTTPError) as exc:
+            last_exc = exc
+            if attempt < BATCH_ITEM_RETRIES - 1:
+                await asyncio.sleep(BATCH_BACKOFF_SECONDS[min(attempt, len(BATCH_BACKOFF_SECONDS) - 1)])
+    raise last_exc or RuntimeError("extraction failed")
+
+
+async def _run_batch_loop(session: AsyncSession, task_id: str) -> None:
+    while True:
+        state = (
+            await session.execute(
+                text("SELECT status FROM paper_evidence_tasks WHERE id::text=:tid"),
+                {"tid": task_id},
+            )
+        ).scalar_one_or_none()
+        if state in ("cancelled", "paused"):
+            return
+        await session.execute(
+            text(
+                "UPDATE paper_evidence_tasks SET status='running', started_at=COALESCE(started_at, now()) "
+                "WHERE id::text=:tid AND status IN ('pending','running')"
+            ),
+            {"tid": task_id},
+        )
+        await session.commit()
+        task_row = (
+            await session.execute(
+                text(
+                    "SELECT max_papers_per_object FROM paper_evidence_tasks WHERE id::text=:tid"
+                ),
+                {"tid": task_id},
+            )
+        ).scalar_one_or_none()
+        rows = (
+            await session.execute(
+                text(
+                    "SELECT id::text, target_type, target_id::text FROM paper_evidence_task_items "
+                    "WHERE task_id::text=:tid AND status='pending' ORDER BY created_at LIMIT 8"
+                ),
+                {"tid": task_id},
+            )
+        ).all()
+        if not rows:
+            break
+        max_papers = task_row or 3
+        sem_epmc = asyncio.Semaphore(EUROPE_PMC_CONCURRENCY)
+        sem_deepseek = asyncio.Semaphore(DEEPSEEK_CONCURRENCY)
+        coros = [
+            _process_batch_item(
+                task_id=task_id,
+                item_id=item_id,
+                target_type=tt,
+                target_id=oid,
+                mode="function",
+                max_papers=max_papers,
+                sem_epmc=sem_epmc,
+                sem_deepseek=sem_deepseek,
+            )
+            for item_id, tt, oid in rows
+        ]
+        await asyncio.gather(*coros, return_exceptions=True)
+        await _update_task_totals(session, task_id)
+        await session.commit()
+    await _update_task_totals(session, task_id)
+    counts = (
+        await session.execute(
+            text(
+                "SELECT status, COUNT(*) FROM paper_evidence_task_items "
+                "WHERE task_id::text=:tid GROUP BY 1"
+            ),
+            {"tid": task_id},
+        )
+    ).all()
+    status_map = {r[0]: r[1] for r in counts}
+    failed = status_map.get("failed", 0)
+    terminal_done = sum(status_map.get(s, 0) for s in ("completed", "skipped"))
+    if failed and terminal_done:
+        final_status = "partially_failed"
+    elif failed:
+        final_status = "failed"
+    else:
+        final_status = "completed"
+    await session.execute(
+        text(
+            "UPDATE paper_evidence_tasks SET status=:st, finished_at=now() "
+            "WHERE id::text=:tid AND status NOT IN ('cancelled','paused')"
+        ),
+        {"tid": task_id, "st": final_status},
+    )
+    await session.commit()
+
+
+async def execute_paper_evidence_batch_background(task_id: str) -> None:
+    """Background entrypoint used by BackgroundTasks; recoverable after restart."""
+    from app.database import AsyncSessionLocal
+
+    if AsyncSessionLocal is None:
+        return
+    try:
+        async with AsyncSessionLocal() as session:
+            await _run_batch_loop(session, task_id)
+    except Exception:  # noqa: BLE001
+        import logging
+
+        logging.getLogger(__name__).exception("[paper-evidence-batch] background failure task_id=%s", task_id)
+
+
+async def recover_interrupted_batch_tasks(session: AsyncSession) -> int:
+    """On startup: reset running tasks to pending so they can be resumed."""
+    result = await session.execute(
+        text(
+            "UPDATE paper_evidence_tasks SET status='pending', resumed_at=now() "
+            "WHERE status IN ('running','pending') AND finished_at IS NULL"
+        )
+    )
+    await session.commit()
+    return result.rowcount or 0
+
+
+async def pause_batch_task(session: AsyncSession, task_id: str, operator_id: str | None = None) -> dict:
+    result = await session.execute(
+        text(
+            "UPDATE paper_evidence_tasks SET status='paused', paused_at=now() "
+            "WHERE id::text=:tid AND status IN ('pending','running')"
+        ),
+        {"tid": task_id},
+    )
+    await session.commit()
+    if result.rowcount == 0:
+        raise ValueError("task is not pauseable in its current state")
+    await _write_audit(
+        session,
+        action_type="EVIDENCE_TASK_PAUSE",
+        entity_type="evidence_task",
+        entity_id=uuid.UUID(task_id),
+        after_data={"status": "paused"},
+        operator_id=operator_id,
+        reason="batch evidence task paused",
+    )
+    await session.commit()
+    return {"task_id": task_id, "status": "paused"}
+
+
+async def resume_batch_task(session: AsyncSession, task_id: str, operator_id: str | None = None) -> dict:
+    result = await session.execute(
+        text(
+            "UPDATE paper_evidence_tasks SET status='pending', resumed_at=now(), paused_at=NULL "
+            "WHERE id::text=:tid AND status='paused'"
+        ),
+        {"tid": task_id},
+    )
+    await session.commit()
+    if result.rowcount == 0:
+        raise ValueError("task is not paused")
+    await _write_audit(
+        session,
+        action_type="EVIDENCE_TASK_RESUME",
+        entity_type="evidence_task",
+        entity_id=uuid.UUID(task_id),
+        after_data={"status": "pending"},
+        operator_id=operator_id,
+        reason="batch evidence task resumed",
+    )
+    await session.commit()
+    return {"task_id": task_id, "status": "pending"}
+
+
+async def cancel_batch_task(session: AsyncSession, task_id: str, operator_id: str | None = None) -> dict:
+    result = await session.execute(
+        text(
+            "UPDATE paper_evidence_tasks SET status='cancelled', cancelled_at=now() "
+            "WHERE id::text=:tid AND status IN ('pending','running','paused')"
+        ),
+        {"tid": task_id},
+    )
+    await session.execute(
+        text(
+            "UPDATE paper_evidence_task_items SET status='skipped', last_error='cancelled', updated_at=now() "
+            "WHERE task_id::text=:tid AND status='pending'"
+        ),
+        {"tid": task_id},
+    )
+    await session.commit()
+    if result.rowcount == 0:
+        raise ValueError("task is not cancellable in its current state")
+    await _write_audit(
+        session,
+        action_type="EVIDENCE_TASK_CANCEL",
+        entity_type="evidence_task",
+        entity_id=uuid.UUID(task_id),
+        after_data={"status": "cancelled"},
+        operator_id=operator_id,
+        reason="batch evidence task cancelled",
+    )
+    await session.commit()
+    return {"task_id": task_id, "status": "cancelled"}
+
+
+async def retry_failed_batch_items(session: AsyncSession, task_id: str, operator_id: str | None = None) -> dict:
+    result = await session.execute(
+        text(
+            "UPDATE paper_evidence_task_items SET status='pending', last_error=NULL, "
+            "retry_count=0, updated_at=now() WHERE task_id::text=:tid AND status='failed'"
+        ),
+        {"tid": task_id},
+    )
+    await session.execute(
+        text(
+            "UPDATE paper_evidence_tasks SET status='pending', finished_at=NULL "
+            "WHERE id::text=:tid AND status IN ('failed','partially_failed','completed','cancelled')"
+        ),
+        {"tid": task_id},
+    )
+    await session.commit()
+    await _write_audit(
+        session,
+        action_type="EVIDENCE_TASK_RETRY",
+        entity_type="evidence_task",
+        entity_id=uuid.UUID(task_id),
+        after_data={"retried": result.rowcount or 0},
+        operator_id=operator_id,
+        reason="retry failed batch items",
+    )
+    await session.commit()
+    return {"task_id": task_id, "retried": result.rowcount or 0}
+
+
+async def list_paper_evidence_tasks(
+    session: AsyncSession, limit: int = 50, offset: int = 0, status: str | None = None
+) -> dict:
+    where = ""
+    params: dict = {"lim": limit, "off": offset}
+    if status:
+        where = "WHERE status = :st"
+        params["st"] = status
+    rows = (
+        await session.execute(
+            text(
+                f"SELECT id::text, target_type, scope, mode, max_papers_per_object, status, "
+                f"total_items, processed_items, awaiting_review_items, failed_items, summary, "
+                f"created_by, created_at, started_at, finished_at, error_message "
+                f"FROM paper_evidence_tasks {where} ORDER BY created_at DESC LIMIT :lim OFFSET :off"
+            ),
+            params,
+        )
+    ).all()
+    total = (
+        await session.execute(text(f"SELECT COUNT(*) FROM paper_evidence_tasks {where}"), params)
+    ).scalar_one()
+    return {
+        "items": [
+            {
+                "id": r[0],
+                "target_type": r[1],
+                "scope": r[2],
+                "mode": r[3],
+                "max_papers_per_object": r[4],
+                "status": r[5],
+                "total_items": r[6],
+                "processed_items": r[7],
+                "awaiting_review_items": r[8],
+                "failed_items": r[9],
+                "summary": r[10],
+                "created_by": r[11],
+                "created_at": r[12].isoformat() if r[12] else None,
+                "started_at": r[13].isoformat() if r[13] else None,
+                "finished_at": r[14].isoformat() if r[14] else None,
+                "error_message": r[15],
+            }
+            for r in rows
+        ],
+        "total": total,
+    }
+
+
+async def get_batch_task(session: AsyncSession, task_id: str) -> dict:
+    task = (
+        await session.execute(
+            text(
+                "SELECT id::text, target_type, scope, mode, max_papers_per_object, status, summary, "
+                "total_items, processed_items, awaiting_review_items, failed_items, created_by, "
+                "created_at, started_at, finished_at, error_message "
+                "FROM paper_evidence_tasks WHERE id::text = :tid"
+            ),
+            {"tid": task_id},
+        )
+    ).first()
+    if task is None:
+        raise ValueError("task not found")
+    counts = (
+        await session.execute(
+            text(
+                "SELECT status, COUNT(*) FROM paper_evidence_task_items "
+                "WHERE task_id::text = :tid GROUP BY 1"
+            ),
+            {"tid": task_id},
+        )
+    ).all()
+    return {
+        "task": {
+            "id": task[0],
+            "target_type": task[1],
+            "scope": task[2],
+            "mode": task[3],
+            "max_papers_per_object": task[4],
+            "status": task[5],
+            "summary": task[6],
+            "total_items": task[7],
+            "processed_items": task[8],
+            "awaiting_review_items": task[9],
+            "failed_items": task[10],
+            "created_by": task[11],
+            "created_at": task[12].isoformat() if task[12] else None,
+            "started_at": task[13].isoformat() if task[13] else None,
+            "finished_at": task[14].isoformat() if task[14] else None,
+            "error_message": task[15],
+        },
+        "counts": {r[0]: r[1] for r in counts},
+    }
+
+
+async def list_batch_items(
+    session: AsyncSession, task_id: str, limit: int = 50, offset: int = 0
+) -> dict:
+    rows = (
+        await session.execute(
+            text(
+                "SELECT id::text, target_type, target_id::text, status, pmid, title, passage, "
+                "direction, confidence, evidence_id::text, error_message, updated_at, label, "
+                "current_confidence, passages_json, last_error, retry_count "
+                "FROM paper_evidence_task_items WHERE task_id::text = :tid "
+                "ORDER BY created_at LIMIT :lim OFFSET :off"
+            ),
+            {"tid": task_id, "lim": limit, "off": offset},
+        )
+    ).all()
+    return {
+        "items": [
+            {
+                "id": r[0],
+                "target_type": r[1],
+                "target_id": r[2],
+                "status": r[3],
+                "pmid": r[4],
+                "title": r[5],
+                "passage": r[6],
+                "direction": r[7],
+                "confidence": float(r[8]) if r[8] is not None else None,
+                "evidence_id": r[9],
+                "error_message": r[10],
+                "updated_at": r[11].isoformat() if r[11] else None,
+                "label": r[12],
+                "current_confidence": float(r[13]) if r[13] is not None else None,
+                "passages_json": r[14],
+                "last_error": r[15],
+                "retry_count": r[16],
+            }
+            for r in rows
+        ]
+    }
+
+
+async def complete_batch_item_reviewed(
+    session: AsyncSession, task_id: str, item_id: str, operator_id: str | None = None
+) -> dict:
+    result = await session.execute(
+        text(
+            "UPDATE paper_evidence_task_items SET status='completed', reviewed_by=:rb, "
+            "reviewed_at=now(), updated_at=now() "
+            "WHERE task_id::text=:tid AND id::text=:iid AND status='awaiting_review'"
+        ),
+        {"tid": task_id, "iid": item_id, "rb": operator_id},
+    )
+    await session.commit()
+    if result.rowcount == 0:
+        raise ValueError("item is not awaiting review")
+    await _update_task_totals(session, task_id)
+    await session.commit()
+    return {"task_id": task_id, "item_id": item_id, "status": "completed"}
+
+
+async def write_evidence_audit_event(
+    session: AsyncSession,
+    *,
+    action_type: str,
+    entity_type: str,
+    entity_id: uuid.UUID,
+    before_data: dict | None = None,
+    after_data: dict | None = None,
+    operator_id: str | None = None,
+    reason: str | None = None,
+) -> dict:
+    await _write_audit(
+        session,
+        action_type=action_type,
+        entity_type=entity_type,
+        entity_id=entity_id,
+        before_data=before_data,
+        after_data=after_data,
+        operator_id=operator_id,
+        reason=reason,
+    )
+    await session.commit()
+    return {"ok": True, "action_type": action_type}
+
+
+async def paper_evidence_stats(
+    session: AsyncSession, target_types: list[str] | None = None
+) -> dict:
+    """Evidence statistics. Optional target_types filters by object type."""
+    tt_filter = ""
+    params: dict = {}
+    if target_types:
+        tt_filter = "AND evidence_target_type = ANY(:tts)"
+        params["tts"] = target_types
+    obj_count = (
+        await session.execute(
+            text(
+                "SELECT COUNT(DISTINCT evidence_target_id) FROM mirror_evidence_records "
+                "WHERE evidence_type='paper_verification' "
+                "AND verification_status IN ('human_verified','ai_extracted') " + tt_filter
+            ),
+            params,
+        )
+    ).scalar_one()
+    status_rows = (
+        await session.execute(
+            text(
+                "SELECT verification_status, COUNT(*) FROM mirror_evidence_records "
+                "WHERE evidence_type='paper_verification' " + tt_filter + " GROUP BY 1"
+            ),
+            params,
+        )
+    ).all()
+    status_map = {r[0]: r[1] for r in status_rows}
+    direction_rows = (
+        await session.execute(
+            text(
+                "SELECT evidence_direction, COUNT(*) FROM mirror_evidence_records "
+                "WHERE evidence_type='paper_verification' "
+                "AND verification_status='human_verified' " + tt_filter + " GROUP BY 1"
+            ),
+            params,
+        )
+    ).all()
+    direction_map = {r[0]: r[1] for r in direction_rows}
+    adjustment = (
+        await session.execute(
+            text(
+                "SELECT COALESCE(AVG(after_confidence - before_confidence), 0) FROM confidence_adjustment_logs "
+                "WHERE status='applied' " + ("AND target_type = ANY(:tts)" if target_types else "")
+            ),
+            params,
+        )
+    ).scalar_one()
+    scope_rows = (
+        await session.execute(
+            text(
+                "SELECT p.source_scope, COUNT(*) FROM mirror_evidence_passages p "
+                "JOIN mirror_evidence_records r ON r.id = p.evidence_id "
+                "WHERE p.is_selected AND r.evidence_type='paper_verification' "
+                "AND r.verification_status='human_verified' "
+                + ("AND r.evidence_target_type = ANY(:tts)" if target_types else "")
+                + " GROUP BY 1"
+            ),
+            params,
+        )
+    ).all()
+    scope_map = {r[0]: r[1] for r in scope_rows}
+    by_type = {
+        r[0]: r[1]
+        for r in (
+            await session.execute(
+                text(
+                    "SELECT evidence_target_type, COUNT(*) FROM mirror_evidence_records "
+                    "WHERE evidence_type='paper_verification' "
+                    "AND verification_status='human_verified' " + tt_filter + " GROUP BY 1"
+                ),
+                params,
+            )
+        ).all()
+    }
+    pending_review = (
+        await session.execute(
+            text("SELECT COUNT(*) FROM evidence_validation_records WHERE status='pending'")
+        )
+    ).scalar_one()
+    draft_items = (
+        await session.execute(
+            text(
+                "SELECT COUNT(*) FROM paper_evidence_task_items WHERE status='awaiting_review' "
+                + ("AND target_type = ANY(:tts)" if target_types else "")
+            ),
+            params,
+        )
+    ).scalar_one()
+    fulltext_hits = (
+        await session.execute(
+            text(
+                "SELECT COUNT(*) FROM paper_evidence_task_items "
+                "WHERE passages_json IS NOT NULL AND passages_json::text LIKE '%fulltext%' "
+                + ("AND target_type = ANY(:tts)" if target_types else "")
+            ),
+            params,
+        )
+    ).scalar_one()
+    with_paper = (
+        await session.execute(
+            text(
+                "SELECT COUNT(*) FROM paper_evidence_task_items WHERE paper_json IS NOT NULL "
+                + ("AND target_type = ANY(:tts)" if target_types else "")
+            ),
+            params,
+        )
+    ).scalar_one()
+    return {
+        "objects_with_evidence": obj_count,
+        "pending_human_review": status_map.get("ai_extracted", 0) + pending_review + draft_items,
+        "completed_verifications": status_map.get("human_verified", 0),
+        "directions": direction_map,
+        "avg_confidence_delta": round(float(adjustment or 0), 4),
+        "invalidated_count": status_map.get("invalidated", 0),
+        "source_scope": scope_map,
+        "oa_fulltext_hit_rate": round(fulltext_hits / with_paper, 4) if with_paper else 0,
+        "by_target_type": by_type,
+    }
+
+
+async def list_evidence_review_queue(
+    session: AsyncSession, limit: int = 50, offset: int = 0, status: str = "pending"
+) -> dict:
+    records = (
+        await session.execute(
+            text(
+                "SELECT id::text, evidence_id::text, rule_code, status, target_type, target_id::text, "
+                "direction, paper_snapshot, detail, created_at, resolved_at, resolved_by, resolution_note "
+                "FROM evidence_validation_records WHERE status=:st "
+                "ORDER BY created_at DESC LIMIT :lim OFFSET :off"
+            ),
+            {"st": status, "lim": limit, "off": offset},
+        )
+    ).all()
+    total = (
+        await session.execute(
+            text("SELECT COUNT(*) FROM evidence_validation_records WHERE status=:st"),
+            {"st": status},
+        )
+    ).scalar_one()
+    return {
+        "items": [
+            {
+                "id": r[0],
+                "evidence_id": r[1],
+                "rule_code": r[2],
+                "status": r[3],
+                "target_type": r[4],
+                "target_id": r[5],
+                "direction": r[6],
+                "paper_snapshot": r[7],
+                "detail": r[8],
+                "created_at": r[9].isoformat() if r[9] else None,
+                "resolved_at": r[10].isoformat() if r[10] else None,
+                "resolved_by": r[11],
+                "resolution_note": r[12],
+            }
+            for r in records
+        ],
+        "total": total,
+    }
+
+
+async def list_confidence_adjustments(
+    session: AsyncSession,
+    *,
+    target_type: str,
+    target_id: uuid.UUID,
+    limit: int = 50,
+) -> dict:
+    rows = (
+        await session.execute(
+            text(
+                "SELECT id::text, evidence_id::text, before_confidence, suggested_confidence, "
+                "after_confidence, direction, formula_version, status, applied_by, applied_at, "
+                "rolled_back_by, rolled_back_at, rollback_reason "
+                "FROM confidence_adjustment_logs "
+                "WHERE target_type=:tt AND target_id=:oid "
+                "ORDER BY applied_at DESC NULLS LAST LIMIT :lim"
+            ),
+            {"tt": target_type, "oid": target_id, "lim": limit},
+        )
+    ).all()
+    return {
+        "items": [
+            {
+                "id": r[0],
+                "evidence_id": r[1],
+                "before_confidence": float(r[2]) if r[2] is not None else None,
+                "suggested_confidence": float(r[3]) if r[3] is not None else None,
+                "after_confidence": float(r[4]) if r[4] is not None else None,
+                "direction": r[5],
+                "formula_version": r[6],
+                "status": r[7],
+                "applied_by": r[8],
+                "applied_at": r[9].isoformat() if r[9] else None,
+                "rolled_back_by": r[10],
+                "rolled_back_at": r[11].isoformat() if r[11] else None,
+                "rollback_reason": r[12],
+            }
+            for r in rows
+        ]
+    }
+
+
+async def resolve_evidence_review_record(
+    session: AsyncSession,
+    record_id: uuid.UUID,
+    *,
+    note: str,
+    operator_id: str | None = None,
+) -> dict:
+    row = (
+        await session.execute(
+            text(
+                "UPDATE evidence_validation_records SET status='resolved', resolved_at=now(), "
+                "resolved_by=:rb, resolution_note=:note WHERE id=:rid AND status='pending' RETURNING id::text"
+            ),
+            {"rid": record_id, "rb": operator_id, "note": note},
+        )
+    ).first()
+    await session.commit()
+    if row is None:
+        raise ValueError("review record not found or already resolved")
+    await _write_audit(
+        session,
+        action_type="EVIDENCE_REVIEW_RESOLVED",
+        entity_type="evidence_validation_record",
+        entity_id=record_id,
+        after_data={"note": note},
+        operator_id=operator_id,
+        reason=note,
+    )
+    await session.commit()
+    return {"id": str(record_id), "status": "resolved"}

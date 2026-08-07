@@ -4803,7 +4803,7 @@ export const attachWorkspaceFileToResource = (id: string, body: WorkspaceFileAtt
 
 export interface UnifiedTaskItem {
   id: string
-  type: 'composite_workflow' | 'field_completion' | 'circuit_extraction' | 'circuit_connection_extraction' | 'molecular_circuit'
+  type: 'composite_workflow' | 'field_completion' | 'circuit_extraction' | 'circuit_connection_extraction' | 'molecular_circuit' | 'paper_evidence'
   status: string
   label: string
   target_type: string | null
@@ -5286,8 +5286,8 @@ export interface PaperEvidencePassageDetail {
   is_selected: boolean
 }
 
-export const searchPaperEvidence = (body: { target_type: string; target_id: string; mode?: string; limit?: number; query_override?: string }) =>
-  postJson<PaperSearchResponse>('/api/ontology/evidence/search', body)
+export const searchPaperEvidence = (body: { target_type: string; target_id: string; mode?: string; limit?: number; query_override?: string }, signal?: AbortSignal) =>
+  postJson<PaperSearchResponse>('/api/ontology/evidence/search', body, undefined, signal)
 
 export const attachPaperEvidence = (body: {
   target_type: string
@@ -5298,8 +5298,8 @@ export const attachPaperEvidence = (body: {
   passages: EvidencePassageInput[]
 }) => postJson<PaperAttachResponse>('/api/ontology/evidence/attach', body)
 
-export const listPaperEvidence = (p: { target_type: string; target_id: string; limit?: number }) =>
-  getJson<{ items: PaperEvidenceItem[] }>('/api/ontology/evidence/list', p)
+export const listPaperEvidence = (p: { target_type: string; target_id: string; limit?: number }, signal?: AbortSignal) =>
+  getJson<{ items: PaperEvidenceItem[] }>('/api/ontology/evidence/list', p, signal)
 
 export const extractPaperPassage = (body: {
   target_type: string
@@ -5307,7 +5307,7 @@ export const extractPaperPassage = (body: {
   pmid: string
   title: string
   abstract: string
-}) => postJson<{
+}, signal?: AbortSignal) => postJson<{
   overall_direction: 'supports' | 'partial' | 'contradicts' | 'not_found'
   paper_relevance: string
   source_type: 'abstract' | 'fulltext' | 'none'
@@ -5325,7 +5325,7 @@ export const extractPaperPassage = (body: {
   parse_status: string
   retry_count: number
   links?: { pubmed: string | null }
-}>('/api/ontology/evidence/extract', body)
+}>('/api/ontology/evidence/extract', body, undefined, signal)
 
 export const getEvidenceQueue = (p: { target_type: string; scope?: string; limit?: number }) =>
   getJson<{ items: Array<{ target_type: string; target_id: string; label: string; confidence: number | null }> }>(
@@ -5333,8 +5333,8 @@ export const getEvidenceQueue = (p: { target_type: string; scope?: string; limit
     p,
   )
 
-export const translateEvidenceText = (body: { text: string }) =>
-  postJson<{ translated: string }>('/api/ontology/evidence/translate', body)
+export const translateEvidenceText = (body: { text: string }, signal?: AbortSignal) =>
+  postJson<{ translated: string }>('/api/ontology/evidence/translate', body, undefined, signal)
 
 export interface EvidencePassageInput {
   source_scope: 'abstract' | 'fulltext'
@@ -5370,10 +5370,157 @@ export const attachPaperEvidencePreview = (body: {
   direction: string
   reviewer_confidence: number
   passages: EvidencePassageInput[]
-}) => postJson<AttachPreviewResponse>('/api/ontology/evidence/attach-preview', body)
+}, signal?: AbortSignal) => postJson<AttachPreviewResponse>('/api/ontology/evidence/attach-preview', body, undefined, signal)
 
 export const rollbackPaperEvidence = (evidenceId: string, reason: string) =>
   postJson<{ evidence_id: string; status: string; changed: boolean; confidence: number | null }>(
     `/api/ontology/evidence/${evidenceId}/rollback`,
     { reason },
   )
+
+// ──── Paper Evidence Batch / Stats / Audit / Review Queue (Phase C) ────────
+
+export interface PaperEvidenceTaskItem {
+  id: string
+  target_type: string
+  target_id: string
+  status: string
+  pmid: string | null
+  title: string | null
+  passage: string | null
+  direction: string | null
+  confidence: number | null
+  evidence_id: string | null
+  error_message: string | null
+  updated_at: string | null
+  label: string | null
+  current_confidence: number | null
+  passages_json: {
+    papers?: Array<Record<string, unknown>>
+    passages?: Array<Record<string, unknown>>
+  } | null
+  last_error: string | null
+  retry_count: number
+}
+
+export interface PaperEvidenceTask {
+  id: string
+  target_type: string
+  scope: string
+  mode: string
+  max_papers_per_object: number
+  status: string
+  total_items: number
+  processed_items: number
+  awaiting_review_items: number
+  failed_items: number
+  summary: Record<string, unknown> | null
+  created_by: string | null
+  created_at: string | null
+  started_at: string | null
+  finished_at: string | null
+  error_message: string | null
+}
+
+export const createPaperEvidenceBatch = (body: {
+  target_type: string
+  scope: string
+  mode?: string
+  max_papers_per_object?: number
+  limit?: number
+  start_paused?: boolean
+}) => postJson<{ task_id: string; target_count: number; skipped_active_targets: number; auto_started: boolean }>(
+  '/api/ontology/evidence/batch',
+  body,
+)
+
+export const listPaperEvidenceTasks = (p?: { limit?: number; offset?: number; status?: string }) =>
+  getJson<{ items: PaperEvidenceTask[]; total: number }>('/api/ontology/evidence/batch', p)
+
+export const getPaperEvidenceTask = (taskId: string) =>
+  getJson<{ task: PaperEvidenceTask; counts: Record<string, number> }>(`/api/ontology/evidence/batch/${taskId}`)
+
+export const listPaperEvidenceTaskItems = (taskId: string, p?: { limit?: number; offset?: number }) =>
+  getJson<{ items: PaperEvidenceTaskItem[] }>(`/api/ontology/evidence/batch/${taskId}/items`, p)
+
+export const pausePaperEvidenceTask = (taskId: string) =>
+  postJson<{ task_id: string; status: string }>(`/api/ontology/evidence/batch/${taskId}/pause`)
+
+export const resumePaperEvidenceTask = (taskId: string) =>
+  postJson<{ task_id: string; status: string }>(`/api/ontology/evidence/batch/${taskId}/resume`)
+
+export const cancelPaperEvidenceTask = (taskId: string) =>
+  postJson<{ task_id: string; status: string }>(`/api/ontology/evidence/batch/${taskId}/cancel`)
+
+export const retryPaperEvidenceTask = (taskId: string) =>
+  postJson<{ task_id: string; retried: number }>(`/api/ontology/evidence/batch/${taskId}/retry-failed`)
+
+export const completePaperEvidenceTaskItem = (taskId: string, itemId: string) =>
+  postJson<{ task_id: string; item_id: string; status: string }>(
+    `/api/ontology/evidence/batch/${taskId}/items/${itemId}/reviewed`,
+  )
+
+export interface PaperEvidenceStats {
+  objects_with_evidence: number
+  pending_human_review: number
+  completed_verifications: number
+  directions: Record<string, number>
+  avg_confidence_delta: number
+  invalidated_count: number
+  source_scope: Record<string, number>
+  oa_fulltext_hit_rate: number
+  by_target_type: Record<string, number>
+}
+
+export const getPaperEvidenceStats = (p?: { target_types?: string }) =>
+  getJson<PaperEvidenceStats>('/api/ontology/evidence/stats', p)
+
+export const writeEvidenceAudit = (body: {
+  action_type: string
+  entity_type?: string
+  entity_id: string
+  before_data?: Record<string, unknown> | null
+  after_data?: Record<string, unknown> | null
+  reason?: string | null
+}) => postJson<{ ok: boolean; action_type: string }>('/api/ontology/evidence/audit', body)
+
+export interface EvidenceReviewQueueItem {
+  id: string
+  evidence_id: string | null
+  rule_code: string
+  status: string
+  target_type: string
+  target_id: string
+  direction: string | null
+  paper_snapshot: Record<string, unknown> | null
+  detail: Record<string, unknown> | null
+  created_at: string | null
+  resolved_at: string | null
+  resolved_by: string | null
+  resolution_note: string | null
+}
+
+export const listEvidenceReviewQueue = (p?: { status?: string; limit?: number; offset?: number }) =>
+  getJson<{ items: EvidenceReviewQueueItem[]; total: number }>('/api/ontology/evidence/review-queue', p)
+
+export const resolveEvidenceReviewRecord = (recordId: string, note: string) =>
+  postJson<{ id: string; status: string }>(`/api/ontology/evidence/review-queue/${recordId}/resolve`, { note })
+
+export interface ConfidenceAdjustmentItem {
+  id: string
+  evidence_id: string | null
+  before_confidence: number | null
+  suggested_confidence: number | null
+  after_confidence: number | null
+  direction: string | null
+  formula_version: string
+  status: string
+  applied_by: string | null
+  applied_at: string | null
+  rolled_back_by: string | null
+  rolled_back_at: string | null
+  rollback_reason: string | null
+}
+
+export const listConfidenceAdjustments = (p: { target_type: string; target_id: string; limit?: number }) =>
+  getJson<{ items: ConfidenceAdjustmentItem[] }>('/api/ontology/evidence/adjustments', p)

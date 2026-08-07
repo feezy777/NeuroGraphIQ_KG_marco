@@ -1,5 +1,6 @@
-import { useMemo } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useI18n } from '../../i18n-context'
+import { getPaperEvidenceStats, type PaperEvidenceStats } from '../../api/endpoints'
 import type { DataCenterCounts, DataCenterTabId } from './dataCenterTypes'
 
 interface Props {
@@ -20,6 +21,15 @@ interface PipelineStage {
 
 export function DataCenterOverview({ counts, loading, onNavigate, onRefresh }: Props) {
   const { t } = useI18n()
+  const [stats, setStats] = useState<PaperEvidenceStats | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    void getPaperEvidenceStats()
+      .then(r => { if (!cancelled) setStats(r) })
+      .catch(() => { if (!cancelled) setStats(null) })
+    return () => { cancelled = true }
+  }, [])
 
   const stages: PipelineStage[] = useMemo(() => {
     const rawTotal = counts.rawAal3Count + counts.rawMacro96Count
@@ -120,6 +130,49 @@ export function DataCenterOverview({ counts, loading, onNavigate, onRefresh }: P
           </div>
         </div>
       )}
+
+      {/* Paper Evidence Stats */}
+      <div className="dc-overview-card">
+        <h3 className="dc-overview-card-header">论文佐证统计</h3>
+        {stats ? (
+          <div className="dc-evidence-stats">
+            <div className="dc-evidence-stat">
+              <strong>{stats.objects_with_evidence}</strong>
+              <span>已有论文证据对象</span>
+            </div>
+            <div className="dc-evidence-stat">
+              <strong>{stats.pending_human_review}</strong>
+              <span>待人工审核</span>
+            </div>
+            <div className="dc-evidence-stat">
+              <strong>{stats.completed_verifications}</strong>
+              <span>已完成佐证</span>
+            </div>
+            <div className="dc-evidence-stat">
+              <strong>{stats.directions.supports ?? 0} / {stats.directions.partial ?? 0} / {stats.directions.contradicts ?? 0}</strong>
+              <span>支持 / 部分 / 矛盾</span>
+            </div>
+            <div className="dc-evidence-stat">
+              <strong>{stats.avg_confidence_delta.toFixed(3)}</strong>
+              <span>平均置信度变化</span>
+            </div>
+            <div className="dc-evidence-stat">
+              <strong>{stats.invalidated_count}</strong>
+              <span>已撤销证据</span>
+            </div>
+            <div className="dc-evidence-stat">
+              <strong>{Math.round(stats.oa_fulltext_hit_rate * 100)}%</strong>
+              <span>OA 全文命中率</span>
+            </div>
+            <div className="dc-evidence-stat">
+              <strong>{stats.source_scope.abstract ?? 0} / {stats.source_scope.fulltext ?? 0}</strong>
+              <span>摘要 / 全文片段</span>
+            </div>
+          </div>
+        ) : (
+          <div className="ontology-empty">暂无统计或接口不可用</div>
+        )}
+      </div>
 
       {/* Quick Entry */}
       <div className="dc-overview-card">

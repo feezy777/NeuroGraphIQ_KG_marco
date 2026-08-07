@@ -6,6 +6,7 @@ import { RuleValidationTab } from './components/RuleValidationTab'
 import { DualReviewPanel } from './components/DualReviewPanel'
 import { HumanReviewPanel } from './components/HumanReviewPanel'
 import { PromotionPanel } from './components/PromotionPanel'
+import { PaperEvidenceReviewPanel } from './components/PaperEvidenceReviewPanel'
 
 const TABS = [
   { key: 'candidates', label: '候选回路' },
@@ -13,6 +14,7 @@ const TABS = [
   { key: 'dual_review', label: '双模型盲审' },
   { key: 'human_review', label: '人工审核' },
   { key: 'promotion', label: '晋升管理' },
+  { key: 'paper_evidence', label: '论文证据复核' },
 ]
 
 interface Props { granularityLevel?: string }
@@ -42,6 +44,7 @@ export function ValidationWorkbench({ granularityLevel }: Props) {
         {tab === 'dual_review' && <DualReviewPanel granularityLevel={granularityLevel} />}
         {tab === 'human_review' && <HumanReviewPanel granularityLevel={granularityLevel} />}
         {tab === 'promotion' && <PromotionPanel granularityLevel={granularityLevel} />}
+        {tab === 'paper_evidence' && <PaperEvidenceReviewPanel />}
       </div>
     </div>
   )

@@ -14,6 +14,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
+from sqlalchemy import text
 
 from app.config import get_settings
 from app.routers import (
@@ -147,11 +148,38 @@ a{color:#1677ff}
 async def log_startup_version() -> None:
     import logging
 
+    import asyncio
+
     log = logging.getLogger("uvicorn.error")
     log.info("[startup] NeuroGraphIQ backend version=%s", BACKEND_VERSION)
     log.info(
         "[startup] registered llm_field_completion router prefix=/api/llm-extraction/field-completion"
     )
+    # Recover interrupted paper-evidence batch tasks (service restart resilience).
+    try:
+        from app.database import AsyncSessionLocal
+        from app.services import paper_evidence_service as pes
+
+        if AsyncSessionLocal is not None:
+            async with AsyncSessionLocal() as session:
+                recovered = await pes.recover_interrupted_batch_tasks(session)
+                task_ids = list(
+                    (
+                        await session.execute(
+                            text(
+                                "SELECT id::text FROM paper_evidence_tasks "
+                                "WHERE status IN ('pending','paused') AND finished_at IS NULL "
+                                "AND id IN (SELECT DISTINCT task_id FROM paper_evidence_task_items WHERE status='pending')"
+                            )
+                        )
+                    ).scalars().all()
+                )
+            for task_id in task_ids:
+                asyncio.get_event_loop().create_task(pes.execute_paper_evidence_batch_background(task_id))
+            if recovered or task_ids:
+                log.info("[startup] paper-evidence batch recovery: reset=%s resumed_tasks=%s", recovered, len(task_ids))
+    except Exception:  # noqa: BLE001
+        log.exception("[startup] paper-evidence batch recovery failed (non-fatal)")
 
 
 @app.get("/api/health", tags=["Health"])

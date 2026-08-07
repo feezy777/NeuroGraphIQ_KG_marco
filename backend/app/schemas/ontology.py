@@ -210,6 +210,20 @@ class BatchTaskCreateRequest(BaseModel):
     mode: str = "function"
     max_papers_per_object: int = Field(default=3, ge=1, le=10)
     limit: int = Field(default=500, ge=1, le=5000)
+    start_paused: bool = False
+
+
+class EvidenceAuditRequest(BaseModel):
+    action_type: str = Field(min_length=1, max_length=64)
+    entity_type: str = Field(default="evidence", max_length=64)
+    entity_id: uuid.UUID
+    before_data: dict | None = None
+    after_data: dict | None = None
+    reason: str | None = None
+
+
+class ReviewResolveRequest(BaseModel):
+    note: str = Field(default="", max_length=2000)
 
 
 class TranslateRequest(BaseModel):

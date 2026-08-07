@@ -12,6 +12,10 @@ import {
   cancelMolecularCircuitRun,
   pauseCompositeWorkflow,
   pauseMolecularCircuitRun,
+  cancelPaperEvidenceTask,
+  pausePaperEvidenceTask,
+  resumePaperEvidenceTask,
+  retryPaperEvidenceTask,
 } from '../api/endpoints'
 
 export interface TaskTypeDef {
@@ -20,8 +24,12 @@ export interface TaskTypeDef {
   label: (task: BgTask) => string
   cancel: (id: string) => Promise<unknown>
   pause?: (id: string) => Promise<unknown>
+  resume?: (id: string) => Promise<unknown>
+  retry?: (id: string) => Promise<unknown>
   /** Some types don't support pause */
   canPause: boolean
+  /** Types that open the paper-evidence workbench from the task center */
+  opensWorkbench?: boolean
 }
 
 const REGISTRY: Record<BgTask['type'], TaskTypeDef> = {
@@ -62,6 +70,17 @@ const REGISTRY: Record<BgTask['type'], TaskTypeDef> = {
     pause: (id) => pauseMolecularCircuitRun(id),
     canPause: true,
   },
+  paper_evidence: {
+    type: 'paper_evidence',
+    icon: '📄',
+    label: (t) => `论文佐证 · ${t.targetType ?? ''}`,
+    cancel: (id) => cancelPaperEvidenceTask(id),
+    pause: (id) => pausePaperEvidenceTask(id),
+    resume: (id) => resumePaperEvidenceTask(id),
+    retry: (id) => retryPaperEvidenceTask(id),
+    canPause: true,
+    opensWorkbench: true,
+  },
 }
 
 /** Look up a task type definition. Falls back to composite_workflow. */
@@ -79,6 +98,16 @@ export async function pauseTask(task: BgTask): Promise<void> {
   await REGISTRY[task.type]?.pause?.(task.id)
 }
 
+/** Convenience: resume a paused task (no-op if unsupported). */
+export async function resumeTask(task: BgTask): Promise<void> {
+  await REGISTRY[task.type]?.resume?.(task.id)
+}
+
+/** Convenience: retry failed items of a task (no-op if unsupported). */
+export async function retryTask(task: BgTask): Promise<void> {
+  await REGISTRY[task.type]?.retry?.(task.id)
+}
+
 /** All task type keys for filter UIs. */
 export const TASK_TYPE_OPTIONS: { key: BgTask['type']; label: string }[] = [
   { key: 'composite_workflow', label: 'LLM 提取' },
@@ -86,4 +115,5 @@ export const TASK_TYPE_OPTIONS: { key: BgTask['type']; label: string }[] = [
   { key: 'circuit_extraction', label: '回路提取' },
   { key: 'molecular_circuit', label: 'Molecular 回路' },
   { key: 'circuit_connection_extraction', label: '回路→连接提取' },
+  { key: 'paper_evidence', label: '论文佐证' },
 ]

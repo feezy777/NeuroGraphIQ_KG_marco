@@ -23,6 +23,7 @@ from app.models.mirror_circuit_validation import MirrorCircuitValidationRun
 from app.services import llm_composite_workflow_service as composite_svc
 from app.services import llm_field_completion_service as fc_svc
 from app.services import molecular_circuit_extraction_service as mol_svc
+from app.services import paper_evidence_service as pes
 
 router = APIRouter()
 _log = logging.getLogger(__name__)
@@ -224,11 +225,47 @@ async def list_unified_tasks(
             _log.exception("Failed to fetch molecular_circuit runs")
             return []
 
+    async def _paper_evidence():
+        try:
+            data = await pes.list_paper_evidence_tasks(session, limit=limit, offset=0, status=status)
+            return [
+                UnifiedTaskItem(
+                    id=item["id"],
+                    type="paper_evidence",
+                    status=item["status"],
+                    label=f"论文佐证 · {item['target_type']}",
+                    target_type=item["target_type"],
+                    target_count=item["total_items"],
+                    provider="deepseek+europepmc",
+                    model_name=None,
+                    created_at=item["created_at"] or "",
+                    started_at=item["started_at"],
+                    completed_at=item["finished_at"],
+                    meta={
+                        "processed_items": item["processed_items"],
+                        "awaiting_review_items": item["awaiting_review_items"],
+                        "failed_items": item["failed_items"],
+                    },
+                )
+                for item in data["items"]
+            ]
+        except Exception:
+            _log.exception("Failed to fetch paper_evidence runs")
+            return []
+
     # Run queries sequentially — SQLAlchemy AsyncSession cannot share a single
     # session across concurrent asyncio tasks (InvalidRequestError: "concurrent
     # operations are not permitted").
     merged: list[UnifiedTaskItem] = []
-    for coro in (_composite, _field_completion, _circuit_extraction, _circuit_connection_extraction, _circuit_validation, _molecular):
+    for coro in (
+        _composite,
+        _field_completion,
+        _circuit_extraction,
+        _circuit_connection_extraction,
+        _circuit_validation,
+        _molecular,
+        _paper_evidence,
+    ):
         try:
             items = await coro()
             if isinstance(items, list):
