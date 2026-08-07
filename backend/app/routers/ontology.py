@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import uuid
 
+import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -15,12 +16,14 @@ from app.schemas.ontology import (
     BatchGroundingByTextRequest,
     CoverageResponse,
     EnumReplaceRequest,
+    EvidenceAttachRequest,
     GroundingListResponse,
     GroundingRead,
     GroundingRunRequest,
     GroundingRunResponse,
     GroundingSkipRequest,
     ManualGroundingRequest,
+    PaperSearchRequest,
     PanoramaResponse,
     TermCreateRequest,
     TermListResponse,
@@ -33,6 +36,7 @@ from app.schemas.ontology import (
 )
 from app.services import ontology_service as svc
 from app.services import ontology_governance_service as gov
+from app.services import paper_evidence_service as pes
 
 router = APIRouter()
 
@@ -597,3 +601,47 @@ async def governance_audit_runs(
     session: AsyncSession = Depends(get_db),
 ):
     return await gov.list_audit_runs(session, limit=limit, offset=offset)
+
+
+# ---- Paper evidence (Phase B) ----
+
+
+@router.post("/evidence/search")
+async def paper_evidence_search(
+    body: PaperSearchRequest,
+    session: AsyncSession = Depends(get_db),
+):
+    try:
+        info = await pes.pack_target_info(session, body.target_type, body.target_id)
+        papers = await pes.search_papers(info["query"], limit=body.limit)
+        return {"target_info": info, "papers": papers}
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail={"code": "INVALID_REQUEST", "message": str(exc)})
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=502, detail={"code": "PAPER_API_ERROR", "message": str(exc)})
+
+
+@router.post("/evidence/attach")
+async def paper_evidence_attach(
+    body: EvidenceAttachRequest,
+    session: AsyncSession = Depends(get_db),
+    _auth: str = Depends(require_role("reviewer")),
+):
+    try:
+        result = await pes.attach_evidence(
+            session,
+            target_type=body.target_type,
+            target_id=body.target_id,
+            pmid=body.pmid,
+            excerpt=body.excerpt,
+            direction=body.direction,
+            operator_id=None,
+        )
+        await session.commit()
+        return result
+    except ValueError as exc:
+        await session.rollback()
+        raise HTTPException(status_code=400, detail={"code": "INVALID_REQUEST", "message": str(exc)})
+    except httpx.HTTPError as exc:
+        await session.rollback()
+        raise HTTPException(status_code=502, detail={"code": "PAPER_API_ERROR", "message": str(exc)})

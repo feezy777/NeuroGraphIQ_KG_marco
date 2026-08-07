@@ -121,6 +121,20 @@ class AlignmentReviewRequest(BaseModel):
     external_label: str | None = None
 
 
+class PaperSearchRequest(BaseModel):
+    target_type: str
+    target_id: uuid.UUID
+    limit: int = Field(default=5, ge=1, le=20)
+
+
+class EvidenceAttachRequest(BaseModel):
+    target_type: str
+    target_id: uuid.UUID
+    pmid: str
+    excerpt: str
+    direction: str = "supports"
+
+
 class GroundingRead(BaseModel):
     id: uuid.UUID
     target_type: str
