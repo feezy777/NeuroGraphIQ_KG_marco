@@ -20,6 +20,7 @@ interface Props {
   onDelete?: (rowId: string) => Promise<void>
   onRefresh?: () => void
   evidenceTargetType?: string
+  onOpenSource?: (targetType: string, targetId: string) => void
 }
 
 function renderFieldValue(value: unknown): string {
@@ -46,6 +47,7 @@ export function FormalObjectDetailDrawer({
   onDelete,
   onRefresh,
   evidenceTargetType,
+  onOpenSource,
 }: Props) {
   const { t } = useI18n()
   const [editingField, setEditingField] = useState<string | null>(null)
@@ -104,6 +106,11 @@ export function FormalObjectDetailDrawer({
               {onFieldCompletion && (
                 <button className="btn btn-sm btn-primary" onClick={onFieldCompletion} title="LLM field completion">
                   ✨ AI Complete
+                </button>
+              )}
+              {onOpenSource && row && typeof row.evidence_target_type === 'string' && typeof row.evidence_target_id === 'string' && (
+                <button className="btn btn-sm" onClick={() => onOpenSource(row.evidence_target_type as string, row.evidence_target_id as string)} title="打开原数据抽屉">
+                  查看原数据
                 </button>
               )}
               <MissingFieldsBadge missingFields={missingFields} />

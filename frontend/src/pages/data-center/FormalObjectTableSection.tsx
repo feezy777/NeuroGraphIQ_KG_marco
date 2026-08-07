@@ -35,6 +35,8 @@ interface Props {
   onValidateSelected?: (ids: string[]) => void
   /** Current granularity level for schema display in FormalAlignmentCard */
   granularityLevel?: string
+  autoOpenId?: string | null
+  onAutoOpenHandled?: () => void
 }
 
 export function FormalObjectTableSection({
@@ -56,6 +58,8 @@ export function FormalObjectTableSection({
   onDeleteSelected,
   onFetchAll,
   granularityLevel,
+  autoOpenId,
+  onAutoOpenHandled,
 }: Props) {
   const { t } = useI18n()
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
@@ -67,6 +71,15 @@ export function FormalObjectTableSection({
   const [circuitBundle, setCircuitBundle] = useState<CircuitBundleFieldCompletionGroup | null>(null)
   const [bundleWarnings, setBundleWarnings] = useState<string[]>([])
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
+
+  useEffect(() => {
+    if (!autoOpenId) return
+    const found = items.find(r => String(r.id) === autoOpenId)
+    if (found) {
+      onOpenDetail(found)
+      onAutoOpenHandled?.()
+    }
+  }, [autoOpenId, items, onOpenDetail, onAutoOpenHandled])
 
   const isCircuitBundle = mapping.targetType === 'circuit'
   const isServerPaged = serverTotal != null

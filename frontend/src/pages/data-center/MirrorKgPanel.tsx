@@ -41,6 +41,13 @@ interface Props {
   onFilterChange: (patch: Partial<{ batchId: string; resourceId: string; sourceAtlas: string; granularityLevel: string }>) => void
 }
 
+function sourceTabFor(targetType: string): MirrorKgSubTab | null {
+  if (targetType === 'connection' || targetType === 'projection') return 'connections'
+  if (targetType === 'circuit') return 'circuits'
+  if (targetType === 'region_function') return 'functions'
+  return null
+}
+
 const SUB_TABS: MirrorKgSubTab[] = ['connections', 'functions', 'circuits', 'triples', 'evidence']
 
 // Sub-tabs under each parent tab: { key, label, formalObjectType, listApi }
@@ -76,6 +83,7 @@ export function MirrorKgPanel({
   const { t } = useI18n()
   const [tick, setTick] = useState(0)
   const [selected, setSelected] = useState<FormalRow | null>(null)
+  const [pendingSource, setPendingSource] = useState<{ type: string; id: string } | null>(null)
   const [detailCompletionOpen, setDetailCompletionOpen] = useState(false)
   const [bundleOpen, setBundleOpen] = useState(false)
   const [bundleLoading, setBundleLoading] = useState(false)
@@ -236,6 +244,8 @@ export function MirrorKgPanel({
           serverPage={page}
           onServerPageChange={setPage}
           onOpenDetail={setSelected}
+          autoOpenId={pendingSource && sourceTabFor(pendingSource.type) === mirrorTab ? pendingSource.id : null}
+          onAutoOpenHandled={() => setPendingSource(null)}
           onRefresh={handleCompletionDone}
           onDeleteSelected={handleBulkDelete}
           onFetchAll={handleFetchAll}
@@ -257,6 +267,12 @@ export function MirrorKgPanel({
             : mirrorTab === 'circuits' ? 'circuit'
             : undefined
         }
+        onOpenSource={(targetType, targetId) => {
+          const tab = sourceTabFor(targetType)
+          if (!tab) return
+          onMirrorTabChange(tab)
+          setPendingSource({ type: targetType, id: targetId })
+        }}
         onFieldCompletion={() => {
           if (mirrorTab === 'circuits' && selected) {
             setBundleOpen(true)
