@@ -60,6 +60,10 @@ class PaperPassageExtraction(BaseModel):
     passage: str = Field(min_length=1, max_length=2000)
     reason: str = Field(min_length=1, max_length=500)
     confidence: float = Field(ge=0.0, le=1.0)
+    paragraph_id: str | None = Field(default=None, max_length=128)
+    section: str | None = Field(default=None, max_length=256)
+    evidence_level: Literal["direct", "indirect", "interpretive", "background"] = "indirect"
+    semantic_confidence: float | None = Field(default=None, ge=0.0, le=1.0)
 
 
 class PaperMultiPassageExtraction(BaseModel):

@@ -10,7 +10,8 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.main import app
-from app.models.mirror_kg import MirrorEvidenceRecord
+from app.models.mirror_kg import PaperSource
+from app.models.mirror_kg import MirrorEvidencePassage, MirrorEvidenceRecord
 from app.services import paper_evidence_service as pes
 
 
@@ -18,8 +19,11 @@ class FakeSession:
     def __init__(self, get_map=None):
         self.get_map = get_map or {}
         self.added = []
+        self.committed = 0
 
     async def get(self, model, pk):
+        if model is PaperSource:
+            return SimpleNamespace(id=pk)
         return self.get_map.get((model, pk))
 
     def add(self, obj):
@@ -27,6 +31,35 @@ class FakeSession:
 
     async def flush(self):
         pass
+
+    async def execute(self, stmt, params=None):
+        if "INSERT INTO paper_sources" in str(stmt):
+            return _FakeScalarOne(uuid.uuid4())
+        return _FakeResult()
+
+    async def commit(self):
+        self.committed += 1
+
+
+class _FakeScalars:
+    def first(self):
+        return None
+
+    def all(self):
+        return []
+
+
+class _FakeResult:
+    def scalars(self):
+        return _FakeScalars()
+
+
+class _FakeScalarOne:
+    def __init__(self, value):
+        self.value = value
+
+    def scalar_one(self):
+        return self.value
 
 
 class _Row:
@@ -109,7 +142,7 @@ def test_attach_rejects_unverified_passages():
                     passages=[{"source_scope": "abstract", "passage": "fabricated text not in source", "direction": "supports", "reason": "r", "confidence": 0.9}],
                 )
             )
-    assert session.added == []
+    assert not any(isinstance(o, (MirrorEvidenceRecord, MirrorEvidencePassage)) for o in session.added)
 
 
 def test_attach_rejects_duplicate_passage():

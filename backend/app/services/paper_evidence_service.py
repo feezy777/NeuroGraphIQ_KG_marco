@@ -19,6 +19,8 @@ from app.models.mirror_kg import (
     ConfidenceAdjustmentLog,
     MirrorEvidenceRecord,
     MirrorEvidencePassage,
+    PaperPassage,
+    PaperSource,
     MirrorRegionCircuit,
     MirrorRegionConnection,
     MirrorRegionFunction,
@@ -39,19 +41,15 @@ from app.services.confidence_rules import (
     SUPPORT_CAP,
     compute_adjustment,
 )
+from app.services.evidence_target_adapter import (
+    TARGET_MODELS as ADAPTER_TARGET_MODELS,
+    build_target_dto,
+)
 
 EUROPE_PMC_SEARCH = "https://www.ebi.ac.uk/europepmc/webservices/rest/search"
 SEARCH_TIMEOUT = 25
 
-TARGET_MODELS = {
-    "projection_function": MirrorProjectionFunction,
-    "circuit_function": MirrorCircuitFunction,
-    "region_function": MirrorRegionFunction,
-    "projection": MirrorRegionConnection,
-    "connection": MirrorRegionConnection,
-    "circuit": MirrorRegionCircuit,
-    "circuit_step": MirrorCircuitStep,
-}
+TARGET_MODELS = ADAPTER_TARGET_MODELS
 
 # Batch execution tuning (independent concurrency for DeepSeek vs Europe PMC)
 DEEPSEEK_CONCURRENCY = 2
@@ -165,6 +163,292 @@ def verify_and_locate_passage(
     para_idx, locator = locate_passage(passage, source)
     locator = locator or (f"{source_scope}:verified:{method}" if verified else None)
     return verified, method, para_idx, locator
+
+
+def normalize_doi(doi: str) -> str:
+    """Lowercase, strip URL prefix / whitespace; keep '10.' prefix convention."""
+    value = (doi or "").strip().lower()
+    for prefix in ("https://doi.org/", "http://doi.org/", "http://dx.doi.org/", "https://dx.doi.org/", "doi:"):
+        if value.startswith(prefix):
+            value = value[len(prefix):]
+    return value.strip()
+
+
+async def ensure_paper_source(
+    session: AsyncSession, paper: dict, *, fetched_at: bool = True
+) -> PaperSource:
+    """Upsert paper_sources by PMID (preferred) or normalized DOI. Idempotent."""
+    pmid = (paper.get("pmid") or "").strip()
+    doi = (paper.get("doi") or "").strip()
+    norm_doi = normalize_doi(doi) if doi else ""
+    abstract = (paper.get("abstract") or "").strip()
+    fulltext = (paper.get("fulltext") or "").strip()
+    abstract_hash = hashlib.sha256(abstract.encode("utf-8")).hexdigest() if abstract else None
+    fulltext_hash = hashlib.sha256(fulltext.encode("utf-8")).hexdigest() if fulltext else None
+    year = int(paper["year"]) if str(paper.get("year") or "").isdigit() else None
+    metadata_json = json.dumps(
+        {
+            "authors": paper.get("authors") or "",
+            "mode": paper.get("mode") or "function",
+            "pmcid": paper.get("pmcid") or "",
+        },
+        ensure_ascii=False,
+    )
+    row_id = None
+    if pmid:
+        row_id = (
+            await session.execute(
+                text(
+                    "INSERT INTO paper_sources "
+                    "(source, pmid, pmcid, doi, normalized_doi, title, journal, publication_year, "
+                    "is_oa, abstract_available, fulltext_available, metadata_json, abstract_hash, "
+                    "fulltext_hash, fetched_at) "
+                    "VALUES (:source, :pmid, :pmcid, :doi, :norm_doi, :title, :journal, :year, "
+                    ":is_oa, :abs_avail, :ft_avail, CAST(:meta AS jsonb), :abs_hash, :ft_hash, "
+                    "CASE WHEN :fetched THEN now() ELSE NULL END) "
+                    "ON CONFLICT (pmid) WHERE pmid IS NOT NULL AND pmid <> '' "
+                    "DO UPDATE SET doi=EXCLUDED.doi, normalized_doi=EXCLUDED.normalized_doi, "
+                    "title=EXCLUDED.title, journal=EXCLUDED.journal, publication_year=EXCLUDED.publication_year, "
+                    "is_oa=EXCLUDED.is_oa, abstract_available=EXCLUDED.abstract_available, "
+                    "fulltext_available=EXCLUDED.fulltext_available, "
+                    "abstract_hash=COALESCE(EXCLUDED.abstract_hash, paper_sources.abstract_hash), "
+                    "fulltext_hash=COALESCE(EXCLUDED.fulltext_hash, paper_sources.fulltext_hash), "
+                    "fetched_at=CASE WHEN :fetched THEN now() ELSE paper_sources.fetched_at END, "
+                    "updated_at=now() "
+                    "RETURNING id"
+                ),
+                {
+                    "source": paper.get("source") or "europepmc",
+                    "pmid": pmid,
+                    "pmcid": (paper.get("pmcid") or "").strip() or None,
+                    "doi": doi or None,
+                    "norm_doi": norm_doi or None,
+                    "title": paper.get("title") or None,
+                    "journal": paper.get("journal") or None,
+                    "year": year,
+                    "is_oa": bool(paper.get("is_open_access", False)),
+                    "abs_avail": bool(abstract),
+                    "ft_avail": bool(fulltext),
+                    "meta": metadata_json,
+                    "abs_hash": abstract_hash,
+                    "ft_hash": fulltext_hash,
+                    "fetched": fetched_at,
+                },
+            )
+        ).scalar_one()
+    elif norm_doi:
+        row_id = (
+            await session.execute(
+                text(
+                    "INSERT INTO paper_sources "
+                    "(source, pmid, pmcid, doi, normalized_doi, title, journal, publication_year, "
+                    "is_oa, abstract_available, fulltext_available, metadata_json, abstract_hash, "
+                    "fulltext_hash, fetched_at) "
+                    "VALUES (:source, NULL, :pmcid, :doi, :norm_doi, :title, :journal, :year, "
+                    ":is_oa, :abs_avail, :ft_avail, CAST(:meta AS jsonb), :abs_hash, :ft_hash, "
+                    "CASE WHEN :fetched THEN now() ELSE NULL END) "
+                    "ON CONFLICT (normalized_doi) WHERE normalized_doi IS NOT NULL AND normalized_doi <> '' "
+                    "DO UPDATE SET pmid=COALESCE(EXCLUDED.pmid, paper_sources.pmid), "
+                    "doi=EXCLUDED.doi, title=EXCLUDED.title, journal=EXCLUDED.journal, "
+                    "publication_year=EXCLUDED.publication_year, is_oa=EXCLUDED.is_oa, "
+                    "abstract_available=EXCLUDED.abstract_available, fulltext_available=EXCLUDED.fulltext_available, "
+                    "abstract_hash=COALESCE(EXCLUDED.abstract_hash, paper_sources.abstract_hash), "
+                    "fulltext_hash=COALESCE(EXCLUDED.fulltext_hash, paper_sources.fulltext_hash), "
+                    "fetched_at=CASE WHEN :fetched THEN now() ELSE paper_sources.fetched_at END, "
+                    "updated_at=now() "
+                    "RETURNING id"
+                ),
+                {
+                    "source": paper.get("source") or "europepmc",
+                    "pmcid": (paper.get("pmcid") or "").strip() or None,
+                    "doi": doi or None,
+                    "norm_doi": norm_doi,
+                    "title": paper.get("title") or None,
+                    "journal": paper.get("journal") or None,
+                    "year": year,
+                    "is_oa": bool(paper.get("is_open_access", False)),
+                    "abs_avail": bool(abstract),
+                    "ft_avail": bool(fulltext),
+                    "meta": metadata_json,
+                    "abs_hash": abstract_hash,
+                    "ft_hash": fulltext_hash,
+                    "fetched": fetched_at,
+                },
+            )
+        ).scalar_one()
+    if row_id is None:
+        raise ValueError("paper has neither PMID nor DOI; cannot persist paper source")
+    row = await session.get(PaperSource, row_id)
+    if row is None:
+        raise ValueError("paper source persistence failed")
+    return row
+
+
+def parse_fulltext_paragraphs(
+    fulltext: str, *, source_scope: str = "fulltext"
+) -> list[dict]:
+    """Split full text into structured paragraphs (section-aware, best effort)."""
+    paragraphs: list[dict] = []
+    text_value = (fulltext or "").strip()
+    if not text_value:
+        return paragraphs
+    # Simple section detection: lines that look like headings (short, no trailing period).
+    lines = text_value.split("\n")
+    current_section = ""
+    buffer: list[str] = []
+    char_offset = 0
+
+    def flush() -> None:
+        nonlocal buffer, char_offset
+        paragraph_text = " ".join(p.strip() for p in buffer if p.strip()).strip()
+        buffer = []
+        if not paragraph_text:
+            return
+        idx = len(paragraphs)
+        para_id = f"{current_section.lower().replace(' ', '_')}_p{idx + 1:03d}" if current_section else f"fulltext_p{idx + 1:03d}"
+        paragraphs.append(
+            {
+                "source_scope": source_scope,
+                "section_title": current_section or None,
+                "paragraph_id": para_id,
+                "paragraph_index": idx,
+                "passage_text": paragraph_text,
+                "text_hash": passage_hash(paragraph_text),
+                "locator": f"{current_section.lower().replace(' ', '_')}:paragraph:{idx}" if current_section else f"paragraph:{idx}",
+                "char_start": None,
+                "char_end": None,
+            }
+        )
+
+    for raw_line in lines:
+        line = raw_line.strip()
+        if not line:
+            continue
+        if len(line) <= 80 and not line.endswith((".", ":", ";", "?", "!")) and len(line.split()) <= 6:
+            flush()
+            current_section = line
+            continue
+        buffer.append(line)
+    flush()
+    return paragraphs
+
+
+async def ensure_paper_passages(
+    session: AsyncSession,
+    paper_id: uuid.UUID,
+    paragraphs: list[dict],
+) -> list[dict]:
+    """Persist structured paragraphs (idempotent per paper_id+paragraph_id)."""
+    saved: list[dict] = []
+    for para in paragraphs:
+        para_id = para.get("paragraph_id")
+        if not para_id:
+            continue
+        existing = (
+            await session.execute(
+                select(PaperPassage).where(
+                    PaperPassage.paper_id == paper_id,
+                    PaperPassage.paragraph_id == para_id,
+                )
+            )
+        ).scalars().first()
+        if existing is not None:
+            saved.append(
+                {
+                    "id": existing.id,
+                    "paragraph_id": existing.paragraph_id,
+                    "section_title": existing.section_title,
+                    "paragraph_index": existing.paragraph_index,
+                    "passage_text": existing.passage_text,
+                    "source_scope": existing.source_scope,
+                    "locator": existing.locator,
+                }
+            )
+            continue
+        row = PaperPassage(
+            paper_id=paper_id,
+            source_scope=para.get("source_scope") or "fulltext",
+            section_title=para.get("section_title"),
+            paragraph_id=para_id,
+            paragraph_index=para.get("paragraph_index"),
+            passage_text=para["passage_text"],
+            text_hash=para.get("text_hash") or passage_hash(para["passage_text"]),
+            locator=para.get("locator"),
+            char_start=para.get("char_start"),
+            char_end=para.get("char_end"),
+        )
+        session.add(row)
+        await session.flush()
+        saved.append(
+            {
+                "id": row.id,
+                "paragraph_id": row.paragraph_id,
+                "section_title": row.section_title,
+                "paragraph_index": row.paragraph_index,
+                "passage_text": row.passage_text,
+                "source_scope": row.source_scope,
+                "locator": row.locator,
+            }
+        )
+    return saved
+
+
+async def recall_candidate_passages(
+    session: AsyncSession,
+    paper_id: uuid.UUID,
+    term: str,
+    limit: int = 30,
+    window: int = 1,
+) -> list[dict]:
+    """V1 recall: term-hit ranking over structured paragraphs (no LLM/embedding)."""
+    rows = (
+        await session.execute(
+            select(PaperPassage)
+            .where(PaperPassage.paper_id == paper_id)
+            .order_by(PaperPassage.paragraph_index)
+        )
+    ).scalars().all()
+    tokens = [t for t in re.split(r"[^a-zA-Z0-9\u4e00-\u9fff]+", term or "") if len(t) > 1]
+    scored: list[tuple[int, PaperPassage]] = []
+    for idx, row in enumerate(rows):
+        text_l = row.passage_text.lower()
+        score = sum(1 for t in tokens if t.lower() in text_l)
+        scored.append((score, idx, row))
+    scored.sort(key=lambda x: (-x[0], x[1]))
+    candidates = [r[2] for r in scored]
+    if not candidates:
+        return []
+    # Keep ±window neighbors for context.
+    indexed = {r[1]: r[2] for r in scored}
+    best_idx = scored[0][1]
+    selected_ids: list[uuid.UUID] = []
+    # Best-hit paragraph first, then its ±window context, then remaining hits.
+    selected_ids.append(indexed[best_idx].id)
+    for delta in range(-window, window + 1):
+        if delta == 0:
+            continue
+        row = indexed.get(best_idx + delta)
+        if row is not None and row.id not in selected_ids:
+            selected_ids.append(row.id)
+    for _, idx, row in scored[1:]:
+        if len(selected_ids) >= limit:
+            break
+        if row.id not in selected_ids:
+            selected_ids.append(row.id)
+    by_id = {r.id: r for r in rows}
+    return [
+        {
+            "id": str(pid),
+            "paragraph_id": by_id[pid].paragraph_id,
+            "section_title": by_id[pid].section_title,
+            "paragraph_index": by_id[pid].paragraph_index,
+            "passage_text": by_id[pid].passage_text,
+            "source_scope": by_id[pid].source_scope,
+            "locator": by_id[pid].locator,
+        }
+        for pid in selected_ids
+        if pid in by_id
+    ]
 
 
 def _name_parts(target_type: str, row) -> list[str]:
@@ -331,6 +615,8 @@ async def attach_evidence(
     paper = await verify_paper(pmid)
     if paper is None:
         raise ValueError("paper not found or invalid PMID")
+    paper_source = await ensure_paper_source(session, paper)
+    paper_id = paper_source.id
     model = TARGET_MODELS.get(target_type)
     if model is None:
         raise ValueError(f"unsupported target_type: {target_type}")
@@ -344,6 +630,20 @@ async def attach_evidence(
     verified = _verify_passages(passages, source, source_scope)
     if not verified:
         raise ValueError("no passage could be verified against the original source")
+    # Link verified passages to structured paper_passages when available.
+    paper_passage_ids: dict[str, uuid.UUID] = {}
+    if paper_id is not None:
+        hash_rows = (
+            await session.execute(
+                select(PaperPassage).where(
+                    PaperPassage.paper_id == paper_id,
+                    PaperPassage.text_hash.in_([p["passage_hash"] for p in verified]),
+                )
+            )
+        ).scalars().all()
+        paper_passage_ids = {r.text_hash: r.id for r in hash_rows}
+    for p in verified:
+        p["paper_passage_id"] = paper_passage_ids.get(p["passage_hash"])
     hashes = [p["passage_hash"] for p in verified]
     duplicate_count = await _count_duplicate_hashes(session, target_type, target_id, hashes)
     if duplicate_count:
@@ -364,7 +664,9 @@ async def attach_evidence(
         evidence_type="paper_verification",
         evidence_text="",
         evidence_direction=direction,
+        evidence_level=next((p.get("evidence_level") for p in verified if p.get("evidence_level")), "indirect"),
         verification_status=verification_status,
+        paper_id=paper_id,
         paper_source=paper["source"],
         paper_pmid=paper["pmid"],
         paper_doi=paper["doi"] or None,
@@ -372,10 +674,12 @@ async def attach_evidence(
         paper_journal=paper["journal"] or None,
         paper_year=int(paper["year"]) if str(paper["year"]).isdigit() else None,
         suggested_confidence=reviewer_confidence,
+        reviewer_confidence=reviewer_confidence,
         confidence_adjustment_status=(
             adjustment.adjustment_status if adjustment else "none"
         ),
         verification_by=operator_id,
+        verification_at=func.now() if verification_status == "human_verified" else None,
         citation_json={
             "pmid": paper["pmid"],
             "doi": paper["doi"],
@@ -396,13 +700,17 @@ async def attach_evidence(
         session.add(
             MirrorEvidencePassage(
                 evidence_id=record.id,
+                paper_passage_id=p.get("paper_passage_id"),
                 source_scope=p["source_scope"],
                 section_title=p.get("section_title"),
                 paragraph_index=p.get("paragraph_index"),
                 passage_text=p["passage"],
+                passage_text_snapshot=p["passage"],
                 direction=p["direction"],
+                evidence_level=p.get("evidence_level") or "indirect",
                 reason=p.get("reason"),
                 confidence=p.get("confidence"),
+                semantic_confidence=p.get("semantic_confidence") or p.get("confidence"),
                 is_selected=True,
                 source_locator=p.get("source_locator"),
                 passage_hash=p["passage_hash"],
@@ -422,6 +730,8 @@ async def attach_evidence(
                 evidence_id=record.id,
                 before_confidence=before,
                 suggested_confidence=reviewer_confidence,
+                reviewer_confidence=reviewer_confidence,
+                calculated_confidence=final_confidence,
                 after_confidence=final_confidence,
                 direction=direction,
                 formula_version=adjustment.formula_version,
@@ -679,6 +989,9 @@ async def rollback_evidence(
         return {"evidence_id": str(evidence_id), "status": "already_invalidated", "changed": False}
     record.verification_status = "invalidated"
     record.verification_by = operator_id
+    record.invalidated_by = operator_id
+    record.invalidated_at = func.now()
+    record.invalidation_reason = reason
     log = (
         await session.execute(
             select(ConfidenceAdjustmentLog).where(
@@ -790,7 +1103,9 @@ async def list_paper_evidence(
                 "evidence_id": str(r.id),
                 "evidence_text": r.evidence_text,
                 "direction": r.evidence_direction,
+                "evidence_level": r.evidence_level,
                 "verification_status": r.verification_status,
+                "paper_id": str(r.paper_id) if r.paper_id else None,
                 "pmid": r.paper_pmid,
                 "doi": r.paper_doi,
                 "title": r.paper_title,
@@ -798,10 +1113,17 @@ async def list_paper_evidence(
                 "year": r.paper_year,
                 "created_at": r.created_at.isoformat() if r.created_at else None,
                 "verification_by": r.verification_by,
+                "verification_at": r.verification_at.isoformat() if r.verification_at else None,
                 "suggested_confidence": (
                     float(r.suggested_confidence) if r.suggested_confidence is not None else None
                 ),
+                "reviewer_confidence": (
+                    float(r.reviewer_confidence) if r.reviewer_confidence is not None else None
+                ),
                 "confidence_adjustment_status": r.confidence_adjustment_status,
+                "invalidated_by": r.invalidated_by,
+                "invalidated_at": r.invalidated_at.isoformat() if r.invalidated_at else None,
+                "invalidation_reason": r.invalidation_reason,
                 "passage_count": len(
                     [p for p in passages_by_evidence.get(r.id, []) if p.is_selected]
                 ),
@@ -949,6 +1271,132 @@ async def extract_passage(*, term: str, title: str, abstract: str, fulltext: str
         "overall_direction": parsed.overall_direction,
         "paper_relevance": parsed.paper_relevance,
         "source_type": source_type,
+        "passages": passages,
+        "parse_status": parse_status,
+        "retry_count": retry_count,
+        "raw_response": raw_response[:1000],
+    }
+
+
+async def extract_passage_from_paper(
+    *,
+    claim: dict,
+    title: str,
+    candidates: list[dict],
+) -> dict:
+    """DeepSeek judgment over recalled candidate paragraphs (paragraph_id-aware)."""
+    cfg = get_settings()
+    provider = get_llm_provider("deepseek")
+    blocks = []
+    for c in candidates:
+        prefix = f"[{c['paragraph_id']}]"
+        if c.get("section_title"):
+            prefix += f" ({c['section_title']})"
+        blocks.append(f"{prefix} {c['passage_text']}")
+    joined = "\n\n".join(blocks)
+    system = "You are a strict JSON API. Reply only with the requested JSON object. Never explain."
+    user = (
+        f'Knowledge claim to verify: "{claim.get("claim_text") or claim.get("function_term") or ""}"\n'
+        "For each relevant paragraph, output the ORIGINAL passage verbatim (copy exactly from the given "
+        "paragraph; do NOT summarize, rewrite, or invent sentences). "
+        "You MUST reuse the exact paragraph_id from the bracket prefix; never invent a paragraph_id. "
+        "Return ONLY one raw JSON object. Do NOT use markdown, code fences, bullet lists, trailing commas, "
+        "or any text outside the JSON object. "
+        'JSON shape: {"overall_direction": "supports", "paper_relevance": "<one sentence>", '
+        '"passages": [{"paragraph_id": "<id>", "section": "<section>", "passage": "<verbatim original>", '
+        '"direction": "supports", "evidence_level": "direct|indirect|interpretive|background", '
+        '"reason": "<one sentence>", "confidence": 0.9, "semantic_confidence": 0.9}]}\n'
+        f"Paper title: {title}\nCandidate paragraphs:\n{joined[:24000]}"
+    )
+    parsed = None
+    parse_status = "provider_error"
+    retry_count = 0
+    raw_response = ""
+    for attempt in range(3):
+        retry_count = attempt
+        try:
+            if attempt == 0:
+                resp = await provider.complete_json(
+                    model=cfg.ontology_residual_model,
+                    system_prompt=system,
+                    user_prompt=user,
+                    temperature=0.1,
+                    max_tokens=cfg.ontology_residual_max_tokens,
+                )
+                raw_response = resp.raw_text or ""
+                if not getattr(resp, "transport_ok", True):
+                    raise httpx.TransportError(getattr(resp, "error", None) or "DeepSeek transport error")
+                if resp.parsed_json is not None:
+                    parsed = PaperMultiPassageExtraction.model_validate(resp.parsed_json)
+                else:
+                    parsed = _parse_multi(raw_response)
+            else:
+                text_result = await provider.complete_text(
+                    model=cfg.ontology_residual_model,
+                    system_prompt=system,
+                    user_prompt=user + "\n\nIMPORTANT: Respond with ONLY the raw JSON object.",
+                    temperature=0.2,
+                    max_tokens=cfg.ontology_residual_max_tokens,
+                    json_mode=False,
+                )
+                raw_response = text_result.raw_text or ""
+                if not getattr(text_result, "transport_ok", True):
+                    raise httpx.TransportError(getattr(text_result, "error", None) or "DeepSeek transport error")
+                parsed = _parse_multi(raw_response)
+            parse_status = "ok"
+            break
+        except httpx.HTTPError:
+            parse_status = "network_error"
+            if attempt < 2:
+                await asyncio.sleep(cfg.ontology_residual_backoff_seconds)
+        except (ValidationError, ValueError, json.JSONDecodeError):
+            parse_status = "parse_error"
+            if attempt < 2:
+                await asyncio.sleep(cfg.ontology_residual_backoff_seconds)
+    if parsed is None:
+        hint = ""
+        if parse_status == "parse_error" and raw_response:
+            hint = f" raw_preview={raw_response[:200]!r}"
+        raise ValueError(
+            f"passage extraction failed: {parse_status} after {retry_count + 1} attempt(s){hint}"
+        )
+    by_id = {c["paragraph_id"]: c for c in candidates}
+    passages = []
+    for item in parsed.passages:
+        para_id = (item.paragraph_id or "").strip()
+        candidate = by_id.get(para_id)
+        source_text = (candidate or {}).get("passage_text") or ""
+        verified, method = verify_passage_against_source(item.passage, source_text) if source_text else (False, None)
+        if not verified:
+            # fallback: match against any recalled paragraph (LLM may omit/typo the id)
+            for c in candidates:
+                ok, m = verify_passage_against_source(item.passage, c["passage_text"])
+                if ok:
+                    verified, method, candidate, para_id = True, m, c, c["paragraph_id"]
+                    break
+        passages.append(
+            {
+                "source_scope": (candidate or {}).get("source_scope") or "fulltext",
+                "section_title": (candidate or {}).get("section_title") or item.section,
+                "paragraph_index": (candidate or {}).get("paragraph_index"),
+                "paragraph_id": para_id or None,
+                "passage": item.passage,
+                "direction": item.direction,
+                "evidence_level": item.evidence_level,
+                "reason": item.reason,
+                "confidence": item.confidence,
+                "semantic_confidence": item.semantic_confidence
+                if item.semantic_confidence is not None
+                else item.confidence,
+                "source_locator": (candidate or {}).get("locator") if verified else None,
+                "source_verified": verified,
+                "passage_hash": passage_hash(item.passage),
+            }
+        )
+    return {
+        "overall_direction": parsed.overall_direction,
+        "paper_relevance": parsed.paper_relevance,
+        "source_type": "fulltext" if any(c.get("source_scope") == "fulltext" for c in candidates) else "abstract",
         "passages": passages,
         "parse_status": parse_status,
         "retry_count": retry_count,
@@ -1388,6 +1836,7 @@ async def _process_batch_item(
             await session.commit()
             async with sem_epmc:
                 info = await pack_target_info(session, target_type, uuid.UUID(target_id), mode=mode)
+                claim = await build_target_dto(session, target_type, uuid.UUID(target_id))
                 papers = await _search_with_retry(info["query"], limit=max_papers)
             if not papers:
                 await session.execute(
@@ -1407,26 +1856,55 @@ async def _process_batch_item(
                 {"iid": item_id, "pj": json.dumps({"papers": papers}, ensure_ascii=False)},
             )
             await session.commit()
-            async with sem_deepseek:
-                extraction = None
-                used_paper = None
-                for paper in papers[:max_papers]:
-                    pmid = (paper.get("pmid") or "").strip()
-                    if not pmid:
-                        continue
-                    abstract = (paper.get("abstract") or "").strip()
+            extraction = None
+            used_paper = None
+            paper_id = None
+            for paper in papers[:max_papers]:
+                pmid = (paper.get("pmid") or "").strip()
+                if not pmid:
+                    continue
+                used_paper = paper
+                async with sem_epmc:
+                    verified_meta = await _verify_paper_with_retry(pmid)
                     fulltext = await fetch_fulltext(pmid)
-                    extraction = await _extract_with_retry(
-                        term=info["function_term"],
-                        title=paper.get("title") or "",
-                        abstract=abstract,
-                        fulltext=fulltext,
+                if verified_meta is None:
+                    continue
+                abstract = (verified_meta.get("abstract") or "").strip()
+                paper_source = await ensure_paper_source(
+                    session,
+                    {**verified_meta, "abstract": abstract, "fulltext": fulltext},
+                )
+                paper_id = paper_source.id
+                paragraphs: list[dict] = []
+                if abstract:
+                    paragraphs.append(
+                        {
+                            "source_scope": "abstract",
+                            "section_title": "Abstract",
+                            "paragraph_id": "abstract_p001",
+                            "paragraph_index": 0,
+                            "passage_text": abstract,
+                            "text_hash": passage_hash(abstract),
+                            "locator": "abstract:paragraph:0",
+                        }
                     )
-                    used_paper = paper
-                    if any(p["source_verified"] for p in extraction["passages"]):
-                        break
-                if extraction is None:
-                    extraction = {"passages": [], "overall_direction": "not_found", "parse_status": "no_candidate", "retry_count": 0, "raw_response": ""}
+                if fulltext.strip():
+                    paragraphs.extend(await parse_fulltext_paragraphs(fulltext))
+                await ensure_paper_passages(session, paper_source.id, paragraphs)
+                await session.commit()
+                candidates = await recall_candidate_passages(
+                    session, paper_source.id, claim["claim_text"], limit=30
+                )
+                async with sem_deepseek:
+                    extraction = await _extract_from_paper_with_retry(
+                        claim=claim,
+                        title=verified_meta.get("title") or paper.get("title") or "",
+                        candidates=candidates,
+                    )
+                if any(p["source_verified"] for p in extraction["passages"]):
+                    break
+            if extraction is None:
+                extraction = {"passages": [], "overall_direction": "not_found", "parse_status": "no_candidate", "retry_count": 0, "raw_response": ""}
             verified = [p for p in extraction["passages"] if p["source_verified"]]
             source_text = (used_paper or {}).get("abstract") or ""
             source_hash = hashlib.sha256((source_text or "").encode("utf-8")).hexdigest()[:64]
@@ -1437,7 +1915,7 @@ async def _process_batch_item(
                     "UPDATE paper_evidence_task_items SET status=:st, last_error=:err, "
                     "pmid=:pmid, title=:title, abstract=:abs, direction=:dir, confidence=:conf, "
                     "passages_json=CAST(:pj AS jsonb), raw_response=:raw, source_text_hash=:hash, parse_status=:ps, "
-                    "retry_count=retry_count+1, updated_at=now() WHERE id::text=:iid"
+                    "paper_id=:paper_id, retry_count=retry_count+1, updated_at=now() WHERE id::text=:iid"
                 ),
                 {
                     "iid": item_id,
@@ -1452,6 +1930,7 @@ async def _process_batch_item(
                     "raw": (extraction.get("raw_response") or "")[:4000],
                     "hash": source_hash,
                     "ps": extraction.get("parse_status") or "ok",
+                    "paper_id": paper_id,
                 },
             )
             await session.commit()
@@ -1487,6 +1966,30 @@ async def _extract_with_retry(*, term: str, title: str, abstract: str, fulltext:
     for attempt in range(BATCH_ITEM_RETRIES):
         try:
             return await extract_passage(term=term, title=title, abstract=abstract, fulltext=fulltext)
+        except (ValueError, ValidationError, httpx.HTTPError) as exc:
+            last_exc = exc
+            if attempt < BATCH_ITEM_RETRIES - 1:
+                await asyncio.sleep(BATCH_BACKOFF_SECONDS[min(attempt, len(BATCH_BACKOFF_SECONDS) - 1)])
+    raise last_exc or RuntimeError("extraction failed")
+
+
+async def _verify_paper_with_retry(pmid: str) -> dict | None:
+    last_exc: Exception | None = None
+    for attempt in range(BATCH_ITEM_RETRIES):
+        try:
+            return await verify_paper(pmid)
+        except (httpx.HTTPStatusError, httpx.TransportError) as exc:
+            last_exc = exc
+            if attempt < BATCH_ITEM_RETRIES - 1:
+                await asyncio.sleep(BATCH_BACKOFF_SECONDS[min(attempt, len(BATCH_BACKOFF_SECONDS) - 1)])
+    raise last_exc or RuntimeError("paper verification failed")
+
+
+async def _extract_from_paper_with_retry(*, claim: dict, title: str, candidates: list[dict]) -> dict:
+    last_exc: Exception | None = None
+    for attempt in range(BATCH_ITEM_RETRIES):
+        try:
+            return await extract_passage_from_paper(claim=claim, title=title, candidates=candidates)
         except (ValueError, ValidationError, httpx.HTTPError) as exc:
             last_exc = exc
             if attempt < BATCH_ITEM_RETRIES - 1:

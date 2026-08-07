@@ -152,15 +152,19 @@ class EvidencePassageItem(BaseModel):
     source_scope: Literal["abstract", "fulltext"] = "abstract"
     section_title: str | None = None
     paragraph_index: int | None = None
+    paragraph_id: str | None = None
     passage: str
     direction: Literal["supports", "partial", "contradicts", "not_found"]
+    evidence_level: Literal["direct", "indirect", "interpretive", "background"] = "indirect"
     reason: str = ""
     confidence: float = Field(ge=0.0, le=1.0)
+    semantic_confidence: float | None = Field(default=None, ge=0.0, le=1.0)
     source_locator: str | None = None
     source_verified: bool = False
 
 
 class EvidenceExtractResponse(BaseModel):
+    paper_id: uuid.UUID | None = None
     overall_direction: Literal["supports", "partial", "contradicts", "not_found"]
     paper_relevance: str
     source_type: Literal["abstract", "fulltext", "none"]

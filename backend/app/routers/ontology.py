@@ -718,18 +718,47 @@ async def paper_evidence_extract(
     _auth: str = Depends(require_role("reviewer")),
 ):
     try:
-        info = await pes.pack_target_info(session, body.target_type, body.target_id)
-        abstract = (body.abstract or "").strip()
-        if not abstract:
-            paper = await pes.verify_paper(body.pmid)
-            abstract = (paper or {}).get("abstract") or ""
+        claim = await pes.build_target_dto(session, body.target_type, body.target_id)
+        paper = await pes.verify_paper(body.pmid)
+        if paper is None:
+            raise ValueError("paper not found or invalid PMID")
+        abstract = (body.abstract or "").strip() or (paper.get("abstract") or "").strip()
         fulltext = await pes.fetch_fulltext(body.pmid)
-        result = await pes.extract_passage(
-            term=info["function_term"], title=body.title, abstract=abstract, fulltext=fulltext
+        paper_source = await pes.ensure_paper_source(
+            session,
+            {**paper, "abstract": abstract, "fulltext": fulltext},
         )
+        paragraphs: list[dict] = []
+        if abstract:
+            paragraphs.append(
+                {
+                    "source_scope": "abstract",
+                    "section_title": "Abstract",
+                    "paragraph_id": "abstract_p001",
+                    "paragraph_index": 0,
+                    "passage_text": abstract,
+                    "text_hash": pes.passage_hash(abstract),
+                    "locator": "abstract:paragraph:0",
+                }
+            )
+        if fulltext.strip():
+            paragraphs.extend(await pes.parse_fulltext_paragraphs(fulltext))
+        saved = await pes.ensure_paper_passages(session, paper_source.id, paragraphs)
+        candidates = await pes.recall_candidate_passages(
+            session, paper_source.id, claim["claim_text"], limit=30
+        )
+        result = await pes.extract_passage_from_paper(
+            claim=claim,
+            title=paper.get("title") or body.title or "",
+            candidates=candidates,
+        )
+        result["paper_id"] = str(paper_source.id)
+        if saved:
+            result["source_type"] = "fulltext" if any(p.get("source_scope") == "fulltext" for p in saved) else "abstract"
         result["links"] = {
             "pubmed": f"https://pubmed.ncbi.nlm.nih.gov/{body.pmid}/" if body.pmid else None,
         }
+        await session.commit()
         return result
     except ValueError as exc:
         raise HTTPException(status_code=400, detail={"code": "INVALID_REQUEST", "message": str(exc)})

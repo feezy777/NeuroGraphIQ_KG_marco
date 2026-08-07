@@ -122,9 +122,14 @@ class TestBatchStateMachine:
                     "query": '"memory consolidation"',
                     "info": {},
                 })),
+                patch.object(pes, "build_target_dto", new=AsyncMock(return_value={
+                    "claim_text": "memory consolidation",
+                    "function_term": "memory consolidation",
+                })),
                 patch.object(pes, "search_papers", new=AsyncMock(return_value=[_paper()])),
                 patch.object(pes, "fetch_fulltext", new=AsyncMock(return_value="")),
-                patch.object(pes, "extract_passage", new=AsyncMock(return_value=_extraction())),
+                patch.object(pes, "verify_paper", new=AsyncMock(return_value=_paper())),
+                patch.object(pes, "extract_passage_from_paper", new=AsyncMock(return_value=_extraction())),
             ):
                 _run(_run_loop(task_id))
             task = _run(_read_task_row(task_id))

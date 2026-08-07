@@ -10,7 +10,7 @@ import uuid
 from datetime import datetime
 from typing import Any, Optional
 
-from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint, func
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Index, Integer, Numeric, String, Text, UniqueConstraint, func, text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -274,7 +274,9 @@ class MirrorEvidenceRecord(Base):
     confidence: Mapped[float | None] = mapped_column(Numeric, nullable=True)
     uncertainty_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     evidence_direction: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    evidence_level: Mapped[str | None] = mapped_column(String(16), nullable=True)
     verification_status: Mapped[str] = mapped_column(String(16), nullable=False, default="pending")
+    paper_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     paper_source: Mapped[str | None] = mapped_column(String(32), nullable=True)
     paper_pmid: Mapped[str | None] = mapped_column(String(64), nullable=True)
     paper_doi: Mapped[str | None] = mapped_column(String(256), nullable=True)
@@ -282,11 +284,15 @@ class MirrorEvidenceRecord(Base):
     paper_journal: Mapped[str | None] = mapped_column(String(256), nullable=True)
     paper_year: Mapped[int | None] = mapped_column(Integer, nullable=True)
     suggested_confidence: Mapped[float | None] = mapped_column(Numeric, nullable=True)
+    reviewer_confidence: Mapped[float | None] = mapped_column(Numeric, nullable=True)
     confidence_adjustment_status: Mapped[str] = mapped_column(
         String(16), nullable=False, default="none"
     )
     verification_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
     verification_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    invalidated_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    invalidated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    invalidation_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
@@ -300,14 +306,18 @@ class MirrorEvidencePassage(Base):
     evidence_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("mirror_evidence_records.id", ondelete="CASCADE"), nullable=False
     )
+    paper_passage_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     source_scope: Mapped[str] = mapped_column(String(16), nullable=False)
     section_title: Mapped[str | None] = mapped_column(Text, nullable=True)
     paragraph_index: Mapped[int | None] = mapped_column(Integer, nullable=True)
     passage_text: Mapped[str] = mapped_column(Text, nullable=False)
+    passage_text_snapshot: Mapped[str | None] = mapped_column(Text, nullable=True)
     translation_zh: Mapped[str | None] = mapped_column(Text, nullable=True)
     direction: Mapped[str] = mapped_column(String(16), nullable=False)
+    evidence_level: Mapped[str | None] = mapped_column(String(16), nullable=True)
     reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     confidence: Mapped[float | None] = mapped_column(Numeric, nullable=True)
+    semantic_confidence: Mapped[float | None] = mapped_column(Numeric, nullable=True)
     is_selected: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     source_locator: Mapped[str | None] = mapped_column(String(256), nullable=True)
     passage_hash: Mapped[str] = mapped_column(String(64), nullable=False)
@@ -327,6 +337,8 @@ class ConfidenceAdjustmentLog(Base):
     evidence_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     before_confidence: Mapped[float | None] = mapped_column(Numeric, nullable=True)
     suggested_confidence: Mapped[float | None] = mapped_column(Numeric, nullable=True)
+    reviewer_confidence: Mapped[float | None] = mapped_column(Numeric, nullable=True)
+    calculated_confidence: Mapped[float | None] = mapped_column(Numeric, nullable=True)
     after_confidence: Mapped[float | None] = mapped_column(Numeric, nullable=True)
     direction: Mapped[str | None] = mapped_column(String(16), nullable=True)
     formula_version: Mapped[str] = mapped_column(String(64), nullable=False)
@@ -336,4 +348,60 @@ class ConfidenceAdjustmentLog(Base):
     rolled_back_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
     rolled_back_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     rollback_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class PaperSource(Base):
+    __tablename__ = "paper_sources"
+    __table_args__ = (
+        Index("uq_paper_sources_pmid", "pmid", unique=True, postgresql_where=text("pmid IS NOT NULL AND pmid <> ''")),
+        Index(
+            "uq_paper_sources_norm_doi",
+            "normalized_doi",
+            unique=True,
+            postgresql_where=text("normalized_doi IS NOT NULL AND normalized_doi <> ''"),
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    source: Mapped[str] = mapped_column(String(32), nullable=False, default="europepmc")
+    pmid: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    pmcid: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    doi: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    normalized_doi: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    title: Mapped[str | None] = mapped_column(Text, nullable=True)
+    journal: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    publication_year: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    is_oa: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    abstract_available: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    fulltext_available: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    metadata_json: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
+    abstract_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    fulltext_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    fetched_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class PaperPassage(Base):
+    __tablename__ = "paper_passages"
+    __table_args__ = (
+        UniqueConstraint("paper_id", "paragraph_id", name="uq_paper_passage_paragraph"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    paper_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("paper_sources.id", ondelete="CASCADE"), nullable=False
+    )
+    source_scope: Mapped[str] = mapped_column(String(16), nullable=False)
+    section_title: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    paragraph_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    paragraph_index: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    passage_text: Mapped[str] = mapped_column(Text, nullable=False)
+    text_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    locator: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    char_start: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    char_end: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

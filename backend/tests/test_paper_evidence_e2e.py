@@ -80,6 +80,7 @@ async def _cleanup(cid):
         )
         await s.execute(text("DELETE FROM ontology_change_logs WHERE entity_id=:oid"), {"oid": cid})
         await s.execute(text("DELETE FROM mirror_region_connections WHERE id=:id"), {"id": cid})
+        await s.execute(text("DELETE FROM paper_sources WHERE pmid='99000001'"))
         await s.commit()
 
 
@@ -110,6 +111,24 @@ def test_full_paper_evidence_flow():
 
 async def _attach(cid):
     async with AsyncSessionLocal() as s:
+        paper = await pes.ensure_paper_source(s, {**PAPER, "abstract": SOURCE, "fulltext": ""})
+        await s.commit()
+        await pes.ensure_paper_passages(
+            s,
+            paper.id,
+            [
+                {
+                    "source_scope": "abstract",
+                    "section_title": "Abstract",
+                    "paragraph_id": "abstract_p001",
+                    "paragraph_index": 0,
+                    "passage_text": SOURCE,
+                    "text_hash": pes.passage_hash(SOURCE),
+                    "locator": "abstract:paragraph:0",
+                }
+            ],
+        )
+        await s.commit()
         result = await pes.attach_evidence(
             s,
                     target_type="connection",
@@ -147,13 +166,16 @@ async def _check_attached(cid, evidence_id):
         ev = (
             await s.execute(
                 text(
-                    "SELECT verification_status, confidence_adjustment_status FROM mirror_evidence_records "
-                    "WHERE id=:eid"
+                    "SELECT verification_status, confidence_adjustment_status, paper_id, "
+                    "reviewer_confidence, evidence_level FROM mirror_evidence_records WHERE id=:eid"
                 ),
                 {"eid": evidence_id},
             )
         ).first()
         assert ev[0] == "human_verified"
+        assert ev[2] is not None
+        assert float(ev[3]) == pytest.approx(0.8)
+        assert ev[4] == "indirect"
         pcount = (
             await s.execute(
                 text("SELECT COUNT(*) FROM mirror_evidence_passages WHERE evidence_id=:eid AND is_selected"),
@@ -161,6 +183,17 @@ async def _check_attached(cid, evidence_id):
             )
         ).scalar_one()
         assert pcount == 1
+        passage_row = (
+            await s.execute(
+                text(
+                    "SELECT paper_passage_id, semantic_confidence FROM mirror_evidence_passages "
+                    "WHERE evidence_id=:eid AND is_selected"
+                ),
+                {"eid": evidence_id},
+            )
+        ).first()
+        assert passage_row[0] is not None
+        assert float(passage_row[1]) == pytest.approx(0.85)
         vcount = (
             await s.execute(
                 text("SELECT COUNT(*) FROM evidence_validation_records WHERE evidence_id=:eid"),
