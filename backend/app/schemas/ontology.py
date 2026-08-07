@@ -125,6 +125,7 @@ class PaperSearchRequest(BaseModel):
     target_type: str
     target_id: uuid.UUID
     limit: int = Field(default=5, ge=1, le=20)
+    mode: str = "function"
 
 
 class EvidenceAttachRequest(BaseModel):
@@ -133,6 +134,8 @@ class EvidenceAttachRequest(BaseModel):
     pmid: str
     excerpt: str
     direction: str = "supports"
+    mode: str = "function"
+    suggested_confidence: float | None = Field(default=None, ge=0.0, le=1.0)
 
 
 class GroundingRead(BaseModel):

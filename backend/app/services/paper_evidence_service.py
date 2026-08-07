@@ -9,12 +9,50 @@ import httpx
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.mirror_kg import MirrorEvidenceRecord, MirrorRegionConnection, MirrorRegionFunction
-from app.models.mirror_macro_clinical import MirrorCircuitFunction, MirrorProjectionFunction
+from app.models.mirror_kg import (
+    MirrorEvidenceRecord,
+    MirrorRegionCircuit,
+    MirrorRegionConnection,
+    MirrorRegionFunction,
+)
+from app.models.mirror_macro_clinical import (
+    MirrorCircuitFunction,
+    MirrorCircuitStep,
+    MirrorProjectionFunction,
+)
 from app.services.ontology_service import TERM_TABLE_BY_TYPE
 
 EUROPE_PMC_SEARCH = "https://www.ebi.ac.uk/europepmc/webservices/rest/search"
 SEARCH_TIMEOUT = 25
+
+TARGET_MODELS = {
+    "projection_function": MirrorProjectionFunction,
+    "circuit_function": MirrorCircuitFunction,
+    "region_function": MirrorRegionFunction,
+    "projection": MirrorRegionConnection,
+    "connection": MirrorRegionConnection,
+    "circuit": MirrorRegionCircuit,
+    "circuit_step": MirrorCircuitStep,
+}
+
+
+def _name_parts(target_type: str, row) -> list[str]:
+    parts: list[str] = []
+    if target_type in ("projection_function", "region_function"):
+        parts.append(str(getattr(row, "function_term", "") or ""))
+    elif target_type == "circuit_function":
+        parts.append(str(getattr(row, "function_term_en", "") or getattr(row, "function_term_cn", "") or ""))
+    elif target_type in ("projection", "connection"):
+        parts.append(str(getattr(row, "source_region_name_en", "") or ""))
+        parts.append(str(getattr(row, "target_region_name_en", "") or ""))
+        parts.append(str(getattr(row, "connection_type", "") or ""))
+    elif target_type == "circuit":
+        parts.append(str(getattr(row, "circuit_name", "") or ""))
+        parts.append(str(getattr(row, "circuit_type", "") or ""))
+    elif target_type == "circuit_step":
+        parts.append(str(getattr(row, "step_name", "") or ""))
+        parts.append(str(getattr(row, "role", "") or ""))
+    return [p for p in parts if p and p != "unknown"]
 
 
 def _term_text_for(row, target_type: str) -> str:
@@ -86,23 +124,25 @@ async def verify_paper(pmid: str) -> dict | None:
 
 
 async def pack_target_info(
-    session: AsyncSession, target_type: str, target_id: uuid.UUID
+    session: AsyncSession,
+    target_type: str,
+    target_id: uuid.UUID,
+    mode: str = "function",
 ) -> dict:
-    model = TERM_TABLE_BY_TYPE.get(target_type)
+    model = TARGET_MODELS.get(target_type)
     if model is None:
         raise ValueError(f"unsupported target_type: {target_type}")
     row = await session.get(model, target_id)
     if row is None:
         raise ValueError("target not found")
-    term_text = _term_text_for(row, target_type)
-    context_parts = [term_text]
-    if target_type == "projection_function" and row.projection_id:
+    name_parts = _name_parts(target_type, row)
+    term_text = name_parts[0] if name_parts else str(getattr(row, "id", ""))
+    context_parts = [term_text] if mode == "function" else name_parts[:2]
+    if target_type in ("projection", "projection_function", "connection") and getattr(row, "projection_id", None):
         proj = await session.get(MirrorRegionConnection, row.projection_id)
         if proj is not None:
             for region_name in (proj.source_region_name_en, proj.target_region_name_en):
                 name = (region_name or "").strip()
-                # Only short, generic region names improve recall; layer/area
-                # specific names over-constrain Europe PMC queries.
                 if name and len(name) <= 40 and not any(
                     token in name.lower() for token in ("layer", "area", "lobule")
                 ):
@@ -114,6 +154,7 @@ async def pack_target_info(
         "target_type": target_type,
         "target_id": str(target_id),
         "function_term": term_text,
+        "mode": mode,
         "query": query,
         "info": {
             "granularity_level": getattr(row, "granularity_level", None),
@@ -131,12 +172,14 @@ async def attach_evidence(
     pmid: str,
     excerpt: str,
     direction: str = "supports",
+    mode: str = "function",
+    suggested_confidence: float | None = None,
     operator_id: str | None = None,
 ) -> dict:
     paper = await verify_paper(pmid)
     if paper is None:
         raise ValueError("paper not found or invalid PMID")
-    model = TERM_TABLE_BY_TYPE.get(target_type)
+    model = TARGET_MODELS.get(target_type)
     if model is None:
         raise ValueError(f"unsupported target_type: {target_type}")
     row = await session.get(model, target_id)
@@ -158,7 +201,20 @@ async def attach_evidence(
     )
     record.evidence_text = excerpt.strip()
     record.evidence_direction = direction
-    record.verification_status = "pending"
+    if direction in ("supports", "partial") and suggested_confidence is not None:
+        new_confidence = max(0.0, min(0.85, float(suggested_confidence)))
+        current = getattr(row, "confidence", None)
+        if current is None or float(current) < new_confidence:
+            row.confidence = new_confidence
+        record.verification_status = "verified_auto"
+        record.suggested_confidence = new_confidence
+        record.confidence_adjustment_status = "applied"
+    else:
+        record.verification_status = "pending"
+        record.suggested_confidence = suggested_confidence
+        record.confidence_adjustment_status = (
+            "pending" if suggested_confidence is not None else "none"
+        )
     record.paper_source = paper["source"]
     record.paper_pmid = paper["pmid"]
     record.paper_doi = paper["doi"] or None
@@ -175,6 +231,7 @@ async def attach_evidence(
     }
     record.source_reference_text = f"{paper['authors']} ({paper['year']}). {paper['title']}. {paper['journal']}."
     record.verification_by = operator_id
+    record.citation_json = {**record.citation_json, "mode": mode}
     session.add(record)
     snippet = excerpt.strip()[:500]
     old_text = (getattr(row, "evidence_text", None) or "").strip()
@@ -186,6 +243,9 @@ async def attach_evidence(
         "target_type": target_type,
         "target_id": str(target_id),
         "evidence_text": row.evidence_text,
+        "confidence": float(row.confidence) if getattr(row, "confidence", None) is not None else None,
+        "verification_status": record.verification_status,
+        "confidence_adjustment_status": record.confidence_adjustment_status,
         "paper": {
             "pmid": paper["pmid"],
             "doi": paper["doi"],

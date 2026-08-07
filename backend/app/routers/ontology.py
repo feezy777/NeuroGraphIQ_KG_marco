@@ -612,7 +612,9 @@ async def paper_evidence_search(
     session: AsyncSession = Depends(get_db),
 ):
     try:
-        info = await pes.pack_target_info(session, body.target_type, body.target_id)
+        info = await pes.pack_target_info(
+            session, body.target_type, body.target_id, mode=body.mode
+        )
         papers = await pes.search_papers(info["query"], limit=body.limit)
         return {"target_info": info, "papers": papers}
     except ValueError as exc:
@@ -635,6 +637,8 @@ async def paper_evidence_attach(
             pmid=body.pmid,
             excerpt=body.excerpt,
             direction=body.direction,
+            mode=body.mode,
+            suggested_confidence=body.suggested_confidence,
             operator_id=None,
         )
         await session.commit()
