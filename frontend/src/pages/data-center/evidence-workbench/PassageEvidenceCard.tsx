@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import type { ClaimComponent, EvidenceLevel, WorkbenchPassage } from './types'
 import { COMPONENT_LABEL, LEVEL_HINT, LEVEL_LABEL } from './types'
 
@@ -14,6 +15,7 @@ interface Props {
   onCopy: () => void
   onShowContext: () => void
   showContext: boolean
+  onReselect?: (paperPassageId: string, text: string) => Promise<boolean>
 }
 
 function VerificationBadge({ passage }: { passage: WorkbenchPassage }) {
@@ -44,9 +46,12 @@ export function PassageEvidenceCard({
   onCopy,
   onShowContext,
   showContext,
+  onReselect,
 }: Props) {
   const allowed = components.map(c => c.component_type)
   const isContradict = passage.direction === 'contradicts'
+  const [reselectOpen, setReselectOpen] = useState(false)
+  const [reselectText, setReselectText] = useState('')
   return (
     <div className={`ew-passage ${!passage.source_verified ? 'ew-passage-invalid' : ''}`} data-testid="ew-passage">
       <div className="ew-passage-top">
@@ -75,6 +80,21 @@ export function PassageEvidenceCard({
             <button type="button" className="btn btn-xs" onClick={onTranslate}>翻译</button>
             <button type="button" className="btn btn-xs" onClick={onCopy}>复制原文</button>
             <button type="button" className="btn btn-xs" onClick={onShowContext}>{showContext ? '收起上下文' : '展开上下文'}</button>
+            {passage.paper_passage_id && onReselect && (
+              <>
+                <button type="button" className="btn btn-xs" onClick={() => setReselectOpen(o => !o)}>重新截取</button>
+                {reselectOpen && (
+                  <div className="ew-reselect">
+                    <textarea className="filter-input ew-trans" value={reselectText} onChange={e => setReselectText(e.target.value)} placeholder="输入更短的真实原文范围（后端校验）" />
+                    <button type="button" className="btn btn-xs" disabled={!reselectText.trim()}
+                      onClick={async () => {
+                        const ok = await onReselect(passage.paper_passage_id!, reselectText.trim())
+                        if (ok) { setReselectOpen(false); setReselectText('') }
+                      }}>校验并替换</button>
+                  </div>
+                )}
+              </>
+            )}
           </div>
           <div className="ew-field">
             <label>证据等级</label>

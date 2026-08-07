@@ -343,22 +343,48 @@ describe('EvidenceReviewModal 论文佐证工作台', () => {
       updated_at: '2026-08-07T00:00:00Z',
       label: '连接 A',
       current_confidence: 0.42,
-      passages_json: {
-        papers: [PAPER],
-        passages: [
-          {
-            source_scope: 'abstract',
-            section_title: null,
-            paragraph_index: 0,
-            passage: 'A real abstract sentence about connectivity and function.',
-            direction: 'supports',
-            reason: 'explicit',
-            confidence: 0.82,
-            source_locator: 'abstract:0',
-            source_verified: true,
-          },
-        ],
-      },
+      attempt_count: 1,
+      last_error_code: null,
+      last_error_message: null,
+      preprocess_outcome: 'evidence_found',
+      paper_id: 'p-1',
+      model_direction: 'supports',
+      candidate_papers: [
+        {
+          paper_id: 'p-1',
+          pmid: '12345',
+          title: 'Paper A',
+          journal: 'J Neuro',
+          year: '2026',
+          is_oa: true,
+          model_direction: 'supports',
+          model_assessment: 'relevant',
+          coverage_summary: { full_claim_supported: true },
+          passages: [
+            {
+              source_scope: 'abstract',
+              section_title: null,
+              paragraph_index: 0,
+              paragraph_id: 'abstract_p001',
+              paper_passage_id: 'pp-1',
+              passage: 'A real abstract sentence about connectivity and function.',
+              direction: 'supports',
+              evidence_level: 'direct',
+              reason: 'explicit',
+              confidence: 0.82,
+              semantic_confidence: 0.82,
+              source_locator: 'abstract:0',
+              source_verified: true,
+              source_verification_method: 'exact',
+              supported_components: ['source_region', 'target_region', 'relation'],
+            },
+          ],
+        },
+      ],
+      review_draft: null,
+      claim_text_snapshot: null,
+      claim_components_snapshot: null,
+      passages_json: null,
       last_error: null,
       retry_count: 0,
     }
@@ -374,7 +400,7 @@ describe('EvidenceReviewModal 论文佐证工作台', () => {
     )
     fireEvent.click(screen.getByTestId('ew-confirm-attach'))
     await waitFor(() => expect(screen.getByText(/已添加 1 篇论文证据/)).toBeTruthy())
-    expect(vi.mocked(endpoints.completePaperEvidenceTaskItem)).toHaveBeenCalledWith('task-1', 'item-1')
+    expect(vi.mocked(endpoints.completePaperEvidenceTaskItem)).toHaveBeenCalledWith('task-1', 'item-1', 'e1')
   })
 
   it('提取中显示当前论文名称与进度条', async () => {

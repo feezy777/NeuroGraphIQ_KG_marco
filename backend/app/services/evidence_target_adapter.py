@@ -389,6 +389,8 @@ async def build_retrieval_context(
     return {
         "claim_text": dto.get("claim_text") or "",
         "structured_claim": dto.get("structured_claim") or {},
+        "claim_components": dto.get("claim_components") or [],
+        "claim_version": dto.get("claim_version") or "claim_v1",
         "object_type": target_type,
         "granularity": dto.get("granularity") or "",
         "source_region": source,

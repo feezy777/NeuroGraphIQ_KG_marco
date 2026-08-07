@@ -30,6 +30,9 @@ class Settings(BaseSettings):
     ontology_residual_batch_size: int = 20
     ontology_residual_max_tokens: int = 5000
     ontology_residual_confidence_threshold: float = 0.9
+    paper_search_concurrency: int = 3
+    paper_fetch_concurrency: int = 4
+    evidence_batch_max_retries: int = 3
 
     # Database components — align with backend/.env.example and docs/dbeaver_postgres_connection.md
     postgres_host: str = "127.0.0.1"

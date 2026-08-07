@@ -245,6 +245,7 @@ async def list_unified_tasks(
                         "processed_items": item["processed_items"],
                         "awaiting_review_items": item["awaiting_review_items"],
                         "failed_items": item["failed_items"],
+                        "review_status": item.get("review_status"),
                     },
                 )
                 for item in data["items"]

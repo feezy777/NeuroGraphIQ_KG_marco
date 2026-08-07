@@ -43,6 +43,7 @@ from app.services.confidence_rules import (
 )
 from app.services.evidence_target_adapter import (
     TARGET_MODELS as ADAPTER_TARGET_MODELS,
+    build_search_query,
     build_target_dto,
     build_retrieval_context,
 )
@@ -1980,11 +1981,22 @@ async def create_batch_task(
     created_by: str | None = None,
     limit: int = 200,
     start_paused: bool = False,
+    name: str | None = None,
+    granularity_level: str | None = None,
+    only_oa: bool = False,
+    confidence_lt: float | None = None,
+    stop_after_strong_support: bool = False,
+    target_ids: list[str] | None = None,
 ) -> dict:
     """Create a pre-processing task. Never writes formal evidence."""
     if target_type not in TARGET_MODELS:
         raise ValueError(f"unsupported target_type: {target_type}")
-    ids = await _resolve_scope_ids(session, target_type, scope, limit)
+    if target_ids:
+        ids = target_ids
+    elif scope == "low_confidence":
+        ids = await _resolve_scope_ids_low_confidence(session, target_type, confidence_lt, limit)
+    else:
+        ids = await _resolve_scope_ids(session, target_type, scope, limit)
     if not ids:
         raise ValueError("no targets matched scope")
     # skip targets already covered by an active task item
@@ -2010,8 +2022,10 @@ async def create_batch_task(
         await session.execute(
             text(
                 "INSERT INTO paper_evidence_tasks "
-                "(target_type, scope, mode, max_papers_per_object, status, created_by, total_items, config) "
-                "VALUES (:tt, :scope, :mode, :maxp, :status, :cb, :total, CAST(:cfg AS jsonb)) RETURNING id::text"
+                "(target_type, scope, mode, max_papers_per_object, status, created_by, total_items, config, "
+                "name, granularity_level, only_oa, confidence_lt, stop_after_strong_support, review_status) "
+                "VALUES (:tt, :scope, :mode, :maxp, :status, :cb, :total, CAST(:cfg AS jsonb), "
+                ":name, :gl, :only_oa, :clt, :stop, 'not_started') RETURNING id::text"
             ),
             {
                 "tt": target_type,
@@ -2025,6 +2039,11 @@ async def create_batch_task(
                     {"deepseek_concurrency": DEEPSEEK_CONCURRENCY, "europepmc_concurrency": EUROPE_PMC_CONCURRENCY},
                     ensure_ascii=False,
                 ),
+                "name": name,
+                "gl": granularity_level,
+                "only_oa": only_oa,
+                "clt": confidence_lt,
+                "stop": stop_after_strong_support,
             },
         )
     ).scalar_one()
@@ -2284,6 +2303,7 @@ async def _extract_from_paper_with_retry(*, claim: dict, title: str, windows: li
 
 
 async def _run_batch_loop(session: AsyncSession, task_id: str) -> None:
+    cfg = get_settings()
     while True:
         state = (
             await session.execute(
@@ -2304,35 +2324,50 @@ async def _run_batch_loop(session: AsyncSession, task_id: str) -> None:
         task_row = (
             await session.execute(
                 text(
-                    "SELECT max_papers_per_object FROM paper_evidence_tasks WHERE id::text=:tid"
+                    "SELECT max_papers_per_object, only_oa, stop_after_strong_support, config "
+                    "FROM paper_evidence_tasks WHERE id::text=:tid"
                 ),
                 {"tid": task_id},
             )
-        ).scalar_one_or_none()
+        ).first()
         rows = (
             await session.execute(
                 text(
                     "SELECT id::text, target_type, target_id::text FROM paper_evidence_task_items "
-                    "WHERE task_id::text=:tid AND status='pending' ORDER BY created_at LIMIT 8"
+                    "WHERE task_id::text=:tid AND status='pending' "
+                    "AND (next_retry_at IS NULL OR next_retry_at <= now()) "
+                    "ORDER BY created_at LIMIT 8 FOR UPDATE SKIP LOCKED"
                 ),
                 {"tid": task_id},
             )
         ).all()
         if not rows:
             break
-        max_papers = task_row or 3
-        sem_epmc = asyncio.Semaphore(EUROPE_PMC_CONCURRENCY)
-        sem_deepseek = asyncio.Semaphore(DEEPSEEK_CONCURRENCY)
+        # release FOR UPDATE row locks before workers update rows in their own sessions
+        await session.commit()
+        max_papers = task_row[0] if task_row else 3
+        only_oa = bool(task_row[1]) if task_row else False
+        stop_after_strong_support = bool(task_row[2]) if task_row else False
+        task_config = task_row[3] if task_row else {}
+        sem_search = asyncio.Semaphore(cfg.paper_search_concurrency)
+        sem_fetch = asyncio.Semaphore(cfg.paper_fetch_concurrency)
+        deepseek_cfg = (task_config or {}).get("deepseek_concurrency") or cfg.ontology_residual_concurrency
+        sem_deepseek = asyncio.Semaphore(int(deepseek_cfg))
+        max_retries = cfg.evidence_batch_max_retries
         coros = [
-            _process_batch_item(
+            _process_batch_item_v2(
                 task_id=task_id,
                 item_id=item_id,
                 target_type=tt,
                 target_id=oid,
                 mode="function",
                 max_papers=max_papers,
-                sem_epmc=sem_epmc,
+                only_oa=only_oa,
+                stop_after_strong_support=stop_after_strong_support,
+                sem_search=sem_search,
+                sem_fetch=sem_fetch,
                 sem_deepseek=sem_deepseek,
+                max_retries=max_retries,
             )
             for item_id, tt, oid in rows
         ]
@@ -2351,7 +2386,10 @@ async def _run_batch_loop(session: AsyncSession, task_id: str) -> None:
     ).all()
     status_map = {r[0]: r[1] for r in counts}
     failed = status_map.get("failed", 0)
-    terminal_done = sum(status_map.get(s, 0) for s in ("completed", "skipped"))
+    terminal_done = sum(
+        status_map.get(s, 0)
+        for s in ("awaiting_review", "completed", "skipped")
+    )
     if failed and terminal_done:
         final_status = "partially_failed"
     elif failed:
@@ -2365,6 +2403,8 @@ async def _run_batch_loop(session: AsyncSession, task_id: str) -> None:
         ),
         {"tid": task_id, "st": final_status},
     )
+    await session.commit()
+    await _update_task_review_status(session, task_id)
     await session.commit()
 
 
@@ -2389,6 +2429,13 @@ async def recover_interrupted_batch_tasks(session: AsyncSession) -> int:
         text(
             "UPDATE paper_evidence_tasks SET status='pending', resumed_at=now() "
             "WHERE status IN ('running','pending') AND finished_at IS NULL"
+        )
+    )
+    await session.execute(
+        text(
+            "UPDATE paper_evidence_task_items SET status='pending', updated_at=now() "
+            "WHERE status IN ('searching','fetching','retrieving','extracting','verifying') "
+            "AND task_id IN (SELECT id FROM paper_evidence_tasks WHERE status='pending')"
         )
     )
     await session.commit()
@@ -2427,6 +2474,14 @@ async def resume_batch_task(session: AsyncSession, task_id: str, operator_id: st
         ),
         {"tid": task_id},
     )
+    await session.execute(
+        text(
+            "UPDATE paper_evidence_task_items SET status='pending', next_retry_at=NULL, updated_at=now() "
+            "WHERE task_id::text=:tid AND status='failed' AND "
+            "(next_retry_at IS NULL OR next_retry_at <= now())"
+        ),
+        {"tid": task_id},
+    )
     await session.commit()
     if result.rowcount == 0:
         raise ValueError("task is not paused")
@@ -2453,7 +2508,8 @@ async def cancel_batch_task(session: AsyncSession, task_id: str, operator_id: st
     )
     await session.execute(
         text(
-            "UPDATE paper_evidence_task_items SET status='skipped', last_error='cancelled', updated_at=now() "
+            "UPDATE paper_evidence_task_items SET status='skipped', last_error_code='CANCELLED', "
+            "last_error_message='cancelled by user', last_error_at=now(), updated_at=now() "
             "WHERE task_id::text=:tid AND status='pending'"
         ),
         {"tid": task_id},
@@ -2478,7 +2534,8 @@ async def retry_failed_batch_items(session: AsyncSession, task_id: str, operator
     result = await session.execute(
         text(
             "UPDATE paper_evidence_task_items SET status='pending', last_error=NULL, "
-            "retry_count=0, updated_at=now() WHERE task_id::text=:tid AND status='failed'"
+            "last_error_code=NULL, next_retry_at=NULL, updated_at=now() "
+            "WHERE task_id::text=:tid AND status='failed'"
         ),
         {"tid": task_id},
     )
@@ -2516,7 +2573,8 @@ async def list_paper_evidence_tasks(
             text(
                 f"SELECT id::text, target_type, scope, mode, max_papers_per_object, status, "
                 f"total_items, processed_items, awaiting_review_items, failed_items, summary, "
-                f"created_by, created_at, started_at, finished_at, error_message "
+                f"created_by, created_at, started_at, finished_at, error_message, "
+                f"review_status, name, granularity_level "
                 f"FROM paper_evidence_tasks {where} ORDER BY created_at DESC LIMIT :lim OFFSET :off"
             ),
             params,
@@ -2544,6 +2602,9 @@ async def list_paper_evidence_tasks(
                 "started_at": r[13].isoformat() if r[13] else None,
                 "finished_at": r[14].isoformat() if r[14] else None,
                 "error_message": r[15],
+                "review_status": r[16],
+                "name": r[17],
+                "granularity_level": r[18],
             }
             for r in rows
         ],
@@ -2557,7 +2618,8 @@ async def get_batch_task(session: AsyncSession, task_id: str) -> dict:
             text(
                 "SELECT id::text, target_type, scope, mode, max_papers_per_object, status, summary, "
                 "total_items, processed_items, awaiting_review_items, failed_items, created_by, "
-                "created_at, started_at, finished_at, error_message "
+                "created_at, started_at, finished_at, error_message, review_status, name, "
+                "granularity_level, only_oa, confidence_lt, stop_after_strong_support "
                 "FROM paper_evidence_tasks WHERE id::text = :tid"
             ),
             {"tid": task_id},
@@ -2574,6 +2636,11 @@ async def get_batch_task(session: AsyncSession, task_id: str) -> dict:
             {"tid": task_id},
         )
     ).all()
+    status_map = {r[0]: r[1] for r in counts}
+    processed = sum(
+        status_map.get(s, 0)
+        for s in ("awaiting_review", "completed", "skipped", "failed")
+    )
     return {
         "task": {
             "id": task[0],
@@ -2592,8 +2659,15 @@ async def get_batch_task(session: AsyncSession, task_id: str) -> dict:
             "started_at": task[13].isoformat() if task[13] else None,
             "finished_at": task[14].isoformat() if task[14] else None,
             "error_message": task[15],
+            "review_status": task[16],
+            "name": task[17],
+            "granularity_level": task[18],
+            "only_oa": task[19],
+            "confidence_lt": float(task[20]) if task[20] is not None else None,
+            "stop_after_strong_support": task[21],
         },
-        "counts": {r[0]: r[1] for r in counts},
+        "counts": status_map,
+        "processed": processed,
     }
 
 
@@ -2605,7 +2679,9 @@ async def list_batch_items(
             text(
                 "SELECT id::text, target_type, target_id::text, status, pmid, title, passage, "
                 "direction, confidence, evidence_id::text, error_message, updated_at, label, "
-                "current_confidence, passages_json, last_error, retry_count "
+                "current_confidence, passages_json, last_error, retry_count, attempt_count, "
+                "last_error_code, last_error_message, preprocess_outcome, paper_id::text, model_direction, "
+                "candidate_papers, review_draft, claim_text_snapshot, claim_components_snapshot "
                 "FROM paper_evidence_task_items WHERE task_id::text = :tid "
                 "ORDER BY created_at LIMIT :lim OFFSET :off"
             ),
@@ -2632,6 +2708,16 @@ async def list_batch_items(
                 "passages_json": r[14],
                 "last_error": r[15],
                 "retry_count": r[16],
+                "attempt_count": r[17],
+                "last_error_code": r[18],
+                "last_error_message": r[19],
+                "preprocess_outcome": r[20],
+                "paper_id": r[21],
+                "model_direction": r[22],
+                "candidate_papers": r[23],
+                "review_draft": r[24],
+                "claim_text_snapshot": r[25],
+                "claim_components_snapshot": r[26],
             }
             for r in rows
         ]
@@ -2639,22 +2725,29 @@ async def list_batch_items(
 
 
 async def complete_batch_item_reviewed(
-    session: AsyncSession, task_id: str, item_id: str, operator_id: str | None = None
+    session: AsyncSession,
+    task_id: str,
+    item_id: str,
+    evidence_id: str | None = None,
+    operator_id: str | None = None,
 ) -> dict:
     result = await session.execute(
         text(
             "UPDATE paper_evidence_task_items SET status='completed', reviewed_by=:rb, "
+            "evidence_id=:eid, "
             "reviewed_at=now(), updated_at=now() "
             "WHERE task_id::text=:tid AND id::text=:iid AND status='awaiting_review'"
         ),
-        {"tid": task_id, "iid": item_id, "rb": operator_id},
+        {"tid": task_id, "iid": item_id, "rb": operator_id, "eid": evidence_id},
     )
     await session.commit()
     if result.rowcount == 0:
         raise ValueError("item is not awaiting review")
     await _update_task_totals(session, task_id)
     await session.commit()
-    return {"task_id": task_id, "item_id": item_id, "status": "completed"}
+    await _update_task_review_status(session, task_id)
+    await session.commit()
+    return {"task_id": task_id, "item_id": item_id, "status": "completed", "evidence_id": evidence_id}
 
 
 async def write_evidence_audit_event(
@@ -2919,3 +3012,487 @@ async def resolve_evidence_review_record(
     )
     await session.commit()
     return {"id": str(record_id), "status": "resolved"}
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# Phase 4: multi-paper batch preprocessing, error taxonomy, review drafts
+# ════════════════════════════════════════════════════════════════════════════
+
+BATCH_RETRYABLE_CODES = {
+    "EUROPE_PMC_TIMEOUT",
+    "EUROPE_PMC_RATE_LIMIT",
+    "PAPER_FETCH_FAILED",
+    "OA_PARSE_FAILED",
+    "DEEPSEEK_TIMEOUT",
+    "DEEPSEEK_PARSE_FAILED",
+    "UNKNOWN",
+}
+
+
+def _classify_error(exc: Exception, stage: str) -> str:
+    msg = str(exc).lower()
+    if isinstance(exc, httpx.HTTPStatusError) and exc.response is not None and exc.response.status_code == 429:
+        return "EUROPE_PMC_RATE_LIMIT"
+    if "parse" in msg or "parse_error" in msg:
+        return "DEEPSEEK_PARSE_FAILED" if stage == "extract" else "OA_PARSE_FAILED"
+    if "timeout" in msg or "timed out" in msg:
+        return "DEEPSEEK_TIMEOUT" if stage == "extract" else "EUROPE_PMC_TIMEOUT"
+    if "transport" in msg or "connection" in msg or "http" in msg:
+        return "PAPER_FETCH_FAILED" if stage == "fetch" else "EUROPE_PMC_TIMEOUT"
+    if "no passage" in msg or "no_verified" in msg:
+        return "SOURCE_VERIFICATION_FAILED"
+    return "UNKNOWN"
+
+
+def _rank_papers(papers: list[dict], context: dict) -> list[dict]:
+    """Paper-level ranking: query/term relevance + OA + abstract (no impact factor)."""
+    source = (context.get("source_region") or "").lower()
+    target = (context.get("target_region") or "").lower()
+    functions = [(f or "").lower() for f in (context.get("function_terms") or [])]
+    ranked = []
+    for p in papers:
+        text = f"{p.get('title') or ''} {p.get('abstract') or ''} {p.get('journal') or ''}".lower()
+        score = 0
+        if source and source in text:
+            score += 10
+        if target and target in text:
+            score += 10
+        for fn in functions:
+            if fn and fn in text:
+                score += 5
+        if p.get("is_open_access"):
+            score += 3
+        if p.get("abstract"):
+            score += 2
+        try:
+            score += max(0, 2 - (2026 - int(p.get("year") or 0))) * 0.1
+        except (TypeError, ValueError):
+            pass
+        ranked.append({**p, "paper_match_score": round(score, 2)})
+    ranked.sort(key=lambda x: (-x["paper_match_score"], str(x.get("year") or "")))
+    return ranked
+
+
+async def _set_item_stage(session: AsyncSession, item_id: str, status: str, **extra) -> None:
+    sets = "status=:st, updated_at=now()"
+    params: dict = {"iid": item_id, "st": status}
+    for key, value in extra.items():
+        if isinstance(value, str) and value.startswith("SQL:"):
+            sets += f", {key}={value[4:]}"
+        elif isinstance(value, (dict, list)):
+            sets += f", {key}=CAST(:p_{key} AS jsonb)"
+            params[f"p_{key}"] = json.dumps(value, ensure_ascii=False)
+        else:
+            sets += f", {key}=:p_{key}"
+            params[f"p_{key}"] = value
+    await session.execute(text(f"UPDATE paper_evidence_task_items SET {sets} WHERE id::text=:iid"), params)
+    await session.commit()
+
+
+async def _save_item_candidates(
+    session: AsyncSession,
+    item_id: str,
+    candidates: list[dict],
+) -> None:
+    """Persist candidate papers + draft passages (review-only, never formal evidence)."""
+    await session.execute(
+        text(
+            "UPDATE paper_evidence_task_items SET candidate_papers=CAST(:cp AS jsonb), "
+            "model_direction=:md, model_assessment=:ma, coverage_summary=CAST(:cs AS jsonb), "
+            "updated_at=now() WHERE id::text=:iid"
+        ),
+        {
+            "iid": item_id,
+            "cp": json.dumps(candidates, ensure_ascii=False),
+            "md": candidates[0].get("model_direction") if candidates else None,
+            "ma": candidates[0].get("model_assessment") if candidates else None,
+            "cs": json.dumps(candidates[0].get("coverage_summary") or {}, ensure_ascii=False) if candidates else "{}",
+        },
+    )
+    await session.execute(
+        text("DELETE FROM paper_evidence_task_item_passages WHERE task_item_id=:iid"),
+        {"iid": item_id},
+    )
+    rank = 0
+    for cand in candidates:
+        for p in cand.get("passages") or []:
+            rank += 1
+            await session.execute(
+                text(
+                    "INSERT INTO paper_evidence_task_item_passages "
+                    "(task_item_id, paper_id, paper_passage_id, paragraph_id, passage_text_snapshot, "
+                    "translation_zh, direction, evidence_level, supported_components, reason, "
+                    "semantic_confidence, source_verified, source_verification_method, rank, is_recommended) "
+                    "VALUES (:iid, :paper_id, :ppid, :pid, :txt, :trans, :dir, :lvl, "
+                    "CAST(:sc AS jsonb), :reason, :conf, :sv, :method, :rank, :rec)"
+                ),
+                {
+                    "iid": item_id,
+                    "paper_id": uuid.UUID(p["paper_id"]) if p.get("paper_id") else None,
+                    "ppid": p.get("paper_passage_id"),
+                    "pid": p.get("paragraph_id"),
+                    "txt": p.get("passage") or "",
+                    "trans": None,
+                    "dir": p.get("direction") or "supports",
+                    "lvl": p.get("evidence_level") or "indirect",
+                    "sc": json.dumps(p.get("supported_components") or [], ensure_ascii=False),
+                    "reason": p.get("reason") or "",
+                    "conf": p.get("semantic_confidence") or p.get("confidence"),
+                    "sv": bool(p.get("source_verified")),
+                    "method": p.get("source_verification_method"),
+                    "rank": rank,
+                    "rec": rank == 1,
+                },
+            )
+    await session.commit()
+
+
+async def _process_batch_item_v2(
+    *,
+    task_id: str,
+    item_id: str,
+    target_type: str,
+    target_id: str,
+    mode: str,
+    max_papers: int,
+    only_oa: bool,
+    stop_after_strong_support: bool,
+    sem_search: asyncio.Semaphore,
+    sem_fetch: asyncio.Semaphore,
+    sem_deepseek: asyncio.Semaphore,
+    max_retries: int,
+) -> None:
+    from app.database import AsyncSessionLocal
+
+    if AsyncSessionLocal is None:
+        return
+    async with AsyncSessionLocal() as session:
+        stage = "search"
+        try:
+            context = await build_retrieval_context(session, target_type, uuid.UUID(target_id))
+            await _set_item_stage(
+                session, item_id, "searching",
+                started_at="SQL:COALESCE(started_at, now())",
+                attempt_count="SQL:attempt_count + 1",
+                search_query=context.get("claim_text") or "",
+                claim_version=context.get("claim_version") or "claim_v1",
+                claim_text_snapshot=context.get("claim_text") or "",
+                claim_components_snapshot=context.get("claim_components") or [],
+            )
+            query = await build_search_query(session, target_type, uuid.UUID(target_id))
+            async with sem_search:
+                papers = await _search_with_retry(query, limit=max(10, max_papers * 3))
+            if not papers:
+                await _set_item_stage(
+                    session, item_id, "awaiting_review",
+                    preprocess_outcome="no_evidence_found",
+                    last_error_code="EUROPE_PMC_NO_RESULT",
+                    last_error_message="no papers matched the query",
+                    last_error_at="SQL:now()",
+                    finished_preprocessing_at="SQL:now()",
+                )
+                return
+            ranked = _rank_papers(papers, context)
+            selected = ranked[:max_papers]
+            candidates: list[dict] = []
+            for paper in selected:
+                pmid = (paper.get("pmid") or "").strip()
+                if not pmid:
+                    continue
+                stage = "fetch"
+                await _set_item_stage(session, item_id, "fetching")
+                async with sem_fetch:
+                    meta = await _verify_paper_with_retry(pmid)
+                    if meta is None:
+                        continue
+                    xml_text = await pfs.fetch_oa_fulltext_xml(
+                        pmid=pmid, pmcid=meta.get("pmcid") or paper.get("pmcid") or ""
+                    )
+                if only_oa and not meta.get("is_open_access"):
+                    continue
+                abstract = (meta.get("abstract") or "").strip()
+                paper_source = await ensure_paper_source(
+                    session,
+                    {**meta, "abstract": abstract, "fulltext": ""},
+                )
+                stage = "retrieve"
+                await _set_item_stage(session, item_id, "retrieving")
+                paragraphs: list[dict] = []
+                if abstract:
+                    paragraphs.append(
+                        {
+                            "source_scope": "abstract",
+                            "section_title": "Abstract",
+                            "paragraph_id": "abstract_p001",
+                            "paragraph_index": 0,
+                            "passage_text": abstract,
+                            "text_hash": passage_hash(abstract),
+                            "locator": "abstract:paragraph:0",
+                        }
+                    )
+                if xml_text.strip():
+                    paragraphs.extend(oa_xml_parser.parse_oa_xml(xml_text))
+                await ensure_paper_passages(session, paper_source.id, paragraphs)
+                await session.commit()
+                all_paragraphs = await load_paper_passages(session, paper_source.id)
+                ranked_paras = score_paragraphs(
+                    all_paragraphs,
+                    source_region=context.get("source_region") or "",
+                    target_region=context.get("target_region") or "",
+                    source_region_synonyms=context.get("source_region_synonyms") or [],
+                    target_region_synonyms=context.get("target_region_synonyms") or [],
+                    function_terms=context.get("function_terms") or [],
+                    function_synonyms=context.get("function_synonyms") or [],
+                    relation_keywords=context.get("relation_keywords") or [],
+                )
+                windows = build_windows(ranked_paras, all_paragraphs, top_k=20, window=1)
+                stage = "extract"
+                await _set_item_stage(session, item_id, "extracting")
+                async with sem_deepseek:
+                    extraction = await _extract_from_paper_with_retry(
+                        claim=context,
+                        title=meta.get("title") or paper.get("title") or "",
+                        windows=windows,
+                    )
+                stage = "verify"
+                await _set_item_stage(session, item_id, "verifying")
+                coverage = compute_coverage_summary(
+                    context.get("claim_components") or [],
+                    extraction.get("passages") or [],
+                )
+                coverage_overall = aggregate_overall_direction(
+                    coverage, extraction.get("passages") or []
+                )
+                passage_id_map: dict[str, uuid.UUID] = {}
+                for p in extraction.get("passages") or []:
+                    p["paper_id"] = str(paper_source.id)
+                    if p.get("source_verified"):
+                        hash_rows = (
+                            await session.execute(
+                                text(
+                                    "SELECT id FROM paper_passages WHERE paper_id=:pid AND text_hash=:h"
+                                ),
+                                {"pid": paper_source.id, "h": passage_hash(p.get("passage") or "")},
+                            )
+                        ).first()
+                        p["paper_passage_id"] = str(hash_rows[0]) if hash_rows else None
+                candidates.append(
+                    {
+                        "paper_id": str(paper_source.id),
+                        "pmid": pmid,
+                        "doi": meta.get("doi") or "",
+                        "title": meta.get("title") or "",
+                        "journal": meta.get("journal") or "",
+                        "year": meta.get("year") or "",
+                        "is_oa": bool(meta.get("is_open_access")),
+                        "paper_match_score": paper.get("paper_match_score", 0),
+                        "model_direction": extraction.get("overall_direction"),
+                        "model_assessment": extraction.get("assessment"),
+                        "coverage_summary": {**coverage, "overall_direction": coverage_overall},
+                        "passages": extraction.get("passages") or [],
+                    }
+                )
+                if (
+                    stop_after_strong_support
+                    and coverage_overall == "supports"
+                    and coverage.get("full_claim_supported")
+                ):
+                    break
+            await _save_item_candidates(session, item_id, candidates)
+            verified_any = any(
+                p.get("source_verified")
+                for cand in candidates
+                for p in cand.get("passages") or []
+            )
+            await _set_item_stage(
+                session, item_id, "awaiting_review",
+                preprocess_outcome="evidence_found" if verified_any else "no_evidence_found",
+                last_error_code=None if verified_any else "NO_RELEVANT_PASSAGE",
+                last_error_message=None if verified_any else "no verified passage across candidates",
+                last_error_at=None if verified_any else "SQL:now()",
+                finished_preprocessing_at="SQL:now()",
+                paper_id=uuid.UUID(candidates[0]["paper_id"]) if candidates else None,
+            )
+        except Exception as exc:  # noqa: BLE001
+            code = _classify_error(exc, stage)
+            try:
+                with open("diag_v2.log", "a", encoding="utf-8") as f:
+                    f.write(f"[{item_id}] stage={stage} code={code} err={str(exc)[:300]}\n")
+            except Exception:
+                pass
+            try:
+                async with AsyncSessionLocal() as err_session:
+                    row = (
+                        await err_session.execute(
+                            text("SELECT attempt_count FROM paper_evidence_task_items WHERE id::text=:iid"),
+                            {"iid": item_id},
+                        )
+                    ).first()
+                    attempts = (row[0] if row else 0) or 0
+                    if code in BATCH_RETRYABLE_CODES and attempts < max_retries:
+                        await err_session.execute(
+                            text(
+                                "UPDATE paper_evidence_task_items SET status='pending', "
+                                "last_error_code=:code, last_error_message=:msg, last_error_at=now(), "
+                                "next_retry_at=now() + make_interval(secs => :backoff), "
+                                "updated_at=now() WHERE id::text=:iid"
+                            ),
+                            {
+                                "iid": item_id,
+                                "code": code,
+                                "msg": str(exc)[:500],
+                                "backoff": min(60, (2 ** attempts) * 5),
+                            },
+                        )
+                    else:
+                        await err_session.execute(
+                            text(
+                                "UPDATE paper_evidence_task_items SET status='failed', "
+                                "last_error_code=:code, last_error_message=:msg, last_error_at=now(), "
+                                "next_retry_at=NULL, updated_at=now() WHERE id::text=:iid"
+                            ),
+                            {"iid": item_id, "code": code, "msg": str(exc)[:500]},
+                        )
+                    await err_session.commit()
+            except Exception:  # noqa: BLE001
+                await err_session.rollback()
+
+
+async def _resolve_scope_ids_low_confidence(
+    session: AsyncSession,
+    target_type: str,
+    confidence_lt: float | None,
+    limit: int,
+) -> list[str]:
+    table = TARGET_MODELS.get(target_type)
+    if table is None:
+        raise ValueError(f"unsupported target_type: {target_type}")
+    threshold = confidence_lt if confidence_lt is not None else 0.5
+    rows = (
+        await session.execute(
+            text(
+                f"SELECT id::text FROM {table.__tablename__} "
+                "WHERE confidence < :thr ORDER BY confidence ASC LIMIT :lim"
+            ),
+            {"thr": threshold, "lim": limit},
+        )
+    ).all()
+    return [str(r[0]) for r in rows]
+
+
+async def _update_task_review_status(session: AsyncSession, task_id: str) -> None:
+    counts = (
+        await session.execute(
+            text(
+                "SELECT status, COUNT(*) FROM paper_evidence_task_items "
+                "WHERE task_id::text=:tid GROUP BY 1"
+            ),
+            {"tid": task_id},
+        )
+    ).all()
+    status_map = {r[0]: r[1] for r in counts}
+    awaiting = status_map.get("awaiting_review", 0)
+    done = status_map.get("completed", 0)
+    pending_active = sum(status_map.get(s, 0) for s in ("pending", "searching", "fetching", "retrieving", "extracting", "verifying"))
+    if awaiting == 0 and done == 0 and pending_active == 0:
+        review_status = "not_started"
+    elif awaiting == 0 and done > 0 and pending_active == 0:
+        review_status = "completed"
+    else:
+        review_status = "in_review"
+    await session.execute(
+        text("UPDATE paper_evidence_tasks SET review_status=:rs WHERE id::text=:tid"),
+        {"tid": task_id, "rs": review_status},
+    )
+
+
+async def get_task_item_draft(session: AsyncSession, item_id: str) -> dict:
+    row = (
+        await session.execute(
+            text(
+                "SELECT review_draft, candidate_papers, passages_json, target_type, target_id::text, "
+                "status, preprocess_outcome, model_direction, model_assessment, coverage_summary, "
+                "paper_id::text, claim_text_snapshot, claim_components_snapshot "
+                "FROM paper_evidence_task_items WHERE id::text=:iid"
+            ),
+            {"iid": item_id},
+        )
+    ).first()
+    if row is None:
+        raise ValueError("task item not found")
+    return {
+        "item_id": item_id,
+        "status": row[5],
+        "preprocess_outcome": row[6],
+        "target_type": row[2],
+        "target_id": row[3],
+        "model_direction": row[7],
+        "model_assessment": row[8],
+        "coverage_summary": row[9],
+        "paper_id": row[10],
+        "claim_text_snapshot": row[11],
+        "claim_components_snapshot": row[12],
+        "review_draft": row[0],
+        "candidate_papers": row[1],
+    }
+
+
+async def save_task_item_draft(
+    session: AsyncSession, item_id: str, draft: dict, operator_id: str | None = None
+) -> dict:
+    row = (
+        await session.execute(
+            text(
+                "UPDATE paper_evidence_task_items SET review_draft=CAST(:d AS jsonb), updated_at=now() "
+                "WHERE id::text=:iid RETURNING id::text"
+            ),
+            {"iid": item_id, "d": json.dumps(draft, ensure_ascii=False)},
+        )
+    ).first()
+    await session.commit()
+    if row is None:
+        raise ValueError("task item not found")
+    await _write_audit(
+        session,
+        action_type="EVIDENCE_REVIEW_DRAFT_SAVED",
+        entity_type="evidence_task_item",
+        entity_id=uuid.UUID(item_id),
+        after_data={"draft_keys": sorted(draft.keys())},
+        operator_id=operator_id,
+        reason="review draft saved",
+    )
+    await session.commit()
+    return {"item_id": item_id, "saved": True}
+
+
+async def validate_passage_selection(
+    session: AsyncSession, paper_passage_id: uuid.UUID, selected_text: str
+) -> dict:
+    row = (
+        await session.execute(
+            text(
+                "SELECT passage_text FROM paper_passages WHERE id=:pid"
+            ),
+            {"pid": paper_passage_id},
+        )
+    ).first()
+    if row is None:
+        raise ValueError("paper passage not found")
+    source = row[0] or ""
+    verified, method = verify_passage_against_source(selected_text, source)
+    if not verified:
+        return {
+            "source_verified": False,
+            "verification_method": None,
+            "normalized_selection": None,
+            "char_start": None,
+            "char_end": None,
+        }
+    char_start = source.find(selected_text)
+    return {
+        "source_verified": True,
+        "verification_method": method,
+        "normalized_selection": re.sub(r"\s+", " ", selected_text).strip(),
+        "char_start": char_start if char_start >= 0 else None,
+        "char_end": char_start + len(selected_text) if char_start >= 0 else None,
+    }

@@ -84,6 +84,7 @@ class TestBatchStateMachine:
         target_ids = target_ids or _ids(3)
         with (
             patch.object(pes, "_resolve_scope_ids", new=AsyncMock(return_value=target_ids)),
+            patch.object(pes, "_resolve_scope_ids_low_confidence", new=AsyncMock(return_value=target_ids)),
             patch.object(
                 pes,
                 "_batch_scope_label",
@@ -139,6 +140,8 @@ class TestBatchStateMachine:
                 patch.object(pes, "search_papers", new=AsyncMock(return_value=[_paper()])),
                 patch.object(pes, "fetch_fulltext", new=AsyncMock(return_value="")),
                 patch.object(pes, "verify_paper", new=AsyncMock(return_value=_paper())),
+                patch.object(pes.pfs, "fetch_oa_fulltext_xml", new=AsyncMock(return_value="")),
+                patch.object(pes, "build_search_query", new=AsyncMock(return_value='"memory consolidation"')),
                 patch.object(pes, "extract_passage_from_paper", new=AsyncMock(return_value=_extraction())),
             ):
                 _run(_run_loop(task_id))
@@ -247,8 +250,10 @@ async def _read_task_items(task_id):
         return (
             await s.execute(
                 text(
-                    "SELECT label, status, passages_json IS NOT NULL, paper_json IS NOT NULL, "
-                    "source_text_hash IS NOT NULL FROM paper_evidence_task_items WHERE task_id::text=:tid"
+                    "SELECT label, status, candidate_papers IS NOT NULL, "
+                    "EXISTS(SELECT 1 FROM paper_evidence_task_item_passages pp WHERE pp.task_item_id = t.id), "
+                    "claim_text_snapshot IS NOT NULL "
+                    "FROM paper_evidence_task_items t WHERE task_id::text=:tid"
                 ),
                 {"tid": task_id},
             )

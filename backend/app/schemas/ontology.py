@@ -228,6 +228,21 @@ class BatchTaskCreateRequest(BaseModel):
     max_papers_per_object: int = Field(default=3, ge=1, le=10)
     limit: int = Field(default=500, ge=1, le=5000)
     start_paused: bool = False
+    name: str | None = None
+    granularity_level: str | None = None
+    only_oa: bool = False
+    confidence_lt: float | None = Field(default=None, ge=0.0, le=1.0)
+    stop_after_strong_support: bool = False
+    target_ids: list[str] | None = None
+
+
+class PassageSelectionRequest(BaseModel):
+    paper_passage_id: uuid.UUID
+    selected_text: str = Field(min_length=1, max_length=4000)
+
+
+class TaskItemDraftRequest(BaseModel):
+    draft: dict
 
 
 class EvidenceAuditRequest(BaseModel):

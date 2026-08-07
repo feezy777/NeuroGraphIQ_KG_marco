@@ -12,6 +12,8 @@ export interface ClaimComponent {
 
 export interface WorkbenchPassage {
   hash: string
+  paper_id?: string | null
+  paper_passage_id?: string | null
   source_scope: 'abstract' | 'fulltext'
   section_title: string | null
   paragraph_index: number | null
@@ -60,6 +62,8 @@ export interface QueueEntry {
   evidenceCount: number
   taskItemId?: string
   draftPmid?: string
+  preprocessOutcome?: string | null
+  modelDirection?: Direction | null
   draftPassages?: WorkbenchPassage[]
   draftDirection?: Direction
   draft?: WorkbenchDraft

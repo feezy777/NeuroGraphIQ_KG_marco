@@ -5463,6 +5463,32 @@ export interface PaperEvidenceTaskItem {
   updated_at: string | null
   label: string | null
   current_confidence: number | null
+  attempt_count: number
+  last_error_code: string | null
+  last_error_message: string | null
+  preprocess_outcome: string | null
+  paper_id: string | null
+  model_direction: string | null
+  candidate_papers: Array<{
+    paper_id: string
+    pmid: string
+    title: string
+    journal: string
+    year: string
+    is_oa: boolean
+    model_direction: string | null
+    model_assessment: string | null
+    coverage_summary: Record<string, unknown> | null
+    passages: Array<Record<string, unknown>>
+  }> | null
+  review_draft: Record<string, unknown> | null
+  claim_text_snapshot: string | null
+  claim_components_snapshot: Array<{
+    component_type: string
+    statement: string
+    required: boolean
+    metadata: Record<string, unknown>
+  }> | null
   passages_json: {
     papers?: Array<Record<string, unknown>>
     passages?: Array<Record<string, unknown>>
@@ -5482,6 +5508,9 @@ export interface PaperEvidenceTask {
   processed_items: number
   awaiting_review_items: number
   failed_items: number
+  review_status: string | null
+  name: string | null
+  granularity_level: string | null
   summary: Record<string, unknown> | null
   created_by: string | null
   created_at: string | null
@@ -5497,6 +5526,12 @@ export const createPaperEvidenceBatch = (body: {
   max_papers_per_object?: number
   limit?: number
   start_paused?: boolean
+  name?: string | null
+  granularity_level?: string | null
+  only_oa?: boolean
+  confidence_lt?: number | null
+  stop_after_strong_support?: boolean
+  target_ids?: string[] | null
 }) => postJson<{ task_id: string; target_count: number; skipped_active_targets: number; auto_started: boolean }>(
   '/api/ontology/evidence/batch',
   body,
@@ -5523,10 +5558,33 @@ export const cancelPaperEvidenceTask = (taskId: string) =>
 export const retryPaperEvidenceTask = (taskId: string) =>
   postJson<{ task_id: string; retried: number }>(`/api/ontology/evidence/batch/${taskId}/retry-failed`)
 
-export const completePaperEvidenceTaskItem = (taskId: string, itemId: string) =>
-  postJson<{ task_id: string; item_id: string; status: string }>(
+export const completePaperEvidenceTaskItem = (taskId: string, itemId: string, evidenceId?: string | null) =>
+  postJson<{ task_id: string; item_id: string; status: string; evidence_id: string | null }>(
     `/api/ontology/evidence/batch/${taskId}/items/${itemId}/reviewed`,
+    undefined,
+    { evidence_id: evidenceId ?? undefined },
   )
+
+export const getTaskItemDraft = (itemId: string) =>
+  getJson<{
+    item_id: string
+    status: string
+    preprocess_outcome: string | null
+    review_draft: Record<string, unknown> | null
+    candidate_papers: Array<Record<string, unknown>> | null
+  }>(`/api/ontology/evidence/batch/items/${itemId}/draft`)
+
+export const saveTaskItemDraft = (itemId: string, draft: Record<string, unknown>) =>
+  postJson<{ item_id: string; saved: boolean }>(`/api/ontology/evidence/batch/items/${itemId}/draft`, { draft })
+
+export const validatePassageSelection = (body: { paper_passage_id: string; selected_text: string }) =>
+  postJson<{
+    source_verified: boolean
+    verification_method: string | null
+    normalized_selection: string | null
+    char_start: number | null
+    char_end: number | null
+  }>('/api/ontology/evidence/passage/validate-selection', body)
 
 export interface PaperEvidenceStats {
   objects_with_evidence: number

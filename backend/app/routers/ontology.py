@@ -24,6 +24,8 @@ from app.schemas.ontology import (
     EvidenceRollbackRequest,
     BatchTaskCreateRequest,
     EvidenceAuditRequest,
+    PassageSelectionRequest,
+    TaskItemDraftRequest,
     TranslateRequest,
     ReviewResolveRequest,
     GroundingListResponse,
@@ -850,6 +852,12 @@ async def paper_evidence_batch_create(
             created_by=None,
             limit=body.limit,
             start_paused=body.start_paused,
+            name=body.name,
+            granularity_level=body.granularity_level,
+            only_oa=body.only_oa,
+            confidence_lt=body.confidence_lt,
+            stop_after_strong_support=body.stop_after_strong_support,
+            target_ids=body.target_ids,
         )
         if not body.start_paused:
             background_tasks.add_task(pes.execute_paper_evidence_batch_background, result["task_id"])
@@ -948,11 +956,52 @@ async def paper_evidence_batch_items(
 async def paper_evidence_batch_item_reviewed(
     task_id: str,
     item_id: str,
+    evidence_id: str | None = Query(default=None),
     session: AsyncSession = Depends(get_db),
     _auth: str = Depends(require_role("reviewer")),
 ):
     try:
-        return await pes.complete_batch_item_reviewed(session, task_id, item_id)
+        return await pes.complete_batch_item_reviewed(
+            session, task_id, item_id, evidence_id=evidence_id
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail={"code": "INVALID_REQUEST", "message": str(exc)})
+
+
+@router.get("/evidence/batch/items/{item_id}/draft")
+async def paper_evidence_batch_item_draft_get(
+    item_id: str,
+    session: AsyncSession = Depends(get_db),
+):
+    try:
+        return await pes.get_task_item_draft(session, item_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail={"code": "INVALID_REQUEST", "message": str(exc)})
+
+
+@router.put("/evidence/batch/items/{item_id}/draft")
+async def paper_evidence_batch_item_draft_put(
+    item_id: str,
+    body: TaskItemDraftRequest,
+    session: AsyncSession = Depends(get_db),
+    _auth: str = Depends(require_role("reviewer")),
+):
+    try:
+        return await pes.save_task_item_draft(session, item_id, body.draft)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail={"code": "INVALID_REQUEST", "message": str(exc)})
+
+
+@router.post("/evidence/passage/validate-selection")
+async def paper_evidence_passage_validate_selection(
+    body: PassageSelectionRequest,
+    session: AsyncSession = Depends(get_db),
+    _auth: str = Depends(require_role("reviewer")),
+):
+    try:
+        return await pes.validate_passage_selection(
+            session, body.paper_passage_id, body.selected_text
+        )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail={"code": "INVALID_REQUEST", "message": str(exc)})
 

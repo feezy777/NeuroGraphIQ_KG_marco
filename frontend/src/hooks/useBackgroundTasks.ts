@@ -45,7 +45,7 @@ function mapToBgTask(item: UnifiedTaskItem): BgTask {
     createdAt: item.created_at,
     startedAt: item.started_at,
     completedAt: item.completed_at,
-    detail: null,
+    detail: item.meta ?? null,
   }
 }
 

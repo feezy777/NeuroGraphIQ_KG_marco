@@ -6,6 +6,8 @@ import { ModelBadge } from '../components/ModelBadge'
 import { CancelConfirmDialog } from '../components/CancelConfirmDialog'
 import { getTaskDef, cancelTask, pauseTask, resumeTask, retryTask, TASK_TYPE_OPTIONS } from '../services/taskRegistry'
 import { EvidenceReviewModal } from './data-center/EvidenceReviewModal'
+import { CreateBatchTaskDialog } from './data-center/evidence-workbench/CreateBatchTaskDialog'
+import { useGlobalGranularity } from '../hooks/useGlobalGranularity'
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -80,6 +82,8 @@ export function BackgroundTaskCenterPage() {
   const [bulkCancelling, setBulkCancelling] = useState(false)
   const [bulkResult, setBulkResult] = useState<string | null>(null)
   const [workbenchTaskId, setWorkbenchTaskId] = useState<string | null>(null)
+  const [createOpen, setCreateOpen] = useState(false)
+  const { granularity } = useGlobalGranularity()
 
   // Filter + sort
   const filtered = useMemo(() => {
@@ -183,6 +187,7 @@ export function BackgroundTaskCenterPage() {
           <button className="btn" onClick={() => setSelectedIds(new Set(queuedTasks.map(t => t.id)))}>
             全选排队 ({queuedTasks.length})
           </button>
+          <button className="btn" onClick={() => setCreateOpen(true)}>新建论文佐证任务</button>
           <input className="tc-search" placeholder="搜索任务名 / ID / 类型…" value={search}
             onChange={e => setSearch(e.target.value)} />
         </div>
@@ -310,6 +315,15 @@ export function BackgroundTaskCenterPage() {
         initialTaskId={workbenchTaskId ?? undefined}
         onClose={() => setWorkbenchTaskId(null)}
       />
+      <CreateBatchTaskDialog
+        open={createOpen}
+        granularity={granularity}
+        onClose={() => setCreateOpen(false)}
+        onCreated={(taskId) => {
+          setCreateOpen(false)
+          setWorkbenchTaskId(taskId)
+        }}
+      />
     </div>
   )
 }
@@ -383,6 +397,16 @@ function TaskCard({ task, onClick, onViewDrawer, onCancel, onPause, onResume, on
         </div>
 
         <div className="tc-card-col tc-card-stats">
+          {task.type === 'paper_evidence' && task.detail && (
+            <>
+              <span className="tc-card-stat">
+                <strong>{Number(task.detail.awaiting_review_items ?? 0)}</strong> <small>待审核</small>
+              </span>
+              <span className="tc-card-stat">
+                <strong>{Number(task.detail.processed_items ?? 0)}</strong> <small>预处理完成</small>
+              </span>
+            </>
+          )}
           {task.targetCount != null && (
             <span className="tc-card-stat">
               <strong>{task.targetCount}</strong> <small>目标</small>
