@@ -14,10 +14,14 @@ from app.schemas.ontology import (
     AlignmentReviewRequest,
     BatchActivateRequest,
     BatchGroundingByTextRequest,
+    AttachPreviewRequest,
+    AttachPreviewResponse,
     CoverageResponse,
     EnumReplaceRequest,
     EvidenceExtractRequest,
+    EvidenceExtractResponse,
     EvidenceAttachRequest,
+    EvidenceRollbackRequest,
     BatchTaskCreateRequest,
     TranslateRequest,
     GroundingListResponse,
@@ -638,10 +642,9 @@ async def paper_evidence_attach(
             target_type=body.target_type,
             target_id=body.target_id,
             pmid=body.pmid,
-            excerpt=body.excerpt,
             direction=body.direction,
-            mode=body.mode,
-            suggested_confidence=body.suggested_confidence,
+            reviewer_confidence=body.reviewer_confidence,
+            passages=[p.model_dump() for p in body.passages],
             operator_id=None,
         )
         await session.commit()
@@ -652,6 +655,43 @@ async def paper_evidence_attach(
     except httpx.HTTPError as exc:
         await session.rollback()
         raise HTTPException(status_code=502, detail={"code": "PAPER_API_ERROR", "message": str(exc)})
+
+
+@router.post("/evidence/attach-preview", response_model=AttachPreviewResponse)
+async def paper_evidence_attach_preview(
+    body: AttachPreviewRequest,
+    session: AsyncSession = Depends(get_db),
+):
+    try:
+        return await pes.attach_preview(
+            session,
+            target_type=body.target_type,
+            target_id=body.target_id,
+            pmid=body.pmid,
+            direction=body.direction,
+            reviewer_confidence=body.reviewer_confidence,
+            passages=[p.model_dump() for p in body.passages],
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail={"code": "INVALID_REQUEST", "message": str(exc)})
+
+
+@router.post("/evidence/{evidence_id}/rollback")
+async def paper_evidence_rollback(
+    evidence_id: uuid.UUID,
+    body: EvidenceRollbackRequest,
+    session: AsyncSession = Depends(get_db),
+    _auth: str = Depends(require_role("reviewer")),
+):
+    try:
+        result = await pes.rollback_evidence(
+            session, evidence_id, reason=body.reason, operator_id=None
+        )
+        await session.commit()
+        return result
+    except ValueError as exc:
+        await session.rollback()
+        raise HTTPException(status_code=400, detail={"code": "INVALID_REQUEST", "message": str(exc)})
 
 
 @router.get("/evidence/list")
@@ -666,7 +706,7 @@ async def paper_evidence_list(
     )
 
 
-@router.post("/evidence/extract")
+@router.post("/evidence/extract", response_model=EvidenceExtractResponse)
 async def paper_evidence_extract(
     body: EvidenceExtractRequest,
     session: AsyncSession = Depends(get_db),

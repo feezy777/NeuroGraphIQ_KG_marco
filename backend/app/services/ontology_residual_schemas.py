@@ -60,3 +60,9 @@ class PaperPassageExtraction(BaseModel):
     passage: str = Field(min_length=1, max_length=2000)
     reason: str = Field(min_length=1, max_length=500)
     confidence: float = Field(ge=0.0, le=1.0)
+
+
+class PaperMultiPassageExtraction(BaseModel):
+    overall_direction: Literal["supports", "partial", "contradicts", "not_found"]
+    paper_relevance: str = Field(min_length=1, max_length=500)
+    passages: list[PaperPassageExtraction] = Field(min_length=1, max_length=10)

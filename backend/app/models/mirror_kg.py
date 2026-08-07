@@ -10,7 +10,7 @@ import uuid
 from datetime import datetime
 from typing import Any, Optional
 
-from sqlalchemy import DateTime, Float, ForeignKey, Integer, Numeric, String, Text, func
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint, func
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -287,4 +287,53 @@ class MirrorEvidenceRecord(Base):
     )
     verification_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
     verification_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class MirrorEvidencePassage(Base):
+    __tablename__ = "mirror_evidence_passages"
+    __table_args__ = (
+        UniqueConstraint("evidence_id", "passage_hash", name="uq_evidence_passage_hash"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    evidence_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("mirror_evidence_records.id", ondelete="CASCADE"), nullable=False
+    )
+    source_scope: Mapped[str] = mapped_column(String(16), nullable=False)
+    section_title: Mapped[str | None] = mapped_column(Text, nullable=True)
+    paragraph_index: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    passage_text: Mapped[str] = mapped_column(Text, nullable=False)
+    translation_zh: Mapped[str | None] = mapped_column(Text, nullable=True)
+    direction: Mapped[str] = mapped_column(String(16), nullable=False)
+    reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    confidence: Mapped[float | None] = mapped_column(Numeric, nullable=True)
+    is_selected: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    source_locator: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    passage_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    source_verified: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class ConfidenceAdjustmentLog(Base):
+    __tablename__ = "confidence_adjustment_logs"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    target_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    target_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    evidence_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    before_confidence: Mapped[float | None] = mapped_column(Numeric, nullable=True)
+    suggested_confidence: Mapped[float | None] = mapped_column(Numeric, nullable=True)
+    after_confidence: Mapped[float | None] = mapped_column(Numeric, nullable=True)
+    direction: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    formula_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="applied")
+    applied_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    applied_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    rolled_back_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    rolled_back_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    rollback_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

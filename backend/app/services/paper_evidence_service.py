@@ -3,18 +3,22 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import re
+import unicodedata
 import uuid
 
 import httpx
 from pydantic import ValidationError
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
 
 from app.models.mirror_kg import (
+    ConfidenceAdjustmentLog,
     MirrorEvidenceRecord,
+    MirrorEvidencePassage,
     MirrorRegionCircuit,
     MirrorRegionConnection,
     MirrorRegionFunction,
@@ -27,7 +31,13 @@ from app.models.mirror_macro_clinical import (
 from app.services.ontology_service import TERM_TABLE_BY_TYPE
 from app.config import get_settings
 from app.services.llm_providers.factory import get_llm_provider
-from app.services.ontology_residual_schemas import PaperPassageExtraction
+from app.services.ontology_residual_schemas import PaperMultiPassageExtraction, PaperPassageExtraction
+from app.services.confidence_rules import (
+    FORMULA_VERSION,
+    PARTIAL_CAP,
+    SUPPORT_CAP,
+    compute_adjustment,
+)
 
 EUROPE_PMC_SEARCH = "https://www.ebi.ac.uk/europepmc/webservices/rest/search"
 SEARCH_TIMEOUT = 25
@@ -41,6 +51,55 @@ TARGET_MODELS = {
     "circuit": MirrorRegionCircuit,
     "circuit_step": MirrorCircuitStep,
 }
+
+
+# ---- Passage verification (pure functions) ----
+
+
+def normalize_for_match(text: str) -> str:
+    """NFKC + collapse whitespace/newlines + unify common unicode punctuation."""
+    t = unicodedata.normalize("NFKC", text or "")
+    t = re.sub(r"[\u2010-\u2015\u2212\u00ad\u2018\u2019\u201c\u201d\u3001\u3002\uff0c\uff0e]", "-", t)
+    t = re.sub(r"[\s\u200b\u200c\u200d]+", " ", t)
+    return t.strip().lower()
+
+
+def passage_hash(passage: str) -> str:
+    return hashlib.sha256(normalize_for_match(passage).encode("utf-8")).hexdigest()
+
+
+def exact_passage_match(passage: str, source: str) -> bool:
+    return bool(passage and passage in source)
+
+
+def normalized_passage_match(passage: str, source: str) -> bool:
+    return bool(passage and normalize_for_match(passage) in normalize_for_match(source))
+
+
+def locate_passage(passage: str, source: str) -> tuple[int | None, str | None]:
+    """Find containing paragraph index (paragraph split by blank lines)."""
+    paragraphs = [p.strip() for p in re.split(r"\n\s*\n", source or "")]
+    for idx, para in enumerate(paragraphs):
+        if passage in para or normalized_passage_match(passage, para):
+            return idx, f"paragraph:{idx}"
+    return None, None
+
+
+def verify_passage_against_source(passage: str, source: str) -> tuple[bool, str | None]:
+    if exact_passage_match(passage, source):
+        return True, "exact"
+    if normalized_passage_match(passage, source):
+        return True, "normalized"
+    return False, None
+
+
+def verify_and_locate_passage(
+    passage: str, source: str, source_scope: str
+) -> tuple[bool, str | None, int | None, str | None]:
+    verified, method = verify_passage_against_source(passage, source)
+    para_idx, locator = locate_passage(passage, source)
+    locator = locator or (f"{source_scope}:verified:{method}" if verified else None)
+    return verified, method, para_idx, locator
 
 
 def _name_parts(target_type: str, row) -> list[str]:
@@ -196,12 +255,14 @@ async def attach_evidence(
     target_type: str,
     target_id: uuid.UUID,
     pmid: str,
-    excerpt: str,
-    direction: str = "supports",
+    direction: str,
+    reviewer_confidence: float,
+    passages: list[dict],
     mode: str = "function",
-    suggested_confidence: float | None = None,
     operator_id: str | None = None,
+    verification_status: str = "human_verified",
 ) -> dict:
+    # 1) verify paper metadata
     paper = await verify_paper(pmid)
     if paper is None:
         raise ValueError("paper not found or invalid PMID")
@@ -211,78 +272,325 @@ async def attach_evidence(
     row = await session.get(model, target_id)
     if row is None:
         raise ValueError("target not found")
-    existing = (
-        await session.execute(
-            select(MirrorEvidenceRecord).where(
-                MirrorEvidenceRecord.evidence_target_type == target_type,
-                MirrorEvidenceRecord.evidence_target_id == target_id,
-                MirrorEvidenceRecord.evidence_type == "paper_verification",
-            )
+    # 2) re-verify passages against source (backend never trusts the client)
+    source, source_scope = await _load_source(pmid)
+    if not source:
+        raise ValueError("no source text available for passage verification")
+    verified = _verify_passages(passages, source, source_scope)
+    if not verified:
+        raise ValueError("no passage could be verified against the original source")
+    hashes = [p["passage_hash"] for p in verified]
+    duplicate_count = await _count_duplicate_hashes(session, target_type, target_id, hashes)
+    if duplicate_count:
+        raise ValueError(f"{duplicate_count} duplicate passage(s) already stored for this object")
+    # 3) deterministic confidence rule (human_verified only)
+    current = float(row.confidence) if getattr(row, "confidence", None) is not None else None
+    adjustment = None
+    if verification_status == "human_verified":
+        adjustment = compute_adjustment(
+            direction=direction,
+            current_confidence=current,
+            reviewer_confidence=reviewer_confidence,
         )
-    ).scalars().first()
-    record = existing or MirrorEvidenceRecord(
+    # 4) write evidence record
+    record = MirrorEvidenceRecord(
         evidence_target_type=target_type,
         evidence_target_id=target_id,
         evidence_type="paper_verification",
-    )
-    record.evidence_text = excerpt.strip()
-    record.evidence_direction = direction
-    if direction in ("supports", "partial") and suggested_confidence is not None:
-        new_confidence = max(0.0, min(0.85, float(suggested_confidence)))
-        current = getattr(row, "confidence", None)
-        if current is None or float(current) < new_confidence:
-            row.confidence = new_confidence
-        record.verification_status = "verified_auto"
-        record.suggested_confidence = new_confidence
-        record.confidence_adjustment_status = "applied"
-    else:
-        record.verification_status = "pending"
-        record.suggested_confidence = suggested_confidence
-        record.confidence_adjustment_status = (
-            "pending" if suggested_confidence is not None else "none"
-        )
-    record.paper_source = paper["source"]
-    record.paper_pmid = paper["pmid"]
-    record.paper_doi = paper["doi"] or None
-    record.paper_title = paper["title"] or None
-    record.paper_journal = paper["journal"] or None
-    record.paper_year = int(paper["year"]) if str(paper["year"]).isdigit() else None
-    record.citation_json = {
-        "pmid": paper["pmid"],
-        "doi": paper["doi"],
-        "title": paper["title"],
-        "journal": paper["journal"],
-        "year": paper["year"],
-        "authors": paper["authors"],
-    }
-    record.source_reference_text = f"{paper['authors']} ({paper['year']}). {paper['title']}. {paper['journal']}."
-    record.verification_by = operator_id
-    record.citation_json = {**record.citation_json, "mode": mode}
-    session.add(record)
-    snippet = excerpt.strip()[:500]
-    old_text = (getattr(row, "evidence_text", None) or "").strip()
-    line = f"[论文证据] {snippet} (PMID:{paper['pmid']}, DOI:{paper['doi'] or '-'})"
-    row.evidence_text = f"{old_text}\n{line}" if old_text else line
-    await session.flush()
-    return {
-        "evidence_id": str(record.id),
-        "target_type": target_type,
-        "target_id": str(target_id),
-        "evidence_text": row.evidence_text,
-        "confidence": float(row.confidence) if getattr(row, "confidence", None) is not None else None,
-        "verification_status": record.verification_status,
-        "confidence_adjustment_status": record.confidence_adjustment_status,
-        "paper": {
+        evidence_text="",
+        evidence_direction=direction,
+        verification_status=verification_status,
+        paper_source=paper["source"],
+        paper_pmid=paper["pmid"],
+        paper_doi=paper["doi"] or None,
+        paper_title=paper["title"] or None,
+        paper_journal=paper["journal"] or None,
+        paper_year=int(paper["year"]) if str(paper["year"]).isdigit() else None,
+        suggested_confidence=reviewer_confidence,
+        confidence_adjustment_status=(
+            adjustment.adjustment_status if adjustment else "none"
+        ),
+        verification_by=operator_id,
+        citation_json={
             "pmid": paper["pmid"],
             "doi": paper["doi"],
             "title": paper["title"],
             "journal": paper["journal"],
             "year": paper["year"],
+            "authors": paper["authors"],
+            "mode": mode,
+        },
+        source_reference_text=(
+            f"{paper['authors']} ({paper['year']}). {paper['title']}. {paper['journal']}."
+        ),
+    )
+    session.add(record)
+    await session.flush()
+    # 5) write passages
+    for p in verified:
+        session.add(
+            MirrorEvidencePassage(
+                evidence_id=record.id,
+                source_scope=p["source_scope"],
+                section_title=p.get("section_title"),
+                paragraph_index=p.get("paragraph_index"),
+                passage_text=p["passage"],
+                direction=p["direction"],
+                reason=p.get("reason"),
+                confidence=p.get("confidence"),
+                is_selected=True,
+                source_locator=p.get("source_locator"),
+                passage_hash=p["passage_hash"],
+                source_verified=True,
+            )
+        )
+    # 6) confidence adjustment + log
+    final_confidence = current
+    if adjustment and adjustment.apply:
+        before = current
+        final_confidence = adjustment.final_confidence
+        row.confidence = final_confidence
+        session.add(
+            ConfidenceAdjustmentLog(
+                target_type=target_type,
+                target_id=target_id,
+                evidence_id=record.id,
+                before_confidence=before,
+                suggested_confidence=reviewer_confidence,
+                after_confidence=final_confidence,
+                direction=direction,
+                formula_version=adjustment.formula_version,
+                status="applied",
+                applied_by=operator_id,
+                applied_at=func.now(),
+            )
+        )
+    # 7) rebuild evidence_text from valid records
+    row.evidence_text = await rebuild_evidence_text(session, target_type, target_id)
+    await session.flush()
+    return {
+        "evidence_id": str(record.id),
+        "target_type": target_type,
+        "target_id": str(target_id),
+        "confidence": float(row.confidence) if getattr(row, "confidence", None) is not None else None,
+        "final_confidence": float(final_confidence) if final_confidence is not None else None,
+        "verification_status": record.verification_status,
+        "confidence_adjustment_status": record.confidence_adjustment_status,
+        "passage_count": len(verified),
+        "paper": {
+            "pmid": paper["pmid"],
+            "doi": paper["doi"],
+            "title": paper["title"],
             "links": {
                 "pubmed": f"https://pubmed.ncbi.nlm.nih.gov/{paper['pmid']}/" if paper["pmid"] else None,
                 "doi": f"https://doi.org/{paper['doi']}" if paper["doi"] else None,
             },
         },
+    }
+
+
+async def _load_source(pmid: str) -> tuple[str, str]:
+    paper = await verify_paper(pmid)
+    abstract = (paper or {}).get("abstract") or ""
+    fulltext = await fetch_fulltext(pmid)
+    if fulltext.strip():
+        return fulltext.strip(), "fulltext"
+    if abstract.strip():
+        return abstract.strip(), "abstract"
+    return "", "none"
+
+
+def _verify_passages(passages: list[dict], source: str, source_scope: str) -> list[dict]:
+    verified = []
+    for p in passages:
+        ok, _method, para_idx, locator = verify_and_locate_passage(
+            p.get("passage") or "", source, source_scope
+        )
+        if not ok:
+            continue
+        item = dict(p)
+        item["source_verified"] = True
+        item["source_scope"] = source_scope
+        item["paragraph_index"] = para_idx
+        item["source_locator"] = locator
+        item["passage_hash"] = passage_hash(item["passage"])
+        verified.append(item)
+    return verified
+
+
+async def _count_duplicate_hashes(
+    session: AsyncSession, target_type: str, target_id: uuid.UUID, hashes: list[str]
+) -> int:
+    if not hashes:
+        return 0
+    rows = (
+        await session.execute(
+            text(
+                "SELECT COUNT(*) FROM mirror_evidence_passages p "
+                "JOIN mirror_evidence_records e ON e.id = p.evidence_id "
+                "WHERE e.evidence_target_type = :tt AND e.evidence_target_id = :tid "
+                "AND p.passage_hash IN :hashes"
+            ),
+            {"tt": target_type, "tid": target_id, "hashes": tuple(hashes)},
+        )
+    ).scalar_one()
+    return int(rows)
+
+
+async def attach_preview(
+    session: AsyncSession,
+    *,
+    target_type: str,
+    target_id: uuid.UUID,
+    pmid: str,
+    direction: str,
+    reviewer_confidence: float,
+    passages: list[dict],
+) -> dict:
+    paper = await verify_paper(pmid)
+    block_reasons = []
+    if paper is None:
+        raise ValueError("paper not found or invalid PMID")
+    model = TARGET_MODELS.get(target_type)
+    row = await session.get(model, target_id) if model else None
+    if row is None:
+        raise ValueError("target not found")
+    source, source_scope = await _load_source(pmid)
+    verified = _verify_passages(passages, source, source_scope) if source else []
+    duplicate_count = (
+        await _count_duplicate_hashes(
+            session, target_type, target_id, [p["passage_hash"] for p in verified]
+        )
+        if verified
+        else 0
+    )
+    current = float(row.confidence) if getattr(row, "confidence", None) is not None else None
+    adjustment = compute_adjustment(
+        direction=direction, current_confidence=current, reviewer_confidence=reviewer_confidence
+    )
+    cap = SUPPORT_CAP if direction == "supports" else (PARTIAL_CAP if direction == "partial" else None)
+    if not source:
+        block_reasons.append("no source text available")
+    if not verified:
+        block_reasons.append("no passage could be verified against the original source")
+    if duplicate_count:
+        block_reasons.append(f"{duplicate_count} duplicate passage(s)")
+    if direction == "not_found":
+        block_reasons.append("not_found cannot be stored as paper evidence")
+    selected = [p["passage"] for p in verified]
+    line = (
+        f"[论文证据:{'?'}] {paper.get('title') or ''} | {paper.get('pmid') or ''} | "
+        f"{paper.get('doi') or ''} | {direction} | {(selected[0] if selected else '')[:200]}"
+    )
+    return {
+        "target_type": target_type,
+        "target_id": str(target_id),
+        "current_confidence": current,
+        "direction": direction,
+        "reviewer_confidence": reviewer_confidence,
+        "final_confidence": adjustment.final_confidence if adjustment.apply else current,
+        "cap": cap,
+        "selected_passage_count": len(selected),
+        "duplicate_passage_count": duplicate_count,
+        "evidence_text_preview": line,
+        "allow": len(block_reasons) == 0,
+        "block_reasons": block_reasons,
+    }
+
+
+async def rebuild_evidence_text(
+    session: AsyncSession, target_type: str, target_id: uuid.UUID
+) -> str:
+    records = (
+        await session.execute(
+            select(MirrorEvidenceRecord)
+            .where(
+                MirrorEvidenceRecord.evidence_target_type == target_type,
+                MirrorEvidenceRecord.evidence_target_id == target_id,
+                MirrorEvidenceRecord.evidence_type == "paper_verification",
+                MirrorEvidenceRecord.verification_status.in_(
+                    ("human_verified", "ai_extracted")
+                ),
+            )
+            .order_by(MirrorEvidenceRecord.created_at.desc())
+        )
+    ).scalars().all()
+    lines = []
+    for record in records:
+        passage = (
+            await session.execute(
+                select(MirrorEvidencePassage)
+                .where(
+                    MirrorEvidencePassage.evidence_id == record.id,
+                    MirrorEvidencePassage.is_selected.is_(True),
+                )
+                .order_by(MirrorEvidencePassage.created_at)
+                .limit(1)
+            )
+        ).scalars().first()
+        snippet = (passage.passage_text if passage else "")[:500]
+        lines.append(
+            f"[论文证据:{record.id}] {record.paper_title or ''} | {record.paper_pmid or ''} | "
+            f"{record.paper_doi or ''} | {record.evidence_direction or ''} | {snippet}"
+        )
+    return "\n".join(lines)
+
+
+async def rollback_evidence(
+    session: AsyncSession,
+    evidence_id: uuid.UUID,
+    *,
+    reason: str,
+    operator_id: str | None = None,
+) -> dict:
+    record = await session.get(MirrorEvidenceRecord, evidence_id)
+    if record is None:
+        raise ValueError("evidence not found")
+    if record.verification_status == "invalidated":
+        return {"evidence_id": str(evidence_id), "status": "already_invalidated", "changed": False}
+    record.verification_status = "invalidated"
+    record.verification_by = operator_id
+    log = (
+        await session.execute(
+            select(ConfidenceAdjustmentLog).where(
+                ConfidenceAdjustmentLog.evidence_id == evidence_id,
+                ConfidenceAdjustmentLog.status == "applied",
+            )
+        )
+    ).scalars().first()
+    target_type = record.evidence_target_type
+    target_id = record.evidence_target_id
+    if log is not None:
+        log.status = "rolled_back"
+        log.rolled_back_by = operator_id
+        log.rolled_back_at = func.now()
+        log.rollback_reason = reason
+    # recompute confidence from other valid applied logs
+    model = TARGET_MODELS.get(target_type)
+    row = await session.get(model, target_id) if model else None
+    if row is not None:
+        remaining = (
+            await session.execute(
+                select(ConfidenceAdjustmentLog)
+                .where(
+                    ConfidenceAdjustmentLog.target_type == target_type,
+                    ConfidenceAdjustmentLog.target_id == target_id,
+                    ConfidenceAdjustmentLog.status == "applied",
+                )
+                .order_by(ConfidenceAdjustmentLog.applied_at.desc())
+            )
+        ).scalars().all()
+        candidates = [float(x.after_confidence) for x in remaining if x.after_confidence is not None]
+        if log is not None and log.before_confidence is not None:
+            candidates.append(float(log.before_confidence))
+        row.confidence = max(candidates) if candidates else None
+        row.evidence_text = await rebuild_evidence_text(session, target_type, target_id)
+    await session.flush()
+    return {
+        "evidence_id": str(evidence_id),
+        "status": "invalidated",
+        "changed": True,
+        "confidence": float(row.confidence) if row is not None and getattr(row, "confidence", None) is not None else None,
     }
 
 
@@ -328,18 +636,29 @@ async def list_paper_evidence(
     }
 
 
+def _parse_multi(raw_text: str) -> PaperMultiPassageExtraction:
+    text_value = (raw_text or "").strip()
+    fence = re.search(r"```(?:json|JSON)?\s*(.*?)```", text_value, re.DOTALL)
+    if fence:
+        text_value = fence.group(1).strip()
+    parsed = json.loads(text_value)
+    return PaperMultiPassageExtraction.model_validate(parsed)
+
+
 async def extract_passage(*, term: str, title: str, abstract: str, fulltext: str = "") -> dict:
     cfg = get_settings()
     provider = get_llm_provider("deepseek")
-    system = "You are a strict JSON API. Reply only with the requested JSON object. Never explain."
     source = (fulltext or abstract or "").strip()
-    source_type = "full text" if fulltext.strip() else "abstract"
+    source_type = "fulltext" if fulltext.strip() else ("abstract" if abstract.strip() else "none")
+    system = "You are a strict JSON API. Reply only with the requested JSON object. Never explain."
     user = (
-        f'Find the passage most relevant to the neuroscience claim "{term}". '
-        "Determine the direction (supports / partial / contradicts / not_found) and confidence 0-1. "
-        'Return JSON exactly like: {"direction": "supports", "passage": "<original passage>", '
-        '"reason": "<one sentence>", "confidence": 0.9}. '
-        f"Paper title: {title}\nSource ({source_type}): {source[:6000]}"
+        f'Find all passages in the paper relevant to the neuroscience claim "{term}". '
+        "For each relevant passage, output the ORIGINAL passage verbatim (copy exactly from the source; "
+        "do NOT summarize, rewrite, or invent sentences). "
+        'Return JSON exactly like: {"overall_direction": "supports", "paper_relevance": "<one sentence>", '
+        '"passages": [{"passage": "<verbatim original>", "direction": "supports", '
+        '"reason": "<one sentence>", "confidence": 0.9}]}. '
+        f"Paper title: {title}\nSource ({source_type}): {source[:8000]}"
     )
     parsed = None
     parse_status = "provider_error"
@@ -358,13 +677,9 @@ async def extract_passage(*, term: str, title: str, abstract: str, fulltext: str
                 )
                 raw_response = resp.raw_text or ""
                 if resp.parsed_json is not None:
-                    parsed = PaperPassageExtraction.model_validate(resp.parsed_json)
+                    parsed = PaperMultiPassageExtraction.model_validate(resp.parsed_json)
                 else:
-                    text_value = (raw_response or "").strip()
-                    fence = re.search(r"```(?:json|JSON)?\s*(.*?)```", text_value, re.DOTALL)
-                    if fence:
-                        text_value = fence.group(1).strip()
-                    parsed = PaperPassageExtraction.model_validate(json.loads(text_value))
+                    parsed = _parse_multi(raw_response)
             else:
                 text_result = await provider.complete_text(
                     model=cfg.ontology_residual_model,
@@ -375,11 +690,7 @@ async def extract_passage(*, term: str, title: str, abstract: str, fulltext: str
                     json_mode=False,
                 )
                 raw_response = text_result.raw_text or ""
-                text_value = (raw_response or "").strip()
-                fence = re.search(r"```(?:json|JSON)?\s*(.*?)```", text_value, re.DOTALL)
-                if fence:
-                    text_value = fence.group(1).strip()
-                parsed = PaperPassageExtraction.model_validate(json.loads(text_value))
+                parsed = _parse_multi(raw_response)
             parse_status = "ok"
             break
         except (ValidationError, ValueError, json.JSONDecodeError):
@@ -388,8 +699,30 @@ async def extract_passage(*, term: str, title: str, abstract: str, fulltext: str
                 await asyncio.sleep(cfg.ontology_residual_backoff_seconds)
     if parsed is None:
         raise ValueError(f"passage extraction failed: {parse_status}")
+    passages = []
+    for item in parsed.passages:
+        verified, method, para_idx, locator = verify_and_locate_passage(
+            item.passage, source, source_type
+        )
+        passages.append(
+            {
+                "source_scope": source_type,
+                "section_title": None,
+                "paragraph_index": para_idx,
+                "passage": item.passage,
+                "direction": item.direction,
+                "reason": item.reason,
+                "confidence": item.confidence,
+                "source_locator": locator,
+                "source_verified": verified,
+                "passage_hash": passage_hash(item.passage),
+            }
+        )
     return {
-        **parsed.model_dump(),
+        "overall_direction": parsed.overall_direction,
+        "paper_relevance": parsed.paper_relevance,
+        "source_type": source_type,
+        "passages": passages,
         "parse_status": parse_status,
         "retry_count": retry_count,
         "raw_response": raw_response[:1000],
@@ -554,11 +887,12 @@ async def run_batch_step(
                 target_type=target_type,
                 target_id=uuid.UUID(target_id),
                 pmid=paper.get("pmid") or "",
-                excerpt=extraction["passage"],
                 direction=extraction["direction"],
+                reviewer_confidence=extraction["confidence"],
+                passages=extraction["passages"],
                 mode=mode,
-                suggested_confidence=extraction["confidence"],
                 operator_id="batch",
+                verification_status="ai_extracted",
             )
             evidence_created += 1
             done += 1

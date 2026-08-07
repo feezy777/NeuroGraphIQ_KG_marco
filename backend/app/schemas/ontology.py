@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -144,6 +145,62 @@ class EvidenceExtractRequest(BaseModel):
     pmid: str
     title: str
     abstract: str
+
+
+class EvidencePassageItem(BaseModel):
+    source_scope: Literal["abstract", "fulltext"] = "abstract"
+    section_title: str | None = None
+    paragraph_index: int | None = None
+    passage: str
+    direction: Literal["supports", "partial", "contradicts", "not_found"]
+    reason: str = ""
+    confidence: float = Field(ge=0.0, le=1.0)
+    source_locator: str | None = None
+    source_verified: bool = False
+
+
+class EvidenceExtractResponse(BaseModel):
+    overall_direction: Literal["supports", "partial", "contradicts", "not_found"]
+    paper_relevance: str
+    source_type: Literal["abstract", "fulltext", "none"]
+    passages: list[EvidencePassageItem]
+
+
+class EvidenceAttachRequest(BaseModel):
+    target_type: str
+    target_id: uuid.UUID
+    pmid: str
+    direction: Literal["supports", "partial", "contradicts", "not_found"]
+    reviewer_confidence: float = Field(ge=0.0, le=1.0)
+    passages: list[EvidencePassageItem]
+
+
+class AttachPreviewRequest(BaseModel):
+    target_type: str
+    target_id: uuid.UUID
+    pmid: str
+    direction: Literal["supports", "partial", "contradicts", "not_found"]
+    reviewer_confidence: float = Field(ge=0.0, le=1.0)
+    passages: list[EvidencePassageItem]
+
+
+class AttachPreviewResponse(BaseModel):
+    target_type: str
+    target_id: uuid.UUID
+    current_confidence: float | None
+    direction: str
+    reviewer_confidence: float
+    final_confidence: float | None
+    cap: float | None
+    selected_passage_count: int
+    duplicate_passage_count: int
+    evidence_text_preview: str
+    allow: bool
+    block_reasons: list[str]
+
+
+class EvidenceRollbackRequest(BaseModel):
+    reason: str
 
 
 class BatchTaskCreateRequest(BaseModel):
