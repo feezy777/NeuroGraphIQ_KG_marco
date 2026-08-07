@@ -176,7 +176,7 @@ def test_dedupe_and_overall_direction():
             self.passages = []
 
     mixed = SimpleNamespace(passages=[SimpleNamespace(direction="supports"), SimpleNamespace(direction="contradicts")])
-    assert pes._combine_overall_direction(mixed) == "partial"
+    assert pes._combine_overall_direction(mixed) == "mixed"
     only_contra = SimpleNamespace(passages=[SimpleNamespace(direction="contradicts")])
     assert pes._combine_overall_direction(only_contra) == "contradicts"
     empty = SimpleNamespace(passages=[], overall_direction="supports")
@@ -274,6 +274,13 @@ CONTROLLED_CLAIM = {
         "target_region": "infralimbic cortex",
         "relation": "projection",
     },
+    "claim_components": [
+        {"component_type": "source_region", "statement": "源脑区为 BLA", "required": True, "metadata": {}},
+        {"component_type": "target_region", "statement": "靶脑区为 infralimbic cortex", "required": True, "metadata": {}},
+        {"component_type": "relation", "statement": "BLA 到 infralimbic cortex 存在投射", "required": True, "metadata": {}},
+        {"component_type": "direction", "statement": "投射方向为 BLA -> infralimbic cortex", "required": True, "metadata": {}},
+        {"component_type": "function", "statement": "该投射参与 fear extinction", "required": True, "metadata": {}},
+    ],
 }
 
 
@@ -346,6 +353,7 @@ def test_controlled_e2e_retrieval_and_judgment(monkeypatch):
                             "reason": "direct anatomical evidence of the projection",
                             "confidence": 0.92,
                             "semantic_confidence": 0.92,
+                            "supported_components": ["source_region", "target_region", "relation", "direction"],
                         },
                         {
                             "paragraph_id": "res_p2",
@@ -356,6 +364,7 @@ def test_controlled_e2e_retrieval_and_judgment(monkeypatch):
                             "reason": "activation of the projection affects extinction",
                             "confidence": 0.9,
                             "semantic_confidence": 0.9,
+                            "supported_components": ["function"],
                         },
                         {
                             "paragraph_id": "disc_p1",
@@ -366,6 +375,7 @@ def test_controlled_e2e_retrieval_and_judgment(monkeypatch):
                             "reason": "author interpretation of the pathway",
                             "confidence": 0.7,
                             "semantic_confidence": 0.7,
+                            "supported_components": ["relation", "function", "direction"],
                         },
                     ],
                 }
@@ -379,16 +389,24 @@ def test_controlled_e2e_retrieval_and_judgment(monkeypatch):
                     title=paper["title"],
                     windows=windows,
                 )
-                assert result["overall_direction"] == "supports"
+                assert result["overall_direction"] == "support"
                 assert result["paper_relevance"] == pytest.approx(0.9)
                 assert result["assessment"]
                 assert len(result["passages"]) >= 2
+                assert result["coverage_summary"]["full_claim_supported"] is True
+                assert result["coverage_summary"]["has_conflict"] is False
+                assert set(result["coverage_summary"]["supported_components"]) >= {
+                    "source_region", "target_region", "relation", "direction", "function",
+                }
+                assert result["coverage_summary"]["uncovered_components"] == []
                 by_id = {p["paragraph_id"]: p for p in result["passages"]}
                 assert "res_p1" in by_id and "res_p2" in by_id and "disc_p1" in by_id
                 assert by_id["res_p1"]["source_verified"] is True
                 assert by_id["res_p1"]["source_verification_method"] == "exact"
                 assert by_id["res_p1"]["evidence_level"] == "direct"
                 assert by_id["disc_p1"]["evidence_level"] == "interpretive"
+                # a single passage does NOT alone prove the full claim
+                assert "function" not in (by_id["res_p1"]["supported_components"] or [])
                 # No reverse-direction or co-occurrence paragraph accepted as evidence
                 returned_ids = {p["paragraph_id"] for p in result["passages"]}
                 assert "int_p1" not in returned_ids  # co-occurrence only
@@ -574,3 +592,125 @@ def test_deepseek_retries_transport_error(monkeypatch):
     assert provider.calls == 3
     assert result["retry_count"] == 2
     assert result["passages"][0]["source_verified"] is True
+
+
+def _run_extract_with_parsed(monkeypatch, parsed, claim=CONTROLLED_CLAIM, custom_paragraphs=None):
+    async def case():
+        async with AsyncSessionLocal() as s:
+            paper = {
+                "pmid": "99070010",
+                "doi": "10.1/coverage",
+                "title": "Coverage paper",
+                "journal": "J",
+                "year": "2026",
+                "authors": "A",
+                "abstract": "",
+                "source": "europepmc",
+            }
+            source = await pes.ensure_paper_source(s, paper)
+            await s.commit()
+            paras = custom_paragraphs if custom_paragraphs is not None else oa_xml_parser.parse_oa_xml(OA_XML)
+            await pes.ensure_paper_passages(s, source.id, paras)
+            await s.commit()
+            try:
+                all_paragraphs = await pes.load_paper_passages(s, source.id)
+                windows = build_windows(
+                    score_paragraphs(all_paragraphs, source_region="BLA", target_region="infralimbic cortex"),
+                    all_paragraphs,
+                    top_k=10,
+                )
+                monkeypatch.setattr(pes, "get_llm_provider", lambda name: FakeDeepSeekProvider(parsed))
+                return await pes.extract_passage_from_paper(
+                    claim=claim,
+                    title=paper["title"],
+                    windows=windows,
+                )
+            finally:
+                await s.execute(text("DELETE FROM paper_passages WHERE paper_id=:pid"), {"pid": source.id})
+                await s.execute(text("DELETE FROM paper_sources WHERE id=:pid"), {"pid": source.id})
+                await s.commit()
+
+    return _run(case())
+
+
+def test_coverage_partial_when_function_missing(monkeypatch):
+    parsed = {
+        "overall_direction": "supports",
+        "paper_relevance": 0.7,
+        "assessment": "only the projection is shown, no functional evidence",
+        "passages": [
+            {
+                "paragraph_id": "res_p1",
+                "section": "Results",
+                "passage": "Anterograde tracing revealed dense BLA terminals in the infralimbic cortex.",
+                "direction": "supports",
+                "evidence_level": "direct",
+                "reason": "projection exists",
+                "confidence": 0.85,
+                "semantic_confidence": 0.85,
+                "supported_components": ["source_region", "target_region", "relation", "direction"],
+            }
+        ],
+    }
+    result = _run_extract_with_parsed(monkeypatch, parsed)
+    assert result["coverage_summary"]["uncovered_components"] == ["function"]
+    assert result["coverage_summary"]["full_claim_supported"] is False
+    assert result["coverage_summary"]["has_conflict"] is False
+    assert result["overall_direction"] == "partial"
+
+
+def test_coverage_mixed_when_support_and_contradict_coexist(monkeypatch):
+    paragraphs = [
+        {
+            "source_scope": "fulltext",
+            "section_title": "Results",
+            "paragraph_id": "res_p1",
+            "paragraph_index": 0,
+            "passage_text": "Anterograde tracing revealed dense BLA terminals in the infralimbic cortex.",
+            "text_hash": pes.passage_hash("Anterograde tracing revealed dense BLA terminals in the infralimbic cortex."),
+            "locator": "results:paragraph:0",
+        },
+        {
+            "source_scope": "fulltext",
+            "section_title": "Discussion",
+            "paragraph_id": "disc_p1",
+            "paragraph_index": 1,
+            "passage_text": "We conclude that the BLA to infralimbic cortex pathway does not contribute to fear extinction.",
+            "text_hash": pes.passage_hash("We conclude that the BLA to infralimbic cortex pathway does not contribute to fear extinction."),
+            "locator": "discussion:paragraph:0",
+        },
+    ]
+    parsed = {
+        "overall_direction": "mixed",
+        "paper_relevance": 0.6,
+        "assessment": "projection is shown but functional effect is explicitly denied",
+        "passages": [
+            {
+                "paragraph_id": "res_p1",
+                "section": "Results",
+                "passage": "Anterograde tracing revealed dense BLA terminals in the infralimbic cortex.",
+                "direction": "supports",
+                "evidence_level": "direct",
+                "reason": "projection exists",
+                "confidence": 0.85,
+                "semantic_confidence": 0.85,
+                "supported_components": ["source_region", "target_region", "relation", "direction"],
+            },
+            {
+                "paragraph_id": "disc_p1",
+                "section": "Discussion",
+                "passage": "We conclude that the BLA to infralimbic cortex pathway does not contribute to fear extinction.",
+                "direction": "contradicts",
+                "evidence_level": "interpretive",
+                "reason": "authors explicitly deny a functional role",
+                "confidence": 0.6,
+                "semantic_confidence": 0.6,
+                "supported_components": ["function"],
+            },
+        ],
+    }
+    result = _run_extract_with_parsed(monkeypatch, parsed, custom_paragraphs=paragraphs)
+    assert result["coverage_summary"]["has_conflict"] is True
+    assert result["coverage_summary"]["full_claim_supported"] is False
+    assert result["coverage_summary"]["contradicted_components"] == ["function"]
+    assert result["overall_direction"] == "mixed"

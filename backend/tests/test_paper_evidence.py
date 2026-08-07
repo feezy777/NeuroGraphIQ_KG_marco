@@ -72,6 +72,13 @@ def test_contradict_no_auto_change():
     assert r.adjustment_status == "pending"
 
 
+def test_mixed_no_auto_change():
+    r = compute_adjustment(direction="mixed", current_confidence=0.4, reviewer_confidence=0.8)
+    assert r.apply is False
+    assert r.adjustment_status == "pending"
+    assert r.final_confidence == 0.4
+
+
 def test_not_found_rejected():
     with pytest.raises(ValueError):
         compute_adjustment(direction="not_found", current_confidence=0.4, reviewer_confidence=0.8)

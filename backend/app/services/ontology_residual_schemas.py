@@ -64,10 +64,11 @@ class PaperPassageExtraction(BaseModel):
     section: str | None = Field(default=None, max_length=256)
     evidence_level: Literal["direct", "indirect", "interpretive", "background"] = "indirect"
     semantic_confidence: float | None = Field(default=None, ge=0.0, le=1.0)
+    supported_components: list[str] = Field(default_factory=list, max_length=12)
 
 
 class PaperMultiPassageExtraction(BaseModel):
-    overall_direction: Literal["supports", "partial", "contradicts", "not_found"]
+    overall_direction: Literal["supports", "partial", "contradicts", "mixed", "not_found"]
     paper_relevance: float = Field(ge=0.0, le=1.0)
     assessment: str = Field(default="", max_length=1000)
     passages: list[PaperPassageExtraction] = Field(default_factory=list, max_length=10)

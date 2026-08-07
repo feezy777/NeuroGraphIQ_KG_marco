@@ -12,7 +12,7 @@ import {
 } from '../../api/endpoints'
 import { ConfirmDialog } from '../../components/ConfirmDialog'
 
-type Direction = 'supports' | 'partial' | 'contradicts' | 'not_found'
+type Direction = 'supports' | 'partial' | 'contradicts' | 'mixed' | 'not_found'
 
 export function PaperEvidenceColumn({ targetType, targetId }: { targetType: string; targetId: string }) {
   const [mode, setMode] = useState<'function' | 'existence'>('function')
@@ -94,7 +94,7 @@ export function PaperEvidenceColumn({ targetType, targetId }: { targetType: stri
         section_title: p.section_title,
         paragraph_index: p.paragraph_index,
         passage: p.passage,
-        direction: p.direction,
+        direction: p.direction as 'supports' | 'partial' | 'contradicts' | 'not_found',
         reason: p.reason,
         confidence: p.confidence,
         source_locator: p.source_locator,
@@ -138,7 +138,7 @@ export function PaperEvidenceColumn({ targetType, targetId }: { targetType: stri
         section_title: p.section_title,
         paragraph_index: p.paragraph_index,
         passage: p.passage,
-        direction: p.direction,
+        direction: p.direction as 'supports' | 'partial' | 'contradicts' | 'not_found',
         reason: p.reason,
         confidence: p.confidence,
         source_locator: p.source_locator,

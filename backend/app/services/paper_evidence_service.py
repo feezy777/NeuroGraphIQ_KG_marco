@@ -802,7 +802,9 @@ async def attach_evidence(
             session,
             evidence_id=record.id,
             rule_code=(
-                "EV_PAPER_EVIDENCE_CONTRADICTORY"
+                "EV_PAPER_EVIDENCE_MIXED"
+                if direction == "mixed"
+                else "EV_PAPER_EVIDENCE_CONTRADICTORY"
                 if direction == "contradicts"
                 else "EV_PAPER_EVIDENCE_ATTACHED"
             ),
@@ -819,11 +821,15 @@ async def attach_evidence(
             detail={
                 "reviewer_confidence": reviewer_confidence,
                 "final_confidence": final_confidence,
-                "status": "pending_review" if direction == "contradicts" else "resolved_by_attach",
+                "status": (
+                    "pending_review"
+                    if direction in ("contradicts", "mixed")
+                    else "resolved_by_attach"
+                ),
             },
             created_by=operator_id,
         )
-        if adjustment and not adjustment.apply and direction == "contradicts":
+        if adjustment and not adjustment.apply and direction in ("contradicts", "mixed"):
             await _write_validation_record(
                 session,
                 evidence_id=record.id,
@@ -1377,7 +1383,7 @@ def _combine_overall_direction(parsed: PaperMultiPassageExtraction) -> str:
     if not directions:
         return "not_found"
     if "supports" in directions and "contradicts" in directions:
-        return "partial"
+        return "mixed"
     if "contradicts" in directions:
         return "contradicts"
     if "supports" in directions:
@@ -1385,6 +1391,68 @@ def _combine_overall_direction(parsed: PaperMultiPassageExtraction) -> str:
     if "partial" in directions:
         return "partial"
     return parsed.overall_direction
+
+
+def compute_coverage_summary(
+    claim_components: list[dict],
+    passages: list[dict],
+) -> dict:
+    """Backend-computed claim coverage from verified passages only.
+
+    DeepSeek provides semantic judgment; coverage is aggregated here from
+    source-verified passages and their supported_components.
+    """
+    required = {
+        c.get("component_type")
+        for c in claim_components
+        if c.get("required") and c.get("component_type")
+    }
+    supported: set[str] = set()
+    contradicted: set[str] = set()
+    for p in passages:
+        if not p.get("source_verified"):
+            continue
+        comps = {c for c in (p.get("supported_components") or []) if c}
+        if p.get("direction") == "contradicts":
+            contradicted |= comps
+        else:
+            supported |= comps
+    supported_in_required = supported & required
+    contradicted_in_required = contradicted & required
+    uncovered = required - supported
+    has_conflict = bool(supported_in_required) and bool(contradicted_in_required)
+    coverage_ratio = round(len(supported_in_required) / len(required), 4) if required else 0.0
+    full_claim_supported = bool(required and required <= supported and not has_conflict)
+    return {
+        "required_components": sorted(required),
+        "supported_components": sorted(supported_in_required),
+        "contradicted_components": sorted(contradicted_in_required),
+        "uncovered_components": sorted(uncovered),
+        "coverage_ratio": coverage_ratio,
+        "has_conflict": has_conflict,
+        "full_claim_supported": full_claim_supported,
+    }
+
+
+def aggregate_overall_direction(coverage: dict, passages: list[dict]) -> str:
+    """Derive overall_direction from verified coverage (backend authority)."""
+    verified = [p for p in passages if p.get("source_verified")]
+    if not verified:
+        return "not_found"
+    if coverage.get("has_conflict"):
+        return "mixed"
+    required = set(coverage.get("required_components") or [])
+    if not required:
+        return "not_found"
+    supported = set(coverage.get("supported_components") or [])
+    contradicted = set(coverage.get("contradicted_components") or [])
+    if required <= supported:
+        return "support"
+    if contradicted and contradicted >= required and not supported:
+        return "contradict"
+    if supported or contradicted:
+        return "partial"
+    return "not_found"
 
 
 async def extract_passage_from_paper(
@@ -1423,10 +1491,15 @@ async def extract_passage_from_paper(
         "You are a strict JSON API for neuroscience evidence judgment. "
         "Reply only with the requested JSON object. Never explain."
     )
+    claim_components = claim.get("claim_components") or []
+    allowed_components = sorted(
+        {c.get("component_type") for c in claim_components if c.get("component_type")}
+    )
     user = (
         f'Knowledge claim to verify: "{claim.get("claim_text") or claim.get("function_term") or ""}"\n'
         "Structured claim (relation direction matters): "
         f"{claim.get('structured_claim') or claim.get('claim_text') or ''}\n"
+        f"Claim components that must hold: {', '.join(allowed_components) or 'none'}\n"
         "Rules:\n"
         "1. Use ONLY the given paragraphs; never add model knowledge.\n"
         "2. Output passages verbatim (copy exactly); never rewrite or invent sentences.\n"
@@ -1438,13 +1511,17 @@ async def extract_passage_from_paper(
         "8. Direction matters: 'B -> A' does not support 'A -> B'; functional connectivity is not an anatomical projection.\n"
         "9. evidence_level: direct (experiment proves the claim/core relation), indirect (needs reasonable inference), "
         "interpretive (author explanation in Discussion/Conclusion), background (Introduction/review-like).\n"
-        "10. overall_direction must reflect ALL returned passages (support+contradict -> partial).\n"
+        "10. overall_direction must reflect ALL returned passages (support+contradict -> mixed).\n"
+        "11. For each passage set supported_components to the claim components it actually supports "
+        "(for a contradicting passage: the components it refutes). Use ONLY component names from the "
+        "Claim components list; never invent components. A passage may support only part of the claim.\n"
         "Return ONLY one raw JSON object (no markdown, no code fences, no trailing commas):\n"
-        '{"overall_direction": "supports", "paper_relevance": 0.9, '
+        '{"overall_direction": "supports|partial|contradicts|mixed|not_found", "paper_relevance": 0.9, '
         '"assessment": "<one or two sentences summarizing the judgment>", '
         '"passages": [{"paragraph_id": "<id>", "section": "<section>", "passage": "<verbatim>", '
         '"direction": "supports", "evidence_level": "direct|indirect|interpretive|background", '
-        '"reason": "<one sentence>", "confidence": 0.9, "semantic_confidence": 0.9}]}\n'
+        '"reason": "<one sentence>", "confidence": 0.9, "semantic_confidence": 0.9, '
+        '"supported_components": ["source_region", "target_region", "relation"]}]}\n'
         f"Paper title: {title}\nCandidate paragraph windows:\n{joined}"
     )
     parsed = None
@@ -1514,12 +1591,16 @@ async def extract_passage_from_paper(
             "reason": item.reason,
             "confidence": item.confidence,
             "semantic_confidence": item.semantic_confidence or item.confidence,
+            "supported_components": [
+                c for c in (item.supported_components or []) if c in allowed_components
+            ],
         }
         for item in parsed.passages
     ]
     verified_passages = _verify_extraction_passages(raw_items, paragraph_map)
     deduped = _dedupe_extraction_passages(verified_passages)
-    overall = _combine_overall_direction(parsed)
+    coverage = compute_coverage_summary(claim_components, deduped)
+    overall = aggregate_overall_direction(coverage, deduped)
     source_type = (
         "fulltext"
         if any((p.get("source_scope") == "fulltext") for p in paragraph_map.values())
@@ -1531,11 +1612,14 @@ async def extract_passage_from_paper(
         "assessment": parsed.assessment,
         "source_type": source_type,
         "passages": deduped,
+        "claim_components": claim_components,
+        "coverage_summary": coverage,
         "retrieval_summary": {
             "candidate_windows": len(windows),
             "input_truncated": truncated,
             "verified_count": sum(1 for p in deduped if p.get("source_verified")),
             "unverified_count": sum(1 for p in deduped if not p.get("source_verified")),
+            "model_overall_direction": parsed.overall_direction,
         },
         "parse_status": parse_status,
         "retry_count": retry_count,

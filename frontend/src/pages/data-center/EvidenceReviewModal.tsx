@@ -15,7 +15,7 @@ import {
   type PaperSearchResponse,
 } from '../../api/endpoints'
 
-type Direction = 'supports' | 'partial' | 'contradicts' | 'not_found'
+type Direction = 'supports' | 'partial' | 'contradicts' | 'mixed' | 'not_found'
 type QueueStatus = 'pending' | 'processing' | 'completed' | 'skipped' | 'failed'
 
 interface QueueItem {
@@ -57,6 +57,7 @@ const DIRECTION_LABEL: Record<Direction, string> = {
   supports: '支持',
   partial: '部分支持',
   contradicts: '矛盾',
+  mixed: '混合证据',
   not_found: '未找到',
 }
 
@@ -253,7 +254,7 @@ export function EvidenceReviewModal({ open, onClose, initialItems, initialTaskId
             section_title: (p.section_title as string | null) ?? null,
             paragraph_index: (p.paragraph_index as number | null) ?? null,
             passage: p.passage,
-            direction: (['supports', 'partial', 'contradicts', 'not_found'] as const).includes(p.direction as Direction)
+            direction: (['supports', 'partial', 'contradicts', 'mixed', 'not_found'] as const).includes(p.direction as Direction)
               ? (p.direction as Direction)
               : 'supports',
             reason: String(p.reason ?? ''),
@@ -461,7 +462,7 @@ export function EvidenceReviewModal({ open, onClose, initialItems, initialTaskId
           source_scope: p.source_scope,
           paragraph_index: p.paragraph_index,
           passage: p.passage,
-          direction: p.direction,
+          direction: p.direction as 'supports' | 'partial' | 'contradicts' | 'not_found',
           reason: p.reason,
           confidence: p.confidence,
           source_locator: p.source_locator,
@@ -492,7 +493,7 @@ export function EvidenceReviewModal({ open, onClose, initialItems, initialTaskId
         section_title: p.section_title,
         paragraph_index: p.paragraph_index,
         passage: p.passage,
-        direction: p.direction,
+        direction: p.direction as 'supports' | 'partial' | 'contradicts' | 'not_found',
         reason: p.reason,
         confidence: p.confidence,
         source_locator: p.source_locator,

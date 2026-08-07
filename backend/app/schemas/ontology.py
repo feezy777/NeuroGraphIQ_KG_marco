@@ -163,14 +163,17 @@ class EvidencePassageItem(BaseModel):
     source_locator: str | None = None
     source_verified: bool = False
     source_verification_method: str | None = None
+    supported_components: list[str] = Field(default_factory=list, max_length=12)
 
 
 class EvidenceExtractResponse(BaseModel):
     paper_id: uuid.UUID | None = None
     paper: dict | None = None
     claim: dict | None = None
+    claim_components: list[dict] | None = None
+    coverage_summary: dict | None = None
     retrieval_summary: dict | None = None
-    overall_direction: Literal["supports", "partial", "contradicts", "not_found"]
+    overall_direction: Literal["supports", "partial", "contradicts", "mixed", "not_found"]
     paper_relevance: float
     assessment: str | None = None
     source_type: Literal["abstract", "fulltext", "none"]
@@ -181,7 +184,7 @@ class EvidenceAttachRequest(BaseModel):
     target_type: str
     target_id: uuid.UUID
     pmid: str
-    direction: Literal["supports", "partial", "contradicts", "not_found"]
+    direction: Literal["supports", "partial", "contradicts", "mixed", "not_found"]
     reviewer_confidence: float = Field(ge=0.0, le=1.0)
     passages: list[EvidencePassageItem]
 
@@ -190,7 +193,7 @@ class AttachPreviewRequest(BaseModel):
     target_type: str
     target_id: uuid.UUID
     pmid: str
-    direction: Literal["supports", "partial", "contradicts", "not_found"]
+    direction: Literal["supports", "partial", "contradicts", "mixed", "not_found"]
     reviewer_confidence: float = Field(ge=0.0, le=1.0)
     passages: list[EvidencePassageItem]
 

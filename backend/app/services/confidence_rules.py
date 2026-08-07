@@ -48,12 +48,12 @@ def compute_adjustment(
             apply=True,
             reason=f"partial: min({PARTIAL_CAP}, max(current, reviewer))",
         )
-    if direction == "contradicts":
+    if direction in ("contradicts", "mixed"):
         return AdjustmentResult(
             final_confidence=current,
             adjustment_status="pending",
             formula_version=FORMULA_VERSION,
             apply=False,
-            reason="contradicts: no automatic change; pending human review",
+            reason=f"{direction}: no automatic change; pending human review",
         )
     raise ValueError("not_found evidence cannot be stored as paper evidence")

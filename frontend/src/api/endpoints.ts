@@ -5293,7 +5293,7 @@ export const attachPaperEvidence = (body: {
   target_type: string
   target_id: string
   pmid: string
-  direction: 'supports' | 'partial' | 'contradicts' | 'not_found'
+  direction: 'supports' | 'partial' | 'contradicts' | 'mixed' | 'not_found'
   reviewer_confidence: number
   passages: EvidencePassageInput[]
 }) => postJson<PaperAttachResponse>('/api/ontology/evidence/attach', body)
@@ -5312,7 +5312,7 @@ export const extractPaperPassage = (body: {
   paper?: Record<string, unknown> | null
   claim?: Record<string, unknown> | null
   retrieval_summary?: Record<string, unknown> | null
-  overall_direction: 'supports' | 'partial' | 'contradicts' | 'not_found'
+  overall_direction: 'supports' | 'partial' | 'contradicts' | 'mixed' | 'not_found'
   paper_relevance: number
   assessment: string | null
   source_type: 'abstract' | 'fulltext' | 'none'
@@ -5362,7 +5362,7 @@ export interface AttachPreviewResponse {
   target_type: string
   target_id: string
   current_confidence: number | null
-  direction: string
+  direction: 'supports' | 'partial' | 'contradicts' | 'mixed' | 'not_found'
   reviewer_confidence: number
   final_confidence: number | null
   cap: number | null

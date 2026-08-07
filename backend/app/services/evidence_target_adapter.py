@@ -78,6 +78,70 @@ def _build_claim(target_type: str, dto: dict) -> str:
     return dto.get("display_name") or target_type
 
 
+def _build_claim_components(target_type: str, dto: dict) -> list[dict]:
+    """Unified claim components: what sub-facts must hold for this object."""
+    source = dto.get("source_region") or ""
+    target = dto.get("target_region") or ""
+    relation = dto.get("relation") or ""
+    direction = dto.get("directionality") or ""
+    functions = dto.get("canonical_terms") or []
+    function = functions[0] if functions else ""
+    circuit = dto.get("circuit_context") or ""
+    role = dto.get("relation") or ""
+
+    def comp(component_type: str, statement: str, required: bool = True, metadata: dict | None = None) -> dict:
+        return {
+            "component_type": component_type,
+            "statement": statement,
+            "required": required,
+            "metadata": metadata or {},
+        }
+
+    if target_type in ("connection", "projection"):
+        components = [
+            comp("source_region", f"源脑区为 {source}" if source else "存在确定的源脑区"),
+            comp("target_region", f"靶脑区为 {target}" if target else "存在确定的靶脑区"),
+            comp("relation", f"{source or '源'} 到 {target or '靶'} 存在 {relation or '连接'} 关系"),
+        ]
+        if direction:
+            components.append(comp("direction", f"连接方向性为 {direction}"))
+        return components
+    if target_type == "projection_function":
+        components = [
+            comp("source_region", f"源脑区为 {source}" if source else "存在确定的源脑区"),
+            comp("target_region", f"靶脑区为 {target}" if target else "存在确定的靶脑区"),
+            comp("relation", f"从 {source or '源'} 到 {target or '靶'} 存在投射"),
+            comp("function", f"该投射具有功能「{function}」" if function else "该投射具有确定功能"),
+        ]
+        return [c for c in components if c["statement"]]
+    if target_type == "region_function":
+        return [
+            comp("source_region", f"脑区为 {source}" if source else "存在确定的脑区"),
+            comp("function", f"该脑区具有功能「{function}」" if function else "该脑区具有确定功能"),
+        ]
+    if target_type == "circuit":
+        return [
+            comp("circuit_identity", f"回路「{circuit or dto.get('display_name') or '?'}」存在"),
+            comp(
+                "context",
+                f"回路类型为 {relation}" if relation else "回路类型确定",
+                required=False,
+            ),
+        ]
+    if target_type == "circuit_function":
+        return [
+            comp("circuit_identity", f"回路「{circuit or '?'}」存在"),
+            comp("function", f"回路具有功能「{function}」" if function else "回路具有确定功能"),
+        ]
+    if target_type == "circuit_step":
+        return [
+            comp("circuit_identity", f"回路「{circuit or '?'}」存在"),
+            comp("circuit_role", f"步骤角色为 {role}" if role else "步骤角色确定"),
+            comp("step_order", f"步骤顺序确定", required=False),
+        ]
+    return []
+
+
 def _connection_dto(row: MirrorRegionConnection) -> dict:
     return {
         "granularity": _clean(getattr(row, "granularity_level", "")),
@@ -243,6 +307,7 @@ async def build_target_dto(
         "relation": dto.get("relation") or None,
         "canonical_terms": dto.get("canonical_terms") or [],
     }
+    dto["claim_components"] = _build_claim_components(target_type, dto)
     dto["claim_version"] = CLAIM_VERSION
     return dto
 
