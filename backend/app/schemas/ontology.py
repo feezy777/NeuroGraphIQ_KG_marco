@@ -127,6 +127,7 @@ class PaperSearchRequest(BaseModel):
     target_id: uuid.UUID
     limit: int = Field(default=5, ge=1, le=20)
     mode: str = "function"
+    query_override: str | None = None
 
 
 class EvidenceAttachRequest(BaseModel):

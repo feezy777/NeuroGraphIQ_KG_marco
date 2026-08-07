@@ -613,6 +613,18 @@ async def list_paper_evidence(
             .limit(limit)
         )
     ).scalars().all()
+    passages_by_evidence: dict[uuid.UUID, list[MirrorEvidencePassage]] = {}
+    if rows:
+        evidence_ids = [r.id for r in rows]
+        passage_rows = (
+            await session.execute(
+                select(MirrorEvidencePassage)
+                .where(MirrorEvidencePassage.evidence_id.in_(evidence_ids))
+                .order_by(MirrorEvidencePassage.created_at)
+            )
+        ).scalars().all()
+        for p in passage_rows:
+            passages_by_evidence.setdefault(p.evidence_id, []).append(p)
     return {
         "items": [
             {
@@ -626,10 +638,35 @@ async def list_paper_evidence(
                 "journal": r.paper_journal,
                 "year": r.paper_year,
                 "created_at": r.created_at.isoformat() if r.created_at else None,
+                "verification_by": r.verification_by,
+                "suggested_confidence": (
+                    float(r.suggested_confidence) if r.suggested_confidence is not None else None
+                ),
+                "confidence_adjustment_status": r.confidence_adjustment_status,
+                "passage_count": len(
+                    [p for p in passages_by_evidence.get(r.id, []) if p.is_selected]
+                ),
                 "links": {
                     "pubmed": f"https://pubmed.ncbi.nlm.nih.gov/{r.paper_pmid}/" if r.paper_pmid else None,
                     "doi": f"https://doi.org/{r.paper_doi}" if r.paper_doi else None,
                 },
+                "passages": [
+                    {
+                        "id": str(p.id),
+                        "source_scope": p.source_scope,
+                        "section_title": p.section_title,
+                        "paragraph_index": p.paragraph_index,
+                        "passage": p.passage_text,
+                        "translation_zh": p.translation_zh,
+                        "direction": p.direction,
+                        "reason": p.reason,
+                        "confidence": float(p.confidence) if p.confidence is not None else None,
+                        "source_locator": p.source_locator,
+                        "source_verified": p.source_verified,
+                        "is_selected": p.is_selected,
+                    }
+                    for p in passages_by_evidence.get(r.id, [])
+                ],
             }
             for r in rows
         ]

@@ -5225,6 +5225,7 @@ export interface PaperSearchResult {
   authors: string
   abstract: string
   source: string
+  is_open_access?: boolean
 }
 
 export interface PaperSearchResponse {
@@ -5241,9 +5242,13 @@ export interface PaperSearchResponse {
 
 export interface PaperAttachResponse {
   evidence_id: string
+  target_type: string
+  target_id: string
   confidence: number | null
+  final_confidence: number | null
   verification_status: string
   confidence_adjustment_status: string
+  passage_count: number
   paper: { links: { pubmed: string | null; doi: string | null } }
 }
 
@@ -5258,20 +5263,39 @@ export interface PaperEvidenceItem {
   journal: string | null
   year: number | null
   created_at: string | null
+  verification_by?: string | null
+  suggested_confidence?: number | null
+  confidence_adjustment_status?: string | null
+  passage_count?: number
   links: { pubmed: string | null; doi: string | null }
+  passages?: PaperEvidencePassageDetail[]
 }
 
-export const searchPaperEvidence = (body: { target_type: string; target_id: string; mode?: string; limit?: number }) =>
+export interface PaperEvidencePassageDetail {
+  id: string
+  source_scope: 'abstract' | 'fulltext'
+  section_title: string | null
+  paragraph_index: number | null
+  passage: string
+  translation_zh: string | null
+  direction: string | null
+  reason: string | null
+  confidence: number | null
+  source_locator: string | null
+  source_verified: boolean
+  is_selected: boolean
+}
+
+export const searchPaperEvidence = (body: { target_type: string; target_id: string; mode?: string; limit?: number; query_override?: string }) =>
   postJson<PaperSearchResponse>('/api/ontology/evidence/search', body)
 
 export const attachPaperEvidence = (body: {
   target_type: string
   target_id: string
   pmid: string
-  excerpt: string
-  direction?: string
-  mode?: string
-  suggested_confidence?: number
+  direction: 'supports' | 'partial' | 'contradicts' | 'not_found'
+  reviewer_confidence: number
+  passages: EvidencePassageInput[]
 }) => postJson<PaperAttachResponse>('/api/ontology/evidence/attach', body)
 
 export const listPaperEvidence = (p: { target_type: string; target_id: string; limit?: number }) =>
@@ -5284,10 +5308,20 @@ export const extractPaperPassage = (body: {
   title: string
   abstract: string
 }) => postJson<{
-  direction: 'supports' | 'partial' | 'contradicts' | 'not_found'
-  passage: string
-  reason: string
-  confidence: number
+  overall_direction: 'supports' | 'partial' | 'contradicts' | 'not_found'
+  paper_relevance: string
+  source_type: 'abstract' | 'fulltext' | 'none'
+  passages: Array<{
+    source_scope: 'abstract' | 'fulltext'
+    section_title: string | null
+    paragraph_index: number | null
+    passage: string
+    direction: 'supports' | 'partial' | 'contradicts' | 'not_found'
+    reason: string
+    confidence: number
+    source_locator: string | null
+    source_verified: boolean
+  }>
   parse_status: string
   retry_count: number
   links?: { pubmed: string | null }
@@ -5301,3 +5335,45 @@ export const getEvidenceQueue = (p: { target_type: string; scope?: string; limit
 
 export const translateEvidenceText = (body: { text: string }) =>
   postJson<{ translated: string }>('/api/ontology/evidence/translate', body)
+
+export interface EvidencePassageInput {
+  source_scope: 'abstract' | 'fulltext'
+  section_title?: string | null
+  paragraph_index?: number | null
+  passage: string
+  direction: 'supports' | 'partial' | 'contradicts' | 'not_found'
+  reason?: string
+  confidence?: number
+  source_locator?: string | null
+  source_verified?: boolean
+}
+
+export interface AttachPreviewResponse {
+  target_type: string
+  target_id: string
+  current_confidence: number | null
+  direction: string
+  reviewer_confidence: number
+  final_confidence: number | null
+  cap: number | null
+  selected_passage_count: number
+  duplicate_passage_count: number
+  evidence_text_preview: string
+  allow: boolean
+  block_reasons: string[]
+}
+
+export const attachPaperEvidencePreview = (body: {
+  target_type: string
+  target_id: string
+  pmid: string
+  direction: string
+  reviewer_confidence: number
+  passages: EvidencePassageInput[]
+}) => postJson<AttachPreviewResponse>('/api/ontology/evidence/attach-preview', body)
+
+export const rollbackPaperEvidence = (evidenceId: string, reason: string) =>
+  postJson<{ evidence_id: string; status: string; changed: boolean; confidence: number | null }>(
+    `/api/ontology/evidence/${evidenceId}/rollback`,
+    { reason },
+  )

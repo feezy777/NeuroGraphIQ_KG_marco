@@ -622,7 +622,10 @@ async def paper_evidence_search(
         info = await pes.pack_target_info(
             session, body.target_type, body.target_id, mode=body.mode
         )
-        papers = await pes.search_papers(info["query"], limit=body.limit)
+        query = (body.query_override or "").strip() or info["query"]
+        papers = await pes.search_papers(query, limit=body.limit)
+        if body.query_override and (body.query_override or "").strip():
+            info = {**info, "query": query}
         return {"target_info": info, "papers": papers}
     except ValueError as exc:
         raise HTTPException(status_code=400, detail={"code": "INVALID_REQUEST", "message": str(exc)})

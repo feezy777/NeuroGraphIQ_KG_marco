@@ -3,74 +3,82 @@ import {
   attachPaperEvidence,
   extractPaperPassage,
   listPaperEvidence,
+  rollbackPaperEvidence,
   searchPaperEvidence,
+  translateEvidenceText,
+  type EvidencePassageInput,
   type PaperEvidenceItem,
   type PaperSearchResponse,
 } from '../../api/endpoints'
+import { ConfirmDialog } from '../../components/ConfirmDialog'
+
+type Direction = 'supports' | 'partial' | 'contradicts' | 'not_found'
 
 export function PaperEvidenceColumn({ targetType, targetId }: { targetType: string; targetId: string }) {
   const [mode, setMode] = useState<'function' | 'existence'>('function')
   const [result, setResult] = useState<PaperSearchResponse | null>(null)
   const [selected, setSelected] = useState<PaperSearchResponse['papers'][number] | null>(null)
-  const [excerpt, setExcerpt] = useState('')
-  const [direction, setDirection] = useState('supports')
+  const [passages, setPassages] = useState<Array<{
+    key: string
+    source_scope: 'abstract' | 'fulltext'
+    section_title: string | null
+    paragraph_index: number | null
+    passage: string
+    direction: Direction
+    reason: string
+    confidence: number
+    source_locator: string | null
+    source_verified: boolean
+  }>>([])
+  const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set())
+  const [translations, setTranslations] = useState<Record<string, string>>({})
+  const [direction, setDirection] = useState<Direction>('supports')
   const [confidence, setConfidence] = useState('0.8')
   const [message, setMessage] = useState<string | null>(null)
-  const [busy, setBusy] = useState(false)
+  const [busy, setBusy] = useState<string | null>(null)
   const [existing, setExisting] = useState<PaperEvidenceItem[]>([])
   const [detail, setDetail] = useState<PaperEvidenceItem | null>(null)
+  const [rollbackTarget, setRollbackTarget] = useState<PaperEvidenceItem | null>(null)
+  const [rollbackReason, setRollbackReason] = useState('')
+
+  const refreshList = useCallback(async () => {
+    try {
+      const r = await listPaperEvidence({ target_type: targetType, target_id: targetId, limit: 50 })
+      setExisting(r.items)
+    } catch {
+      setExisting([])
+    }
+  }, [targetType, targetId])
 
   useEffect(() => {
-    listPaperEvidence({ target_type: targetType, target_id: targetId })
-      .then(r => setExisting(r.items))
-      .catch(() => setExisting([]))
-  }, [targetType, targetId])
+    void refreshList()
+  }, [refreshList])
 
   const search = useCallback(async () => {
     setMessage(null)
-    setBusy(true)
+    setBusy('search')
     try {
-      const resp = await searchPaperEvidence({ target_type: targetType, target_id: targetId, mode, limit: 5 })
+      const resp = await searchPaperEvidence({ target_type: targetType, target_id: targetId, mode, limit: 8 })
       setResult(resp)
       setSelected(null)
-      setExcerpt('')
+      setPassages([])
+      setSelectedKeys(new Set())
     } catch (err) {
       setMessage(`检索失败：${err instanceof Error ? err.message : String(err)}`)
     } finally {
-      setBusy(false)
+      setBusy(null)
     }
   }, [targetType, targetId, mode])
 
   const pick = useCallback((paper: PaperSearchResponse['papers'][number]) => {
     setSelected(paper)
-    setExcerpt(paper.abstract.slice(0, 500))
+    setPassages([])
+    setSelectedKeys(new Set())
   }, [])
-
-  const attach = useCallback(async () => {
-    if (!selected) return
-    setBusy(true)
-    setMessage(null)
-    try {
-      const resp = await attachPaperEvidence({
-        target_type: targetType,
-        target_id: targetId,
-        pmid: selected.pmid,
-        excerpt,
-        direction,
-        mode,
-        suggested_confidence: parseFloat(confidence) || undefined,
-      })
-      setMessage(`已挂接：置信度=${resp.confidence ?? '不变'}（${resp.verification_status}）`)
-    } catch (err) {
-      setMessage(`挂接失败：${err instanceof Error ? err.message : String(err)}`)
-    } finally {
-      setBusy(false)
-    }
-  }, [selected, targetType, targetId, excerpt, direction, mode, confidence])
 
   const extract = useCallback(async () => {
     if (!selected) return
-    setBusy(true)
+    setBusy('extract')
     setMessage(null)
     try {
       const r = await extractPaperPassage({
@@ -80,16 +88,95 @@ export function PaperEvidenceColumn({ targetType, targetId }: { targetType: stri
         title: selected.title,
         abstract: selected.abstract,
       })
-      setDirection(r.direction)
-      setExcerpt(r.passage)
-      setConfidence(String(r.confidence))
-      setMessage(`已截取段落（${r.direction}，置信度 ${r.confidence}）：${r.reason}`)
+      const mapped = r.passages.map((p, i) => ({
+        key: `${selected.pmid}-${i}`,
+        source_scope: p.source_scope,
+        section_title: p.section_title,
+        paragraph_index: p.paragraph_index,
+        passage: p.passage,
+        direction: p.direction,
+        reason: p.reason,
+        confidence: p.confidence,
+        source_locator: p.source_locator,
+        source_verified: p.source_verified,
+      }))
+      setPassages(mapped)
+      setSelectedKeys(new Set(mapped.filter(p => p.source_verified).map(p => p.key)))
+      setDirection(r.overall_direction)
+      setMessage(`${mapped.filter(p => p.source_verified).length}/${mapped.length} 个片段通过原文校验`)
     } catch (err) {
       setMessage(`截取失败：${err instanceof Error ? err.message : String(err)}`)
     } finally {
-      setBusy(false)
+      setBusy(null)
     }
   }, [selected, targetType, targetId])
+
+  const translateOne = useCallback(async (key: string, text: string) => {
+    setBusy('translate')
+    try {
+      const r = await translateEvidenceText({ text })
+      setTranslations(t => ({ ...t, [key]: r.translated }))
+    } catch (err) {
+      setMessage(`翻译失败：${err instanceof Error ? err.message : String(err)}`)
+    } finally {
+      setBusy(null)
+    }
+  }, [])
+
+  const attach = useCallback(async () => {
+    if (!selected) return
+    const chosen = passages.filter(p => selectedKeys.has(p.key) && p.source_verified)
+    if (chosen.length === 0) {
+      setMessage('请先选择至少一个通过校验的原文片段')
+      return
+    }
+    setBusy('attach')
+    setMessage(null)
+    try {
+      const body: EvidencePassageInput[] = chosen.map(p => ({
+        source_scope: p.source_scope,
+        section_title: p.section_title,
+        paragraph_index: p.paragraph_index,
+        passage: p.passage,
+        direction: p.direction,
+        reason: p.reason,
+        confidence: p.confidence,
+        source_locator: p.source_locator,
+        source_verified: true,
+      }))
+      const resp = await attachPaperEvidence({
+        target_type: targetType,
+        target_id: targetId,
+        pmid: selected.pmid,
+        direction,
+        reviewer_confidence: parseFloat(confidence) || 0,
+        passages: body,
+      })
+      await refreshList()
+      setMessage(`已挂接 ${resp.passage_count} 段原文，对象置信度=${resp.confidence ?? '不变'}（${resp.verification_status}）`)
+    } catch (err) {
+      setMessage(`挂接失败：${err instanceof Error ? err.message : String(err)}`)
+    } finally {
+      setBusy(null)
+    }
+  }, [selected, passages, selectedKeys, direction, confidence, targetType, targetId, refreshList])
+
+  const rollback = useCallback(async () => {
+    if (!rollbackTarget) return
+    setBusy('rollback')
+    try {
+      await rollbackPaperEvidence(rollbackTarget.evidence_id, rollbackReason.trim() || '人工撤销')
+      setRollbackTarget(null)
+      setRollbackReason('')
+      setDetail(null)
+      await refreshList()
+      setMessage('证据已撤销并回滚置信度')
+    } catch (err) {
+      setMessage(`撤销失败：${err instanceof Error ? err.message : String(err)}`)
+    } finally {
+      setBusy(null)
+    }
+  }, [rollbackTarget, rollbackReason, refreshList])
 
   return (
     <div className="pe-column">
@@ -102,20 +189,22 @@ export function PaperEvidenceColumn({ targetType, targetId }: { targetType: stri
           <option value="function">功能佐证</option>
           <option value="existence">存在性佐证</option>
         </select>
-        <button type="button" className="btn btn-sm" disabled={busy} onClick={search}>检索论文</button>
+        <button type="button" className="btn btn-sm" disabled={busy !== null} onClick={search}>检索论文</button>
       </div>
       {message && <div className="ontology-page-message">{message}</div>}
+      {busy && <div className="ew-busy">处理中：{busy}</div>}
       <div className="pe-split">
         <div className="pe-list">
           <h4>检索结果</h4>
           {result && result.papers.length === 0 && <div className="ontology-empty">未检索到论文</div>}
           {result?.papers.map(paper => (
-            <div key={paper.pmid} className={`ontology-preview ${selected?.pmid === paper.pmid ? 'ontology-preview-selected' : ''}`} style={{ cursor: 'pointer' }} onClick={() => pick(paper)}>
+            <div key={paper.pmid} data-testid="pe-paper" className={`ontology-preview ${selected?.pmid === paper.pmid ? 'ontology-preview-selected' : ''}`} style={{ cursor: 'pointer' }} onClick={() => pick(paper)}>
               <strong>{paper.title}</strong>
               <div>{paper.authors}（{paper.year}）· {paper.journal}</div>
-              <div>
+              <div className="ontology-form-row">
                 {paper.pmid && <a href={`https://pubmed.ncbi.nlm.nih.gov/${paper.pmid}/`} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()}>PubMed {paper.pmid}</a>}
                 {paper.doi && <a href={`https://doi.org/${paper.doi}`} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()}> DOI</a>}
+                {paper.is_open_access && <span className="ew-oa">OA</span>}
               </div>
             </div>
           ))}
@@ -123,7 +212,7 @@ export function PaperEvidenceColumn({ targetType, targetId }: { targetType: stri
           {existing.map(ev => (
             <div key={ev.evidence_id} className="ontology-preview" style={{ cursor: 'pointer' }} onClick={() => setDetail(ev)}>
               <strong>{ev.title ?? '未命名文献'}</strong>
-              <div>{ev.direction ?? '—'} · {ev.verification_status ?? '—'}</div>
+              <div>{ev.direction ?? '—'} · {ev.verification_status ?? '—'} · 段落 {ev.passage_count ?? 0}</div>
               {ev.pmid && <a href={ev.links.pubmed ?? '#'} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()}>PubMed {ev.pmid}</a>}
             </div>
           ))}
@@ -144,25 +233,49 @@ export function PaperEvidenceColumn({ targetType, targetId }: { targetType: stri
                 <summary>摘要</summary>
                 <p className="pe-abstract">{selected.abstract || '无摘要'}</p>
               </details>
-              <textarea className="filter-input pe-excerpt" value={excerpt} onChange={e => setExcerpt(e.target.value)} placeholder="证据段落（可编辑）" />
-              <button type="button" className="btn btn-sm" disabled={busy} onClick={extract}>AI 截取段落</button>
-              <div className="ontology-form-row">
-                <select className="filter-select" value={direction} onChange={e => setDirection(e.target.value)}>
-                  <option value="supports">支持</option>
-                  <option value="partial">部分支持</option>
-                  <option value="contradicts">矛盾</option>
-                  <option value="not_found">未找到</option>
-                </select>
-                <input className="filter-input" style={{ width: 80 }} value={confidence} onChange={e => setConfidence(e.target.value)} />
-                <button type="button" className="btn btn-sm" disabled={!excerpt.trim() || busy} onClick={attach}>挂接并更新置信度</button>
-              </div>
+              <button type="button" className="btn btn-sm" disabled={busy !== null} onClick={extract}>AI 提取原文片段</button>
+              {passages.length > 0 && (
+                <div className="pe-passages">
+                  {passages.map(p => {
+                    const checked = selectedKeys.has(p.key)
+                    return (
+                      <div key={p.key} data-testid="ew-passage" className={`ew-passage ${!p.source_verified ? 'ew-passage-invalid' : ''}`}>
+                        <label>
+                          <input type="checkbox" checked={checked} disabled={!p.source_verified}
+                            onChange={e => setSelectedKeys(prev => { const n = new Set(prev); if (e.target.checked) n.add(p.key); else n.delete(p.key); return n })} />
+                          选择
+                        </label>
+                        <span className="ew-meta">{p.source_scope}{p.paragraph_index != null ? ` · ¶${p.paragraph_index}` : ''} · {p.direction} · {p.confidence}</span>
+                        {p.source_verified ? <span className="ew-ok">已验证</span> : <span className="ew-bad">未通过校验，禁选</span>}
+                        <p className="ew-passage-en">{p.passage}</p>
+                        {p.source_verified && (
+                          <div className="ontology-form-row">
+                            <textarea className="filter-input ew-trans" value={translations[p.key] ?? ''} onChange={e => setTranslations(t => ({ ...t, [p.key]: e.target.value }))} placeholder="中文翻译（可编辑）" />
+                            <button type="button" className="btn btn-xs" onClick={() => translateOne(p.key, p.passage)}>翻译</button>
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })}
+                  <div className="ontology-form-row">
+                    <select className="filter-select" value={direction} onChange={e => setDirection(e.target.value as Direction)}>
+                      <option value="supports">支持</option>
+                      <option value="partial">部分支持</option>
+                      <option value="contradicts">矛盾</option>
+                      <option value="not_found">未找到</option>
+                    </select>
+                    <input className="filter-input" style={{ width: 80 }} value={confidence} onChange={e => setConfidence(e.target.value)} />
+                    <button type="button" className="btn btn-sm" disabled={direction === 'not_found' || busy !== null} onClick={attach}>挂接并更新置信度</button>
+                  </div>
+                </div>
+              )}
             </>
           )}
         </div>
       </div>
       {detail && (
         <div className="ontology-drawer-overlay" onClick={() => setDetail(null)}>
-          <aside className="ontology-drawer" style={{ width: 'min(480px, 94vw)' }} onClick={e => e.stopPropagation()}>
+          <aside className="ontology-drawer" style={{ width: 'min(560px, 94vw)' }} onClick={e => e.stopPropagation()}>
             <div className="ontology-drawer-header">
               <span className="ontology-card-title">证据详情</span>
               <button type="button" className="btn btn-xs" onClick={() => setDetail(null)}>关闭</button>
@@ -170,19 +283,52 @@ export function PaperEvidenceColumn({ targetType, targetId }: { targetType: stri
             <div className="ontology-drawer-body">
               <div className="ontology-detail-row"><span>标题</span><strong>{detail.title ?? '—'}</strong></div>
               <div className="ontology-detail-row"><span>期刊/年份</span><span>{detail.journal ?? '—'} / {detail.year ?? '—'}</span></div>
+              <div className="ontology-detail-row"><span>PMID</span><span>{detail.pmid ?? '—'}</span></div>
+              <div className="ontology-detail-row"><span>DOI</span><span>{detail.doi ?? '—'}</span></div>
               <div className="ontology-detail-row"><span>方向</span><span>{detail.direction ?? '—'}</span></div>
               <div className="ontology-detail-row"><span>验证状态</span><span>{detail.verification_status ?? '—'}</span></div>
+              <div className="ontology-detail-row"><span>审核人</span><span>{detail.verification_by ?? '—'}</span></div>
+              <div className="ontology-detail-row"><span>入库时间</span><span>{detail.created_at ? new Date(detail.created_at).toLocaleString() : '—'}</span></div>
+              <div className="ontology-detail-row"><span>建议置信度</span><span>{detail.suggested_confidence ?? '—'}（{detail.confidence_adjustment_status ?? '—'}）</span></div>
               <div className="ontology-detail-row"><span>链接</span>
                 <span>{detail.pmid && <a href={detail.links.pubmed ?? '#'} target="_blank" rel="noreferrer">PubMed</a>} {detail.doi && <a href={detail.links.doi ?? '#'} target="_blank" rel="noreferrer">DOI</a>}</span>
               </div>
               <section className="ontology-detail-section">
-                <h4>证据段落</h4>
-                <p style={{ fontSize: 12 }}>{detail.evidence_text}</p>
+                <h4>原文段落（{detail.passage_count ?? 0}）</h4>
+                {(detail.passages ?? []).filter(p => p.is_selected).map(p => (
+                  <div key={p.id} className="ew-passage">
+                    <span className="ew-meta">{p.source_scope}{p.section_title ? ` · ${p.section_title}` : ''}{p.paragraph_index != null ? ` · ¶${p.paragraph_index}` : ''} · {p.direction} · {p.confidence}</span>
+                    <p className="ew-passage-en">{p.passage}</p>
+                    {p.translation_zh && <p className="ew-passage-zh">{p.translation_zh}</p>}
+                    {p.reason && <p className="ew-meta">理由：{p.reason}</p>}
+                  </div>
+                ))}
               </section>
+              <div className="ontology-detail-row" style={{ marginTop: 12 }}>
+                <button type="button" className="btn btn-sm btn-danger" onClick={() => setRollbackTarget(detail)}>撤销证据</button>
+              </div>
             </div>
           </aside>
         </div>
       )}
+      <ConfirmDialog
+        open={rollbackTarget !== null}
+        title="撤销论文证据"
+        message={`确定撤销「${rollbackTarget?.title ?? ''}」？将回滚置信度调整并标记为 invalidated。`}
+        onConfirm={rollback}
+        onCancel={() => { setRollbackTarget(null); setRollbackReason('') }}
+        confirmLabel="确认撤销"
+        danger
+        loading={busy === 'rollback'}
+      >
+        <textarea
+          className="filter-input"
+          style={{ width: '100%', minHeight: 64, marginTop: 8 }}
+          placeholder="撤销原因（必填）"
+          value={rollbackReason}
+          onChange={e => setRollbackReason(e.target.value)}
+        />
+      </ConfirmDialog>
     </div>
   )
 }

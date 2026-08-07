@@ -56,10 +56,15 @@ export function PaperEvidencePanel() {
         target_type: targetType,
         target_id: targetId.trim(),
         pmid: selectedPmid,
-        excerpt,
-        direction,
-        mode,
-        suggested_confidence: parseFloat(confidence) || undefined,
+        direction: direction as 'supports' | 'partial' | 'contradicts' | 'not_found',
+        reviewer_confidence: parseFloat(confidence) || 0,
+        passages: [{
+          source_scope: 'abstract' as const,
+          passage: excerpt,
+          direction: direction as 'supports' | 'partial' | 'contradicts' | 'not_found',
+          confidence: parseFloat(confidence) || 0,
+          source_verified: false,
+        }],
       })
       setMessage(
         `已挂接证据，置信度=${resp.confidence ?? '不变'}（${resp.verification_status}），` +
