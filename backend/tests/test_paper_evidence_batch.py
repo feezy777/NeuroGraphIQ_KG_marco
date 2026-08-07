@@ -143,6 +143,7 @@ class TestBatchStateMachine:
             assert ev_count == 0
         finally:
             _run(_cleanup([task_id]))
+            _run(_cleanup_batch_paper())
 
     def test_pause_resume_cancel(self):
         result = self._make_task()
@@ -395,3 +396,12 @@ async def _find_audit(target_id):
                 {"oid": target_id},
             )
         ).scalars().all()
+
+
+async def _cleanup_batch_paper():
+    async with AsyncSessionLocal() as s:
+        await s.execute(
+            text("DELETE FROM paper_passages WHERE paper_id IN (SELECT id FROM paper_sources WHERE pmid='10001')")
+        )
+        await s.execute(text("DELETE FROM paper_sources WHERE pmid='10001'"))
+        await s.commit()

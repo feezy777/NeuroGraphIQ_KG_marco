@@ -139,6 +139,10 @@ def normalized_passage_match(passage: str, source: str) -> bool:
     return bool(passage and normalize_for_match(passage) in normalize_for_match(source))
 
 
+def _normalize_whitespace_only(text: str) -> str:
+    return re.sub(r"\s+", " ", text or "").strip().lower()
+
+
 def locate_passage(passage: str, source: str) -> tuple[int | None, str | None]:
     """Find containing paragraph index (paragraph split by blank lines)."""
     paragraphs = [p.strip() for p in re.split(r"\n\s*\n", source or "")]
@@ -151,8 +155,10 @@ def locate_passage(passage: str, source: str) -> tuple[int | None, str | None]:
 def verify_passage_against_source(passage: str, source: str) -> tuple[bool, str | None]:
     if exact_passage_match(passage, source):
         return True, "exact"
+    if _normalize_whitespace_only(passage) and _normalize_whitespace_only(passage) in _normalize_whitespace_only(source):
+        return True, "normalized_whitespace"
     if normalized_passage_match(passage, source):
-        return True, "normalized"
+        return True, "normalized_unicode"
     return False, None
 
 
@@ -715,6 +721,7 @@ async def attach_evidence(
                 source_locator=p.get("source_locator"),
                 passage_hash=p["passage_hash"],
                 source_verified=True,
+                source_verification_method=p.get("source_verification_method"),
             )
         )
     # 6) confidence adjustment + log
@@ -842,13 +849,14 @@ async def _load_source(pmid: str) -> tuple[str, str]:
 def _verify_passages(passages: list[dict], source: str, source_scope: str) -> list[dict]:
     verified = []
     for p in passages:
-        ok, _method, para_idx, locator = verify_and_locate_passage(
+        ok, method, para_idx, locator = verify_and_locate_passage(
             p.get("passage") or "", source, source_scope
         )
         if not ok:
             continue
         item = dict(p)
         item["source_verified"] = True
+        item["source_verification_method"] = method
         item["source_scope"] = source_scope
         item["paragraph_index"] = para_idx
         item["source_locator"] = locator
@@ -1144,6 +1152,7 @@ async def list_paper_evidence(
                         "confidence": float(p.confidence) if p.confidence is not None else None,
                         "source_locator": p.source_locator,
                         "source_verified": p.source_verified,
+                        "source_verification_method": p.source_verification_method,
                         "is_selected": p.is_selected,
                     }
                     for p in passages_by_evidence.get(r.id, [])
@@ -1390,6 +1399,7 @@ async def extract_passage_from_paper(
                 else item.confidence,
                 "source_locator": (candidate or {}).get("locator") if verified else None,
                 "source_verified": verified,
+                "source_verification_method": method if verified else None,
                 "passage_hash": passage_hash(item.passage),
             }
         )
