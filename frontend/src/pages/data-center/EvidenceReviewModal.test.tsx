@@ -337,4 +337,28 @@ describe('EvidenceReviewModal 论文佐证工作台', () => {
     await waitFor(() => expect(screen.getByText(/入库成功/)).toBeTruthy())
     expect(vi.mocked(endpoints.completePaperEvidenceTaskItem)).toHaveBeenCalledWith('task-1', 'item-1')
   })
+
+  it('提取中显示当前论文名称与进度条', async () => {
+    let resolveExtract!: (v: unknown) => void
+    vi.mocked(endpoints.extractPaperPassage).mockReturnValue(new Promise(res => { resolveExtract = res }))
+    renderWorkbench([ITEM_A])
+    await waitFor(() => expect(screen.getByText('Paper A')).toBeTruthy())
+    fireEvent.click(screen.getByText('Paper A'))
+    fireEvent.click(screen.getByText('AI 提取原文'))
+    await waitFor(() => expect(screen.getAllByText(/DeepSeek 正在提取「Paper A」/).length).toBeGreaterThan(0))
+    expect(screen.getByText(/当前论文：/)).toBeTruthy()
+    expect(document.querySelector('.ew-progress-track')).toBeTruthy()
+    resolveExtract(EXTRACT_OK)
+  })
+
+  it('parse_error 时显示友好消息并保留论文名', async () => {
+    vi.mocked(endpoints.extractPaperPassage).mockRejectedValueOnce(
+      new Error('HTTP 400: {"code":"INVALID_REQUEST","message":"passage extraction failed: parse_error after 3 attempt(s)"}'),
+    )
+    renderWorkbench([ITEM_A])
+    await waitFor(() => expect(screen.getByText('Paper A')).toBeTruthy())
+    fireEvent.click(screen.getByText('Paper A'))
+    fireEvent.click(screen.getByText('AI 提取原文'))
+    await waitFor(() => expect(screen.getByText(/「Paper A」提取解析失败/)).toBeTruthy())
+  })
 })

@@ -832,11 +832,23 @@ async def list_paper_evidence(
     }
 
 
+def _extract_json_object(text_value: str) -> str:
+    """Locate the outermost JSON object in a noisy LLM response."""
+    start = text_value.find("{")
+    end = text_value.rfind("}")
+    if start >= 0 and end > start:
+        return text_value[start : end + 1]
+    return text_value
+
+
 def _parse_multi(raw_text: str) -> PaperMultiPassageExtraction:
     text_value = (raw_text or "").strip()
     fence = re.search(r"```(?:json|JSON)?\s*(.*?)```", text_value, re.DOTALL)
     if fence:
         text_value = fence.group(1).strip()
+    text_value = _extract_json_object(text_value)
+    # JSON does not allow trailing commas; LLM responses often include them.
+    text_value = re.sub(r",\s*([}\]])", r"\1", text_value)
     parsed = json.loads(text_value)
     return PaperMultiPassageExtraction.model_validate(parsed)
 
@@ -851,6 +863,8 @@ async def extract_passage(*, term: str, title: str, abstract: str, fulltext: str
         f'Find all passages in the paper relevant to the neuroscience claim "{term}". '
         "For each relevant passage, output the ORIGINAL passage verbatim (copy exactly from the source; "
         "do NOT summarize, rewrite, or invent sentences). "
+        "Return ONLY one raw JSON object. Do NOT use markdown, code fences, bullet lists, or any text "
+        "outside the JSON object. Do NOT include trailing commas. "
         'Return JSON exactly like: {"overall_direction": "supports", "paper_relevance": "<one sentence>", '
         '"passages": [{"passage": "<verbatim original>", "direction": "supports", '
         '"reason": "<one sentence>", "confidence": 0.9}]}. '
@@ -872,6 +886,10 @@ async def extract_passage(*, term: str, title: str, abstract: str, fulltext: str
                     max_tokens=cfg.ontology_residual_max_tokens,
                 )
                 raw_response = resp.raw_text or ""
+                if not getattr(resp, "transport_ok", True):
+                    raise httpx.TransportError(
+                        getattr(resp, "error", None) or "DeepSeek transport error"
+                    )
                 if resp.parsed_json is not None:
                     parsed = PaperMultiPassageExtraction.model_validate(resp.parsed_json)
                 else:
@@ -886,15 +904,28 @@ async def extract_passage(*, term: str, title: str, abstract: str, fulltext: str
                     json_mode=False,
                 )
                 raw_response = text_result.raw_text or ""
+                if not getattr(text_result, "transport_ok", True):
+                    raise httpx.TransportError(
+                        getattr(text_result, "error", None) or "DeepSeek transport error"
+                    )
                 parsed = _parse_multi(raw_response)
             parse_status = "ok"
             break
+        except httpx.HTTPError:
+            parse_status = "network_error"
+            if attempt < 2:
+                await asyncio.sleep(cfg.ontology_residual_backoff_seconds)
         except (ValidationError, ValueError, json.JSONDecodeError):
             parse_status = "parse_error"
             if attempt < 2:
                 await asyncio.sleep(cfg.ontology_residual_backoff_seconds)
     if parsed is None:
-        raise ValueError(f"passage extraction failed: {parse_status}")
+        hint = ""
+        if parse_status == "parse_error" and raw_response:
+            hint = f" raw_preview={raw_response[:200]!r}"
+        raise ValueError(
+            f"passage extraction failed: {parse_status} after {retry_count + 1} attempt(s){hint}"
+        )
     passages = []
     for item in parsed.passages:
         verified, method, para_idx, locator = verify_and_locate_passage(

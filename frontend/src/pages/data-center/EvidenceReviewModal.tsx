@@ -349,6 +349,21 @@ export function EvidenceReviewModal({ open, onClose, initialItems, initialTaskId
 
   const selectedPaper = result?.papers.find(p => p.pmid === selectedPmid)
 
+  const busyText = useMemo(() => {
+    const paperTitle = selectedPaper?.title ?? (current?.draftPmid ? '批量草稿论文' : '')
+    switch (busy) {
+      case 'search': return '正在检索 Europe PMC…'
+      case 'extract': return paperTitle
+        ? `DeepSeek 正在提取「${paperTitle}」的原文片段（最多 3 次尝试）…`
+        : 'DeepSeek 正在提取原文片段…'
+      case 'translate': return '正在翻译…'
+      case 'preview': return '正在计算置信度预览…'
+      case 'attach': return '正在入库并更新置信度…'
+      case 'loading': return '正在加载队列…'
+      default: return busy ? `处理中：${busy}` : ''
+    }
+  }, [busy, selectedPaper, current])
+
   const extract = useCallback(async () => {
     if (!current || !selectedPaper) return
     abortRef.current?.abort()
@@ -375,7 +390,15 @@ export function EvidenceReviewModal({ open, onClose, initialItems, initialTaskId
       setStep(2)
       setMessage(`${mapped.filter(p => p.source_verified).length}/${mapped.length} 个片段通过原文校验`)
     } catch (err) {
-      setMessage(`提取失败：${err instanceof Error ? err.message : String(err)}`)
+      const raw = err instanceof Error ? err.message : String(err)
+      const paperTitle = selectedPaper?.title ?? '当前论文'
+      if (raw.includes('parse_error')) {
+        setMessage(`「${paperTitle}」提取解析失败（DeepSeek 返回内容无法解析），请重试或换一篇论文`)
+      } else if (raw.includes('network_error')) {
+        setMessage(`「${paperTitle}」网络/服务错误，请稍后重试`)
+      } else {
+        setMessage(`提取失败：${raw}`)
+      }
       mark(idx, 'failed')
     } finally {
       setBusy(null)
@@ -614,7 +637,12 @@ export function EvidenceReviewModal({ open, onClose, initialItems, initialTaskId
             </div>
             <div className="ew-hint">{STEPS_HINT[step]}</div>
             {message && <div className="ontology-page-message">{message}</div>}
-            {busy && <div className="ew-busy">处理中：{busy}</div>}
+            <div className="ew-progress-track">
+              <div className="ew-progress-fill" style={{ width: `${Math.round(((step + 1) / 5) * 100)}%` }} />
+              {busy && <div className="ew-progress-anim" />}
+            </div>
+            <div className="ew-progress-text">{busyText || `步骤 ${step + 1}/5：${STEPS[step]}`}</div>
+            {busy && <div className="ew-busy">{busyText}</div>}
             {allDone && <div className="ew-done-banner">当前队列已处理完成</div>}
 
             <div className="ew-section ew-object-info">
@@ -679,6 +707,12 @@ export function EvidenceReviewModal({ open, onClose, initialItems, initialTaskId
             {(selectedPaper || (current?.draftPassages?.length ?? 0) > 0) && (
               <div className="ew-section">
                 <h4>原文片段（{passages.length}）</h4>
+                {selectedPaper && (
+                  <div className="ew-current-paper">
+                    <strong>当前论文：</strong>{selectedPaper.title}
+                    <span className="ew-meta"> · PMID {selectedPaper.pmid}{selectedPaper.doi ? ` · DOI ${selectedPaper.doi}` : ''}</span>
+                  </div>
+                )}
                 <div className="ontology-form-row">
                   <button type="button" className="btn btn-sm" disabled={busy !== null} onClick={extract}>AI 提取原文</button>
                   <button type="button" className="btn btn-sm" disabled={busy !== null || selectedHashes.size === 0} onClick={translateAll}>翻译全部已选</button>

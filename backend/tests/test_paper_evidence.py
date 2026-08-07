@@ -13,6 +13,7 @@ from app.services.paper_evidence_service import (
     normalize_for_match,
     normalized_passage_match,
     passage_hash,
+    _parse_multi,
     verify_passage_against_source,
 )
 
@@ -96,3 +97,36 @@ def test_multi_passage_schema_rejects_bad_direction():
     }
     with pytest.raises(ValidationError):
         PaperMultiPassageExtraction.model_validate(payload)
+
+
+def test_parse_multi_tolerates_code_fence_and_prose():
+    raw = (
+        'Here is the extracted evidence:\n```json\n'
+        '{"overall_direction": "supports", "paper_relevance": "r", '
+        '"passages": [{"passage": "The hippocampus is critical for memory consolidation.", '
+        '"direction": "supports", "reason": "direct", "confidence": 0.9}]}\n```\nHope this helps.'
+    )
+    model = _parse_multi(raw)
+    assert model.overall_direction == "supports"
+    assert len(model.passages) == 1
+
+
+def test_parse_multi_tolerates_trailing_commas():
+    raw = (
+        '{"overall_direction": "partial", "paper_relevance": "r", '
+        '"passages": [{"passage": "a", "direction": "partial", "reason": "r", "confidence": 0.6,},],}'
+    )
+    model = _parse_multi(raw)
+    assert model.overall_direction == "partial"
+    assert model.passages[0].confidence == 0.6
+
+
+def test_parse_multi_extracts_json_object_from_noise():
+    raw = (
+        'prefix text {"overall_direction": "contradicts", "paper_relevance": "r", '
+        '"passages": [{"passage": "a", "direction": "contradicts", "reason": "r", "confidence": 0.4}]} '
+        'suffix text'
+    )
+    model = _parse_multi(raw)
+    assert model.overall_direction == "contradicts"
+    assert len(model.passages) == 1
