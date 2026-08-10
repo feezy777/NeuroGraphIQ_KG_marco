@@ -8,6 +8,7 @@ import json
 import re
 import unicodedata
 import uuid
+from difflib import SequenceMatcher
 
 import httpx
 from pydantic import ValidationError
@@ -34,7 +35,11 @@ from app.models.ontology import OntologyChangeLog
 from app.services.ontology_service import TERM_TABLE_BY_TYPE
 from app.config import get_settings
 from app.services.llm_providers.factory import get_llm_provider
-from app.services.ontology_residual_schemas import PaperMultiPassageExtraction, PaperPassageExtraction
+from app.services.ontology_residual_schemas import (
+    PaperMultiPassageExtraction,
+    PaperPassageExtraction,
+    PaperRelevanceBatch,
+)
 from app.services.confidence_rules import (
     FORMULA_VERSION,
     PARTIAL_CAP,
@@ -50,6 +55,13 @@ from app.services.evidence_target_adapter import (
 from app.services.paragraph_retrieval import build_windows, score_paragraphs
 from app.services import oa_xml_parser
 from app.services import paper_fetch_service as pfs
+
+# Similarity tier: token Jaccard (word overlap) or character ratio for LLM
+# passages that are not verbatim. Exact / whitespace / unicode-normalized
+# matches stay preferred; similarity is a controlled fallback for human review.
+SIMILARITY_TOKEN_JACCARD_THRESHOLD = 0.75
+SIMILARITY_RATIO_THRESHOLD = 0.8
+LOCATE_SIMILARITY_THRESHOLD = 0.6
 
 EUROPE_PMC_SEARCH = "https://www.ebi.ac.uk/europepmc/webservices/rest/search"
 SEARCH_TIMEOUT = 25
@@ -148,6 +160,25 @@ def _normalize_whitespace_only(text: str) -> str:
     return re.sub(r"\s+", " ", text or "").strip().lower()
 
 
+def _token_jaccard(passage: str, source: str) -> float:
+    tokens_a = set(re.findall(r"[a-z0-9]+", normalize_for_match(passage)))
+    tokens_b = set(re.findall(r"[a-z0-9]+", normalize_for_match(source)))
+    if not tokens_a or not tokens_b:
+        return 0.0
+    return len(tokens_a & tokens_b) / len(tokens_a | tokens_b)
+
+
+def passage_similarity_score(passage: str, source: str) -> float:
+    """0–1 similarity between a passage and a source text (max of token Jaccard / char ratio)."""
+    norm_p = normalize_for_match(passage)
+    norm_s = normalize_for_match(source)
+    if not norm_p or not norm_s:
+        return 0.0
+    jaccard = _token_jaccard(passage, source)
+    ratio = SequenceMatcher(None, norm_p, norm_s).ratio()
+    return max(jaccard, ratio)
+
+
 def locate_passage(passage: str, source: str) -> tuple[int | None, str | None]:
     """Find containing paragraph index (paragraph split by blank lines)."""
     paragraphs = [p.strip() for p in re.split(r"\n\s*\n", source or "")]
@@ -158,12 +189,24 @@ def locate_passage(passage: str, source: str) -> tuple[int | None, str | None]:
 
 
 def verify_passage_against_source(passage: str, source: str) -> tuple[bool, str | None]:
+    """Tiered verification: exact → normalized → similarity.
+
+    Similarity is a controlled fallback for LLM passages with light rewrites;
+    it still requires strong token/character overlap so unrelated text never passes.
+    """
+    if not passage or not source:
+        return False, None
     if exact_passage_match(passage, source):
         return True, "exact"
     if _normalize_whitespace_only(passage) and _normalize_whitespace_only(passage) in _normalize_whitespace_only(source):
         return True, "normalized_whitespace"
     if normalized_passage_match(passage, source):
         return True, "normalized_unicode"
+    score = passage_similarity_score(passage, source)
+    if score >= SIMILARITY_TOKEN_JACCARD_THRESHOLD and _token_jaccard(passage, source) >= SIMILARITY_TOKEN_JACCARD_THRESHOLD:
+        return True, "similarity"
+    if score >= SIMILARITY_RATIO_THRESHOLD:
+        return True, "similarity"
     return False, None
 
 
@@ -316,7 +359,8 @@ def parse_fulltext_paragraphs(
         if not paragraph_text:
             return
         idx = len(paragraphs)
-        para_id = f"{current_section.lower().replace(' ', '_')}_p{idx + 1:03d}" if current_section else f"fulltext_p{idx + 1:03d}"
+        section_slug = re.sub(r"[^a-z0-9]+", "_", (current_section or "").lower()).strip("_")[:64]
+        para_id = f"{section_slug}_p{idx + 1:03d}" if section_slug else f"fulltext_p{idx + 1:03d}"
         paragraphs.append(
             {
                 "source_scope": source_scope,
@@ -325,7 +369,7 @@ def parse_fulltext_paragraphs(
                 "paragraph_index": idx,
                 "passage_text": paragraph_text,
                 "text_hash": passage_hash(paragraph_text),
-                "locator": f"{current_section.lower().replace(' ', '_')}:paragraph:{idx}" if current_section else f"paragraph:{idx}",
+                "locator": f"{section_slug}:paragraph:{idx}" if section_slug else f"paragraph:{idx}",
                 "char_start": None,
                 "char_end": None,
             }
@@ -525,17 +569,36 @@ async def search_papers(query: str, limit: int = 5) -> list[dict]:
     return papers
 
 
+_CONFERENCE_NOISE_PATTERNS = (
+    "poster session",
+    "annual meeting",
+    "abstracts of the",
+    "meeting abstracts",
+    "conference proceedings",
+    "computational neuroscience meeting",
+    "annual computational",
+    "proceedings of the",
+)
+
+
+def _is_conference_noise(title: str) -> bool:
+    t = (title or "").lower()
+    return any(p in t for p in _CONFERENCE_NOISE_PATTERNS)
+
+
 async def _search(query: str, limit: int) -> list[dict]:
     async with httpx.AsyncClient(trust_env=False, timeout=SEARCH_TIMEOUT) as client:
-        resp = await client.get(
+        payload = await pfs._get_json_with_retry(
+            client,
             EUROPE_PMC_SEARCH,
-            params={"query": query, "format": "json", "pageSize": limit},
+            {"query": query, "format": "json", "pageSize": limit, "resultType": "core"},
         )
-        resp.raise_for_status()
-        payload = resp.json()
     results = payload.get("resultList", {}).get("result", [])
     papers = []
     for item in results:
+        title = item.get("title") or ""
+        if _is_conference_noise(title):
+            continue
         pmcid = (item.get("pmcid") or "").upper()
         is_oa = str(item.get("isOpenAccess") or "").lower() == "y"
         papers.append(
@@ -543,11 +606,11 @@ async def _search(query: str, limit: int) -> list[dict]:
                 "pmid": item.get("pmid") or "",
                 "pmcid": pmcid,
                 "doi": item.get("doi") or "",
-                "title": item.get("title") or "",
+                "title": title,
                 "journal": item.get("journalTitle") or "",
                 "year": item.get("pubYear") or "",
                 "authors": item.get("authorString") or "",
-                "abstract": (item.get("abstractText") or "")[:4000],
+                "abstract": pfs.clean_html_text(item.get("abstractText") or "")[:4000],
                 "is_open_access": is_oa,
                 "fulltext_available": bool(pmcid) and is_oa,
                 "source": "europepmc",
@@ -569,21 +632,18 @@ async def fetch_fulltext(pmid: str) -> str:
             text_xml = resp.text
     except httpx.HTTPError:
         return ""
-    plain = re.sub(r"<[^>]+>", " ", text_xml)
-    plain = re.sub(r"\s+", " ", plain).strip()
-    return plain[:8000]
+    return pfs.clean_html_text(text_xml)[:8000]
 
 
 async def verify_paper(pmid: str) -> dict | None:
     if not pmid:
         return None
     async with httpx.AsyncClient(trust_env=False, timeout=SEARCH_TIMEOUT) as client:
-        resp = await client.get(
+        payload = await pfs._get_json_with_retry(
+            client,
             EUROPE_PMC_SEARCH,
-            params={"query": f"EXT_ID:{pmid}", "format": "json", "pageSize": 1},
+            {"query": f"EXT_ID:{pmid}", "format": "json", "pageSize": 1, "resultType": "core"},
         )
-        resp.raise_for_status()
-        payload = resp.json()
     results = payload.get("resultList", {}).get("result", [])
     if not results:
         return None
@@ -595,7 +655,7 @@ async def verify_paper(pmid: str) -> dict | None:
         "journal": item.get("journalTitle") or "",
         "year": item.get("pubYear") or "",
         "authors": item.get("authorString") or "",
-        "abstract": (item.get("abstractText") or "")[:4000],
+        "abstract": pfs.clean_html_text(item.get("abstractText") or "")[:4000],
         "source": "europepmc",
     }
 
@@ -676,12 +736,19 @@ async def attach_evidence(
     claim_version = claim.get("claim_version") or "claim_v1"
     claim_text = claim.get("claim_text") or ""
     # 2) re-verify passages against source (backend never trusts the client)
-    source, source_scope = await _load_source(pmid)
+    source, source_scope = await _load_source(session, pmid)
     if not source:
         raise ValueError("no source text available for passage verification")
     verified = _verify_passages(passages, source, source_scope)
     if not verified:
         raise ValueError("no passage could be verified against the original source")
+    if any(
+        p.get("source_verification_method") in ("similarity", "similarity_located")
+        for p in verified
+    ) and not (reviewer_note or "").strip():
+        raise ValueError(
+            "approximate (similarity) passages require a reviewer note confirming the original text"
+        )
     # Link verified passages to structured paper_passages when available.
     paper_passage_ids: dict[str, uuid.UUID] = {}
     if paper_id is not None:
@@ -923,7 +990,35 @@ async def attach_evidence(
     }
 
 
-async def _load_source(pmid: str) -> tuple[str, str]:
+async def _load_source(session: AsyncSession, pmid: str) -> tuple[str, str]:
+    """Load verification source, preferring cached structured passages.
+
+    Extraction stores normalized paragraphs in paper_passages; attach must
+    re-verify against the SAME text (not a re-fetched, differently-normalized
+    plain-text dump) or previously verified passages get rejected on attach.
+    """
+    row_id = (
+        await session.execute(
+            text("SELECT id FROM paper_sources WHERE pmid=:pmid"),
+            {"pmid": pmid},
+        )
+    ).scalar_one_or_none()
+    if row_id is not None:
+        paras = (
+            await session.execute(
+                text(
+                    "SELECT passage_text, source_scope FROM paper_passages "
+                    "WHERE paper_id=:pid ORDER BY paragraph_index"
+                ),
+                {"pid": row_id},
+            )
+        ).all()
+        if paras:
+            joined = "\n\n".join(p for p, _ in paras).strip()
+            scopes = {s for _, s in paras}
+            if joined:
+                return joined, ("fulltext" if "fulltext" in scopes else "abstract")
+    # fallback: network fetch (paper not cached / no passages stored)
     paper = await verify_paper(pmid)
     abstract = (paper or {}).get("abstract") or ""
     fulltext = await fetch_fulltext(pmid)
@@ -990,7 +1085,7 @@ async def attach_preview(
     row = await session.get(model, target_id) if model else None
     if row is None:
         raise ValueError("target not found")
-    source, source_scope = await _load_source(pmid)
+    source, source_scope = await _load_source(session, pmid)
     verified = _verify_passages(passages, source, source_scope) if source else []
     duplicate_count = (
         await _count_duplicate_hashes(
@@ -1409,31 +1504,59 @@ async def extract_passage(*, term: str, title: str, abstract: str, fulltext: str
     }
 
 
+def _locate_best_paragraph(
+    passage: str, paragraph_map: dict[str, dict]
+) -> tuple[dict | None, float]:
+    """Find the paragraph with the highest similarity to the passage (0–1)."""
+    best: dict | None = None
+    best_score = 0.0
+    for para in paragraph_map.values():
+        source_text = (para or {}).get("passage_text") or ""
+        if not source_text:
+            continue
+        score = passage_similarity_score(passage, source_text)
+        if score > best_score:
+            best, best_score = para, score
+    return best, best_score
+
+
 def _verify_extraction_passages(
     passages: list[dict],
     paragraph_map: dict[str, dict],
 ) -> list[dict]:
-    """Strict backend verification: paragraph_id must exist and passage must match.
+    """Backend verification: paragraph_id hit first, fuzzy locate as fallback.
 
-    Only exact / normalized whitespace / normalized Unicode punctuation pass.
-    If paragraph_id is missing or unknown → source_verified=false (no fallback).
+    1) paragraph_id hit → tiered match (exact / normalized / similarity).
+    2) unknown/missing paragraph_id → locate best-matching paragraph across the
+       paper; verified only if similarity ≥ LOCATE_SIMILARITY_THRESHOLD (no guesswork).
     """
     verified_out: list[dict] = []
     for item in passages:
         para_id = (item.get("paragraph_id") or "").strip()
         candidate = paragraph_map.get(para_id)
-        source_text = (candidate or {}).get("passage_text") or ""
-        ok, method = (
-            verify_passage_against_source(item.get("passage") or "", source_text)
-            if source_text
-            else (False, None)
-        )
+        ok, method = False, None
+        if candidate is not None:
+            source_text = (candidate or {}).get("passage_text") or ""
+            ok, method = (
+                verify_passage_against_source(item.get("passage") or "", source_text)
+                if source_text
+                else (False, None)
+            )
+        if not ok:
+            located, loc_score = _locate_best_paragraph(
+                item.get("passage") or "", paragraph_map
+            )
+            if located is not None and loc_score >= LOCATE_SIMILARITY_THRESHOLD:
+                candidate = located
+                ok = True
+                method = "similarity_located"
         verified_out.append(
             {
                 **item,
                 "source_scope": (candidate or {}).get("source_scope") or "fulltext",
                 "section_title": (candidate or {}).get("section_title") or item.get("section"),
                 "paragraph_index": (candidate or {}).get("paragraph_index"),
+                "paragraph_id": (candidate or {}).get("paragraph_id") or item.get("paragraph_id"),
                 "source_locator": (candidate or {}).get("locator") if ok else None,
                 "source_verified": ok,
                 "source_verification_method": method if ok else None,
@@ -1581,6 +1704,21 @@ async def extract_passage_from_paper(
     allowed_components = sorted(
         {c.get("component_type") for c in claim_components if c.get("component_type")}
     )
+    direction_rule = (
+        "8. Existence mode: the claim is about the OBJECT EXISTING (a projection/connection "
+        "between the two regions). If the paper establishes connectivity between the two regions "
+        "(even without exact laterality or direction), return a partial passage with "
+        "supported_components excluding 'direction', rather than not_found.\n"
+        "8b. INDIRECT evidence is still evidence: if the paper establishes connectivity involving "
+        "a structure that CONTAINS one of the regions (e.g. 'striatal-thalamic connections' for a "
+        "putamen-thalamus claim, since putamen is part of the striatum), return the passage as "
+        "partial with evidence_level 'background' or 'indirect' and confidence 0.3-0.5, and say so "
+        "in reason. Only return not_found when the paper does not involve either region's "
+        "structure at all.\n"
+        if claim.get("claim_mode") == "existence"
+        else "8. Direction matters: 'B -> A' does not support 'A -> B'; functional connectivity "
+        "is not an anatomical projection.\n"
+    )
     user = (
         f'Knowledge claim to verify: "{claim.get("claim_text") or claim.get("function_term") or ""}"\n'
         "Structured claim (relation direction matters): "
@@ -1594,20 +1732,26 @@ async def extract_passage_from_paper(
         "5. Search for BOTH supporting and contradicting evidence; you may return 1-8 passages.\n"
         "6. Distinguish experimental Results (direct) from author interpretation (interpretive) and background (background).\n"
         "7. Keyword co-occurrence is NOT evidence: 'A and B both participate in X' does not mean 'A projects to B'.\n"
-        "8. Direction matters: 'B -> A' does not support 'A -> B'; functional connectivity is not an anatomical projection.\n"
-        "9. evidence_level: direct (experiment proves the claim/core relation), indirect (needs reasonable inference), "
+        + direction_rule
+        + "9. evidence_level: direct (experiment proves the claim/core relation), indirect (needs reasonable inference), "
         "interpretive (author explanation in Discussion/Conclusion), background (Introduction/review-like).\n"
         "10. overall_direction must reflect ALL returned passages (support+contradict -> mixed).\n"
         "11. For each passage set supported_components to the claim components it actually supports "
         "(for a contradicting passage: the components it refutes). Use ONLY component names from the "
         "Claim components list; never invent components. A passage may support only part of the claim.\n"
+        "12. evidence_dimension: 'existence' = the paper establishes the OBJECT itself (e.g. an "
+        "anatomical projection between the two regions, the circuit exists); 'function' = it describes "
+        "what the object does (function, effect, role); 'mixed' = both. Pick per passage; "
+        "overall evidence_dimension must reflect the dominant kind.\n"
         "Return ONLY one raw JSON object (no markdown, no code fences, no trailing commas):\n"
         '{"overall_direction": "supports|partial|contradicts|mixed|not_found", "paper_relevance": 0.9, '
         '"assessment": "<one or two sentences summarizing the judgment>", '
+        '"evidence_dimension": "existence|function|mixed", '
         '"passages": [{"paragraph_id": "<id>", "section": "<section>", "passage": "<verbatim>", '
         '"direction": "supports", "evidence_level": "direct|indirect|interpretive|background", '
         '"reason": "<one sentence>", "confidence": 0.9, "semantic_confidence": 0.9, '
-        '"supported_components": ["source_region", "target_region", "relation"]}]}\n'
+        '"supported_components": ["source_region", "target_region", "relation"], '
+        '"evidence_dimension": "existence"}]}\n'
         f"Paper title: {title}\nCandidate paragraph windows:\n{joined}"
     )
     parsed = None
@@ -1682,6 +1826,7 @@ async def extract_passage_from_paper(
             "supported_components": [
                 c for c in (item.supported_components or []) if c in allowed_components
             ],
+            "evidence_dimension": item.evidence_dimension,
         }
         for item in parsed.passages
     ]
@@ -1698,6 +1843,7 @@ async def extract_passage_from_paper(
         "overall_direction": overall,
         "paper_relevance": parsed.paper_relevance,
         "assessment": parsed.assessment,
+        "evidence_dimension": parsed.evidence_dimension,
         "source_type": source_type,
         "passages": deduped,
         "claim_components": claim_components,
@@ -2232,7 +2378,7 @@ async def _process_batch_item(
                     function_synonyms=context.get("function_synonyms") or [],
                     relation_keywords=context.get("relation_keywords") or [],
                 )
-                windows = build_windows(ranked, all_paragraphs, top_k=20, window=1)
+                windows = build_windows(ranked, all_paragraphs)
                 async with sem_deepseek:
                     extraction = await _extract_from_paper_with_retry(
                         claim=context,
@@ -2335,6 +2481,135 @@ async def _extract_from_paper_with_retry(*, claim: dict, title: str, windows: li
     raise last_exc or RuntimeError("extraction failed")
 
 
+def _parse_relevance_batch(raw_text: str) -> PaperRelevanceBatch:
+    """Parse a noisy DeepSeek relevance response into the batch schema."""
+    text_value = (raw_text or "").strip()
+    fence = re.search(r"```(?:json|JSON)?\s*(.*?)```", text_value, re.DOTALL)
+    if fence:
+        text_value = fence.group(1).strip()
+    text_value = _extract_json_object(text_value)
+    text_value = re.sub(r",\s*([}\]])", r"\1", text_value)
+    parsed = json.loads(text_value)
+    items = parsed.get("items") or []
+    for it in items:
+        rel = it.get("relevance")
+        if isinstance(rel, str):
+            try:
+                it["relevance"] = max(0.0, min(1.0, float(rel.strip() or 0)))
+            except ValueError:
+                it["relevance"] = 0.0
+    return PaperRelevanceBatch.model_validate({"items": items})
+
+
+async def semantic_filter_papers(
+    papers: list[dict],
+    context: dict,
+    *,
+    threshold: float | None = None,
+) -> tuple[list[dict], list[dict]]:
+    """DeepSeek relevance scoring over candidate papers (title + abstract).
+
+    Returns (keep, skipped); skipped papers carry semantic_relevance and
+    semantic_skip_reason for audit. Threshold <= 0 disables filtering;
+    provider failure degrades to keep-all (papers are never dropped because
+    the filter itself failed).
+    """
+    cfg = get_settings()
+    if threshold is None:
+        threshold = float(getattr(cfg, "paper_semantic_threshold", 0.4) or 0)
+    if threshold <= 0 or not papers:
+        return papers, []
+    try:
+        provider = get_llm_provider("deepseek")
+    except Exception:  # noqa: BLE001 — advisory filter: never block extraction
+        return papers, []
+    claim_text = context.get("claim_text") or context.get("function_term") or ""
+    lines = []
+    for p in papers:
+        pmid = (p.get("pmid") or "").strip()
+        ident = pmid or (p.get("doi") or "").strip() or "?"
+        title = (p.get("title") or "").strip()
+        abstract = (p.get("abstract") or "").strip()[:1000]
+        lines.append(f"- id: {ident} | title: {title} | abstract: {abstract}")
+    system = "You are a strict JSON API. Reply only with the requested JSON object. Never explain."
+    user = (
+        f'Rate how relevant each paper is to the neuroscience claim: "{claim_text}".\n'
+        "Rules:\n"
+        "1. relevance is 0-1: 1 = the paper directly studies the claim "
+        "(same regions and relation/function); 0 = unrelated.\n"
+        "2. A paper that merely mentions a region name in passing is NOT relevant.\n"
+        "3. Keyword co-occurrence is not evidence: 'A and B both participate in X' "
+        "does not mean the paper supports the claim.\n"
+        "4. Output ONLY one raw JSON object (no markdown, no code fences, no trailing commas):\n"
+        '{"items": [{"pmid": "<id>", "relevance": 0.8, "reason": "<one sentence>"}]}\n'
+        f"Papers:\n{chr(10).join(lines)}"
+    )
+    parsed = None
+    for attempt in range(3):
+        try:
+            if attempt == 0:
+                resp = await provider.complete_json(
+                    model=cfg.ontology_residual_model,
+                    system_prompt=system,
+                    user_prompt=user,
+                    temperature=0.1,
+                    max_tokens=cfg.paper_semantic_max_tokens,
+                )
+                raw_response = resp.raw_text or ""
+                if not getattr(resp, "transport_ok", True):
+                    raise httpx.TransportError(
+                        getattr(resp, "error", None) or "DeepSeek transport error"
+                    )
+                if resp.parsed_json is not None:
+                    parsed = PaperRelevanceBatch.model_validate(resp.parsed_json)
+                else:
+                    parsed = _parse_relevance_batch(raw_response)
+            else:
+                text_result = await provider.complete_text(
+                    model=cfg.ontology_residual_model,
+                    system_prompt=system,
+                    user_prompt=user + "\n\nIMPORTANT: Respond with ONLY the raw JSON object.",
+                    temperature=0.2,
+                    max_tokens=cfg.paper_semantic_max_tokens,
+                    json_mode=False,
+                )
+                if not getattr(text_result, "transport_ok", True):
+                    raise httpx.TransportError(
+                        getattr(text_result, "error", None) or "DeepSeek transport error"
+                    )
+                parsed = _parse_relevance_batch(text_result.raw_text or "")
+            break
+        except httpx.HTTPError:
+            if attempt < 2:
+                await asyncio.sleep(cfg.ontology_residual_backoff_seconds)
+        except (ValidationError, ValueError, json.JSONDecodeError):
+            if attempt < 2:
+                await asyncio.sleep(cfg.ontology_residual_backoff_seconds)
+        except Exception:  # noqa: BLE001 — pre-filter is advisory: never block extraction
+            if attempt < 2:
+                await asyncio.sleep(cfg.ontology_residual_backoff_seconds)
+    if parsed is None:
+        return papers, []
+    scores = {it.pmid: (it.relevance, it.reason) for it in parsed.items}
+    keep: list[dict] = []
+    skipped: list[dict] = []
+    for p in papers:
+        pmid = (p.get("pmid") or "").strip()
+        ident = pmid or (p.get("doi") or "").strip()
+        rel, reason = scores.get(pmid) or scores.get(ident) or (0.0, "")
+        if rel >= threshold:
+            keep.append({**p, "semantic_relevance": rel})
+        else:
+            skipped.append(
+                {
+                    **p,
+                    "semantic_relevance": rel,
+                    "semantic_skip_reason": reason or "relevance below threshold",
+                }
+            )
+    return keep, skipped
+
+
 async def extract_candidates_for_target(
     session: AsyncSession,
     *,
@@ -2343,6 +2618,7 @@ async def extract_candidates_for_target(
     max_papers: int,
     only_oa: bool = False,
     stop_after_strong_support: bool = False,
+    mode: str = "function",
     sem_fetch: asyncio.Semaphore,
     sem_deepseek: asyncio.Semaphore,
     on_stage=None,
@@ -2353,7 +2629,8 @@ async def extract_candidates_for_target(
     model judgment, coverage and verified passages. A single paper failure is
     captured with an error code and does not stop the remaining papers.
     """
-    ranked = _rank_papers(papers, context)
+    kept, semantic_skipped = await semantic_filter_papers(papers, context)
+    ranked = _rank_papers(kept, context)
     selected = ranked[:max_papers]
     candidates: list[dict] = []
     last_llm_model: str | None = None
@@ -2423,7 +2700,7 @@ async def extract_candidates_for_target(
                 function_synonyms=context.get("function_synonyms") or [],
                 relation_keywords=context.get("relation_keywords") or [],
             )
-            windows = build_windows(ranked_paras, all_paragraphs, top_k=20, window=1)
+            windows = build_windows(ranked_paras, all_paragraphs)
             if on_stage is not None:
                 await on_stage("extracting")
             async with sem_deepseek:
@@ -2465,6 +2742,7 @@ async def extract_candidates_for_target(
                     "journal": meta.get("journal") or "",
                     "year": meta.get("year") or "",
                     "is_oa": bool(meta.get("is_open_access")),
+                    "fulltext_fetched": bool((xml_text or "").strip()),
                     "paper_match_score": paper.get("paper_match_score", 0),
                     "model_direction": extraction.get("overall_direction"),
                     "model_assessment": extraction.get("assessment"),
@@ -2487,6 +2765,16 @@ async def extract_candidates_for_target(
                     "passages": [],
                 }
             )
+    # audit-visible semantic skips (never silently dropped)
+    for p in semantic_skipped:
+        candidates.append(
+            {
+                **p,
+                "error_code": "SEMANTIC_SKIPPED",
+                "error_message": p.get("semantic_skip_reason") or "relevance below threshold",
+                "passages": [],
+            }
+        )
     return candidates, last_llm_model
 
 
@@ -2512,7 +2800,7 @@ async def _run_batch_loop(session: AsyncSession, task_id: str) -> None:
         task_row = (
             await session.execute(
                 text(
-                    "SELECT max_papers_per_object, only_oa, stop_after_strong_support, config "
+                    "SELECT max_papers_per_object, only_oa, stop_after_strong_support, config, mode "
                     "FROM paper_evidence_tasks WHERE id::text=:tid"
                 ),
                 {"tid": task_id},
@@ -2537,6 +2825,7 @@ async def _run_batch_loop(session: AsyncSession, task_id: str) -> None:
         only_oa = bool(task_row[1]) if task_row else False
         stop_after_strong_support = bool(task_row[2]) if task_row else False
         task_config = task_row[3] if task_row else {}
+        task_mode = (task_row[4] if task_row else None) or "function"
         sem_search = asyncio.Semaphore(cfg.paper_search_concurrency)
         sem_fetch = asyncio.Semaphore(cfg.paper_fetch_concurrency)
         deepseek_cfg = (task_config or {}).get("deepseek_concurrency") or cfg.ontology_residual_concurrency
@@ -2548,7 +2837,7 @@ async def _run_batch_loop(session: AsyncSession, task_id: str) -> None:
                 item_id=item_id,
                 target_type=tt,
                 target_id=oid,
-                mode="function",
+                mode=task_mode,
                 max_papers=max_papers,
                 only_oa=only_oa,
                 stop_after_strong_support=stop_after_strong_support,
@@ -3298,32 +3587,125 @@ def _rank_papers(papers: list[dict], context: dict) -> list[dict]:
     return ranked
 
 
-def _build_epmc_query(context: dict) -> str:
-    """Build a broader Europe PMC query from the retrieval context.
+# Connection-evidence vocabulary: papers rarely write "structural_connection";
+# they use tractography / projection / fiber / DTI / white matter and specialized
+# terms like "thalamostriatal". NOTE: "connectivity" alone is deliberately absent —
+# it mostly matches fMRI functional-connectivity papers, which are NOT evidence
+# for an anatomical projection. Ordered by generality so the OR-group limit keeps
+# the most useful terms.
+CONNECTION_EVIDENCE_TERMS = [
+    "projection",
+    "tractography",
+    "fiber",
+    "tract",
+    "DTI",
+    "structural connectivity",
+    "white matter",
+    "thalamostriatal",
+    "thalamo-striatal",
+]
 
-    Each concept (source / target / function, canonical + synonyms) becomes an
-    OR-group of `ABSTRACT:"term" OR BODY:"term"` clauses joined with AND, so
-    matches from abstracts AND open-access full-text bodies are both considered.
+# Region synonyms papers actually use: "putamen" is part of the striatum, so
+# striatum-only papers (the majority) must also be retrieved.
+_REGION_SYNONYM_HINTS = {
+    "putamen": ["striatum", "caudate putamen", "neostriatum"],
+    "striatum": ["putamen"],
+    "thalamus": ["thalamic"],
+    "thalamic": ["thalamus"],
+}
+
+
+def _region_search_terms(region: str) -> list[str]:
+    core = _core_region_term(region)
+    terms = [region, core]
+    hints = _REGION_SYNONYM_HINTS.get((core or "").lower(), [])
+    return [t for t in dict.fromkeys(terms + hints) if t]
+
+# Lateral/qualifier words stripped when deriving the core region term, so
+# "right thalamus proper" searches as "thalamus" too (papers rarely use the full phrase).
+_REGION_MODIFIER_WORDS = {
+    "right", "left", "proper", "superior", "inferior", "medial", "lateral",
+    "anterior", "posterior", "dorsal", "ventral", "caudal", "rostral",
+    "central", "deep", "superficial", "primary", "secondary", "bilateral",
+    "motor", "related", "gray", "white", "intermediate",
+}
+
+# Structural suffixes stripped as well, so "Agranular insular area, posterior
+# part, layer 6b" → "Agranular insular" instead of the unwieldy full phrase.
+_REGION_STRUCTURAL_WORDS = {
+    "layer", "part", "area", "sublayer", "region", "sector", "division",
+}
+
+
+def _core_region_term(region: str) -> str:
+    """Derive the core region noun phrase, e.g. 'right thalamus proper' → 'thalamus'.
+
+    Modifiers (right/posterior/...) and structural suffixes (layer/part/area/...)
+    are stripped; numeric labels (6b) dropped; a long remainder is trimmed to its
+    last 3 words (the distinctive head noun phrase).
+    """
+    words = [
+        w for w in re.split(r"[\s\-,\/]+", region or "")
+        if w
+        and len(w) > 1
+        and not re.fullmatch(r"\d+[a-z]?|\d+", w)
+        and w.lower() not in _REGION_MODIFIER_WORDS
+        and w.lower() not in _REGION_STRUCTURAL_WORDS
+    ]
+    if not words:
+        return (region or "").strip()
+    core = " ".join(words).strip()
+    parts = core.split()
+    return " ".join(parts[-3:]) if len(parts) > 3 else core
+
+
+def _build_epmc_query(context: dict, *, abstract_only: bool = True) -> str:
+    """Build a Europe PMC query from the retrieval context.
+
+    abstract_only=True (default): all clauses target ABSTRACT — far less noise
+    than BODY (where "fiber"/"projection" appear everywhere). Callers fall back
+    to abstract_only=False when ABSTRACT-only returns nothing.
+
+    Each concept (source / target / function, canonical + synonyms + core term)
+    becomes an OR-group of `ABSTRACT:"term"` (or `OR BODY:"term"`) clauses joined
+    with AND. Connection-type objects also OR in the connection-evidence
+    vocabulary (tractography / fiber / projection / ...) instead of requiring
+    the rare exact phrase "structural_connection".
     """
     def group(terms: list[str], limit: int = 4) -> str | None:
         clauses: list[str] = []
+        seen: set[str] = set()
         for t in terms:
             t = (t or "").strip().strip('"')
-            if t and len(t) <= 80 and t.lower() not in ("unknown", "none"):
+            key = t.lower()
+            if t and len(t) <= 80 and key not in ("unknown", "none") and key not in seen:
+                seen.add(key)
                 clauses.append(f'ABSTRACT:"{t}"')
-                clauses.append(f'BODY:"{t}"')
-            if len(clauses) // 2 >= limit:
+                if not abstract_only:
+                    clauses.append(f'BODY:"{t}"')
+            if len(clauses) // (1 if abstract_only else 2) >= limit:
                 break
         return "(" + " OR ".join(clauses) + ")" if clauses else None
 
+    src = context.get("source_region") or ""
+    tgt = context.get("target_region") or ""
     parts: list[str] = []
-    src = group([context.get("source_region") or ""] + (context.get("source_region_synonyms") or []))
-    tgt = group([context.get("target_region") or ""] + (context.get("target_region_synonyms") or []))
-    fn = group((context.get("function_terms") or []) + (context.get("function_synonyms") or []), limit=3)
-    if src:
-        parts.append(src)
-    if tgt:
-        parts.append(tgt)
+    src_group = group(
+        _region_search_terms(src)
+        + (context.get("source_region_synonyms") or [])
+    )
+    tgt_group = group(
+        _region_search_terms(tgt)
+        + (context.get("target_region_synonyms") or [])
+    )
+    if src_group:
+        parts.append(src_group)
+    if tgt_group:
+        parts.append(tgt_group)
+    fn_terms = list((context.get("function_terms") or []) + (context.get("function_synonyms") or []))
+    if context.get("object_type") in ("connection", "projection") or context.get("relation_keywords"):
+        fn_terms = fn_terms + CONNECTION_EVIDENCE_TERMS
+    fn = group(fn_terms, limit=6)
     if fn:
         parts.append(fn)
     return " AND ".join(parts)
@@ -3425,7 +3807,9 @@ async def _process_batch_item_v2(
     async with AsyncSessionLocal() as session:
         stage = "search"
         try:
-            context = await build_retrieval_context(session, target_type, uuid.UUID(target_id))
+            context = await build_retrieval_context(
+                session, target_type, uuid.UUID(target_id), mode=mode
+            )
             await _set_item_stage(
                 session, item_id, "searching",
                 started_at="SQL:COALESCE(started_at, now())",
@@ -3435,9 +3819,21 @@ async def _process_batch_item_v2(
                 claim_text_snapshot=context.get("claim_text") or "",
                 claim_components_snapshot=context.get("claim_components") or [],
             )
-            query = await build_search_query(session, target_type, uuid.UUID(target_id))
+            query = await build_search_query(
+                session, target_type, uuid.UUID(target_id), mode=mode
+            )
             async with sem_search:
                 papers = await _search_with_retry(query, limit=max(10, max_papers * 3))
+            if not papers:
+                # ABSTRACT-only missed everything → retry with BODY-inclusive query
+                wide_query = await build_search_query(
+                    session, target_type, uuid.UUID(target_id), mode=mode, abstract_only=False
+                )
+                if wide_query and wide_query != query:
+                    async with sem_search:
+                        papers = await _search_with_retry(wide_query, limit=max(10, max_papers * 3))
+                    if papers:
+                        query = wide_query
             if not papers:
                 await _set_item_stage(
                     session, item_id, "awaiting_review",
@@ -3450,9 +3846,10 @@ async def _process_batch_item_v2(
                 return
             ranked = _rank_papers(papers, context)
             selected = ranked[:max_papers]
+            kept, semantic_skipped = await semantic_filter_papers(selected, context)
             candidates: list[dict] = []
             last_llm_model: str | None = None
-            for paper in selected:
+            for paper in kept:
                 pmid = (paper.get("pmid") or "").strip()
                 if not pmid:
                     continue
@@ -3502,7 +3899,7 @@ async def _process_batch_item_v2(
                     function_synonyms=context.get("function_synonyms") or [],
                     relation_keywords=context.get("relation_keywords") or [],
                 )
-                windows = build_windows(ranked_paras, all_paragraphs, top_k=20, window=1)
+                windows = build_windows(ranked_paras, all_paragraphs)
                 stage = "extract"
                 await _set_item_stage(session, item_id, "extracting")
                 async with sem_deepseek:
@@ -3556,6 +3953,16 @@ async def _process_batch_item_v2(
                     and coverage.get("full_claim_supported")
                 ):
                     break
+            # audit-visible semantic skips (never silently dropped)
+            for p in semantic_skipped:
+                candidates.append(
+                    {
+                        **p,
+                        "error_code": "SEMANTIC_SKIPPED",
+                        "error_message": p.get("semantic_skip_reason") or "relevance below threshold",
+                        "passages": [],
+                    }
+                )
             await _save_item_candidates(session, item_id, candidates)
             verified_any = any(
                 p.get("source_verified")
@@ -4148,4 +4555,135 @@ async def create_batch_task(
         "target_count": estimate,
         "skipped_active_targets": 0,
         "auto_started": not start_paused,
+    }
+
+
+# ---- Paper Library (read-only) ----
+
+
+async def list_papers(
+    session: AsyncSession,
+    *,
+    search: str = "",
+    oa: bool | None = None,
+    year: int | None = None,
+    has_fulltext: bool | None = None,
+    page: int = 1,
+    page_size: int = 20,
+) -> dict:
+    """Paper Library: paginated read-only list over paper_sources."""
+    where = ["1=1"]
+    params: dict = {}
+    if search:
+        where.append("(title ILIKE :q OR journal ILIKE :q OR pmid ILIKE :q OR doi ILIKE :q)")
+        params["q"] = f"%{search}%"
+    if oa is not None:
+        where.append("is_oa = :oa")
+        params["oa"] = oa
+    if year is not None:
+        where.append("publication_year = :yr")
+        params["yr"] = year
+    if has_fulltext is not None:
+        where.append("fulltext_available = :ft")
+        params["ft"] = has_fulltext
+    clause = " AND ".join(where)
+    params["lim"] = page_size
+    params["off"] = (max(1, page) - 1) * page_size
+    rows = (
+        await session.execute(
+            text(
+                f"SELECT ps.id, ps.pmid, ps.pmcid, ps.doi, ps.title, ps.journal, "
+                f"ps.publication_year, ps.is_oa, ps.abstract_available, ps.fulltext_available, "
+                f"(SELECT COUNT(*) FROM paper_passages pp WHERE pp.paper_id = ps.id) AS paragraph_count, "
+                f"(SELECT COUNT(*) FROM mirror_evidence_records er WHERE er.paper_id = ps.id) AS evidence_count "
+                f"FROM paper_sources ps WHERE {clause} ORDER BY ps.fetched_at DESC NULLS LAST "
+                f"LIMIT :lim OFFSET :off"
+            ),
+            params,
+        )
+    ).all()
+    total = (
+        await session.execute(text(f"SELECT COUNT(*) FROM paper_sources WHERE {clause}"), params)
+    ).scalar_one()
+    return {
+        "items": [
+            {
+                "id": str(r[0]),
+                "pmid": r[1],
+                "pmcid": r[2],
+                "doi": r[3],
+                "title": r[4],
+                "journal": r[5],
+                "publication_year": r[6],
+                "is_oa": bool(r[7]),
+                "abstract_available": bool(r[8]),
+                "fulltext_available": bool(r[9]),
+                "paragraph_count": int(r[10] or 0),
+                "evidence_count": int(r[11] or 0),
+            }
+            for r in rows
+        ],
+        "total": int(total),
+    }
+
+
+async def get_paper_detail(session: AsyncSession, paper_id: uuid.UUID) -> dict:
+    """Paper Library detail: metadata + paragraphs + linked evidence targets."""
+    row = (
+        await session.execute(
+            text(
+                "SELECT id, source, pmid, pmcid, doi, title, journal, publication_year, "
+                "is_oa, abstract_available, fulltext_available, metadata_json "
+                "FROM paper_sources WHERE id = :pid"
+            ),
+            {"pid": paper_id},
+        )
+    ).first()
+    if row is None:
+        raise ValueError("paper not found")
+    paragraphs = (
+        await session.execute(
+            text(
+                "SELECT paragraph_id, section_title, paragraph_index, passage_text, source_scope "
+                "FROM paper_passages WHERE paper_id = :pid ORDER BY paragraph_index"
+            ),
+            {"pid": paper_id},
+        )
+    ).all()
+    evidence = (
+        await session.execute(
+            text(
+                "SELECT evidence_target_type, evidence_target_id FROM mirror_evidence_records "
+                "WHERE paper_id = :pid AND verification_status IN ('human_verified','ai_extracted')"
+            ),
+            {"pid": paper_id},
+        )
+    ).all()
+    return {
+        "paper": {
+            "id": str(row[0]),
+            "source": row[1],
+            "pmid": row[2],
+            "pmcid": row[3],
+            "doi": row[4],
+            "title": row[5],
+            "journal": row[6],
+            "publication_year": row[7],
+            "is_oa": bool(row[8]),
+            "abstract_available": bool(row[9]),
+            "fulltext_available": bool(row[10]),
+            "metadata_json": row[11],
+        },
+        "paragraphs": [
+            {
+                "paragraph_id": p[0],
+                "section_title": p[1],
+                "paragraph_index": p[2],
+                "passage_text": p[3],
+                "source_scope": p[4],
+            }
+            for p in paragraphs
+        ],
+        "evidence_count": len(evidence),
+        "targets": [{"target_type": t[0], "target_id": str(t[1])} for t in evidence],
     }

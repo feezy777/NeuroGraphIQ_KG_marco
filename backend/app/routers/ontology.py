@@ -631,9 +631,19 @@ async def paper_evidence_search(
         info = await pes.pack_target_info(
             session, body.target_type, body.target_id, mode=body.mode
         )
-        context = await pes.build_retrieval_context(session, body.target_type, body.target_id)
+        context = await pes.build_retrieval_context(
+            session, body.target_type, body.target_id, mode=body.mode
+        )
         query = (body.query_override or "").strip() or pes._build_epmc_query(context) or info["query"]
         papers = await pes.search_papers(query, limit=body.limit)
+        # ABSTRACT-only can miss papers that only mention the terms in the body:
+        # fall back to the BODY-inclusive query when nothing matched.
+        if not papers and not (body.query_override or "").strip():
+            fallback = pes._build_epmc_query(context, abstract_only=False) or ""
+            if fallback and fallback != query:
+                papers = await pes.search_papers(fallback, limit=body.limit)
+                if papers:
+                    query = fallback
         ranked = pes._rank_papers(papers, context)
         for p in ranked:
             text_blob = f"{p.get('title') or ''} {p.get('abstract') or ''} {p.get('journal') or ''}".lower()
@@ -663,7 +673,9 @@ async def paper_evidence_extract_selected(
     _auth: str = Depends(require_role("reviewer")),
 ):
     try:
-        context = await pes.build_retrieval_context(session, body.target_type, body.target_id)
+        context = await pes.build_retrieval_context(
+            session, body.target_type, body.target_id, mode=body.mode
+        )
         cfg = pes.get_settings()
         sem_fetch = asyncio.Semaphore(cfg.paper_fetch_concurrency)
         sem_deepseek = asyncio.Semaphore(cfg.ontology_residual_concurrency)
@@ -675,6 +687,7 @@ async def paper_evidence_extract_selected(
             max_papers=len(papers),
             only_oa=body.only_oa,
             stop_after_strong_support=body.stop_after_strong_support,
+            mode=body.mode,
             sem_fetch=sem_fetch,
             sem_deepseek=sem_deepseek,
         )
@@ -793,7 +806,9 @@ async def paper_evidence_extract(
         pmcid = (body.pmcid or "").strip()
         if not (pmid or doi or pmcid):
             raise ValueError("paper identifier required (pmid / pmcid / doi)")
-        context = await pes.build_retrieval_context(session, body.target_type, body.target_id)
+        context = await pes.build_retrieval_context(
+            session, body.target_type, body.target_id, mode=body.mode
+        )
         cached, metadata = await pfs.ensure_paper_cached(
             session, pmid=pmid or None, pmcid=pmcid or None, doi=doi or None
         )
@@ -816,7 +831,7 @@ async def paper_evidence_extract(
                 "authors": meta.get("authors", ""),
                 "source": paper_source.source,
             }
-        abstract = (body.abstract or "").strip()
+        abstract = (body.abstract or "").strip() or (paper.get("abstract") or "").strip()
         xml_text = await pfs.fetch_oa_fulltext_xml(
             pmid=paper.get("pmid") or pmid or None,
             pmcid=paper.get("pmcid") or pmcid or None,
@@ -849,7 +864,7 @@ async def paper_evidence_extract(
             function_synonyms=context.get("function_synonyms") or [],
             relation_keywords=context.get("relation_keywords") or [],
         )
-        windows = build_windows(ranked, all_paragraphs, top_k=20, window=1)
+        windows = build_windows(ranked, all_paragraphs)
         result = await pes.extract_passage_from_paper(
             claim=context,
             title=paper.get("title") or body.title or "",
@@ -1085,6 +1100,38 @@ async def paper_evidence_passage_validate_selection(
         return await pes.validate_passage_selection(
             session, body.paper_passage_id, body.selected_text
         )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail={"code": "INVALID_REQUEST", "message": str(exc)})
+
+
+@router.get("/evidence/papers")
+async def paper_library_list(
+    search: str | None = Query(default=None),
+    oa: bool | None = Query(default=None),
+    year: int | None = Query(default=None),
+    has_fulltext: bool | None = Query(default=None),
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=20, ge=1, le=100),
+    session: AsyncSession = Depends(get_db),
+):
+    return await pes.list_papers(
+        session,
+        search=search or "",
+        oa=oa,
+        year=year,
+        has_fulltext=has_fulltext,
+        page=page,
+        page_size=page_size,
+    )
+
+
+@router.get("/evidence/papers/{paper_id}")
+async def paper_library_detail(
+    paper_id: uuid.UUID,
+    session: AsyncSession = Depends(get_db),
+):
+    try:
+        return await pes.get_paper_detail(session, paper_id)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail={"code": "INVALID_REQUEST", "message": str(exc)})
 
