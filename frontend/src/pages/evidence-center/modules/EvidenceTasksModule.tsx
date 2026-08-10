@@ -53,7 +53,7 @@ function TaskRow({ task, selected, onSelect, onStartReview, onOpen }: {
         <span className={`evidence-task-chip evidence-task-chip-${taskReviewTone(task.review_status)}`}>审核 · {reviewLabel}</span>
       </div>
       <div className="evidence-task-actions">
-        <button type="button" className="btn btn-xs btn-primary" onClick={onStartReview}>开始人工处理</button>
+        <button type="button" className="btn btn-xs" onClick={onStartReview}>开始人工处理</button>
         {task.awaiting_review_items > 0 && (
           <button type="button" className="btn btn-xs" onClick={onOpen}>跳转待审核</button>
         )}
@@ -160,7 +160,7 @@ export function EvidenceTasksModule() {
         </div>
         <div className="evidence-task-toolbar-actions">
           <button type="button" className="btn btn-sm" onClick={() => void loadTasks()}>刷新</button>
-          <button type="button" className="btn btn-sm btn-primary" onClick={() => setCreateOpen(true)}>创建批量预处理</button>
+          <button type="button" className="btn btn-sm" onClick={() => setCreateOpen(true)}>创建批量预处理</button>
         </div>
       </div>
 
