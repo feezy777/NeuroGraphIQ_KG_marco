@@ -1,6 +1,10 @@
 import { EvidenceCenterProvider, useEvidenceCenter, type ModuleKey } from './EvidenceCenterContext'
 import { EvidenceCenterHeader } from './EvidenceCenterHeader'
+import { EvidenceCandidatesModule } from './modules/EvidenceCandidatesModule'
+import { EvidencePromotionModule } from './modules/EvidencePromotionModule'
+import { EvidenceReviewModule } from './modules/EvidenceReviewModule'
 import { EvidenceTasksModule } from './modules/EvidenceTasksModule'
+import { PaperLibraryModule } from './modules/PaperLibraryModule'
 
 const MODULE_TITLE: Record<ModuleKey, string> = {
   tasks: '佐证任务',
@@ -23,7 +27,10 @@ function EvidenceCenterBody() {
     <div className="evidence-center-body">
       <div className="evidence-module-hint">{MODULE_HINT[state.module]}</div>
       {state.module === 'tasks' && <EvidenceTasksModule />}
-      {/* papers/candidates/review/promotion 模块在 Task 6-9 接入 */}
+      {state.module === 'papers' && <PaperLibraryModule />}
+      {state.module === 'candidates' && <EvidenceCandidatesModule />}
+      {state.module === 'review' && <EvidenceReviewModule />}
+      {state.module === 'promotion' && <EvidencePromotionModule />}
     </div>
   )
 }

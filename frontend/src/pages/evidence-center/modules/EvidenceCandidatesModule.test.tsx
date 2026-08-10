@@ -257,4 +257,27 @@ describe('EvidenceCandidatesModule', () => {
     await waitFor(() => expect(endpoints.searchPaperEvidence).toHaveBeenCalled())
     expect(screen.queryByText('A Study of R1 to R2 Projection')).toBeNull()
   })
+
+  it('无任务时从 sessionStorage initial-queue 一次性恢复队列(数据中心入口交接)', async () => {
+    sessionStorage.setItem(
+      'evidence-center.initial-queue',
+      JSON.stringify({
+        items: [
+          { target_type: 'connection', target_id: 'r1-r2', label: 'R1 → R2 连接', confidence: 0.7 },
+          { target_type: 'region_function', target_id: 'f-1', label: 'R1 功能', confidence: 0.5 },
+        ],
+        taskId: null,
+      }),
+    )
+    window.location.hash = '#/evidence-center?module=candidates&target_type=connection&target_id=r1-r2'
+    render(
+      <EvidenceCenterProvider>
+        <EvidenceCandidatesModule />
+      </EvidenceCenterProvider>,
+    )
+    await waitFor(() => expect(screen.getByText('R1 功能')).toBeTruthy())
+    expect(screen.getByText('R1 → R2 连接')).toBeTruthy()
+    expect(screen.getByText(/已从数据中心恢复 2 个待处理对象/)).toBeTruthy()
+    expect(sessionStorage.getItem('evidence-center.initial-queue')).toBeNull()
+  })
 })

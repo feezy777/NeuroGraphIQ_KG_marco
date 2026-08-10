@@ -9,6 +9,7 @@ import {
   type PaperSearchResponse,
 } from '../../../api/endpoints'
 import { useEvidenceCenter } from '../EvidenceCenterContext'
+import { INITIAL_QUEUE_KEY } from '../evidenceCenterUrl'
 import { candidatePassagesToWorkbench } from '../components/candidatePassages'
 import { ClaimPanel } from '../components/ClaimPanel'
 import { DIRECTION_LABEL, type Direction, type QueueEntry, type QueueStatus, type WorkbenchPassage } from '../components/types'
@@ -277,6 +278,37 @@ export function EvidenceCandidatesModule() {
     setExcludedPaperIds(new Set())
     setMessage(null)
   }, [current?.target_id])
+
+  // 数据中心跳转兼容:无任务时从 sessionStorage initial-queue 一次性恢复队列
+  // (loadItems 无 taskId 时已清空队列、目标切换 effect 已清 message,此 effect 声明最晚,恢复覆盖之)
+  useEffect(() => {
+    if (state.taskId) return
+    try {
+      const raw = sessionStorage.getItem(INITIAL_QUEUE_KEY)
+      if (!raw) return
+      const parsed = JSON.parse(raw) as {
+        items?: Array<{ target_type?: string; target_id?: string; label?: string; confidence?: number | null }>
+      } | null
+      const items = parsed?.items
+      if (!Array.isArray(items) || items.length === 0) return
+      sessionStorage.removeItem(INITIAL_QUEUE_KEY)
+      const restored: QueueEntry[] = items
+        .filter(it => it && typeof it.target_type === 'string' && typeof it.target_id === 'string')
+        .map(it => ({
+          target_type: it.target_type as string,
+          target_id: it.target_id as string,
+          label: it.label || (it.target_id as string),
+          confidence: typeof it.confidence === 'number' ? it.confidence : null,
+          status: 'pending' as const,
+          evidenceCount: 0,
+        }))
+      if (restored.length === 0) return
+      setQueue(restored)
+      setMessage(`已从数据中心恢复 ${restored.length} 个待处理对象，可手动检索或直接加入人工审核`)
+    } catch {
+      // 交接数据损坏时忽略,保持空态
+    }
+  }, [state.taskId, setQueue])
 
   const mode = current?.target_type === 'connection' || current?.target_type === 'projection' ? 'existence' : 'function'
 
