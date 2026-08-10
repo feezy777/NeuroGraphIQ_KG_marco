@@ -21,7 +21,7 @@ import {
   type PaperSearchResponse,
 } from '../../api/endpoints'
 import { ConfirmDialog } from '../../components/ConfirmDialog'
-import { AttachDialog } from '../evidence-center/components/AttachDialog'
+import { PromotionDialog } from '../evidence-center/components/PromotionDialog'
 import { candidatePassagesToWorkbench } from '../evidence-center/components/candidatePassages'
 import { ClaimPanel } from '../evidence-center/components/ClaimPanel'
 import { CoveragePanel } from '../evidence-center/components/CoveragePanel'
@@ -1123,7 +1123,7 @@ export function EvidenceReviewModal({ open, onClose, initialItems, initialTaskId
         <span className="ew-meta" title={attachDisabledReason}>{attachDisabled ? `ⓘ ${attachDisabledReason}` : '确认论文证据'}</span>
         <button type="button" data-testid="ew-attach" className="btn btn-primary btn-sm" disabled={attachDisabled} onClick={() => setConfirmOpen(true)}>确认论文证据</button>
       </div>
-      <AttachDialog
+      <PromotionDialog
         open={confirmOpen}
         targetLabel={current?.label ?? ''}
         claimText={claimText}

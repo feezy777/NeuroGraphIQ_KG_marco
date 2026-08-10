@@ -22,7 +22,7 @@ interface Props {
   onClose: () => void
 }
 
-export function AttachDialog({ open, targetLabel, claimText, paper, passages, components, direction, preview, busy, onConfirm, onClose }: Props) {
+export function PromotionDialog({ open, targetLabel, claimText, paper, passages, components, direction, preview, busy, onConfirm, onClose }: Props) {
   if (!open) return null
   return (
     <div className="ontology-modal-overlay" onClick={onClose}>
@@ -52,7 +52,7 @@ export function AttachDialog({ open, targetLabel, claimText, paper, passages, co
           {preview && !preview.allow && preview.block_reasons.map((r, i) => <div key={i} className="ew-bad">{r}</div>)}
           <p className="ew-meta">确认后将创建正式论文证据，并更新当前知识对象置信度。所有操作可在证据记录中追溯并可回滚。</p>
           <div className="ontology-modal-actions">
-            <button type="button" data-testid="ew-confirm-attach" className="btn btn-sm" disabled={!preview?.allow || busy} onClick={onConfirm}>确认入库</button>
+            <button type="button" data-testid="ew-confirm-attach" className="btn btn-sm" disabled={!preview?.allow || busy} onClick={onConfirm}>确认晋升</button>
             <button type="button" className="btn btn-sm" onClick={onClose}>取消</button>
           </div>
         </div>
