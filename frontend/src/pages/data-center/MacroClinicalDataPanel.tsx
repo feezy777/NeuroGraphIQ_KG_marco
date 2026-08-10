@@ -35,7 +35,7 @@ import { DataObjectDetailDrawer } from './DataObjectDetailDrawer'
 import { DataCenterTableRegion } from './DataCenterTableRegion'
 
 import { FormalObjectTableSection } from './FormalObjectTableSection'
-import { EvidenceReviewModal } from './EvidenceReviewModal'
+import { navigateToEvidenceCandidates } from '../evidence-center/evidenceCenterUrl'
 
 import { FormalObjectDetailDrawer } from './FormalObjectDetailDrawer'
 
@@ -156,8 +156,6 @@ export function MacroClinicalDataPanel({
   const [tick, setTick] = useState(0)
 
   const [selected, setSelected] = useState<MacroRow | null>(null)
-  const [reviewOpen, setReviewOpen] = useState(false)
-  const [reviewItems, setReviewItems] = useState<Array<{ target_type: string; target_id: string; label: string; confidence: number | null }>>([])
 
   const handlePaperEvidence = useCallback((rows: MacroRow[]) => {
     const targetType = macroTab === 'circuit_steps' ? 'circuit_step'
@@ -166,16 +164,17 @@ export function MacroClinicalDataPanel({
       : null
     if (!targetType) return
     const labelKeys = ['label', 'name', 'circuit_name', 'function_term', 'step_name', 'source_region_name_en', 'title']
-    setReviewItems(rows.map(r => {
-      const labelKey = labelKeys.find(k => r[k] != null)
-      return {
-        target_type: targetType,
-        target_id: String(r.id),
-        label: labelKey ? String(r[labelKey]) : String(r.id),
-        confidence: typeof r.confidence === 'number' ? r.confidence : null,
-      }
-    }))
-    setReviewOpen(true)
+    navigateToEvidenceCandidates({
+      items: rows.map(r => {
+        const labelKey = labelKeys.find(k => r[k] != null)
+        return {
+          target_type: targetType,
+          target_id: String(r.id),
+          label: labelKey ? String(r[labelKey]) : String(r.id),
+          confidence: typeof r.confidence === 'number' ? r.confidence : null,
+        }
+      }),
+    })
   }, [macroTab])
 
   const [legacySelected, setLegacySelected] = useState<MacroRow | null>(null)
@@ -714,8 +713,6 @@ export function MacroClinicalDataPanel({
       />
 
 
-
-      <EvidenceReviewModal open={reviewOpen} onClose={() => setReviewOpen(false)} initialItems={reviewItems} />
 
       {formalMapping && selected && (
 

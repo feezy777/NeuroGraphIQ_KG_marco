@@ -5,7 +5,7 @@ import { StatusBadge } from '../components/StatusBadge'
 import { ModelBadge } from '../components/ModelBadge'
 import { CancelConfirmDialog } from '../components/CancelConfirmDialog'
 import { getTaskDef, cancelTask, pauseTask, resumeTask, retryTask, TASK_TYPE_OPTIONS } from '../services/taskRegistry'
-import { EvidenceReviewModal } from './data-center/EvidenceReviewModal'
+import { navigateToEvidenceCandidates } from './evidence-center/evidenceCenterUrl'
 import { CreateBatchTaskDialog } from './evidence-center/components/CreateBatchTaskDialog'
 import { useGlobalGranularity } from '../hooks/useGlobalGranularity'
 
@@ -81,7 +81,6 @@ export function BackgroundTaskCenterPage() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [bulkCancelling, setBulkCancelling] = useState(false)
   const [bulkResult, setBulkResult] = useState<string | null>(null)
-  const [workbenchTaskId, setWorkbenchTaskId] = useState<string | null>(null)
   const [createOpen, setCreateOpen] = useState(false)
   const { granularity } = useGlobalGranularity()
 
@@ -288,7 +287,7 @@ export function BackgroundTaskCenterPage() {
                 onPause={() => { void pauseTask(task) }}
                 onResume={() => { void resumeTask(task) }}
                 onRetry={() => { void retryTask(task) }}
-                onOpenWorkbench={() => setWorkbenchTaskId(task.id)}
+                onOpenWorkbench={() => navigateToEvidenceCandidates({ taskId: task.id })}
                 onViewDrawer={() => setDrawerTask(task)}
                 onCancel={() => setCancelTarget(task)} />
             ))
@@ -310,18 +309,13 @@ export function BackgroundTaskCenterPage() {
       {cancelTarget && (
         <CancelConfirmDialog task={cancelTarget} onClose={() => setCancelTarget(null)} />
       )}
-      <EvidenceReviewModal
-        open={workbenchTaskId !== null}
-        initialTaskId={workbenchTaskId ?? undefined}
-        onClose={() => setWorkbenchTaskId(null)}
-      />
       <CreateBatchTaskDialog
         open={createOpen}
         granularity={granularity}
         onClose={() => setCreateOpen(false)}
         onCreated={(taskId) => {
           setCreateOpen(false)
-          setWorkbenchTaskId(taskId)
+          navigateToEvidenceCandidates({ taskId })
         }}
       />
     </div>

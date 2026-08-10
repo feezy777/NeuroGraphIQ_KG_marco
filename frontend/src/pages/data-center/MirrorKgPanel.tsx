@@ -18,7 +18,7 @@ import {
 } from '../../api/endpoints'
 import { FormalObjectTableSection } from './FormalObjectTableSection'
 import { FormalObjectDetailDrawer } from './FormalObjectDetailDrawer'
-import { EvidenceReviewModal } from './EvidenceReviewModal'
+import { navigateToEvidenceCandidates } from '../evidence-center/evidenceCenterUrl'
 import { CreateBatchTaskDialog } from '../evidence-center/components/CreateBatchTaskDialog'
 import { FieldCompletionModal } from './FieldCompletionModal'
 import { MultiTargetFieldCompletionModal } from './MultiTargetFieldCompletionModal'
@@ -95,10 +95,8 @@ export function MirrorKgPanel({
   const [selected, setSelected] = useState<FormalRow | null>(null)
   const [pendingSource, setPendingSource] = useState<{ type: string; id: string } | null>(null)
   const [evidenceCategory, setEvidenceCategory] = useState<'region' | 'connection' | 'circuit' | 'other'>('connection')
-  const [reviewOpen, setReviewOpen] = useState(false)
   const [batchOpen, setBatchOpen] = useState(false)
   const [batchTargetIds, setBatchTargetIds] = useState<string[]>([])
-  const [reviewItems, setReviewItems] = useState<Array<{ target_type: string; target_id: string; label: string; confidence: number | null }>>([])
   const categoryTypes = useMemo(() => {
     if (mirrorTab !== 'evidence') return undefined
     if (evidenceCategory === 'region') return ['mirror_function', 'region_function']
@@ -288,14 +286,15 @@ export function MirrorKgPanel({
           granularityLevel={granularityLevel}
           onPaperEvidence={(rows) => {
             const labelKeys = ['label', 'name', 'circuit_name', 'function_term', 'step_name', 'source_region_name_en', 'title']
-            setReviewItems(rows.map(r => {
-              const targetType = mirrorTab === 'evidence' && typeof r.evidence_target_type === 'string'
-                ? r.evidence_target_type as string
-                : (mapping?.targetType as string) || 'connection'
-              const labelKey = labelKeys.find(k => r[k] != null)
-              return { target_type: targetType, target_id: String(r.id), label: labelKey ? String(r[labelKey]) : String(r.id), confidence: typeof r.confidence === 'number' ? r.confidence : null }
-            }))
-            setReviewOpen(true)
+            navigateToEvidenceCandidates({
+              items: rows.map(r => {
+                const targetType = mirrorTab === 'evidence' && typeof r.evidence_target_type === 'string'
+                  ? r.evidence_target_type as string
+                  : (mapping?.targetType as string) || 'connection'
+                const labelKey = labelKeys.find(k => r[k] != null)
+                return { target_type: targetType, target_id: String(r.id), label: labelKey ? String(r[labelKey]) : String(r.id), confidence: typeof r.confidence === 'number' ? r.confidence : null }
+              }),
+            })
           }}
           onBatchPaperEvidence={(rows) => {
             setBatchTargetIds(rows.map(r => String(r.id)))
@@ -348,7 +347,6 @@ export function MirrorKgPanel({
           setDetailCompletionOpen(true)
         }}
       />
-      <EvidenceReviewModal open={reviewOpen} onClose={() => setReviewOpen(false)} initialItems={reviewItems} />
       <CreateBatchTaskDialog
         open={batchOpen}
         granularity={granularityLevel}
