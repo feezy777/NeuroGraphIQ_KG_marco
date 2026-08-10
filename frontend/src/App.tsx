@@ -16,6 +16,7 @@ import { ValidationCenterPage } from './pages/validation-center/ValidationCenter
 import { SettingsPage } from './pages/SettingsPage'
 import { MirrorKgPage } from './pages/MirrorKgPage'
 import { OntologyCenterPage } from './pages/ontology-center/OntologyCenterPage'
+import { EvidenceCenterPage } from './pages/evidence-center/EvidenceCenterPage'
 import { BackgroundTaskCenterPage } from './pages/BackgroundTaskCenter'
 import { GraphExplorerPage } from './pages/GraphExplorerPage'
 import './components/brain-3d/brain3d.css'
@@ -30,6 +31,7 @@ const ROUTES: Record<string, ComponentType> = {
   '/import-batches': ImportBatchesPage,
   '/import-pipeline': ImportPipelinePage,
   '/data-center': DataCenterPage,
+  '/evidence-center': EvidenceCenterPage,
   '/ontology-center': OntologyCenterPage,
   '/llm-extraction': LlmExtractionPage,
   '/mirror-kg': MirrorKgPage,
