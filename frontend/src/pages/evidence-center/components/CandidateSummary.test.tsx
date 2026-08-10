@@ -7,6 +7,7 @@ const DATA: CandidateSummaryData = {
   foundPapers: 5,
   extractedPapers: 3,
   verifiedPassages: 2,
+  selectedPassages: 2,
   coverageRatio: 0.5,
   direction: 'supports',
   modelAssessment: '支持连接存在',
@@ -43,6 +44,19 @@ describe('CandidateSummary', () => {
     render(<CandidateSummary data={DATA} onEnterReview={onEnterReview} />)
     fireEvent.click(screen.getByRole('button', { name: /进入人工审核/ }))
     expect(onEnterReview).toHaveBeenCalledTimes(1)
+  })
+
+  it('零选中片段时 [进入人工审核] 禁用并提示先勾选已核验片段', () => {
+    render(<CandidateSummary data={{ ...DATA, selectedPassages: 0 }} onEnterReview={() => {}} />)
+    const btn = screen.getByRole('button', { name: /进入人工审核/ }) as HTMLButtonElement
+    expect(btn.disabled).toBe(true)
+    expect(btn.title).toContain('请先勾选已核验的候选片段')
+  })
+
+  it('已勾选片段时 [进入人工审核] 可用且按钮显示选中数', () => {
+    render(<CandidateSummary data={DATA} onEnterReview={() => {}} />)
+    const btn = screen.getByRole('button', { name: /进入人工审核（2）/ }) as HTMLButtonElement
+    expect(btn.disabled).toBe(false)
   })
 
   it('禁止项:无 Reviewer Confidence / Direction 输入与 attach 控件', () => {

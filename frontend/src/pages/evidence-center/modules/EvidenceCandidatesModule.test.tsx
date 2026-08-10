@@ -216,6 +216,22 @@ describe('EvidenceCandidatesModule', () => {
     })
   })
 
+  it('往返:建立审核草稿后模块重挂载,重新打开证据视图不误删草稿', async () => {
+    renderModule()
+    await waitFor(() => expect(screen.getByText('A Study of R1 to R2 Projection')).toBeTruthy())
+    // 勾选片段 → 写入审核草稿
+    fireEvent.click(screen.getByRole('button', { name: /查看证据候选/ }))
+    fireEvent.click(screen.getAllByRole('checkbox')[0])
+    await waitFor(() => expect(sessionStorage.getItem('evidence-center.review-draft.r1-r2')).toBeTruthy())
+    // 模拟「进入审核 → 返回候选」:模块重挂载,选中状态清空
+    cleanup()
+    renderModule()
+    await waitFor(() => expect(screen.getByText('A Study of R1 to R2 Projection')).toBeTruthy())
+    // 打开任意论文证据视图(零选中)→ 已存草稿必须保留
+    fireEvent.click(screen.getByRole('button', { name: /查看证据候选/ }))
+    expect(sessionStorage.getItem('evidence-center.review-draft.r1-r2')).toBeTruthy()
+  })
+
   it('排除此候选从列表移除论文卡', async () => {
     renderModule()
     await waitFor(() => expect(screen.getByText('A Study of R1 to R2 Projection')).toBeTruthy())
@@ -372,6 +388,70 @@ describe('EvidenceCandidatesModule', () => {
         ]),
       })),
     )
+  })
+
+  it('手动批量提取后:提取结果卡片渲染且出现「查看证据候选」', async () => {
+    vi.mocked(endpoints.listPaperEvidenceTaskItems).mockResolvedValue({ items: [] })
+    vi.mocked(endpoints.searchPaperEvidence).mockResolvedValue({
+      target_info: { target_type: 'connection', target_id: 'r1-r2', function_term: '', mode: 'existence', query: '', info: {} },
+      papers: [{
+        pmid: '99999999',
+        doi: '10.9999/abc',
+        title: 'A Newly Found Paper',
+        journal: 'Nature',
+        year: '2025',
+        authors: '',
+        abstract: '',
+        source: 'europepmc',
+        is_open_access: true,
+      }],
+    })
+    vi.mocked(endpoints.extractSelectedPaperEvidence).mockResolvedValueOnce({
+      claim: '',
+      claim_components: [],
+      results: [{
+        paper_id: 'paper-2',
+        pmid: '99999999',
+        doi: '10.9999/abc',
+        pmcid: null,
+        title: 'A Newly Found Paper',
+        journal: 'Nature',
+        year: '2025',
+        is_oa: true,
+        fulltext_fetched: true,
+        model_direction: 'supports',
+        model_assessment: '支持连接存在',
+        coverage_summary: null,
+        passages: [{
+          passage: 'Evidence from the newly extracted paper.',
+          source_scope: 'abstract',
+          section_title: null,
+          direction: 'supports',
+          evidence_level: 'direct',
+          source_verified: true,
+          supported_components: ['relation'],
+        }],
+      }],
+      llm_model: null,
+    })
+    window.location.hash = '#/evidence-center?module=candidates&task_id=t1&target_type=connection&target_id=r1-r2'
+    render(
+      <EvidenceCenterProvider>
+        <EvidenceCandidatesModule />
+      </EvidenceCenterProvider>,
+    )
+    await waitFor(() => expect(screen.getByText('查找相关论文')).toBeTruthy())
+    fireEvent.click(screen.getByRole('button', { name: /重新搜索/ }))
+    await waitFor(() => expect(screen.getByText('A Newly Found Paper')).toBeTruthy())
+    fireEvent.click(screen.getByRole('button', { name: /全选/ }))
+    fireEvent.click(screen.getByRole('button', { name: /提取所选论文（1）/ }))
+    // 提取结果卡:AI 判断 / 片段 / 已核验 + [查看证据候选];检索卡保留(标题出现两处)
+    await waitFor(() => expect(screen.getByRole('button', { name: /查看证据候选/ })).toBeTruthy())
+    expect(screen.getByText(/AI 判断 支持/)).toBeTruthy()
+    expect(screen.getByText('片段 1')).toBeTruthy()
+    expect(screen.getByText('已核验 1')).toBeTruthy()
+    expect(screen.getByText(/候选论文（2）/)).toBeTruthy()
+    expect(screen.getAllByText('A Newly Found Paper')).toHaveLength(2)
   })
 
   it('OA Only / 年份过滤在客户端过滤搜索结果', async () => {

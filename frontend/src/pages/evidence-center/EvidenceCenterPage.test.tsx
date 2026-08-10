@@ -53,7 +53,31 @@ function makeItem(overrides: Record<string, unknown>) {
 }
 
 const TASK_ITEMS = [
-  makeItem({ candidate_papers: [{ paper_id: 'p1' }] }),
+  makeItem({
+    candidate_papers: [{
+      paper_id: 'p1',
+      pmid: '12345678',
+      doi: null,
+      pmcid: null,
+      title: 'Paper One',
+      journal: 'Brain Journal',
+      year: '2024',
+      is_oa: true,
+      fulltext_fetched: true,
+      model_direction: null,
+      model_assessment: null,
+      coverage_summary: null,
+      passages: [{
+        passage: 'R1 projects to R2 in the macaque.',
+        source_scope: 'abstract',
+        section_title: null,
+        direction: 'supports',
+        evidence_level: 'direct',
+        source_verified: true,
+        supported_components: ['relation'],
+      }],
+    }],
+  }),
   makeItem({
     id: 'it2',
     target_type: 'region',
@@ -143,11 +167,19 @@ describe('EvidenceCenterPage', () => {
     expect(title()).toContain('审核')
   })
 
-  it('candidates 右栏渲染 CandidateSummary,点击 [进入人工审核] 跳转 review', async () => {
+  it('candidates 右栏渲染 CandidateSummary,勾选片段后点击 [进入人工审核] 跳转 review', async () => {
     vi.mocked(listPaperEvidenceTaskItems).mockResolvedValue({ items: TASK_ITEMS })
     window.location.hash = '#/evidence-center?module=candidates&task_id=t1'
     render(<EvidenceCenterPage />)
     await waitFor(() => expect(screen.getByTestId('evidence-candidate-summary')).toBeTruthy())
+    // 零选中时 [进入人工审核] 禁用
+    expect((screen.getByRole('button', { name: /进入人工审核/ }) as HTMLButtonElement).disabled).toBe(true)
+    // 勾选已核验片段后启用(左栏 ObjectQueue 也有 checkbox,需限定在证据视图内)
+    fireEvent.click(screen.getByRole('button', { name: /查看证据候选/ }))
+    fireEvent.click(within(screen.getByTestId('evidence-paper-view')).getByLabelText('选择片段'))
+    await waitFor(() =>
+      expect((screen.getByRole('button', { name: /进入人工审核/ }) as HTMLButtonElement).disabled).toBe(false),
+    )
     fireEvent.click(screen.getByRole('button', { name: /进入人工审核/ }))
     await waitFor(() => expect(window.location.hash).toContain('module=review'))
     expect(window.location.hash).toContain('target_id=r1-r2')

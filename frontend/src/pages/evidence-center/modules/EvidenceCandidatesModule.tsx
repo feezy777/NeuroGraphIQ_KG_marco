@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   extractSelectedPaperEvidence,
   getEvidenceTarget,
@@ -401,13 +401,21 @@ export function EvidenceCandidatesModule() {
     [evidencePaper],
   )
 
+  // 记录本 effect 最近一次写入的 (key, 论文),用于区分「用户清空选择」与「尚未选择/已切换论文」:
+  // 只有先前在同一论文上写入过草稿、现在选择被清空时才删除,避免误删用户已存在的审核草稿
+  const draftWrittenRef = useRef<{ key: string; paperId: string | null } | null>(null)
+
   useEffect(() => {
     if (!current || !evidencePaper) return
     const passages = candidatePassagesToWorkbench(evidencePaper.passages ?? [], evidencePaper.paper_id)
       .filter(p => selectedHashes.has(p.hash))
     const key = `${DRAFT_PREFIX}${current.target_id}`
+    const paperId = evidencePaper.paper_id || evidencePaper.pmid
     if (passages.length === 0) {
-      sessionStorage.removeItem(key)
+      if (draftWrittenRef.current?.key === key && draftWrittenRef.current.paperId === paperId) {
+        sessionStorage.removeItem(key)
+        draftWrittenRef.current = null
+      }
       return
     }
     const draft: ReviewDraft = {
@@ -418,6 +426,7 @@ export function EvidenceCandidatesModule() {
       pmid: evidencePaper.pmid,
     }
     sessionStorage.setItem(key, JSON.stringify(draft))
+    draftWrittenRef.current = { key, paperId }
   }, [current, evidencePaper, selectedHashes])
 
   // ─── 右栏候选摘要(Context → RightPanel) ───
@@ -432,16 +441,17 @@ export function EvidenceCandidatesModule() {
       foundPapers: all.length + (manualResult?.papers.length ?? 0),
       extractedPapers: all.length,
       verifiedPassages: verified.length,
+      selectedPassages: selectedHashes.size,
       coverageRatio: coverage.coverage_ratio,
       direction: aggregateTmpDirection(coverage, verified),
       modelAssessment: all[0]?.model_assessment ?? null,
     }
-  }, [current, dto, candidates, manualResults, manualResult, claimComponents])
+  }, [current, dto, candidates, manualResults, manualResult, claimComponents, selectedHashes])
 
   useEffect(() => { setCandidateSummary(summary) }, [summary, setCandidateSummary])
   useEffect(() => () => { setCandidateSummary(null) }, [setCandidateSummary])
 
-  const totalPapers = candidates.length + visibleSearchPapers.length
+  const totalPapers = candidates.length + manualResults.length + visibleSearchPapers.length
 
   return (
     <div className="evidence-candidates">
@@ -614,6 +624,21 @@ export function EvidenceCandidatesModule() {
                       onViewEvidence={() => setEvidenceViewPaperId(cand.paper_id || cand.pmid)}
                     />
                   ))}
+                  {manualResults
+                    .filter(c => !excludedPaperIds.has(c.paper_id || c.pmid))
+                    .map(cand => (
+                      <CandidatePaperCard
+                        key={`m-${cand.paper_id || cand.pmid}`}
+                        paper={extractedToCardData(cand)}
+                        selected={false}
+                        reExtracting={reExtractBusy === (cand.paper_id || cand.pmid)}
+                        onToggleSelected={() => undefined}
+                        onOpenDetail={() => setDetailPaperId(cand.paper_id)}
+                        onExclude={() => setExcludedPaperIds(prev => new Set(prev).add(cand.paper_id || cand.pmid))}
+                        onReExtract={() => void handleReExtract(cand)}
+                        onViewEvidence={() => setEvidenceViewPaperId(cand.paper_id || cand.pmid)}
+                      />
+                    ))}
                 </div>
               </>
             )}

@@ -6,6 +6,8 @@ export interface CandidateSummaryData {
   foundPapers: number
   extractedPapers: number
   verifiedPassages: number
+  /** 当前已勾选的候选片段数(零时禁止进入人工审核) */
+  selectedPassages: number
   /** 0-1;null 表示无可计算覆盖 */
   coverageRatio: number | null
   direction: Direction | null
@@ -63,8 +65,14 @@ export function CandidateSummary({ data, onEnterReview }: Props) {
           {data.modelAssessment && (
             <p className="evidence-summary-assessment">模型评估: {data.modelAssessment}</p>
           )}
-          <button type="button" className="btn btn-sm btn-primary evidence-summary-review" onClick={onEnterReview}>
-            进入人工审核
+          <button
+            type="button"
+            className="btn btn-sm btn-primary evidence-summary-review"
+            disabled={data.selectedPassages === 0}
+            title={data.selectedPassages === 0 ? '请先勾选已核验的候选片段' : '进入人工审核'}
+            onClick={onEnterReview}
+          >
+            进入人工审核{data.selectedPassages > 0 ? `（${data.selectedPassages}）` : ''}
           </button>
         </>
       )}
