@@ -5293,6 +5293,9 @@ export interface PaperEvidenceItem {
   verification_by?: string | null
   suggested_confidence?: number | null
   confidence_adjustment_status?: string | null
+  invalidated_by?: string | null
+  invalidated_at?: string | null
+  invalidation_reason?: string | null
   passage_count?: number
   links: { pubmed: string | null; doi: string | null }
   passages?: PaperEvidencePassageDetail[]
@@ -5410,11 +5413,15 @@ export interface ExtractedPaperCandidate {
   journal: string
   year: string
   is_oa: boolean
+  fulltext_fetched?: boolean | null
   paper_match_score: number
   model_direction: string | null
   model_assessment: string | null
   coverage_summary: Record<string, unknown> | null
   passages: Array<Record<string, unknown>>
+  semantic_relevance?: number | null
+  semantic_skip_reason?: string | null
+  evidence_dimension?: 'existence' | 'function' | 'mixed' | null
   error_code?: string | null
   error_message?: string | null
 }
@@ -5425,6 +5432,7 @@ export const extractSelectedPaperEvidence = (body: {
   papers: Array<{ pmid: string; doi?: string | null; pmcid?: string | null; title?: string | null }>
   only_oa?: boolean
   stop_after_strong_support?: boolean
+  mode?: 'function' | 'existence'
 }) => postJson<{
   claim: string
   claim_components: Array<Record<string, unknown>>
@@ -5712,3 +5720,41 @@ export interface ConfidenceAdjustmentItem {
 
 export const listConfidenceAdjustments = (p: { target_type: string; target_id: string; limit?: number }) =>
   getJson<{ items: ConfidenceAdjustmentItem[] }>('/api/ontology/evidence/adjustments', p)
+
+// ──── Paper Library (read-only) ──────────────────────────────────────────
+
+export interface EvidencePaperItem {
+  id: string
+  pmid: string | null
+  pmcid: string | null
+  doi: string | null
+  title: string | null
+  journal: string | null
+  publication_year: number | null
+  is_oa: boolean
+  abstract_available: boolean
+  fulltext_available: boolean
+  paragraph_count: number
+  evidence_count: number
+}
+
+export interface EvidencePaperParagraph {
+  paragraph_id: string
+  section_title: string | null
+  paragraph_index: number
+  passage_text: string
+  source_scope: string
+}
+
+export interface EvidencePaperDetail {
+  paper: EvidencePaperItem
+  paragraphs: EvidencePaperParagraph[]
+  evidence_count: number
+  targets: Array<{ target_type: string; target_id: string }>
+}
+
+export const listEvidencePapers = (p?: Record<string, string | number | boolean | undefined>) =>
+  getJson<{ items: EvidencePaperItem[]; total: number }>('/api/ontology/evidence/papers', p)
+
+export const getEvidencePaperDetail = (paperId: string) =>
+  getJson<EvidencePaperDetail>(`/api/ontology/evidence/papers/${paperId}`)
