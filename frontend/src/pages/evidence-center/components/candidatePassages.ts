@@ -2,7 +2,7 @@ import type { EvidenceLevel, WorkbenchPassage } from './types'
 
 /**
  * 将后端宽松的候选片段(Record)转换为工作台片段(WorkbenchPassage)。
- * 供证据候选模块 / 人工审核模块 / EvidenceReviewModal 共用。
+ * 供证据候选模块 / 人工审核模块共用(原工作台 EvidenceReviewModal 已改为跳转壳)。
  */
 export function candidatePassagesToWorkbench(
   passages: Array<Record<string, unknown>>,

@@ -35,3 +35,36 @@ export function buildEvidenceUrl(s: EvidenceCenterState): string {
   const q = params.toString()
   return `#/evidence-center${q ? `?${q}` : ''}`
 }
+
+/** 数据中心 → Evidence Center 候选模块的一次性队列交接 key */
+export const INITIAL_QUEUE_KEY = 'evidence-center.initial-queue'
+
+export interface EvidenceQueueHandoffItem {
+  target_type: string
+  target_id: string
+  label: string
+  confidence: number | null
+}
+
+/**
+ * 数据中心入口跳转 Evidence Center 候选模块:
+ * - 有 items 时写入 sessionStorage initial-queue(候选模块挂载时恢复队列,一次性消费)
+ * - hash 跳转到 candidates,并带首个对象的 target/task 参数
+ */
+export function navigateToEvidenceCandidates(opts: {
+  items?: EvidenceQueueHandoffItem[]
+  taskId?: string | null
+}): void {
+  const { items, taskId } = opts
+  if (items?.length) {
+    sessionStorage.setItem(INITIAL_QUEUE_KEY, JSON.stringify({ items, taskId: taskId ?? null }))
+  }
+  const first = items?.[0]
+  window.location.hash = buildEvidenceUrl({
+    module: 'candidates',
+    taskId: taskId ?? null,
+    targetType: first?.target_type ?? null,
+    targetId: first?.target_id ?? null,
+    paperId: null,
+  })
+}
