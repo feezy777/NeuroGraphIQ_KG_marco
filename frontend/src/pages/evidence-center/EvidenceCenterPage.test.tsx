@@ -148,12 +148,16 @@ describe('EvidenceCenterPage', () => {
     expect(screen.getByTestId('evidence-right-panel')).toBeTruthy()
   })
 
-  it('papers 模块例外:全宽渲染并隐藏左右栏', async () => {
+  it('papers 模块例外:全宽渲染并隐藏左右栏,论文库主区布局完整', async () => {
     window.location.hash = '#/evidence-center?module=papers'
     const { container } = render(<EvidenceCenterPage />)
     await waitFor(() => expect(container.querySelector('.evidence-center-layout-full')).toBeTruthy())
     expect(container.querySelector('.evidence-left')).toBeNull()
     expect(container.querySelector('.evidence-right')).toBeNull()
+    // 全宽下论文库完整渲染:搜索条 + 空态(不受 620px 主区限制影响)
+    expect(container.querySelector('.paper-module')).toBeTruthy()
+    expect(container.querySelector('.paper-search-bar')).toBeTruthy()
+    await waitFor(() => expect(screen.getByText(/暂无论文/)).toBeTruthy())
   })
 
   it('右栏随 module 切换:占位标题(任务/审核)与候选摘要(candidates)', () => {

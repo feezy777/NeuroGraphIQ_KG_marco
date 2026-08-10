@@ -2,6 +2,7 @@ import { useEvidenceCenter, type ModuleKey } from '../EvidenceCenterContext'
 import { CandidateSummary } from './CandidateSummary'
 import { PromotionImpact } from './PromotionImpact'
 import { ReviewerDecisionPanel } from './ReviewerDecisionPanel'
+import { TaskSummary } from './TaskSummary'
 
 const RIGHT_TITLES: Record<ModuleKey, string> = {
   tasks: '任务与队列概览',
@@ -11,9 +12,33 @@ const RIGHT_TITLES: Record<ModuleKey, string> = {
   promotion: '晋升确认',
 }
 
-/** 右栏插槽:候选模块渲染 CandidateSummary,审核模块渲染 ReviewerDecisionPanel,晋升模块渲染 PromotionImpact,其余模块暂为占位标题 */
+/** 右栏插槽:佐证任务渲染 TaskSummary,候选模块渲染 CandidateSummary,审核模块渲染 ReviewerDecisionPanel,晋升模块渲染 PromotionImpact */
 export function RightPanel({ module }: { module: ModuleKey }) {
-  const { state, candidateSummary, reviewDecision, promotionImpact, openTarget } = useEvidenceCenter()
+  const {
+    state,
+    taskSummary,
+    taskSummaryActions,
+    candidateSummary,
+    reviewDecision,
+    promotionImpact,
+    openTarget,
+    openTask,
+  } = useEvidenceCenter()
+
+  if (module === 'tasks') {
+    return (
+      <aside className="evidence-right-panel" data-testid="evidence-right-panel">
+        <TaskSummary
+          data={taskSummary}
+          onStartReview={() => {
+            if (taskSummary) openTask(taskSummary.id)
+          }}
+          onCreateBatch={taskSummaryActions.onCreateBatch}
+          onRefresh={taskSummaryActions.onRefresh}
+        />
+      </aside>
+    )
+  }
 
   if (module === 'candidates') {
     return (

@@ -2,6 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState, t
 import type { CandidateSummaryData } from './components/CandidateSummary'
 import type { PromotionImpactState } from './components/PromotionImpact'
 import type { ReviewDecisionState } from './components/ReviewerDecisionPanel'
+import type { TaskSummaryActions, TaskSummaryData } from './components/TaskSummary'
 import type { QueueEntry } from './components/types'
 import { buildEvidenceUrl, parseEvidenceUrl, type EvidenceCenterState } from './evidenceCenterUrl'
 
@@ -24,6 +25,12 @@ interface EvidenceCenterContextValue {
   /** 晋升模块推送的晋升影响状态(仅 promotion 模块使用,RightPanel 渲染 PromotionImpact) */
   promotionImpact: PromotionImpactState | null
   setPromotionImpact: (s: PromotionImpactState | null) => void
+  /** 佐证任务模块推送的选中任务摘要(仅 tasks 模块使用,RightPanel 渲染 TaskSummary) */
+  taskSummary: TaskSummaryData | null
+  setTaskSummary: (s: TaskSummaryData | null) => void
+  /** 佐证任务模块注册的右栏操作(创建批量预处理/刷新;对话框与列表都在模块内) */
+  taskSummaryActions: TaskSummaryActions
+  setTaskSummaryActions: (a: TaskSummaryActions) => void
 }
 
 const EvidenceCenterContext = createContext<EvidenceCenterContextValue | null>(null)
@@ -34,6 +41,11 @@ export function EvidenceCenterProvider({ children }: { children: ReactNode }) {
   const [candidateSummary, setCandidateSummary] = useState<CandidateSummaryData | null>(null)
   const [reviewDecision, setReviewDecision] = useState<ReviewDecisionState | null>(null)
   const [promotionImpact, setPromotionImpact] = useState<PromotionImpactState | null>(null)
+  const [taskSummary, setTaskSummary] = useState<TaskSummaryData | null>(null)
+  const [taskSummaryActions, setTaskSummaryActions] = useState<TaskSummaryActions>({
+    onCreateBatch: () => {},
+    onRefresh: () => {},
+  })
 
   useEffect(() => {
     const handler = () => setState(parseEvidenceUrl(window.location.hash))
@@ -74,7 +86,11 @@ export function EvidenceCenterProvider({ children }: { children: ReactNode }) {
     setReviewDecision,
     promotionImpact,
     setPromotionImpact,
-  }), [state, queue, gotoModule, openTask, openTarget, selectPaper, candidateSummary, reviewDecision, promotionImpact])
+    taskSummary,
+    setTaskSummary,
+    taskSummaryActions,
+    setTaskSummaryActions,
+  }), [state, queue, gotoModule, openTask, openTarget, selectPaper, candidateSummary, reviewDecision, promotionImpact, taskSummary, taskSummaryActions])
 
   return <EvidenceCenterContext.Provider value={value}>{children}</EvidenceCenterContext.Provider>
 }

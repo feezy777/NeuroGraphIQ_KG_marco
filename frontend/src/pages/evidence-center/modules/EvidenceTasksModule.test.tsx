@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import * as endpoints from '../../../api/endpoints'
 import { EvidenceCenterProvider } from '../EvidenceCenterContext'
+import { RightPanel } from '../components/RightPanel'
 import { EvidenceTasksModule } from './EvidenceTasksModule'
 
 vi.mock('../../../api/endpoints', () => ({
@@ -26,6 +27,20 @@ const TASK = {
 /** 匹配 "标签 <b>值</b>" 结构的统计文本(直接文本子节点不含 <b> 内数值) */
 const stat = (label: string, value: number) =>
   screen.getByText((_content, el) => el?.textContent === `${label} ${value}`)
+
+/** 在 Task Summary 内匹配 "标签 <b>值</b>" 结构(避免与任务行统计重复匹配) */
+const summaryStat = (label: string, value: number) =>
+  within(screen.getByTestId('evidence-task-summary'))
+    .getByText((_content, el) => el?.textContent === `${label} ${value}`)
+
+/** 模块 + 右栏 Task Summary 组合渲染(与页面级 EvidenceCenterPage 接线一致) */
+const renderWithRightPanel = () =>
+  render(
+    <EvidenceCenterProvider>
+      <EvidenceTasksModule />
+      <RightPanel module="tasks" />
+    </EvidenceCenterProvider>,
+  )
 
 describe('EvidenceTasksModule', () => {
   afterEach(() => { cleanup(); window.location.hash = '' })
@@ -104,5 +119,82 @@ describe('EvidenceTasksModule', () => {
     vi.mocked(endpoints.listPaperEvidenceTasks).mockResolvedValue({ items: [], total: 0 })
     render(<EvidenceCenterProvider><EvidenceTasksModule /></EvidenceCenterProvider>)
     await waitFor(() => expect(screen.getByText(/暂无佐证任务/)).toBeTruthy())
+  })
+
+  // ─── V2-S5 右栏 Task Summary ───
+
+  it('未选中任务时右栏 Task Summary 显示引导提示', async () => {
+    renderWithRightPanel()
+    await waitFor(() => expect(screen.getByText('任务一')).toBeTruthy())
+    expect(screen.getByTestId('evidence-task-summary')).toBeTruthy()
+    expect(screen.getByText(/选择一个任务/)).toBeTruthy()
+  })
+
+  it('选中任务后右栏 Task Summary 显示进度计数条/状态/任务信息,行高亮', async () => {
+    renderWithRightPanel()
+    await waitFor(() => expect(screen.getByText('任务一')).toBeTruthy())
+    fireEvent.click(screen.getByTestId('evidence-task-row-t1'))
+    const summary = screen.getByTestId('evidence-task-summary')
+    // 名称与类型
+    expect(within(summary).getByText('任务一')).toBeTruthy()
+    expect(within(summary).getByText('connection')).toBeTruthy()
+    // 状态 chips(与任务行内文本重复,限定在摘要内断言)
+    expect(within(summary).getByText('预处理 · 待预处理')).toBeTruthy()
+    expect(within(summary).getByText('审核 · 未开始审核')).toBeTruthy()
+    // 进度计数条:processed=0 / awaiting=2 / failed=0(总数为 2)
+    expect(within(summary).getByTestId('evidence-progress-bar')).toBeTruthy()
+    expect((within(summary).getByTestId('evidence-progress-ok') as HTMLSpanElement).style.width).toBe('0%')
+    expect((within(summary).getByTestId('evidence-progress-warn') as HTMLSpanElement).style.width).toBe('100%')
+    expect((within(summary).getByTestId('evidence-progress-bad') as HTMLSpanElement).style.width).toBe('0%')
+    expect(summaryStat('已处理', 0)).toBeTruthy()
+    expect(summaryStat('待审', 2)).toBeTruthy()
+    expect(summaryStat('失败', 0)).toBeTruthy()
+    expect(summaryStat('总数', 2)).toBeTruthy()
+    // 任务信息:模式/粒度/创建时间
+    expect(within(summary).getByText('模式')).toBeTruthy()
+    expect(within(summary).getByText('存在性')).toBeTruthy()
+    expect(within(summary).getByText('粒度')).toBeTruthy()
+    expect(within(summary).getByText('macro')).toBeTruthy()
+    expect(within(summary).getByText('创建时间')).toBeTruthy()
+    expect(within(summary).getByText('2026-08-10 00:00')).toBeTruthy()
+    // 任务行选中高亮
+    expect(screen.getByTestId('evidence-task-row-t1').className).toContain('evidence-task-row-selected')
+  })
+
+  it('TaskSummary [开始人工处理] 跳转候选模块(URL task_id)', async () => {
+    renderWithRightPanel()
+    await waitFor(() => expect(screen.getByText('任务一')).toBeTruthy())
+    fireEvent.click(screen.getByTestId('evidence-task-row-t1'))
+    fireEvent.click(within(screen.getByTestId('evidence-task-summary')).getByText('开始人工处理'))
+    await waitFor(() => expect(window.location.hash).toContain('module=candidates'))
+    expect(window.location.hash).toContain('task_id=t1')
+  })
+
+  it('TaskSummary [创建批量预处理] 打开模块对话框,[刷新] 重新加载任务列表', async () => {
+    renderWithRightPanel()
+    await waitFor(() => expect(screen.getByText('任务一')).toBeTruthy())
+    fireEvent.click(screen.getByTestId('evidence-task-row-t1'))
+    const summary = screen.getByTestId('evidence-task-summary')
+    // 创建批量预处理:右栏按钮触发模块内对话框
+    fireEvent.click(within(summary).getByText('创建批量预处理'))
+    expect(screen.getByTestId('create-batch-dialog')).toBeTruthy()
+    fireEvent.click(within(screen.getByTestId('create-batch-dialog')).getByText('关闭'))
+    expect(screen.queryByTestId('create-batch-dialog')).toBeNull()
+    // 刷新:重新请求任务列表
+    const callsBefore = vi.mocked(endpoints.listPaperEvidenceTasks).mock.calls.length
+    fireEvent.click(within(summary).getByText('刷新'))
+    await waitFor(() =>
+      expect(vi.mocked(endpoints.listPaperEvidenceTasks).mock.calls.length).toBeGreaterThan(callsBefore),
+    )
+  })
+
+  it('URL 携带 task_id 时自动选中任务并在右栏显示摘要', async () => {
+    window.location.hash = '#/evidence-center?module=tasks&task_id=t1'
+    renderWithRightPanel()
+    const summary = await screen.findByTestId('evidence-task-summary')
+    await waitFor(() => expect(within(summary).getByText('任务一')).toBeTruthy())
+    expect(screen.getByTestId('evidence-task-row-t1').className).toContain('evidence-task-row-selected')
+    expect(within(summary).getByText('存在性')).toBeTruthy()
+    expect(summaryStat('总数', 2)).toBeTruthy()
   })
 })

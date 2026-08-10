@@ -1,8 +1,10 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { listPaperEvidenceTasks, type PaperEvidenceTask } from '../../../api/endpoints'
 import { useGlobalGranularity } from '../../../hooks/useGlobalGranularity'
 import { useEvidenceCenter } from '../EvidenceCenterContext'
 import { CreateBatchTaskDialog } from '../components/CreateBatchTaskDialog'
+import type { TaskSummaryActions, TaskSummaryData } from '../components/TaskSummary'
+import { TASK_REVIEW_LABELS, TASK_STATUS_LABELS, taskReviewTone, taskStatusTone } from '../components/taskStatus'
 
 interface StatusGroup {
   key: string
@@ -20,47 +22,22 @@ const STATUS_GROUPS: StatusGroup[] = [
   { key: 'failed', label: '失败', match: t => t.failed_items > 0 || t.status === 'failed' },
 ]
 
-const STATUS_LABELS: Record<string, string> = {
-  pending: '待预处理',
-  running: '运行中',
-  paused: '已暂停',
-  completed: '预处理完成',
-  failed: '预处理失败',
-}
-
-const REVIEW_LABELS: Record<string, string> = {
-  not_started: '未开始审核',
-  processing: '审核中',
-  in_progress: '审核中',
-  completed: '审核完成',
-}
-
-function statusTone(status: string): string {
-  switch (status) {
-    case 'completed': return 'ok'
-    case 'failed': return 'bad'
-    case 'paused': return 'warn'
-    case 'running': return 'info'
-    default: return 'muted'
-  }
-}
-
-function reviewTone(reviewStatus: string | null): string {
-  if (reviewStatus === 'completed') return 'ok'
-  if (reviewStatus === 'processing' || reviewStatus === 'in_progress') return 'info'
-  return 'muted'
-}
-
-function TaskRow({ task, onStartReview, onOpen }: {
+function TaskRow({ task, selected, onSelect, onStartReview, onOpen }: {
   task: PaperEvidenceTask
+  selected: boolean
+  onSelect: () => void
   onStartReview: () => void
   onOpen: () => void
 }) {
-  const statusLabel = STATUS_LABELS[task.status] ?? task.status
-  const reviewLabel = REVIEW_LABELS[task.review_status ?? ''] ?? task.review_status ?? '—'
+  const statusLabel = TASK_STATUS_LABELS[task.status] ?? task.status
+  const reviewLabel = TASK_REVIEW_LABELS[task.review_status ?? ''] ?? task.review_status ?? '—'
   const evidenceCount = task.awaiting_review_items + task.processed_items
   return (
-    <div className="evidence-task-row">
+    <div
+      className={`evidence-task-row${selected ? ' evidence-task-row-selected' : ''}`}
+      data-testid={`evidence-task-row-${task.id}`}
+      onClick={onSelect}
+    >
       <div className="evidence-task-main">
         <span className="evidence-task-name">{task.name || task.target_type}</span>
         <span className="evidence-task-type">{task.target_type}</span>
@@ -72,8 +49,8 @@ function TaskRow({ task, onStartReview, onOpen }: {
         <span className="evidence-task-stat">佐证数 <b>{evidenceCount}</b></span>
       </div>
       <div className="evidence-task-chips">
-        <span className={`evidence-task-chip evidence-task-chip-${statusTone(task.status)}`}>预处理 · {statusLabel}</span>
-        <span className={`evidence-task-chip evidence-task-chip-${reviewTone(task.review_status)}`}>审核 · {reviewLabel}</span>
+        <span className={`evidence-task-chip evidence-task-chip-${taskStatusTone(task.status)}`}>预处理 · {statusLabel}</span>
+        <span className={`evidence-task-chip evidence-task-chip-${taskReviewTone(task.review_status)}`}>审核 · {reviewLabel}</span>
       </div>
       <div className="evidence-task-actions">
         <button type="button" className="btn btn-xs btn-primary" onClick={onStartReview}>开始人工处理</button>
@@ -87,12 +64,13 @@ function TaskRow({ task, onStartReview, onOpen }: {
 }
 
 export function EvidenceTasksModule() {
-  const { openTask } = useEvidenceCenter()
+  const { state, openTask, setTaskSummary, setTaskSummaryActions } = useEvidenceCenter()
   const { granularity } = useGlobalGranularity()
   const [tasks, setTasks] = useState<PaperEvidenceTask[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [createOpen, setCreateOpen] = useState(false)
+  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null)
 
   const loadTasks = useCallback(async () => {
     setLoading(true)
@@ -109,10 +87,54 @@ export function EvidenceTasksModule() {
 
   useEffect(() => { void loadTasks() }, [loadTasks])
 
+  // 选中任务(点击任务行;URL 携带 task_id 时自动选中)
+  const handleSelectTask = useCallback((taskId: string) => {
+    setSelectedTaskId(prev => (prev === taskId ? prev : taskId))
+  }, [])
+
+  useEffect(() => {
+    const tid = state.taskId
+    if (tid && !selectedTaskId && tasks.some(t => t.id === tid)) setSelectedTaskId(tid)
+  }, [state.taskId, selectedTaskId, tasks])
+
   // 进入证据候选模块,由该模块加载 task 的候选论文
   const handleStartReview = useCallback((task: PaperEvidenceTask) => {
+    setSelectedTaskId(task.id)
     openTask(task.id)
   }, [openTask])
+
+  // 选中任务 → Context 推送右栏 TaskSummary(与 S3 reviewDecision / S4 promotionImpact 同模式)
+  const selectedTask = selectedTaskId ? tasks.find(t => t.id === selectedTaskId) ?? null : null
+  const taskSummary = useMemo<TaskSummaryData | null>(() => {
+    if (!selectedTask) return null
+    return {
+      id: selectedTask.id,
+      name: selectedTask.name,
+      targetType: selectedTask.target_type,
+      mode: selectedTask.mode,
+      granularity: selectedTask.granularity_level,
+      status: selectedTask.status,
+      reviewStatus: selectedTask.review_status,
+      total: selectedTask.total_items,
+      processed: selectedTask.processed_items,
+      awaitingReview: selectedTask.awaiting_review_items,
+      failed: selectedTask.failed_items,
+      createdAt: selectedTask.created_at,
+    }
+  }, [selectedTask])
+
+  useEffect(() => { setTaskSummary(taskSummary) }, [taskSummary, setTaskSummary])
+  useEffect(() => () => { setTaskSummary(null) }, [setTaskSummary])
+
+  // 右栏操作:创建批量预处理对话框与列表刷新都在本模块内,经 Context 回调暴露
+  const handleCreateBatch = useCallback(() => setCreateOpen(true), [])
+  useEffect(() => {
+    const actions: TaskSummaryActions = { onCreateBatch: handleCreateBatch, onRefresh: loadTasks }
+    setTaskSummaryActions(actions)
+    return () => {
+      setTaskSummaryActions({ onCreateBatch: () => {}, onRefresh: () => {} })
+    }
+  }, [setTaskSummaryActions, handleCreateBatch, loadTasks])
 
   // 每个任务只落入第一个命中的分组(按 STATUS_GROUPS 顺序优先)
   const assignedKeys = new Set<string>()
@@ -164,6 +186,8 @@ export function EvidenceTasksModule() {
                 <TaskRow
                   key={task.id}
                   task={task}
+                  selected={task.id === selectedTaskId}
+                  onSelect={() => handleSelectTask(task.id)}
                   onStartReview={() => void handleStartReview(task)}
                   onOpen={() => openTask(task.id)}
                 />
