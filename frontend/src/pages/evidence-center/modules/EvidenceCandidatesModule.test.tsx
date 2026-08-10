@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import * as endpoints from '../../../api/endpoints'
 import { EvidenceCenterProvider } from '../EvidenceCenterContext'
 import { EvidenceCandidatesModule } from './EvidenceCandidatesModule'
@@ -80,6 +80,32 @@ const ITEM = {
   passages_json: null,
   last_error: null,
   retry_count: 0,
+}
+
+/** 第二篇论文:用于「多论文多片段混合审核」草稿累计测试 */
+const PAPER_B = {
+  paper_id: 'paper-2',
+  pmid: '87654321',
+  doi: null,
+  pmcid: null,
+  title: 'Another Study on R1 to R2',
+  journal: 'Neuro Letters',
+  year: '2023',
+  is_oa: false,
+  model_direction: 'supports',
+  model_assessment: 'B 支持连接存在',
+  coverage_summary: null,
+  passages: [
+    {
+      passage: 'R1 also projects to R2 according to this study.',
+      source_scope: 'abstract',
+      section_title: null,
+      direction: 'supports',
+      evidence_level: 'direct',
+      source_verified: true,
+      supported_components: ['relation'],
+    },
+  ],
 }
 
 const DTO = {
@@ -230,6 +256,91 @@ describe('EvidenceCandidatesModule', () => {
     // 打开任意论文证据视图(零选中)→ 已存草稿必须保留
     fireEvent.click(screen.getByRole('button', { name: /查看证据候选/ }))
     expect(sessionStorage.getItem('evidence-center.review-draft.r1-r2')).toBeTruthy()
+  })
+
+  it('多论文混合审核:论文 A 与论文 B 勾选的片段累计写入同一份审核草稿(修复:不被后看论文覆盖)', async () => {
+    vi.mocked(endpoints.listPaperEvidenceTaskItems).mockResolvedValue({
+      items: [{ ...ITEM, candidate_papers: [CANDIDATE, PAPER_B] }],
+    })
+    renderModule()
+    await waitFor(() => expect(screen.getByText('A Study of R1 to R2 Projection')).toBeTruthy())
+
+    // 论文 A:查看证据候选 → 勾选已核验片段 → 草稿仅含 A
+    const cardA = screen.getAllByTestId('paper-card-candidate')
+      .find(c => c.textContent?.includes('A Study of R1 to R2 Projection'))!
+    fireEvent.click(within(cardA).getByRole('button', { name: /查看证据候选/ }))
+    fireEvent.click(screen.getAllByRole('checkbox')[0])
+    await waitFor(() => {
+      const draft = JSON.parse(sessionStorage.getItem('evidence-center.review-draft.r1-r2')!) as {
+        passages: Array<{ hash: string }>
+      }
+      expect(draft.passages).toHaveLength(1)
+      expect(draft.passages[0].hash).toBe('paper-1-0-We observed that R1 projects to R2 in the macaque.')
+    })
+
+    // 返回列表 → 论文 B:查看证据候选 → 勾选 → 草稿累计两篇(A 不被 B 覆盖)
+    fireEvent.click(screen.getByTestId('evidence-paper-back'))
+    const cardB = screen.getAllByTestId('paper-card-candidate')
+      .find(c => c.textContent?.includes('Another Study on R1 to R2'))!
+    fireEvent.click(within(cardB).getByRole('button', { name: /查看证据候选/ }))
+    fireEvent.click(screen.getAllByRole('checkbox')[0])
+    await waitFor(() => {
+      const draft = JSON.parse(sessionStorage.getItem('evidence-center.review-draft.r1-r2')!) as {
+        passages: Array<{ hash: string }>
+      }
+      expect(draft.passages).toHaveLength(2)
+      expect(new Set(draft.passages.map(p => p.hash))).toEqual(new Set([
+        'paper-1-0-We observed that R1 projects to R2 in the macaque.',
+        'paper-2-0-R1 also projects to R2 according to this study.',
+      ]))
+    })
+  })
+
+  it('多论文草稿:取消一篇勾选时保留另一篇;全部清空时删除草稿(删除保护不破坏)', async () => {
+    vi.mocked(endpoints.listPaperEvidenceTaskItems).mockResolvedValue({
+      items: [{ ...ITEM, candidate_papers: [CANDIDATE, PAPER_B] }],
+    })
+    renderModule()
+    await waitFor(() => expect(screen.getByText('A Study of R1 to R2 Projection')).toBeTruthy())
+
+    // 两篇论文各勾选一个片段
+    const cardA = screen.getAllByTestId('paper-card-candidate')
+      .find(c => c.textContent?.includes('A Study of R1 to R2 Projection'))!
+    fireEvent.click(within(cardA).getByRole('button', { name: /查看证据候选/ }))
+    fireEvent.click(screen.getAllByRole('checkbox')[0])
+    fireEvent.click(screen.getByTestId('evidence-paper-back'))
+    const cardB = screen.getAllByTestId('paper-card-candidate')
+      .find(c => c.textContent?.includes('Another Study on R1 to R2'))!
+    fireEvent.click(within(cardB).getByRole('button', { name: /查看证据候选/ }))
+    fireEvent.click(screen.getAllByRole('checkbox')[0])
+    await waitFor(() => {
+      const draft = JSON.parse(sessionStorage.getItem('evidence-center.review-draft.r1-r2')!) as {
+        passages: Array<{ hash: string }>
+      }
+      expect(draft.passages).toHaveLength(2)
+    })
+
+    // 论文 A 取消勾选 → 草稿保留论文 B 的片段(不被误删)
+    fireEvent.click(screen.getByTestId('evidence-paper-back'))
+    const cardA2 = screen.getAllByTestId('paper-card-candidate')
+      .find(c => c.textContent?.includes('A Study of R1 to R2 Projection'))!
+    fireEvent.click(within(cardA2).getByRole('button', { name: /查看证据候选/ }))
+    fireEvent.click(screen.getAllByRole('checkbox')[0])
+    await waitFor(() => {
+      const draft = JSON.parse(sessionStorage.getItem('evidence-center.review-draft.r1-r2')!) as {
+        passages: Array<{ hash: string }>
+      }
+      expect(draft.passages).toHaveLength(1)
+      expect(draft.passages[0].hash).toBe('paper-2-0-R1 also projects to R2 according to this study.')
+    })
+
+    // 论文 B 取消勾选 → 全部清空 → 草稿删除
+    fireEvent.click(screen.getByTestId('evidence-paper-back'))
+    const cardB2 = screen.getAllByTestId('paper-card-candidate')
+      .find(c => c.textContent?.includes('Another Study on R1 to R2'))!
+    fireEvent.click(within(cardB2).getByRole('button', { name: /查看证据候选/ }))
+    fireEvent.click(screen.getAllByRole('checkbox')[0])
+    await waitFor(() => expect(sessionStorage.getItem('evidence-center.review-draft.r1-r2')).toBeNull())
   })
 
   it('排除此候选从列表移除论文卡', async () => {

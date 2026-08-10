@@ -169,7 +169,16 @@ export function ReviewerDecisionPanel({
 
       <div className="ew-sticky-actions">
         <button type="button" className="btn btn-sm" onClick={onReject} data-testid="ew-reject-btn">驳回证据</button>
-        <button type="button" className="btn btn-sm btn-primary" onClick={onApprove} data-testid="ew-approve-btn">审核通过</button>
+        <button
+          type="button"
+          className="btn btn-sm btn-primary"
+          disabled={selectedCount === 0}
+          title={selectedCount === 0 ? '请先勾选已核验的候选片段' : '审核通过'}
+          onClick={onApprove}
+          data-testid="ew-approve-btn"
+        >
+          审核通过
+        </button>
       </div>
     </div>
   )

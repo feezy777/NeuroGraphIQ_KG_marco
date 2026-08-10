@@ -401,33 +401,45 @@ export function EvidenceCandidatesModule() {
     [evidencePaper],
   )
 
-  // 记录本 effect 最近一次写入的 (key, 论文),用于区分「用户清空选择」与「尚未选择/已切换论文」:
-  // 只有先前在同一论文上写入过草稿、现在选择被清空时才删除,避免误删用户已存在的审核草稿
-  const draftWrittenRef = useRef<{ key: string; paperId: string | null } | null>(null)
+  // 记录本 effect 最近一次写入的 key,用于区分「用户清空选择」与「尚未选择」:
+  // 只有先前为本目标写入过草稿、现在选择全部清空时才删除,避免误删用户已存在的审核草稿
+  const draftWrittenRef = useRef<{ key: string } | null>(null)
 
+  // auto-draft 跨论文累计:遍历全部已提取论文,收集 selectedHashes 对应的片段(不限于当前查看的论文),
+  // 支持「多论文多片段混合审核」;右栏 selectedPassages 计数与草稿内容保持一致
   useEffect(() => {
-    if (!current || !evidencePaper) return
-    const passages = candidatePassagesToWorkbench(evidencePaper.passages ?? [], evidencePaper.paper_id)
-      .filter(p => selectedHashes.has(p.hash))
+    if (!current) return
     const key = `${DRAFT_PREFIX}${current.target_id}`
-    const paperId = evidencePaper.paper_id || evidencePaper.pmid
-    if (passages.length === 0) {
-      if (draftWrittenRef.current?.key === key && draftWrittenRef.current.paperId === paperId) {
+    const allPapers = [...candidates, ...manualResults]
+    const selected: WorkbenchPassage[] = []
+    const seen = new Set<string>()
+    let metaPaper: CandidatePaper | null = null
+    for (const c of allPapers) {
+      for (const p of candidatePassagesToWorkbench(c.passages ?? [], c.paper_id)) {
+        if (!selectedHashes.has(p.hash) || seen.has(p.hash)) continue
+        seen.add(p.hash)
+        selected.push(p)
+        if (!metaPaper) metaPaper = c
+      }
+    }
+    if (selected.length === 0) {
+      if (draftWrittenRef.current?.key === key) {
         sessionStorage.removeItem(key)
         draftWrittenRef.current = null
       }
       return
     }
+    // 元数据取第一篇贡献片段的论文(多论文时片段自身携带 paper_id/paper_passage_id 溯源)
     const draft: ReviewDraft = {
-      passages,
-      modelDirection: evidencePaper.model_direction,
-      modelAssessment: evidencePaper.model_assessment,
-      paperTitle: evidencePaper.title,
-      pmid: evidencePaper.pmid,
+      passages: selected,
+      modelDirection: metaPaper?.model_direction ?? null,
+      modelAssessment: metaPaper?.model_assessment ?? null,
+      paperTitle: metaPaper?.title ?? '',
+      pmid: metaPaper?.pmid ?? '',
     }
     sessionStorage.setItem(key, JSON.stringify(draft))
-    draftWrittenRef.current = { key, paperId }
-  }, [current, evidencePaper, selectedHashes])
+    draftWrittenRef.current = { key }
+  }, [current, candidates, manualResults, selectedHashes])
 
   // ─── 右栏候选摘要(Context → RightPanel) ───
   const summary = useMemo<CandidateSummaryData | null>(() => {
