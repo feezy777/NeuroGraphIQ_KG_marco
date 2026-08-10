@@ -204,7 +204,7 @@ describe('EvidenceCandidatesModule', () => {
     await waitFor(() => expect(screen.getByText('A Study of R1 to R2 Projection')).toBeTruthy())
     fireEvent.click(screen.getByText('排除'))
     expect(screen.queryByText('A Study of R1 to R2 Projection')).toBeNull()
-    expect(screen.getByText(/当前对象没有候选论文/)).toBeTruthy()
+    expect(screen.getByText(/当前对象暂无候选证据/)).toBeTruthy()
   })
 
   it('重新提取触发 extractSelectedPaperEvidence 并更新片段数', async () => {

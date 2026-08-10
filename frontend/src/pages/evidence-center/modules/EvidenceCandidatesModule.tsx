@@ -466,17 +466,17 @@ export function EvidenceCandidatesModule() {
                 </div>
                 {candidates.length === 0 && (
                   <div className="evidence-candidates-empty">
-                    当前对象没有候选论文，可在任务中重新预处理，或使用下方手动检索入口。
+                    当前对象暂无候选证据，可尝试重新提取或切换其他对象。
                   </div>
                 )}
                 {candidates.map(cand => (
                   <CandidatePaperCard
                     key={cand.paper_id || cand.pmid}
                     cand={cand}
-                    expanded={expandedPaperId === cand.paper_id}
+                    expanded={expandedPaperId === (cand.paper_id || cand.pmid)}
                     selectedHashes={selectedHashes}
                     reExtracting={reExtractBusy === (cand.paper_id || cand.pmid)}
-                    onToggleExpand={() => setExpandedPaperId(prev => (prev === cand.paper_id ? null : cand.paper_id))}
+                    onToggleExpand={() => setExpandedPaperId(prev => (prev === (cand.paper_id || cand.pmid) ? null : (cand.paper_id || cand.pmid)))}
                     onTogglePassage={handleTogglePassage}
                     onReview={() => handleReview(cand)}
                     onExclude={() => setExcludedPaperIds(prev => new Set(prev).add(cand.paper_id || cand.pmid))}
@@ -542,10 +542,10 @@ export function EvidenceCandidatesModule() {
                   <CandidatePaperCard
                     key={cand.paper_id || cand.pmid}
                     cand={cand}
-                    expanded={expandedPaperId === cand.paper_id}
+                    expanded={expandedPaperId === (cand.paper_id || cand.pmid)}
                     selectedHashes={selectedHashes}
                     reExtracting={reExtractBusy === (cand.paper_id || cand.pmid)}
-                    onToggleExpand={() => setExpandedPaperId(prev => (prev === cand.paper_id ? null : cand.paper_id))}
+                    onToggleExpand={() => setExpandedPaperId(prev => (prev === (cand.paper_id || cand.pmid) ? null : (cand.paper_id || cand.pmid)))}
                     onTogglePassage={handleTogglePassage}
                     onReview={() => handleReview(cand)}
                     onExclude={() => setExcludedPaperIds(prev => new Set(prev).add(cand.paper_id || cand.pmid))}
