@@ -90,6 +90,7 @@ export function PaperEvidenceColumn({ targetType, targetId }: { targetType: stri
         target_type: targetType,
         target_id: targetId,
         pmid: selected.pmid,
+        doi: selected.doi,
         title: selected.title,
         abstract: selected.abstract,
       })

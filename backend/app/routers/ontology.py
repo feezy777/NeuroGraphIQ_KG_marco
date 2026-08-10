@@ -739,8 +739,15 @@ async def paper_evidence_extract(
     _auth: str = Depends(require_role("reviewer")),
 ):
     try:
+        pmid = (body.pmid or "").strip()
+        doi = (body.doi or "").strip()
+        pmcid = (body.pmcid or "").strip()
+        if not (pmid or doi or pmcid):
+            raise ValueError("paper identifier required (pmid / pmcid / doi)")
         context = await pes.build_retrieval_context(session, body.target_type, body.target_id)
-        cached, metadata = await pfs.ensure_paper_cached(session, pmid=body.pmid)
+        cached, metadata = await pfs.ensure_paper_cached(
+            session, pmid=pmid or None, pmcid=pmcid or None, doi=doi or None
+        )
         if metadata is not None:
             paper = metadata
             paper_source = await pes.ensure_paper_source(
@@ -762,8 +769,8 @@ async def paper_evidence_extract(
             }
         abstract = (body.abstract or "").strip()
         xml_text = await pfs.fetch_oa_fulltext_xml(
-            pmid=paper.get("pmid") or body.pmid,
-            pmcid=paper.get("pmcid") or "",
+            pmid=paper.get("pmid") or pmid or None,
+            pmcid=paper.get("pmcid") or pmcid or None,
         )
         paragraphs: list[dict] = []
         if abstract:
@@ -825,7 +832,7 @@ async def paper_evidence_extract(
         if saved:
             result["source_type"] = "fulltext" if any(p.get("source_scope") == "fulltext" for p in saved) else "abstract"
         result["links"] = {
-            "pubmed": f"https://pubmed.ncbi.nlm.nih.gov/{body.pmid}/" if body.pmid else None,
+            "pubmed": f"https://pubmed.ncbi.nlm.nih.gov/{paper.get('pmid') or pmid}/" if (paper.get("pmid") or pmid) else None,
         }
         await session.commit()
         return result

@@ -5362,6 +5362,8 @@ export const extractPaperPassage = (body: {
   target_type: string
   target_id: string
   pmid: string
+  doi?: string | null
+  pmcid?: string | null
   title: string
   abstract: string
 }, signal?: AbortSignal) => postJson<{

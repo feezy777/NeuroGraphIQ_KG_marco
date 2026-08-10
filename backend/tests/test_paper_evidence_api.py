@@ -205,3 +205,51 @@ def test_rollback_idempotent():
 
     assert result["changed"] is False
     assert result["status"] == "already_invalidated"
+
+
+def test_extract_doi_only_paper(monkeypatch, client):
+    """DOI-only papers (no PMID) must not fail with 'paper identifier required'."""
+    paper_source = SimpleNamespace(
+        id=uuid.uuid4(), pmid=None, pmcid=None, doi="10.1000/doi-only",
+        title="DOI Only Paper", journal="J", publication_year=2026,
+        metadata_json={}, source="europepmc",
+    )
+    monkeypatch.setattr(
+        "app.routers.ontology.pes.build_retrieval_context",
+        AsyncMock(return_value={"claim_text": "c", "claim_components": [], "function_term": "f"}),
+    )
+    monkeypatch.setattr(
+        "app.routers.ontology.pes.pfs.ensure_paper_cached",
+        AsyncMock(return_value=(paper_source, None)),
+    )
+    monkeypatch.setattr("app.routers.ontology.pes.pfs.fetch_oa_fulltext_xml", AsyncMock(return_value=""))
+    monkeypatch.setattr("app.routers.ontology.pes.ensure_paper_passages", AsyncMock(return_value=[]))
+    monkeypatch.setattr("app.routers.ontology.pes.load_paper_passages", AsyncMock(return_value=[]))
+    monkeypatch.setattr("app.routers.ontology.pes.score_paragraphs", lambda *a, **k: [])
+    monkeypatch.setattr("app.routers.ontology.pes.build_windows", lambda *a, **k: [])
+    monkeypatch.setattr(
+        "app.routers.ontology.pes.extract_passage_from_paper",
+        AsyncMock(return_value={
+            "overall_direction": "not_found",
+            "paper_relevance": 0.0,
+            "assessment": "no evidence",
+            "source_type": "none",
+            "passages": [],
+            "retrieval_summary": {},
+            "parse_status": "ok",
+            "retry_count": 0,
+            "raw_response": "",
+        }),
+    )
+    resp = client.post("/api/ontology/evidence/extract", json={
+        "target_type": "connection",
+        "target_id": str(uuid.uuid4()),
+        "pmid": "",
+        "doi": "10.1000/doi-only",
+        "title": "DOI Only Paper",
+        "abstract": "",
+    })
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["overall_direction"] == "not_found"
+    assert body["paper"]["doi"] == "10.1000/doi-only"

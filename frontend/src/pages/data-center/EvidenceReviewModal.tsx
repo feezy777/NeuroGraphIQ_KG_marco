@@ -434,6 +434,7 @@ export function EvidenceReviewModal({ open, onClose, initialItems, initialTaskId
         target_type: current.target_type,
         target_id: current.target_id,
         pmid: selectedPaper.pmid,
+        doi: selectedPaper.doi,
         title: selectedPaper.title,
         abstract: selectedPaper.abstract,
       }, abortRef.current.signal)

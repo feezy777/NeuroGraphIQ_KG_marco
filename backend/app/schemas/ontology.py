@@ -144,6 +144,8 @@ class EvidenceExtractRequest(BaseModel):
     target_type: str
     target_id: uuid.UUID
     pmid: str
+    doi: str | None = None
+    pmcid: str | None = None
     title: str
     abstract: str
 
