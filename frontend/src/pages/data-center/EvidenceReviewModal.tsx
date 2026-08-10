@@ -510,6 +510,21 @@ export function EvidenceReviewModal({ open, onClose, initialItems, initialTaskId
     [tmpCoverage, selectedPassages],
   )
 
+  const busyText = useMemo(() => {
+    const paperTitle = selectedPaper?.title ?? (current?.draftPmid ? '批量草稿论文' : '')
+    switch (busy) {
+      case 'search': return '正在检索 Europe PMC…'
+      case 'extract': return paperTitle
+        ? `DeepSeek 正在提取「${paperTitle}」的原文片段（最多 3 次尝试）…`
+        : 'DeepSeek 正在提取原文片段…'
+      case 'translate': return '正在翻译…'
+      case 'preview': return '正在计算置信度预览…'
+      case 'attach': return '正在入库并更新置信度…'
+      case 'loading': return '正在加载队列…'
+      default: return busy ? `处理中：${busy}` : ''
+    }
+  }, [busy, selectedPaper, current])
+
   const updatePassage = useCallback((hash: string, patch: Partial<WorkbenchPassage>) => {
     setPassages(ps => ps.map(p => (p.hash === hash ? { ...p, ...patch } : p)))
     setDirty(true)
@@ -737,21 +752,6 @@ export function EvidenceReviewModal({ open, onClose, initialItems, initialTaskId
         : busy !== null
           ? '正在处理中'
           : ''
-
-  const busyText = useMemo(() => {
-    const paperTitle = selectedPaper?.title ?? (current?.draftPmid ? '批量草稿论文' : '')
-    switch (busy) {
-      case 'search': return '正在检索 Europe PMC…'
-      case 'extract': return paperTitle
-        ? `DeepSeek 正在提取「${paperTitle}」的原文片段（最多 3 次尝试）…`
-        : 'DeepSeek 正在提取原文片段…'
-      case 'translate': return '正在翻译…'
-      case 'preview': return '正在计算置信度预览…'
-      case 'attach': return '正在入库并更新置信度…'
-      case 'loading': return '正在加载队列…'
-      default: return busy ? `处理中：${busy}` : ''
-    }
-  }, [busy, selectedPaper, current])
 
   return (
     <div className="evidence-workbench" style={{ height: `${heightPct}vh` }} data-testid="ew-workbench">

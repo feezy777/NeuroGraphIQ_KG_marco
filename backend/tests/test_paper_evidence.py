@@ -138,3 +138,15 @@ def test_parse_multi_extracts_json_object_from_noise():
     model = _parse_multi(raw)
     assert model.overall_direction == "contradicts"
     assert len(model.passages) == 1
+
+
+def test_parse_multi_tolerates_no_evidence_and_string_relevance():
+    raw = (
+        '{"overall_direction": "no_evidence", '
+        '"paper_relevance": "No source text was provided, so no passages could be extracted.", '
+        '"passages": []}'
+    )
+    model = _parse_multi(raw)
+    assert model.overall_direction == "not_found"
+    assert model.paper_relevance == 0.0
+    assert model.passages == []

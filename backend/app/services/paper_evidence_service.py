@@ -1263,6 +1263,25 @@ def _extract_json_object(text_value: str) -> str:
     return text_value
 
 
+def _normalize_extraction_payload(payload: dict | None) -> dict:
+    """Tolerate common DeepSeek output variants before Pydantic validation."""
+    p = dict(payload or {})
+    direction = str(p.get("overall_direction") or "").strip().lower()
+    if direction in ("no_evidence", "no evidence", "none", "no evidence found"):
+        direction = "not_found"
+    if direction not in ("supports", "partial", "contradicts", "mixed", "not_found"):
+        direction = "not_found"
+    p["overall_direction"] = direction
+    rel = p.get("paper_relevance")
+    if isinstance(rel, str):
+        try:
+            p["paper_relevance"] = max(0.0, min(1.0, float(rel.strip() or 0)))
+        except ValueError:
+            p["paper_relevance"] = 0.0
+    p["passages"] = p.get("passages") or []
+    return p
+
+
 def _parse_multi(raw_text: str) -> PaperMultiPassageExtraction:
     text_value = (raw_text or "").strip()
     fence = re.search(r"```(?:json|JSON)?\s*(.*?)```", text_value, re.DOTALL)
@@ -1271,7 +1290,7 @@ def _parse_multi(raw_text: str) -> PaperMultiPassageExtraction:
     text_value = _extract_json_object(text_value)
     # JSON does not allow trailing commas; LLM responses often include them.
     text_value = re.sub(r",\s*([}\]])", r"\1", text_value)
-    parsed = json.loads(text_value)
+    parsed = _normalize_extraction_payload(json.loads(text_value))
     return PaperMultiPassageExtraction.model_validate(parsed)
 
 
@@ -1315,7 +1334,9 @@ async def extract_passage(*, term: str, title: str, abstract: str, fulltext: str
                         getattr(resp, "error", None) or "DeepSeek transport error"
                     )
                 if resp.parsed_json is not None:
-                    parsed = PaperMultiPassageExtraction.model_validate(resp.parsed_json)
+                    parsed = PaperMultiPassageExtraction.model_validate(
+                        _normalize_extraction_payload(resp.parsed_json)
+                    )
                 else:
                     parsed = _parse_multi(raw_response)
             else:
@@ -1602,7 +1623,9 @@ async def extract_passage_from_paper(
                 if not getattr(resp, "transport_ok", True):
                     raise httpx.TransportError(getattr(resp, "error", None) or "DeepSeek transport error")
                 if resp.parsed_json is not None:
-                    parsed = PaperMultiPassageExtraction.model_validate(resp.parsed_json)
+                    parsed = PaperMultiPassageExtraction.model_validate(
+                        _normalize_extraction_payload(resp.parsed_json)
+                    )
                 else:
                     parsed = _parse_multi(raw_response)
             else:
