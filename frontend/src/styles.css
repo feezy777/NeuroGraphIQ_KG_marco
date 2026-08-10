@@ -11746,3 +11746,56 @@ input[type="range"]::-webkit-slider-thumb {
 }
 .evidence-candidates-manual-paper strong { font-weight: 600; }
 .evidence-candidates-empty { padding: 24px 12px; text-align: center; color: var(--text-muted); font-size: 13px; }
+
+/* ── 人工审核模块(EvidenceReviewModule) ─────────────────────────────────── */
+.evidence-review { display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 16px; align-items: start; }
+.evidence-review-main { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.evidence-review-passages { display: flex; flex-direction: column; gap: 8px; }
+.evidence-review-paper {
+  background: var(--white);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.evidence-review-paper h4 { margin: 0 0 4px; font-size: 13px; }
+.evidence-review-paper strong { font-size: 13px; color: var(--text); }
+.evidence-review-side { width: 380px; display: flex; flex-direction: column; gap: 10px; }
+.evidence-review-side .ew-right-inner {
+  background: var(--white);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.evidence-review-side .ew-right-inner h4 { margin: 0 0 4px; font-size: 13px; }
+.evidence-review-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.ew-dir-label { display: flex; align-items: center; gap: 6px; }
+.ew-ai-recommend {
+  font-size: 11px;
+  color: var(--muted);
+  background: #f1f5f9;
+  border: 1px dashed var(--border);
+  border-radius: 10px;
+  padding: 1px 8px;
+  font-weight: 400;
+}
+.ew-dir-radios { display: flex; flex-wrap: wrap; gap: 6px; }
+.ew-dir-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  font-size: 12px;
+  cursor: pointer;
+  background: var(--white);
+  color: var(--text);
+}
+.ew-dir-chip:hover { border-color: var(--primary); background: #f8fafc; }
+.ew-dir-chip-active { background: #eff6ff; border-color: var(--primary); color: var(--primary); font-weight: 600; }

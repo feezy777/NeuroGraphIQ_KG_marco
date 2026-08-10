@@ -1,0 +1,360 @@
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import {
+  attachPaperEvidencePreview,
+  getEvidenceTarget,
+  saveTaskItemDraft,
+  translateEvidenceText,
+  validatePassageSelection,
+  type AttachPreviewResponse,
+  type EvidenceTargetDto,
+} from '../../../api/endpoints'
+import { useEvidenceCenter } from '../EvidenceCenterContext'
+import { ClaimPanel } from '../components/ClaimPanel'
+import { CoveragePanel } from '../components/CoveragePanel'
+import { PassageEvidenceCard } from '../components/PassageEvidenceCard'
+import { ReviewerDecisionPanel } from '../components/ReviewerDecisionPanel'
+import { aggregateTmpDirection, computeTmpCoverage } from '../components/claimCoverage'
+import type { Direction, EvidenceLevel, WorkbenchPassage } from '../components/types'
+
+const DRAFT_PREFIX = 'evidence-center.review-draft.'
+
+/** T7 候选模块写入、本模块恢复/回写的审核草稿 */
+interface ReviewDraft {
+  passages: WorkbenchPassage[]
+  modelDirection: Direction | null
+  modelAssessment: string | null
+  paperTitle: string
+  pmid: string
+  doi?: string | null
+  translations?: Record<string, string>
+  reviewerDirection?: Direction
+  reviewerEvidenceLevel?: EvidenceLevel
+  reviewerConfidence?: string
+  note?: string
+}
+
+export function EvidenceReviewModule() {
+  const { state, queue, openTarget } = useEvidenceCenter()
+  const [dto, setDto] = useState<EvidenceTargetDto | null>(null)
+  const [passages, setPassages] = useState<WorkbenchPassage[]>([])
+  const [selectedHashes, setSelectedHashes] = useState<Set<string>>(new Set())
+  const [translations, setTranslations] = useState<Record<string, string>>({})
+  const [direction, setDirection] = useState<Direction>('supports')
+  const [modelDirection, setModelDirection] = useState<Direction | null>(null)
+  const [modelAssessment, setModelAssessment] = useState<string | null>(null)
+  const [paperTitle, setPaperTitle] = useState('')
+  const [pmid, setPmid] = useState('')
+  const [doi, setDoi] = useState<string | null>(null)
+  const [evidenceLevel, setEvidenceLevel] = useState<EvidenceLevel>('indirect')
+  const [confidence, setConfidence] = useState('0.8')
+  const [note, setNote] = useState('')
+  const [preview, setPreview] = useState<AttachPreviewResponse | null>(null)
+  const [previewBusy, setPreviewBusy] = useState(false)
+  const [showContextHash, setShowContextHash] = useState<string | null>(null)
+  const [message, setMessage] = useState<string | null>(null)
+  const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
+  const abortRef = useRef<AbortController | null>(null)
+
+  const targetType = state.targetType
+  const targetId = state.targetId
+
+  // ─── 目标切换:恢复 sessionStorage 审核草稿(刷新不丢) ───
+  useEffect(() => {
+    setDto(null)
+    setPassages([])
+    setSelectedHashes(new Set())
+    setTranslations({})
+    setDirection('supports')
+    setEvidenceLevel('indirect')
+    setConfidence('0.8')
+    setNote('')
+    setModelDirection(null)
+    setModelAssessment(null)
+    setPaperTitle('')
+    setPmid('')
+    setDoi(null)
+    setPreview(null)
+    setPreviewBusy(false)
+    setShowContextHash(null)
+    setMessage(null)
+    setSaveState('idle')
+    if (!targetId) return
+    const raw = sessionStorage.getItem(`${DRAFT_PREFIX}${targetId}`)
+    if (!raw) return
+    try {
+      const d = JSON.parse(raw) as Partial<ReviewDraft>
+      if (Array.isArray(d.passages)) {
+        setPassages(d.passages)
+        setSelectedHashes(new Set(d.passages.filter(p => p.source_verified).map(p => p.hash)))
+      }
+      if (d.modelDirection) setModelDirection(d.modelDirection as Direction)
+      if (d.modelAssessment != null) setModelAssessment(d.modelAssessment)
+      if (d.paperTitle != null) setPaperTitle(d.paperTitle)
+      if (d.pmid != null) setPmid(d.pmid)
+      if (d.doi != null) setDoi(d.doi)
+      if (d.translations) setTranslations(d.translations)
+      if (d.reviewerDirection) setDirection(d.reviewerDirection as Direction)
+      if (d.reviewerEvidenceLevel) setEvidenceLevel(d.reviewerEvidenceLevel as EvidenceLevel)
+      if (d.reviewerConfidence != null) setConfidence(d.reviewerConfidence)
+      if (d.note != null) setNote(d.note)
+    } catch {
+      // 草稿损坏时忽略,保持空态
+    }
+  }, [targetId])
+
+  // Claim DTO(ClaimPanel 数据源)
+  useEffect(() => {
+    if (!targetType || !targetId) return
+    let cancelled = false
+    getEvidenceTarget(targetType, targetId)
+      .then(d => { if (!cancelled) setDto(d) })
+      .catch(() => { if (!cancelled) setDto(null) })
+    return () => { cancelled = true }
+  }, [targetType, targetId])
+
+  const updatePassage = useCallback((hash: string, patch: Partial<WorkbenchPassage>) => {
+    setPassages(ps => ps.map(p => (p.hash === hash ? { ...p, ...patch } : p)))
+  }, [])
+
+  const selectedPassages = useMemo(
+    () => passages.filter(p => selectedHashes.has(p.hash)),
+    [passages, selectedHashes],
+  )
+
+  const claimComponents = dto?.claim_components ?? []
+  const tmpCoverage = useMemo(() => computeTmpCoverage(claimComponents, selectedPassages), [claimComponents, selectedPassages])
+  const tmpDirection = useMemo(() => aggregateTmpDirection(tmpCoverage, selectedPassages), [tmpCoverage, selectedPassages])
+
+  // ─── 置信度预览(350ms debounce,body 同旧逻辑) ───
+  const runPreview = useCallback(async () => {
+    if (!targetType || !targetId || !pmid) return
+    if (selectedPassages.length === 0) {
+      setPreview(null)
+      return
+    }
+    abortRef.current?.abort()
+    abortRef.current = new AbortController()
+    setPreviewBusy(true)
+    try {
+      const r = await attachPaperEvidencePreview({
+        target_type: targetType,
+        target_id: targetId,
+        pmid,
+        direction,
+        reviewer_confidence: parseFloat(confidence) || 0,
+        passages: selectedPassages.map(p => ({
+          source_scope: p.source_scope,
+          paragraph_index: p.paragraph_index,
+          passage: p.passage,
+          direction: p.direction,
+          reason: p.reason,
+          confidence: p.confidence,
+          source_locator: p.source_locator,
+          source_verified: true,
+          supported_components: p.supported_components,
+        })),
+      }, abortRef.current.signal)
+      setPreview(r)
+    } catch (err) {
+      // 被新一轮预览 abort 的旧请求不算失败
+      if ((err as Error)?.name !== 'AbortError') {
+        setMessage(`预览失败：${err instanceof Error ? err.message : String(err)}`)
+      }
+    } finally {
+      setPreviewBusy(false)
+    }
+  }, [targetType, targetId, pmid, direction, confidence, selectedPassages])
+
+  useEffect(() => {
+    const t = setTimeout(() => void runPreview(), 350)
+    return () => clearTimeout(t)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [direction, confidence, selectedHashes, passages, pmid, targetType, targetId])
+
+  // ─── 草稿 debounce(500ms)写回 sessionStorage(永不丢) ───
+  const buildDraft = useCallback((): ReviewDraft => ({
+    passages,
+    modelDirection,
+    modelAssessment,
+    paperTitle,
+    pmid,
+    doi,
+    translations,
+    reviewerDirection: direction,
+    reviewerEvidenceLevel: evidenceLevel,
+    reviewerConfidence: confidence,
+    note,
+  }), [passages, modelDirection, modelAssessment, paperTitle, pmid, doi, translations, direction, evidenceLevel, confidence, note])
+
+  useEffect(() => {
+    if (!targetId || passages.length === 0) return
+    const t = setTimeout(() => {
+      sessionStorage.setItem(`${DRAFT_PREFIX}${targetId}`, JSON.stringify(buildDraft()))
+    }, 500)
+    return () => clearTimeout(t)
+  }, [targetId, buildDraft])
+
+  // ─── 片段操作 ───
+  const translatePassage = useCallback(async (hash: string, text: string) => {
+    try {
+      const r = await translateEvidenceText({ text })
+      setTranslations(t => ({ ...t, [hash]: r.translated }))
+    } catch (err) {
+      setMessage(`翻译失败：${err instanceof Error ? err.message : String(err)}`)
+    }
+  }, [])
+
+  const copyPassage = useCallback((text: string) => {
+    void navigator.clipboard?.writeText(text).catch(() => undefined)
+  }, [])
+
+  const handleReselect = useCallback(async (paperPassageId: string, text: string): Promise<boolean> => {
+    try {
+      const r = await validatePassageSelection({ paper_passage_id: paperPassageId, selected_text: text })
+      if (!r.source_verified) {
+        setMessage('重新截取未通过原文校验，禁止使用')
+        return false
+      }
+      const hash = passages.find(p => p.paper_passage_id === paperPassageId)?.hash
+      if (hash) {
+        updatePassage(hash, {
+          passage: r.normalized_selection ?? text,
+          source_verified: true,
+          source_verification_method: r.verification_method,
+        })
+      }
+      setMessage('重新截取已通过原文校验')
+      return true
+    } catch (err) {
+      setMessage(`重新截取失败：${err instanceof Error ? err.message : String(err)}`)
+      return false
+    }
+  }, [passages, updatePassage])
+
+  // ─── 顶部操作 ───
+  const handleBack = useCallback(() => {
+    if (targetType && targetId) openTarget(targetType, targetId, 'candidates')
+  }, [targetType, targetId, openTarget])
+
+  const taskItem = queue.find(q => q.target_type === targetType && q.target_id === targetId)
+
+  const handleSaveDraft = useCallback(async () => {
+    if (!targetId) return
+    const draft = buildDraft()
+    sessionStorage.setItem(`${DRAFT_PREFIX}${targetId}`, JSON.stringify(draft))
+    if (taskItem?.taskItemId) {
+      setSaveState('saving')
+      try {
+        await saveTaskItemDraft(taskItem.taskItemId, draft as unknown as Record<string, unknown>, 0)
+        setSaveState('saved')
+      } catch (err) {
+        setSaveState('error')
+        setMessage(`保存到任务失败：${err instanceof Error ? err.message : String(err)}`)
+      }
+    } else {
+      setMessage('草稿已保存在本地（未关联任务项）')
+    }
+  }, [targetId, buildDraft, taskItem?.taskItemId])
+
+  if (!targetType || !targetId) {
+    return (
+      <div className="evidence-review">
+        <div className="evidence-review-main">
+          <div className="evidence-candidates-empty">
+            请先从「佐证任务」或「证据候选」进入一个目标对象。
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="evidence-review" data-testid="evidence-review">
+      <div className="evidence-review-main">
+        <ClaimPanel
+          claimText={dto?.claim_text ?? ''}
+          components={claimComponents}
+          confidence={dto?.current_confidence ?? null}
+          evidenceCount={dto?.existing_evidence ?? 0}
+          targetType={targetType}
+          granularity={dto?.granularity ?? ''}
+        />
+
+        <div className="evidence-review-paper" data-testid="evidence-review-paper">
+          <h4>当前论文</h4>
+          <strong>{paperTitle || '—'}</strong>
+          <span className="ew-meta">PMID {pmid || '—'} · DOI {doi || '—'}</span>
+          {modelAssessment && <p className="ew-meta">模型评估：{modelAssessment}</p>}
+        </div>
+
+        {message && <div className="ontology-page-message">{message}</div>}
+
+        <div className="evidence-review-passages">
+          {passages.length === 0 && (
+            <div className="evidence-candidates-empty">
+              暂无审核草稿。请先在「证据候选」中勾选片段并「加入人工审核」。
+            </div>
+          )}
+          {passages.map(p => (
+            <PassageEvidenceCard
+              key={p.hash}
+              passage={p}
+              components={claimComponents}
+              selected={selectedHashes.has(p.hash)}
+              translation={translations[p.hash] ?? ''}
+              onToggleSelect={checked => {
+                setSelectedHashes(prev => {
+                  const n = new Set(prev)
+                  if (checked) n.add(p.hash)
+                  else n.delete(p.hash)
+                  return n
+                })
+              }}
+              onLevelChange={level => updatePassage(p.hash, { evidence_level: level })}
+              onComponentToggle={(comp, checked) => {
+                const next = checked
+                  ? [...new Set([...(p.supported_components || []), comp])]
+                  : (p.supported_components || []).filter(c => c !== comp)
+                updatePassage(p.hash, { supported_components: next })
+              }}
+              onTranslationChange={value => setTranslations(t => ({ ...t, [p.hash]: value }))}
+              onTranslate={() => void translatePassage(p.hash, p.passage)}
+              onCopy={() => copyPassage(p.passage)}
+              onShowContext={() => setShowContextHash(prev => (prev === p.hash ? null : p.hash))}
+              showContext={showContextHash === p.hash}
+              onReselect={handleReselect}
+            />
+          ))}
+        </div>
+
+        {selectedPassages.length > 0 && (
+          <CoveragePanel coverage={tmpCoverage} direction={tmpDirection} />
+        )}
+      </div>
+
+      <div className="evidence-review-side">
+        <ReviewerDecisionPanel
+          direction={direction}
+          modelDirection={modelDirection}
+          onDirectionChange={setDirection}
+          evidenceLevel={evidenceLevel}
+          onEvidenceLevelChange={setEvidenceLevel}
+          confidence={confidence}
+          onConfidenceChange={setConfidence}
+          note={note}
+          onNoteChange={setNote}
+          selectedCount={selectedHashes.size}
+          preview={preview}
+          previewBusy={previewBusy}
+        />
+        <div className="evidence-review-actions">
+          <button type="button" className="btn btn-sm" onClick={handleBack}>返回证据候选</button>
+          <button type="button" className="btn btn-sm btn-primary" onClick={() => void handleSaveDraft()}>保存草稿</button>
+          {saveState === 'saving' && <span className="ew-meta">保存中…</span>}
+          {saveState === 'saved' && <span className="ew-ok">已保存</span>}
+          {saveState === 'error' && <span className="ew-bad">保存失败</span>}
+        </div>
+      </div>
+    </div>
+  )
+}

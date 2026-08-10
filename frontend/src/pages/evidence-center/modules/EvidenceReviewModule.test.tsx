@@ -1,0 +1,271 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { useEffect } from 'react'
+import * as endpoints from '../../../api/endpoints'
+import { EvidenceCenterProvider, useEvidenceCenter } from '../EvidenceCenterContext'
+import type { EvidenceLevel, QueueStatus, WorkbenchPassage } from '../components/types'
+import { EvidenceReviewModule } from './EvidenceReviewModule'
+
+vi.mock('../../../api/endpoints', () => ({
+  getEvidenceTarget: vi.fn(),
+  attachPaperEvidencePreview: vi.fn(),
+  translateEvidenceText: vi.fn(),
+  validatePassageSelection: vi.fn(),
+  saveTaskItemDraft: vi.fn(),
+}))
+
+const DRAFT_KEY = 'evidence-center.review-draft.r1-r2'
+
+const PASSAGE_VERIFIED: WorkbenchPassage = {
+  hash: 'h1',
+  paper_id: 'paper-1',
+  paper_passage_id: 'pp1',
+  source_scope: 'abstract',
+  section_title: null,
+  paragraph_index: 0,
+  paragraph_id: null,
+  passage: 'We observed that R1 projects to R2 in the macaque.',
+  translation_zh: null,
+  direction: 'supports',
+  evidence_level: 'direct',
+  reason: '直接支持',
+  confidence: 0.9,
+  semantic_confidence: 0.82,
+  source_locator: 'pmc:123:sec1',
+  source_verified: true,
+  source_verification_method: 'exact',
+  supported_components: ['relation'],
+}
+
+const PASSAGE_UNVERIFIED: WorkbenchPassage = {
+  ...PASSAGE_VERIFIED,
+  hash: 'h2',
+  paper_passage_id: 'pp2',
+  passage: 'A secondary passage without verification.',
+  source_verified: false,
+  source_verification_method: null,
+  supported_components: [],
+}
+
+const DRAFT = {
+  passages: [PASSAGE_VERIFIED, PASSAGE_UNVERIFIED],
+  modelDirection: 'supports',
+  modelAssessment: '支持连接存在',
+  paperTitle: 'A Study of R1 to R2 Projection',
+  pmid: '12345678',
+}
+
+const DTO = {
+  target_type: 'connection',
+  target_id: 'r1-r2',
+  granularity: 'macro_clinical',
+  display_name: 'R1 → R2',
+  source_region: 'R1',
+  target_region: 'R2',
+  canonical_terms: [],
+  relation: 'projects_to',
+  directionality: '',
+  circuit_context: '',
+  function_context: '',
+  current_confidence: 0.7,
+  existing_evidence: 2,
+  structured_claim: {},
+  claim_text: 'R1 投射到 R2 且影响功能',
+  claim_components: [
+    { component_type: 'relation', statement: '存在投射关系', required: true, metadata: {} },
+    { component_type: 'source_region', statement: '源脑区为 R1', required: true, metadata: {} },
+  ],
+  claim_version: 'v1',
+}
+
+const PREVIEW = {
+  target_type: 'connection',
+  target_id: 'r1-r2',
+  current_confidence: 0.7,
+  direction: 'supports',
+  reviewer_confidence: 0.8,
+  final_confidence: 0.85,
+  cap: 0.85,
+  selected_passage_count: 1,
+  duplicate_passage_count: 0,
+  evidence_text_preview: '...',
+  allow: true,
+  block_reasons: [] as string[],
+}
+
+const REVIEW_HASH = '#/evidence-center?module=review&task_id=t1&target_type=connection&target_id=r1-r2'
+
+function renderModule(hash = REVIEW_HASH) {
+  window.location.hash = hash
+  return render(
+    <EvidenceCenterProvider>
+      <EvidenceReviewModule />
+    </EvidenceCenterProvider>,
+  )
+}
+
+/** 模拟候选模块已把带 taskItemId 的队列同步到 context */
+function QueueSeeder() {
+  const { setQueue } = useEvidenceCenter()
+  useEffect(() => {
+    setQueue([{
+      target_type: 'connection',
+      target_id: 'r1-r2',
+      label: 'R1 → R2 连接',
+      confidence: 0.7,
+      status: 'awaiting_review' as QueueStatus,
+      evidenceCount: 1,
+      taskItemId: 'item-1',
+    }])
+  }, [setQueue])
+  return null
+}
+
+describe('EvidenceReviewModule', () => {
+  afterEach(() => {
+    cleanup()
+    window.location.hash = ''
+    sessionStorage.clear()
+  })
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    sessionStorage.setItem(DRAFT_KEY, JSON.stringify(DRAFT))
+    vi.mocked(endpoints.getEvidenceTarget).mockResolvedValue(DTO)
+    vi.mocked(endpoints.attachPaperEvidencePreview).mockResolvedValue(PREVIEW)
+    vi.mocked(endpoints.translateEvidenceText).mockResolvedValue({ translated: '译文内容：R1 投射到 R2。' })
+    vi.mocked(endpoints.validatePassageSelection).mockResolvedValue({
+      source_verified: true,
+      verification_method: 'exact',
+      normalized_selection: 'R1 projects to R2.',
+      char_start: 0,
+      char_end: 20,
+    })
+    vi.mocked(endpoints.saveTaskItemDraft).mockResolvedValue({ item_id: 'item-1', saved: true, server_revision: 1 })
+  })
+
+  it('从 sessionStorage draft 恢复 passages 并渲染 PassageEvidenceCard + AI 推荐灰字', async () => {
+    renderModule()
+    await waitFor(() => expect(screen.getByText('We observed that R1 projects to R2 in the macaque.')).toBeTruthy())
+    expect(screen.getByText('A secondary passage without verification.')).toBeTruthy()
+    expect(screen.getByText('未通过原文校验，请人工核对或重新截取')).toBeTruthy()
+    expect(screen.getByText('AI 推荐：支持')).toBeTruthy()
+    // 未核验片段不可勾选
+    const cards = screen.getAllByTestId('ew-passage')
+    const checkboxes = cards.map(c => c.querySelector('input[type="checkbox"]')) as HTMLInputElement[]
+    expect(checkboxes[0].disabled).toBe(false)
+    expect(checkboxes[1].disabled).toBe(true)
+  })
+
+  it('方向修改触发 attach-preview(debounce 350ms)', async () => {
+    renderModule()
+    await waitFor(() => expect(endpoints.attachPaperEvidencePreview).toHaveBeenCalled())
+    fireEvent.click(screen.getByLabelText('矛盾'))
+    await waitFor(() =>
+      expect(endpoints.attachPaperEvidencePreview).toHaveBeenLastCalledWith(expect.objectContaining({
+        target_type: 'connection',
+        target_id: 'r1-r2',
+        pmid: '12345678',
+        direction: 'contradicts',
+        reviewer_confidence: 0.8,
+      }), expect.anything()),
+    )
+    expect(endpoints.attachPaperEvidencePreview).toHaveBeenCalledWith(expect.objectContaining({
+      passages: expect.arrayContaining([expect.objectContaining({ source_verified: true, passage: PASSAGE_VERIFIED.passage })]),
+    }), expect.anything())
+  })
+
+  it('翻译按钮调用 translateEvidenceText 并显示译文', async () => {
+    renderModule()
+    await waitFor(() => expect(screen.getByText('We observed that R1 projects to R2 in the macaque.')).toBeTruthy())
+    fireEvent.click(screen.getByRole('button', { name: '翻译' }))
+    await waitFor(() => expect(endpoints.translateEvidenceText).toHaveBeenCalledWith({ text: PASSAGE_VERIFIED.passage }))
+    const ta = screen.getByPlaceholderText('中文翻译（可编辑）') as HTMLTextAreaElement
+    await waitFor(() => expect(ta.value).toBe('译文内容：R1 投射到 R2。'))
+  })
+
+  it('「返回证据候选」→ module=candidates 且 draft 保留,重新进入 review 恢复', async () => {
+    renderModule()
+    await waitFor(() => expect(screen.getByText('We observed that R1 projects to R2 in the macaque.')).toBeTruthy())
+    fireEvent.click(screen.getByRole('button', { name: '返回证据候选' }))
+    await waitFor(() => expect(window.location.hash).toContain('module=candidates'))
+    expect(window.location.hash).toContain('target_id=r1-r2')
+    const raw = sessionStorage.getItem(DRAFT_KEY)
+    expect(raw).toBeTruthy()
+    expect(JSON.parse(raw!).passages.length).toBe(2)
+    // 重新进入 review 模块 → 从 draft 恢复
+    cleanup()
+    renderModule()
+    await waitFor(() => expect(screen.getByText('We observed that R1 projects to R2 in the macaque.')).toBeTruthy())
+    expect(screen.getByText('AI 推荐：支持')).toBeTruthy()
+  })
+
+  it('AI 推荐与人工确认视觉:modelDirection 灰字 + 人工方向 radio 独立高亮', async () => {
+    const { container } = renderModule()
+    await waitFor(() => expect(screen.getByText('AI 推荐：支持')).toBeTruthy())
+    const badge = container.querySelector('.ew-ai-recommend')
+    expect(badge).toBeTruthy()
+    expect(badge!.textContent).toBe('AI 推荐：支持')
+    // 人工方向 radio 独立于 AI 推荐存在,当前选择高亮
+    const radios = container.querySelectorAll('input[name="dir"]')
+    expect(radios.length).toBe(5)
+    const checked = [...radios].find(r => (r as HTMLInputElement).checked) as HTMLInputElement
+    expect(checked.value).toBe('supports')
+    const supportsChip = screen.getByText('支持')
+    expect(supportsChip.className).toContain('ew-dir-chip')
+    expect(supportsChip.className).toContain('ew-dir-chip-active')
+    expect(screen.getByText('矛盾').className).not.toContain('ew-dir-chip-active')
+  })
+
+  it('禁止项:无 Europe PMC 搜索控件 / 无 attach / 无正式确认文案', async () => {
+    renderModule()
+    await waitFor(() => expect(screen.getByText('We observed that R1 projects to R2 in the macaque.')).toBeTruthy())
+    expect(screen.queryByPlaceholderText(/检索/)).toBeNull()
+    expect(screen.queryByText(/Europe PMC/)).toBeNull()
+    expect(screen.queryByText('确认论文证据')).toBeNull()
+    expect(screen.queryByText('确认入库')).toBeNull()
+    expect(screen.queryByTestId('ew-attach')).toBeNull()
+    expect(screen.queryByText('检索')).toBeNull()
+  })
+
+  it('保存草稿:写 sessionStorage + 有 taskItemId 时调 saveTaskItemDraft', async () => {
+    window.location.hash = REVIEW_HASH
+    render(
+      <EvidenceCenterProvider>
+        <QueueSeeder />
+        <EvidenceReviewModule />
+      </EvidenceCenterProvider>,
+    )
+    await waitFor(() => expect(screen.getByText('We observed that R1 projects to R2 in the macaque.')).toBeTruthy())
+    fireEvent.click(screen.getByRole('button', { name: '保存草稿' }))
+    await waitFor(() =>
+      expect(endpoints.saveTaskItemDraft).toHaveBeenCalledWith('item-1', expect.objectContaining({
+        passages: expect.any(Array),
+        reviewerDirection: 'supports',
+        modelDirection: 'supports',
+        pmid: '12345678',
+      }), 0),
+    )
+    const raw = sessionStorage.getItem(DRAFT_KEY)
+    const draft = JSON.parse(raw!) as { reviewerDirection: string; reviewerEvidenceLevel: EvidenceLevel; note: string }
+    expect(draft.reviewerDirection).toBe('supports')
+    expect(draft.reviewerEvidenceLevel).toBe('indirect')
+    expect(typeof draft.note).toBe('string')
+  })
+
+  it('重新截取调用 validatePassageSelection 并通过校验后替换原文', async () => {
+    renderModule()
+    await waitFor(() => expect(screen.getByText('We observed that R1 projects to R2 in the macaque.')).toBeTruthy())
+    fireEvent.click(screen.getByRole('button', { name: '重新截取' }))
+    const input = screen.getByPlaceholderText('输入更短的真实原文范围（后端校验）') as HTMLTextAreaElement
+    fireEvent.change(input, { target: { value: 'R1 projects to R2.' } })
+    fireEvent.click(screen.getByRole('button', { name: '校验并替换' }))
+    await waitFor(() =>
+      expect(endpoints.validatePassageSelection).toHaveBeenCalledWith({
+        paper_passage_id: 'pp1',
+        selected_text: 'R1 projects to R2.',
+      }),
+    )
+    await waitFor(() => expect(screen.getByText('R1 projects to R2.')).toBeTruthy())
+  })
+})
