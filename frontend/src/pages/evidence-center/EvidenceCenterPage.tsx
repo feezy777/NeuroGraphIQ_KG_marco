@@ -1,5 +1,12 @@
+import { useEffect, useMemo, useState } from 'react'
+import { listPaperEvidenceTasks } from '../../api/endpoints'
 import { EvidenceCenterProvider, useEvidenceCenter, type ModuleKey } from './EvidenceCenterContext'
 import { EvidenceCenterHeader } from './EvidenceCenterHeader'
+import { ContextBar } from './components/ContextBar'
+import { ObjectQueue } from './components/ObjectQueue'
+import { RightPanel } from './components/RightPanel'
+import { MODULE_TO_STEP, StepPills } from './components/StepPills'
+import { QUEUE_STATUS_LABEL } from './components/types'
 import { EvidenceCandidatesModule } from './modules/EvidenceCandidatesModule'
 import { EvidencePromotionModule } from './modules/EvidencePromotionModule'
 import { EvidenceReviewModule } from './modules/EvidenceReviewModule'
@@ -22,16 +29,75 @@ const MODULE_HINT: Record<ModuleKey, string> = {
 }
 
 function EvidenceCenterBody() {
-  const { state } = useEvidenceCenter()
+  const { state, queue, openTarget } = useEvidenceCenter()
+  const [taskName, setTaskName] = useState<string | null>(null)
+
+  // 任务名:从 tasks 列表按 state.taskId 推导(ContextBar 展示用)
+  useEffect(() => {
+    if (!state.taskId) {
+      setTaskName(null)
+      return
+    }
+    let cancelled = false
+    listPaperEvidenceTasks({ limit: 50 })
+      .then(r => {
+        const t = r.items.find(x => x.id === state.taskId)
+        if (!cancelled) setTaskName(t?.name || t?.target_type || null)
+      })
+      .catch(() => { if (!cancelled) setTaskName(null) })
+    return () => { cancelled = true }
+  }, [state.taskId])
+
+  const currentIndex = useMemo(() => {
+    if (queue.length === 0) return -1
+    const idx = queue.findIndex(q => q.target_type === state.targetType && q.target_id === state.targetId)
+    return idx >= 0 ? idx : 0
+  }, [queue, state.targetType, state.targetId])
+
+  const current = currentIndex >= 0 ? queue[currentIndex] : null
+  const isPapers = state.module === 'papers'
+
   return (
-    <div className="evidence-center-body">
-      <div className="evidence-module-hint">{MODULE_HINT[state.module]}</div>
-      {state.module === 'tasks' && <EvidenceTasksModule />}
-      {state.module === 'papers' && <PaperLibraryModule />}
-      {state.module === 'candidates' && <EvidenceCandidatesModule />}
-      {state.module === 'review' && <EvidenceReviewModule />}
-      {state.module === 'promotion' && <EvidencePromotionModule />}
-    </div>
+    <>
+      <ContextBar
+        targetLabel={current?.label ?? null}
+        targetType={current?.target_type ?? null}
+        granularity={null}
+        confidence={current?.confidence ?? null}
+        evidenceCount={current?.evidenceCount ?? null}
+        taskName={taskName}
+        queueIndex={currentIndex}
+        queueTotal={queue.length}
+        taskStatus={current ? (QUEUE_STATUS_LABEL[current.status] ?? current.status) : null}
+        onBackToDataCenter={() => { window.location.hash = '#/data-center' }}
+        onRefresh={() => { window.location.reload() }}
+      />
+      <StepPills currentStep={MODULE_TO_STEP[state.module]} />
+      <div className={`evidence-center-layout${isPapers ? ' evidence-center-layout-full' : ''}`} data-testid="evidence-center-layout">
+        {!isPapers && (
+          <aside className="evidence-left">
+            <ObjectQueue
+              queue={queue}
+              currentIndex={currentIndex}
+              onSelect={e => openTarget(e.target_type, e.target_id, 'candidates')}
+            />
+          </aside>
+        )}
+        <main className="evidence-main">
+          <div className="evidence-module-hint">{MODULE_HINT[state.module]}</div>
+          {state.module === 'tasks' && <EvidenceTasksModule />}
+          {state.module === 'papers' && <PaperLibraryModule />}
+          {state.module === 'candidates' && <EvidenceCandidatesModule />}
+          {state.module === 'review' && <EvidenceReviewModule />}
+          {state.module === 'promotion' && <EvidencePromotionModule />}
+        </main>
+        {!isPapers && (
+          <aside className="evidence-right">
+            <RightPanel module={state.module} />
+          </aside>
+        )}
+      </div>
+    </>
   )
 }
 

@@ -1,9 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { EvidenceCenterPage } from './EvidenceCenterPage'
+import { listPaperEvidenceTaskItems, listPaperEvidenceTasks } from '../../api/endpoints'
 
 vi.mock('../../api/endpoints', () => ({
-  listPaperEvidenceTasks: vi.fn().mockResolvedValue({ items: [] }),
+  listPaperEvidenceTasks: vi.fn().mockResolvedValue({ items: [], total: 0 }),
   listEvidencePapers: vi.fn().mockResolvedValue({ items: [], total: 0 }),
   listPaperEvidenceTaskItems: vi.fn().mockResolvedValue({ items: [] }),
   getEvidenceTarget: vi.fn().mockResolvedValue(null),
@@ -18,21 +19,74 @@ vi.mock('../../api/endpoints', () => ({
   validatePassageSelection: vi.fn().mockResolvedValue({ source_verified: true }),
 }))
 
+function makeItem(overrides: Record<string, unknown>) {
+  return {
+    id: 'it',
+    target_type: 'connection',
+    target_id: 'r1-r2',
+    status: 'awaiting_review',
+    pmid: null,
+    title: null,
+    passage: null,
+    direction: null,
+    confidence: null,
+    evidence_id: null,
+    error_message: null,
+    updated_at: null,
+    label: 'R1→R2',
+    current_confidence: 0.85,
+    attempt_count: 0,
+    last_error_code: null,
+    last_error_message: null,
+    preprocess_outcome: null,
+    paper_id: null,
+    model_direction: null,
+    candidate_papers: [],
+    review_draft: null,
+    claim_text_snapshot: null,
+    claim_components_snapshot: null,
+    passages_json: null,
+    last_error: null,
+    retry_count: 0,
+    ...overrides,
+  }
+}
+
+const TASK_ITEMS = [
+  makeItem({ candidate_papers: [{ paper_id: 'p1' }] }),
+  makeItem({
+    id: 'it2',
+    target_type: 'region',
+    target_id: 'r3',
+    label: 'R3',
+    status: 'completed',
+    current_confidence: 0.9,
+    candidate_papers: [{ paper_id: 'p1' }],
+  }),
+]
+
 describe('EvidenceCenterPage', () => {
   beforeEach(() => {
     sessionStorage.clear()
   })
 
-  afterEach(() => { cleanup(); window.location.hash = ''; sessionStorage.clear() })
+  afterEach(() => {
+    cleanup()
+    window.location.hash = ''
+    sessionStorage.clear()
+    vi.mocked(listPaperEvidenceTaskItems).mockResolvedValue({ items: [] })
+    vi.mocked(listPaperEvidenceTasks).mockResolvedValue({ items: [], total: 0 })
+  })
 
   it('渲染五模块导航与默认说明句', () => {
     window.location.hash = '#/evidence-center'
     render(<EvidenceCenterPage />)
-    expect(screen.getByText('佐证任务')).toBeTruthy()
-    expect(screen.getByText('论文库')).toBeTruthy()
-    expect(screen.getByText('证据候选')).toBeTruthy()
-    expect(screen.getByText('人工审核')).toBeTruthy()
-    expect(screen.getByText('证据晋升')).toBeTruthy()
+    const nav = screen.getByTestId('evidence-module-nav')
+    expect(within(nav).getByText('佐证任务')).toBeTruthy()
+    expect(within(nav).getByText('论文库')).toBeTruthy()
+    expect(within(nav).getByText('证据候选')).toBeTruthy()
+    expect(within(nav).getByText('人工审核')).toBeTruthy()
+    expect(within(nav).getByText('证据晋升')).toBeTruthy()
   })
 
   it('模块导航切换更新 URL 与内容区', async () => {
@@ -55,5 +109,85 @@ describe('EvidenceCenterPage', () => {
     const { container } = render(<EvidenceCenterPage />)
     await waitFor(() => expect(container.querySelector(selector)).toBeTruthy())
     expect(screen.getByText(text)).toBeTruthy()
+  })
+
+  // ─── V2 三栏骨架 ───
+
+  it('渲染三栏骨架:左队列 / 主内容 / 右栏', () => {
+    window.location.hash = '#/evidence-center?module=candidates'
+    const { container } = render(<EvidenceCenterPage />)
+    expect(container.querySelector('.evidence-center-layout')).toBeTruthy()
+    expect(container.querySelector('.evidence-left')).toBeTruthy()
+    expect(container.querySelector('.evidence-main')).toBeTruthy()
+    expect(container.querySelector('.evidence-right')).toBeTruthy()
+    expect(screen.getByTestId('evidence-queue')).toBeTruthy()
+    expect(screen.getByTestId('evidence-right-panel')).toBeTruthy()
+  })
+
+  it('papers 模块例外:全宽渲染并隐藏左右栏', async () => {
+    window.location.hash = '#/evidence-center?module=papers'
+    const { container } = render(<EvidenceCenterPage />)
+    await waitFor(() => expect(container.querySelector('.evidence-center-layout-full')).toBeTruthy())
+    expect(container.querySelector('.evidence-left')).toBeNull()
+    expect(container.querySelector('.evidence-right')).toBeNull()
+  })
+
+  it('右栏占位标题随 module 切换', () => {
+    window.location.hash = '#/evidence-center?module=tasks'
+    const { container } = render(<EvidenceCenterPage />)
+    const title = () => container.querySelector('.evidence-right-panel h4')?.textContent ?? ''
+    expect(title()).toContain('任务')
+    fireEvent.click(screen.getByText('证据候选'))
+    expect(title()).toContain('检索')
+    fireEvent.click(screen.getAllByText('人工审核')[0])
+    expect(title()).toContain('审核')
+  })
+
+  it('ContextBar 显示当前对象、类型、置信度、证据数与队列进度', async () => {
+    vi.mocked(listPaperEvidenceTaskItems).mockResolvedValue({ items: TASK_ITEMS })
+    window.location.hash = '#/evidence-center?module=candidates&task_id=t1'
+    render(<EvidenceCenterPage />)
+    const bar = await screen.findByTestId('evidence-context-bar')
+    await waitFor(() => expect(within(bar).getByText('R1→R2')).toBeTruthy())
+    expect(within(bar).getByText('connection')).toBeTruthy()
+    expect(within(bar).getByText(/置信度 85%/)).toBeTruthy()
+    expect(within(bar).getByText(/1 条证据/)).toBeTruthy()
+    expect(within(bar).getByText(/1\/2/)).toBeTruthy()
+    expect(within(bar).getByText('待审核')).toBeTruthy()
+  })
+
+  it('队列为空时 ContextBar 显示占位', async () => {
+    window.location.hash = '#/evidence-center?module=tasks'
+    render(<EvidenceCenterPage />)
+    const bar = await screen.findByTestId('evidence-context-bar')
+    expect(within(bar).getByText('未选择对象')).toBeTruthy()
+    expect(within(bar).getByText(/等待处理对象/)).toBeTruthy()
+  })
+
+  it('ObjectQueue 渲染待处理对象列表且当前项高亮', async () => {
+    vi.mocked(listPaperEvidenceTaskItems).mockResolvedValue({ items: TASK_ITEMS })
+    window.location.hash = '#/evidence-center?module=candidates&task_id=t1'
+    render(<EvidenceCenterPage />)
+    await waitFor(() => expect(screen.getByText('待处理对象')).toBeTruthy())
+    const items = screen.getAllByTestId('evidence-queue-item')
+    expect(items).toHaveLength(2)
+    expect(items[0].textContent).toContain('R1→R2')
+    expect(items[0].textContent).toContain('待审核')
+    expect(items[0].className).toContain('evidence-queue-item-active')
+    expect(items[1].className).not.toContain('evidence-queue-item-active')
+  })
+
+  it('StepPills 渲染五步并随 module 高亮当前步', async () => {
+    window.location.hash = '#/evidence-center?module=candidates'
+    render(<EvidenceCenterPage />)
+    const pills = await screen.findByTestId('evidence-step-pills')
+    for (const label of ['确认对象', '查找论文', '找到原文', '人工审核', '确认晋升']) {
+      expect(within(pills).getByText(label)).toBeTruthy()
+    }
+    expect(pills.querySelector('.evidence-step-pill.active')?.textContent).toContain('确认对象')
+    fireEvent.click(screen.getAllByText('人工审核')[0])
+    await waitFor(() => expect(window.location.hash).toContain('module=review'))
+    expect(screen.getByTestId('evidence-step-pills').querySelector('.evidence-step-pill.active')?.textContent)
+      .toContain('找到原文')
   })
 })

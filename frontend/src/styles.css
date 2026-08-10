@@ -11970,3 +11970,129 @@ input[type="range"]::-webkit-slider-thumb {
 }
 .evidence-detail-passage-meta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .evidence-detail-actions { display: flex; gap: 8px; justify-content: flex-end; }
+
+/* ── Evidence Center V2 三栏骨架 (S1) ─────────────────────────────────────── */
+.evidence-center {
+  height: calc(100vh - var(--topbar-h) - var(--log-console-actual-height, var(--log-console-height-collapsed)) - 44px);
+  min-height: 0;
+}
+.evidence-center-layout {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 230px minmax(620px, 1fr) 370px;
+  gap: 14px;
+}
+.evidence-center-layout-full { grid-template-columns: 1fr; }
+.evidence-center-layout-full .evidence-left,
+.evidence-center-layout-full .evidence-right { display: none; }
+.evidence-left,
+.evidence-main,
+.evidence-right {
+  min-height: 0;
+  min-width: 0;
+  overflow-y: auto;
+  background: var(--white);
+  border: 1px solid var(--border);
+  border-radius: var(--card-radius);
+  box-shadow: var(--shadow);
+  padding: 12px 14px;
+}
+.evidence-main { display: flex; flex-direction: column; gap: 12px; }
+.evidence-right-panel h4 { font-size: 14px; color: var(--text); margin-bottom: 6px; }
+
+/* 顶部信息条 ContextBar */
+.evidence-context-bar {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  padding: 10px 14px;
+  background: var(--white);
+  border: 1px solid var(--border);
+  border-radius: var(--card-radius);
+  box-shadow: var(--shadow);
+}
+.evidence-context-object { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-width: 0; }
+.evidence-context-label { font-size: 14px; font-weight: 700; color: var(--text); }
+.evidence-context-chip {
+  font-size: 11px;
+  font-weight: 600;
+  background: #f1f5f9;
+  color: var(--text-muted);
+  border-radius: 999px;
+  padding: 2px 10px;
+}
+.evidence-context-task { font-size: 12px; color: var(--text-muted); }
+.evidence-context-progress { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.evidence-context-actions { margin-left: auto; display: flex; gap: 8px; }
+
+/* 五步流程 StepPills */
+.evidence-step-pills { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.evidence-step-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-muted);
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: #f1f5f9;
+  transition: all .15s ease;
+}
+.evidence-step-num {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #e2e8f0;
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.evidence-step-pill.active { background: var(--primary); color: #fff; }
+.evidence-step-pill.active .evidence-step-num { background: rgba(255, 255, 255, .25); color: #fff; }
+
+/* 统一对象队列 ObjectQueue */
+.evidence-queue { display: flex; flex-direction: column; gap: 8px; }
+.evidence-queue-head { display: flex; align-items: center; justify-content: space-between; }
+.evidence-queue-title { font-size: 14px; font-weight: 700; color: var(--text); }
+.evidence-queue-count { background: #eff6ff; color: var(--primary); border-radius: 999px; padding: 1px 8px; font-size: 11px; font-weight: 600; }
+.evidence-queue-stats { display: flex; gap: 6px; flex-wrap: wrap; }
+.evidence-queue-stat { font-size: 11px; color: var(--text-muted); background: #f8fafc; border-radius: 6px; padding: 2px 8px; }
+.evidence-queue-filter { font-size: 12px; color: var(--text-muted); display: flex; align-items: center; gap: 4px; cursor: pointer; user-select: none; }
+.evidence-queue-list { display: flex; flex-direction: column; gap: 6px; }
+.evidence-queue-item {
+  position: relative;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 10px 8px 14px;
+  cursor: pointer;
+  transition: border-color .15s ease, background .15s ease;
+}
+.evidence-queue-item:hover { border-color: var(--primary); }
+.evidence-queue-item-active { border-color: var(--primary); background: #eff6ff; }
+.evidence-queue-item-active::before {
+  content: '';
+  position: absolute;
+  left: -1px;
+  top: 6px;
+  bottom: 6px;
+  width: 3px;
+  border-radius: 2px;
+  background: var(--primary);
+}
+.evidence-queue-item-label { font-size: 13px; font-weight: 600; color: var(--text); }
+.evidence-queue-item-meta { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+.evidence-queue-item-foot { display: flex; align-items: center; justify-content: space-between; margin-top: 4px; }
+.evidence-queue-status { font-size: 11px; font-weight: 600; }
+.evidence-queue-status-info { color: var(--primary); }
+.evidence-queue-status-warn { color: #d48806; }
+.evidence-queue-status-ok { color: #389e0d; }
+.evidence-queue-status-bad { color: #cf1322; }
+.evidence-queue-status-muted { color: var(--text-muted); }
+.evidence-queue-evidence { font-size: 11px; color: var(--text-muted); }
+.evidence-queue-empty { font-size: 12px; color: var(--text-muted); text-align: center; padding: 16px 0; }

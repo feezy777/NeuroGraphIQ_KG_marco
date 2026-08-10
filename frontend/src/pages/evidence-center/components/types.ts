@@ -70,6 +70,30 @@ export interface QueueEntry {
   draft?: WorkbenchDraft
 }
 
+export const QUEUE_STATUS_LABEL: Record<QueueStatus, string> = {
+  pending: '待处理',
+  searching: '检索中',
+  extracting: '提取中',
+  awaiting_review: '待审核',
+  completed: '已完成',
+  skipped: '已跳过',
+  failed: '失败',
+}
+
+/** 队列条目状态 → 语义色板(ok/warn/bad/info/muted) */
+export function queueStatusTone(status: QueueStatus): string {
+  switch (status) {
+    case 'completed': return 'ok'
+    case 'awaiting_review': return 'warn'
+    case 'failed': return 'bad'
+    case 'pending':
+    case 'searching':
+    case 'extracting': return 'info'
+    case 'skipped': return 'muted'
+    default: return 'muted'
+  }
+}
+
 export const DIRECTION_LABEL: Record<Direction, string> = {
   supports: '支持',
   partial: '部分支持',
