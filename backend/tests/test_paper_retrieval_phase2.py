@@ -95,6 +95,23 @@ def test_score_paragraphs_ranking_priorities():
     assert ranked[3]["paragraph_id"] == "m1"
 
 
+def test_build_epmc_query_uses_synonym_or_groups():
+    context = {
+        "source_region": "BLA",
+        "source_region_synonyms": ["basolateral amygdala"],
+        "target_region": "infralimbic cortex",
+        "target_region_synonyms": ["IL"],
+        "function_terms": ["fear extinction"],
+        "function_synonyms": ["extinction learning"],
+        "relation_keywords": [],
+    }
+    q = pes._build_epmc_query(context)
+    assert '"BLA" OR "basolateral amygdala"' in q
+    assert '"infralimbic cortex" OR "IL"' in q
+    assert '"fear extinction" OR "extinction learning"' in q
+    assert q.count(" AND ") == 2
+
+
 def test_synonym_hit_boost_and_section_prior():
     paragraphs = [
         {"paragraph_id": "p1", "section_title": "Results", "paragraph_index": 0, "passage_text": "Amygdala stimulation altered extinction behavior."},

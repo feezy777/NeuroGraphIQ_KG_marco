@@ -544,28 +544,6 @@ describe('EvidenceReviewModal 论文佐证工作台', () => {
     expect(screen.queryAllByTestId('ew-passage')).toHaveLength(0)
   })
 
-  it('多选论文批量提取：结果按论文分组展示，失败论文隔离，可载入成功论文片段', async () => {
-    renderWorkbench([ITEM_A])
-    await waitFor(() => expect(screen.getByText('Paper A')).toBeTruthy())
-    // select the paper via checkbox
-    const checkbox = screen.getByTestId('ew-paper').querySelector('input[type="checkbox"]') as HTMLInputElement
-    fireEvent.click(checkbox)
-    expect(checkbox.checked).toBe(true)
-    fireEvent.click(screen.getByTestId('ew-extract-selected'))
-    await waitFor(() => expect(screen.getByTestId('ew-extract-all-results')).toBeTruthy())
-    expect(screen.getByText(/批量提取结果（2 篇）/)).toBeTruthy()
-    expect(screen.getByText(/PAPER_FETCH_FAILED/)).toBeTruthy()
-    fireEvent.click(screen.getByText('选择此论文并载入片段'))
-    await waitFor(() => expect(screen.getAllByTestId('ew-passage')).toHaveLength(1))
-    expect(screen.getByTestId('ew-step-label').textContent).toContain('步骤 4/5')
-    expect(vi.mocked(endpoints.extractSelectedPaperEvidence)).toHaveBeenCalledWith(
-      expect.objectContaining({
-        target_id: ITEM_A.target_id,
-        papers: [expect.objectContaining({ pmid: '12345' })],
-      }),
-    )
-  })
-
   it('缺少 PMID/DOI 的论文：单篇提取禁用，批量提取自动跳过并提示', async () => {
     vi.mocked(endpoints.searchPaperEvidence).mockResolvedValue({
       ...SEARCH_OK,
@@ -580,14 +558,29 @@ describe('EvidenceReviewModal 论文佐证工作台', () => {
     fireEvent.click(screen.getAllByText('No Identifier Paper')[0])
     expect((screen.getByText('AI 提取原文') as HTMLButtonElement).disabled).toBe(true)
     expect(screen.getByText(/该论文缺少 PMID\/DOI，无法提取/)).toBeTruthy()
-    // select all -> identifier-less paper skipped automatically
-    fireEvent.click(screen.getByText('全选'))
+  })
+
+  it('多选论文逐篇提取：每篇结果独立展示，可载入任意一篇的片段', async () => {
+    const paperB = { ...PAPER, pmid: '88888', title: 'Paper B', doi: '10.2000/bbb' }
+    vi.mocked(endpoints.searchPaperEvidence).mockResolvedValue({
+      ...SEARCH_OK,
+      papers: [PAPER, paperB],
+    })
+    renderWorkbench([ITEM_A])
+    await waitFor(() => expect(screen.getByText('Paper B')).toBeTruthy())
+    const papers = screen.getAllByTestId('ew-paper')
+    const boxes = papers.map(el => el.querySelector('input[type="checkbox"]') as HTMLInputElement)
+    fireEvent.click(boxes[0])
+    fireEvent.click(boxes[1])
+    expect(boxes.every(b => b.checked)).toBe(true)
     fireEvent.click(screen.getByTestId('ew-extract-selected'))
-    await waitFor(() => expect(screen.getByText(/已处理 2 篇论文：1 篇找到有效片段/)).toBeTruthy())
-    expect(vi.mocked(endpoints.extractSelectedPaperEvidence)).toHaveBeenCalledWith(
-      expect.objectContaining({
-        papers: [expect.objectContaining({ pmid: '12345' })], // identifier-less paper excluded
-      }),
-    )
+    await waitFor(() => expect(screen.getAllByTestId('ew-paper-result').length).toBe(2))
+    expect(vi.mocked(endpoints.extractPaperPassage)).toHaveBeenCalledTimes(2)
+    const calls = vi.mocked(endpoints.extractPaperPassage).mock.calls.map(c => c[0].pmid)
+    expect(calls).toEqual(expect.arrayContaining(['12345', '88888']))
+    // load passages from Paper B
+    fireEvent.click(screen.getAllByText('载入片段')[1])
+    await waitFor(() => expect(screen.getAllByTestId('ew-passage')).toHaveLength(2))
+    expect(screen.getByTestId('ew-step-label').textContent).toContain('步骤 4/5')
   })
 })

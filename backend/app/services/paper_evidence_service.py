@@ -542,7 +542,7 @@ async def _search(query: str, limit: int) -> list[dict]:
                 "journal": item.get("journalTitle") or "",
                 "year": item.get("pubYear") or "",
                 "authors": item.get("authorString") or "",
-                "abstract": (item.get("abstractText") or "")[:2000],
+                "abstract": (item.get("abstractText") or "")[:4000],
                 "is_open_access": str(item.get("isOpenAccess") or "").lower() == "y",
                 "source": "europepmc",
             }
@@ -589,7 +589,7 @@ async def verify_paper(pmid: str) -> dict | None:
         "journal": item.get("journalTitle") or "",
         "year": item.get("pubYear") or "",
         "authors": item.get("authorString") or "",
-        "abstract": (item.get("abstractText") or "")[:2000],
+        "abstract": (item.get("abstractText") or "")[:4000],
         "source": "europepmc",
     }
 
@@ -3288,6 +3288,35 @@ def _rank_papers(papers: list[dict], context: dict) -> list[dict]:
         ranked.append({**p, "paper_match_score": round(score, 2)})
     ranked.sort(key=lambda x: (-x["paper_match_score"], str(x.get("year") or "")))
     return ranked
+
+
+def _build_epmc_query(context: dict) -> str:
+    """Build a broader Europe PMC query from the retrieval context.
+
+    Uses OR-groups per concept (source / target / function, canonical + synonyms)
+    joined with AND, instead of quoting the whole display name.
+    """
+    def group(terms: list[str], limit: int = 4) -> str | None:
+        cleaned: list[str] = []
+        for t in terms:
+            t = (t or "").strip().strip('"')
+            if t and len(t) <= 80 and t.lower() not in ("unknown", "none"):
+                cleaned.append(f'"{t}"')
+            if len(cleaned) >= limit:
+                break
+        return "(" + " OR ".join(cleaned) + ")" if cleaned else None
+
+    parts: list[str] = []
+    src = group([context.get("source_region") or ""] + (context.get("source_region_synonyms") or []))
+    tgt = group([context.get("target_region") or ""] + (context.get("target_region_synonyms") or []))
+    fn = group((context.get("function_terms") or []) + (context.get("function_synonyms") or []), limit=3)
+    if src:
+        parts.append(src)
+    if tgt:
+        parts.append(tgt)
+    if fn:
+        parts.append(fn)
+    return " AND ".join(parts)
 
 
 async def _set_item_stage(session: AsyncSession, item_id: str, status: str, **extra) -> None:

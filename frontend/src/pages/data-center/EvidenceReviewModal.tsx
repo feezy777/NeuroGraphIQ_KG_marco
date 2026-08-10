@@ -4,7 +4,6 @@ import {
   attachPaperEvidencePreview,
   completePaperEvidenceTaskItem,
   extractPaperPassage,
-  extractSelectedPaperEvidence,
   getEvidenceQueue,
   getEvidenceTarget,
   listPaperEvidence,
@@ -97,21 +96,12 @@ export function EvidenceReviewModal({ open, onClose, initialItems, initialTaskId
   const [dto, setDto] = useState<EvidenceTargetDto | null>(null)
   const [result, setResult] = useState<PaperSearchResponse | null>(null)
   const [selectedPaperIds, setSelectedPaperIds] = useState<Set<string>>(new Set())
-  const [extractAllResults, setExtractAllResults] = useState<Array<{
-    paper_id: string
-    pmid: string
-    doi: string
-    title: string
-    journal: string
-    year: string
-    is_oa: boolean
-    model_direction: string | null
-    model_assessment: string | null
-    coverage_summary: Record<string, unknown> | null
-    passages: Array<Record<string, unknown>>
-    error_code?: string | null
-    error_message?: string | null
-  }>>([])
+  const [paperExtractResults, setPaperExtractResults] = useState<Record<string, {
+    busy?: boolean
+    error?: string
+    model_direction?: string | null
+    passages?: WorkbenchPassage[]
+  }>>({})
   const [query, setQuery] = useState('')
   const [chips, setChips] = useState<string[]>([])
   const [excludedPmids, setExcludedPmids] = useState<Set<string>>(new Set())
@@ -438,26 +428,26 @@ export function EvidenceReviewModal({ open, onClose, initialItems, initialTaskId
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open])
 
-  const extract = useCallback(async () => {
-    if (!current || !selectedPaper) return
+  const extractOneForPaper = useCallback(async (paper: NonNullable<PaperSearchResponse['papers'][number]>) => {
+    if (!current) return null
     abortRef.current?.abort()
     abortRef.current = new AbortController()
     targetRef.current = current.target_id
     setBusy('extract')
-    setMessage(null)
-    setStep(2)
     try {
       const r = await extractPaperPassage({
         target_type: current.target_type,
         target_id: current.target_id,
-        pmid: selectedPaper.pmid,
-        doi: selectedPaper.doi,
-        title: selectedPaper.title,
-        abstract: selectedPaper.abstract,
+        pmid: paper.pmid,
+        doi: paper.doi,
+        title: paper.title,
+        abstract: paper.abstract,
       }, abortRef.current.signal)
-      if (targetRef.current !== current.target_id) return
+      if (targetRef.current !== current.target_id) return null
       const mapped: WorkbenchPassage[] = r.passages.map((p, i) => ({
-        hash: `${selectedPaper.pmid}-${i}-${p.passage}`,
+        hash: `${paper.pmid}-${i}-${p.passage}`,
+        paper_id: null,
+        paper_passage_id: null,
         source_scope: p.source_scope,
         section_title: p.section_title,
         paragraph_index: p.paragraph_index,
@@ -474,16 +464,31 @@ export function EvidenceReviewModal({ open, onClose, initialItems, initialTaskId
         source_verification_method: p.source_verification_method,
         supported_components: p.supported_components ?? [],
       }))
-      setPassages(mapped)
-      setSelectedHashes(new Set(mapped.filter(p => p.source_verified).map(p => p.hash)))
-      setModelDirection(r.overall_direction)
-      setModelAssessment(r.assessment)
-      setDirection(r.overall_direction)
-      setStep(3)
-      const verified = mapped.filter(p => p.source_verified).length
-      setMessage(`找到 ${mapped.length} 个候选证据片段：${verified} 个已通过原文核验，${mapped.length - verified} 个未通过核验`)
+      return { passages: mapped, model_direction: r.overall_direction, model_assessment: r.assessment }
     } catch (err) {
-      if (targetRef.current !== current.target_id) return
+      if (targetRef.current !== current.target_id) return null
+      throw err
+    } finally {
+      setBusy(null)
+    }
+  }, [current])
+
+  const extract = useCallback(async () => {
+    if (!current || !selectedPaper) return
+    setMessage(null)
+    setStep(2)
+    try {
+      const result = await extractOneForPaper(selectedPaper)
+      if (!result) return
+      setPassages(result.passages)
+      setSelectedHashes(new Set(result.passages.filter(p => p.source_verified).map(p => p.hash)))
+      setModelDirection(result.model_direction)
+      setModelAssessment(result.model_assessment)
+      setDirection(result.model_direction ?? 'supports')
+      setStep(3)
+      const verified = result.passages.filter(p => p.source_verified).length
+      setMessage(`找到 ${result.passages.length} 个候选证据片段：${verified} 个已通过原文核验，${result.passages.length - verified} 个未通过核验`)
+    } catch (err) {
       const raw = err instanceof Error ? err.message : String(err)
       const paperTitle = selectedPaper?.title ?? '当前论文'
       if (raw.includes('parse_error')) {
@@ -494,10 +499,55 @@ export function EvidenceReviewModal({ open, onClose, initialItems, initialTaskId
         setMessage(`提取失败：${raw}`)
       }
       mark(idx, 'failed')
-    } finally {
-      setBusy(null)
     }
-  }, [current, selectedPaper, idx, mark])
+  }, [current, selectedPaper, idx, mark, extractOneForPaper])
+
+  const extractSelected = useCallback(async () => {
+    if (!current || selectedPaperIds.size === 0) return
+    const papers = (result?.papers ?? []).filter(p => selectedPaperIds.has(p.pmid))
+    const extractable = papers.filter(p => p.pmid || p.doi)
+    if (extractable.length === 0) {
+      setMessage('所选论文均缺少 PMID/DOI，无法提取')
+      return
+    }
+    setPaperExtractResults({})
+    setMessage(null)
+    let done = 0
+    let okCount = 0
+    for (const paper of extractable) {
+      setPaperExtractResults(prev => ({ ...prev, [paper.pmid]: { busy: true } }))
+      setMessage(`正在逐篇提取 ${done + 1}/${extractable.length}：${paper.title.slice(0, 40)}…`)
+      try {
+        const r = await extractOneForPaper(paper)
+        if (!r) continue
+        if (r.passages.some(p => p.source_verified)) okCount += 1
+        setPaperExtractResults(prev => ({
+          ...prev,
+          [paper.pmid]: { busy: false, model_direction: r.model_direction, passages: r.passages },
+        }))
+      } catch (err) {
+        setPaperExtractResults(prev => ({
+          ...prev,
+          [paper.pmid]: { busy: false, error: err instanceof Error ? err.message : String(err) },
+        }))
+      }
+      done += 1
+    }
+    setMessage(`已逐篇提取 ${extractable.length} 篇论文，${okCount} 篇找到有效片段；点击论文下方「载入片段」进入审核`)
+  }, [current, selectedPaperIds, result, extractOneForPaper])
+
+  const loadPaperResult = useCallback((paper: NonNullable<PaperSearchResponse['papers'][number]>, passages: WorkbenchPassage[]) => {
+    setPassages(passages)
+    setSelectedHashes(new Set(passages.filter(p => p.source_verified).map(p => p.hash)))
+    const res = paperExtractResults[paper.pmid]
+    setModelDirection((res?.model_direction as Direction) ?? null)
+    setDirection((res?.model_direction as Direction) ?? 'supports')
+    setSelectedPmid(paper.pmid)
+    setStep(3)
+    setDirty(true)
+    const verified = passages.filter(p => p.source_verified).length
+    setMessage(`已载入「${paper.title}」的 ${passages.length} 个候选片段（${verified} 个已核验），请人工审核`)
+  }, [paperExtractResults])
 
   const translatePassage = useCallback(async (hash: string, text: string) => {
     abortRef.current?.abort()
@@ -570,71 +620,6 @@ export function EvidenceReviewModal({ open, onClose, initialItems, initialTaskId
       return false
     }
   }, [passages, updatePassage])
-
-  const extractSelected = useCallback(async () => {
-    if (!current || selectedPaperIds.size === 0) return
-    setBusy('extract-all')
-    setMessage(null)
-    try {
-      const selected = (result?.papers ?? []).filter(p => selectedPaperIds.has(p.pmid))
-      const extractable = selected.filter(p => p.pmid || p.doi)
-      if (extractable.length === 0) {
-        setMessage('所选论文均缺少 PMID/DOI，无法提取')
-        return
-      }
-      if (extractable.length < selected.length) {
-        setMessage(`已跳过 ${selected.length - extractable.length} 篇缺少 PMID/DOI 的论文`)
-      }
-      const r = await extractSelectedPaperEvidence({
-        target_type: current.target_type,
-        target_id: current.target_id,
-        papers: extractable.map(p => ({
-          pmid: p.pmid || '',
-          doi: p.doi || null,
-          title: p.title || null,
-        })),
-      })
-      setExtractAllResults(r.results)
-      const okCount = r.results.filter(x => !x.error_code && (x.passages ?? []).some(p => p.source_verified)).length
-      setMessage(`已处理 ${r.results.length} 篇论文：${okCount} 篇找到有效片段`)
-    } catch (err) {
-      setMessage(`批量提取失败：${err instanceof Error ? err.message : String(err)}`)
-    } finally {
-      setBusy(null)
-    }
-  }, [current, selectedPaperIds, result])
-
-  const loadExtractedPaper = useCallback((cand: typeof extractAllResults[number]) => {
-    const mapped: WorkbenchPassage[] = (cand.passages ?? []).map((p, i) => ({
-      hash: `${cand.paper_id}-${i}`,
-      paper_id: cand.paper_id,
-      paper_passage_id: (p.paper_passage_id as string | null) ?? null,
-      source_scope: (p.source_scope === 'fulltext' ? 'fulltext' : 'abstract') as 'abstract' | 'fulltext',
-      section_title: (p.section_title as string | null) ?? null,
-      paragraph_index: (p.paragraph_index as number | null) ?? null,
-      paragraph_id: (p.paragraph_id as string | null) ?? null,
-      passage: String(p.passage ?? ''),
-      translation_zh: null,
-      direction: (p.direction as WorkbenchPassage['direction']) ?? 'supports',
-      evidence_level: (p.evidence_level as EvidenceLevel) ?? 'indirect',
-      reason: String(p.reason ?? ''),
-      confidence: Number(p.confidence ?? 0),
-      semantic_confidence: p.semantic_confidence != null ? Number(p.semantic_confidence) : null,
-      source_locator: (p.source_locator as string | null) ?? null,
-      source_verified: Boolean(p.source_verified),
-      source_verification_method: (p.source_verification_method as string | null) ?? null,
-      supported_components: Array.isArray(p.supported_components) ? (p.supported_components as string[]) : [],
-    }))
-    setSelectedPmid(cand.pmid)
-    setPassages(mapped)
-    setSelectedHashes(new Set(mapped.filter(p => p.source_verified).map(p => p.hash)))
-    setDirection((cand.model_direction as Direction) ?? 'supports')
-    setModelDirection((cand.model_direction as Direction) ?? null)
-    setModelAssessment(cand.model_assessment ?? null)
-    setStep(3)
-    setDirty(true)
-    setMessage(`已载入「${cand.title}」的 ${mapped.length} 个候选片段，请人工审核`)
-  }, [])
 
   const runPreview = useCallback(async () => {
     if (!current || !selectedPmid) return
@@ -923,7 +908,7 @@ export function EvidenceReviewModal({ open, onClose, initialItems, initialTaskId
               <div className="ontology-form-row">
                 <button type="button" className="btn btn-xs" disabled={visiblePapers.length === 0} onClick={() => setSelectedPaperIds(new Set(visiblePapers.map(p => p.pmid).filter(Boolean)))}>全选</button>
                 <button type="button" data-testid="ew-extract-selected" className="btn btn-sm" disabled={selectedPaperIds.size === 0 || busy !== null} onClick={extractSelected}>提取所选论文（{selectedPaperIds.size}）</button>
-                <span className="ew-meta">按相关性选择多篇论文后一次性提取，结果按论文分组供人工选择</span>
+                <span className="ew-meta">多选后逐篇提取，每篇结果展示在对应论文下方</span>
               </div>
               {result && result.papers.length === 0 && (
                 <div className="ontology-empty">没有找到符合当前检索式的论文，请修改检索词、放宽搜索或恢复系统推荐检索式后重新搜索。</div>
@@ -931,7 +916,9 @@ export function EvidenceReviewModal({ open, onClose, initialItems, initialTaskId
               {result && result.papers.length > 0 && visiblePapers.length === 0 && (
                 <div className="ontology-empty">当前筛选/排除后无论文，请调整筛选条件</div>
               )}
-              {visiblePapers.map(p => (
+              {visiblePapers.map(p => {
+                const paperResult = paperExtractResults[p.pmid]
+                return (
                 <div key={p.pmid} className={`ew-paper ${selectedPmid === p.pmid ? 'ew-paper-active' : ''}`} data-testid="ew-paper"
                   onClick={() => { setSelectedPmid(p.pmid); setPassages([]); setStep(2); setDirty(true); audit('EVIDENCE_PAPER_SELECT', { pmid: p.pmid, title: p.title }) }}>
                   <strong>{p.title}</strong>
@@ -952,36 +939,27 @@ export function EvidenceReviewModal({ open, onClose, initialItems, initialTaskId
                     {p.abstract ? <span className="ew-meta">Abstract</span> : <span className="ew-meta">无摘要</span>}
                     <button type="button" className="btn btn-xs" onClick={e => { e.stopPropagation(); setExcludedPmids(prev => new Set(prev).add(p.pmid)) }}>排除此候选</button>
                   </div>
+                  {paperResult && (
+                    <div className="ew-paper-result" data-testid="ew-paper-result">
+                      {paperResult.busy && <span className="ew-meta">正在提取…</span>}
+                      {paperResult.error && <span className="ew-bad">提取失败：{paperResult.error}</span>}
+                      {!paperResult.busy && !paperResult.error && paperResult.passages && (
+                        <>
+                          <span className="ew-meta">
+                            模型判断：{paperResult.model_direction ?? '—'} · 候选片段 {paperResult.passages.length} ·
+                            已核验 {paperResult.passages.filter(x => x.source_verified).length}
+                          </span>
+                          <div className="ontology-form-row">
+                            <button type="button" className="btn btn-xs" disabled={!paperResult.passages.some(x => x.source_verified)}
+                              onClick={e => { e.stopPropagation(); loadPaperResult(p, paperResult.passages!) }}>载入片段</button>
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  )}
                 </div>
-              ))}
-              {extractAllResults.length > 0 && (
-                <div className="ew-section" data-testid="ew-extract-all-results">
-                  <h4>批量提取结果（{extractAllResults.length} 篇）</h4>
-                  {extractAllResults.map(c => {
-                    const cov = c.coverage_summary as Record<string, unknown> | null
-                    const supportedCount = Array.isArray(cov?.supported_components) ? (cov.supported_components as string[]).length : 0
-                    const requiredCount = Array.isArray(cov?.required_components) ? (cov.required_components as string[]).length : 0
-                    const verifiedCount = (c.passages ?? []).filter(p => p.source_verified).length
-                    return (
-                      <div key={c.paper_id || c.pmid || c.doi} className="ew-paper">
-                        <strong>{c.title || '未命名论文'}</strong>
-                        <div className="ew-meta">{c.journal} · {c.year} · PMID {c.pmid || '—'} · DOI {c.doi || '—'}</div>
-                        {c.error_code ? (
-                          <div className="ew-bad">{c.error_code}: {c.error_message}</div>
-                        ) : (
-                          <>
-                            <div className="ew-meta">模型判断：{c.model_direction ?? '—'} · 覆盖 {supportedCount}/{requiredCount} · 候选片段 {c.passages?.length ?? 0} · 已核验 {verifiedCount}</div>
-                            <div className="ontology-form-row">
-                              <button type="button" className="btn btn-sm" disabled={verifiedCount === 0} onClick={() => loadExtractedPaper(c)}>选择此论文并载入片段</button>
-                              {verifiedCount === 0 && <span className="ew-bad">无有效核验片段</span>}
-                            </div>
-                          </>
-                        )}
-                      </div>
-                    )
-                  })}
-                </div>
-              )}
+                )
+              })}
             </div>
 
             {(selectedPaper || (current?.draftPassages?.length ?? 0) > 0 || passages.length > 0) && (

@@ -631,9 +631,9 @@ async def paper_evidence_search(
         info = await pes.pack_target_info(
             session, body.target_type, body.target_id, mode=body.mode
         )
-        query = (body.query_override or "").strip() or info["query"]
-        papers = await pes.search_papers(query, limit=body.limit)
         context = await pes.build_retrieval_context(session, body.target_type, body.target_id)
+        query = (body.query_override or "").strip() or pes._build_epmc_query(context) or info["query"]
+        papers = await pes.search_papers(query, limit=body.limit)
         ranked = pes._rank_papers(papers, context)
         for p in ranked:
             text_blob = f"{p.get('title') or ''} {p.get('abstract') or ''} {p.get('journal') or ''}".lower()
