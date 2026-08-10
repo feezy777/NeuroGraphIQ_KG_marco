@@ -516,7 +516,9 @@ def _term_text_for(row, target_type: str) -> str:
 async def search_papers(query: str, limit: int = 5) -> list[dict]:
     papers = await _search(query, limit)
     if not papers:
-        tokens = [t for t in re.split(r"[^a-zA-Z0-9]+", query) if t]
+        plain = re.sub(r"\b(ABSTRACT|BODY|TITLE)\s*:", "", query)
+        plain = re.sub(r"\s+(AND|OR)\s+", " ", plain).strip()
+        tokens = [t for t in re.split(r"[^a-zA-Z0-9]+", plain) if t]
         fallback = " AND ".join(tokens)
         if fallback and fallback != query:
             papers = await _search(fallback, limit)
@@ -534,16 +536,20 @@ async def _search(query: str, limit: int) -> list[dict]:
     results = payload.get("resultList", {}).get("result", [])
     papers = []
     for item in results:
+        pmcid = (item.get("pmcid") or "").upper()
+        is_oa = str(item.get("isOpenAccess") or "").lower() == "y"
         papers.append(
             {
                 "pmid": item.get("pmid") or "",
+                "pmcid": pmcid,
                 "doi": item.get("doi") or "",
                 "title": item.get("title") or "",
                 "journal": item.get("journalTitle") or "",
                 "year": item.get("pubYear") or "",
                 "authors": item.get("authorString") or "",
                 "abstract": (item.get("abstractText") or "")[:4000],
-                "is_open_access": str(item.get("isOpenAccess") or "").lower() == "y",
+                "is_open_access": is_oa,
+                "fulltext_available": bool(pmcid) and is_oa,
                 "source": "europepmc",
             }
         )
@@ -3262,7 +3268,7 @@ def _classify_error(exc: Exception, stage: str) -> str:
 
 
 def _rank_papers(papers: list[dict], context: dict) -> list[dict]:
-    """Paper-level ranking: query/term relevance + OA + abstract (no impact factor)."""
+    """Paper-level ranking: query/term relevance + OA full text + abstract (no impact factor)."""
     source = (context.get("source_region") or "").lower()
     target = (context.get("target_region") or "").lower()
     functions = [(f or "").lower() for f in (context.get("function_terms") or [])]
@@ -3277,7 +3283,9 @@ def _rank_papers(papers: list[dict], context: dict) -> list[dict]:
         for fn in functions:
             if fn and fn in text:
                 score += 5
-        if p.get("is_open_access"):
+        if p.get("fulltext_available"):
+            score += 4
+        elif p.get("is_open_access"):
             score += 3
         if p.get("abstract"):
             score += 2
@@ -3293,18 +3301,20 @@ def _rank_papers(papers: list[dict], context: dict) -> list[dict]:
 def _build_epmc_query(context: dict) -> str:
     """Build a broader Europe PMC query from the retrieval context.
 
-    Uses OR-groups per concept (source / target / function, canonical + synonyms)
-    joined with AND, instead of quoting the whole display name.
+    Each concept (source / target / function, canonical + synonyms) becomes an
+    OR-group of `ABSTRACT:"term" OR BODY:"term"` clauses joined with AND, so
+    matches from abstracts AND open-access full-text bodies are both considered.
     """
     def group(terms: list[str], limit: int = 4) -> str | None:
-        cleaned: list[str] = []
+        clauses: list[str] = []
         for t in terms:
             t = (t or "").strip().strip('"')
             if t and len(t) <= 80 and t.lower() not in ("unknown", "none"):
-                cleaned.append(f'"{t}"')
-            if len(cleaned) >= limit:
+                clauses.append(f'ABSTRACT:"{t}"')
+                clauses.append(f'BODY:"{t}"')
+            if len(clauses) // 2 >= limit:
                 break
-        return "(" + " OR ".join(cleaned) + ")" if cleaned else None
+        return "(" + " OR ".join(clauses) + ")" if clauses else None
 
     parts: list[str] = []
     src = group([context.get("source_region") or ""] + (context.get("source_region_synonyms") or []))

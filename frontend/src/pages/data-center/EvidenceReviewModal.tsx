@@ -440,6 +440,7 @@ export function EvidenceReviewModal({ open, onClose, initialItems, initialTaskId
         target_id: current.target_id,
         pmid: paper.pmid,
         doi: paper.doi,
+        pmcid: paper.pmcid,
         title: paper.title,
         abstract: paper.abstract,
       }, abortRef.current.signal)
@@ -886,7 +887,7 @@ export function EvidenceReviewModal({ open, onClose, initialItems, initialTaskId
             />
 
             <div className="ew-section">
-              <h4>论文搜索 Query（可修改，仅影响检索，不影响正式 Claim）</h4>
+              <h4>论文搜索 Query（可修改，同时检索摘要与 OA 全文，仅影响检索，不影响正式 Claim）</h4>
               <div className="ontology-form-row">
                 <input className="filter-input" value={query} onChange={e => { setQuery(e.target.value); setDirty(true) }} placeholder="Europe PMC 检索式（可编辑）" />
                 <button type="button" className="btn btn-sm" disabled={!current || busy !== null} onClick={() => { audit('EVIDENCE_QUERY_EDIT', { query }); void startSearch(current!, query, idx) }}>重新搜索</button>
@@ -935,8 +936,8 @@ export function EvidenceReviewModal({ open, onClose, initialItems, initialTaskId
                     </label>
                     {p.pmid && <a href={`https://pubmed.ncbi.nlm.nih.gov/${p.pmid}/`} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()}>PubMed {p.pmid}</a>}
                     {p.doi && <a href={`https://doi.org/${p.doi}`} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()}>DOI</a>}
-                    {p.is_open_access ? <span className="ew-oa">OA Full Text</span> : <span className="ew-meta">非 OA</span>}
-                    {p.abstract ? <span className="ew-meta">Abstract</span> : <span className="ew-meta">无摘要</span>}
+                    {p.abstract ? <span className="ew-meta">摘要可用</span> : <span className="ew-meta">无摘要</span>}
+                    {p.fulltext_available ? <span className="ew-oa">OA 全文可用</span> : <span className="ew-meta">无 OA 全文</span>}
                     <button type="button" className="btn btn-xs" onClick={e => { e.stopPropagation(); setExcludedPmids(prev => new Set(prev).add(p.pmid)) }}>排除此候选</button>
                   </div>
                   {paperResult && (

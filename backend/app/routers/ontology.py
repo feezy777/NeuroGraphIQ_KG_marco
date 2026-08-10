@@ -648,8 +648,7 @@ async def paper_evidence_search(
                 reasons.append("功能词")
             p["match_reason"] = "、".join(reasons) or "检索式命中"
         papers = ranked
-        if body.query_override and (body.query_override or "").strip():
-            info = {**info, "query": query}
+        info = {**info, "query": query}
         return {"target_info": info, "papers": papers}
     except ValueError as exc:
         raise HTTPException(status_code=400, detail={"code": "INVALID_REQUEST", "message": str(exc)})

@@ -91,6 +91,7 @@ export function PaperEvidenceColumn({ targetType, targetId }: { targetType: stri
         target_id: targetId,
         pmid: selected.pmid,
         doi: selected.doi,
+        pmcid: selected.pmcid,
         title: selected.title,
         abstract: selected.abstract,
       })
@@ -255,7 +256,8 @@ export function PaperEvidenceColumn({ targetType, targetId }: { targetType: stri
               <div className="ontology-form-row">
                 {paper.pmid && <a href={`https://pubmed.ncbi.nlm.nih.gov/${paper.pmid}/`} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()}>PubMed {paper.pmid}</a>}
                 {paper.doi && <a href={`https://doi.org/${paper.doi}`} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()}> DOI</a>}
-                {paper.is_open_access && <span className="ew-oa">OA</span>}
+                {paper.abstract ? <span className="ew-meta">摘要</span> : <span className="ew-meta">无摘要</span>}
+                {paper.fulltext_available ? <span className="ew-oa">OA 全文</span> : <span className="ew-meta">无全文</span>}
               </div>
             </div>
           ))}

@@ -5218,6 +5218,7 @@ export const listChangeLogs = (p?: { entity_type?: string; entity_id?: string; a
 
 export interface PaperSearchResult {
   pmid: string
+  pmcid?: string
   doi: string
   title: string
   journal: string
@@ -5226,6 +5227,7 @@ export interface PaperSearchResult {
   abstract: string
   source: string
   is_open_access?: boolean
+  fulltext_available?: boolean
   paper_match_score?: number
   match_reason?: string
 }

@@ -412,8 +412,11 @@ async def build_search_query(session: AsyncSession, target_type: str, target_id:
     dto = await build_target_dto(session, target_type, target_id)
     tokens = []
     for term in dto["canonical_terms"]:
+        term = (term or "").strip().strip('"')
         if term and len(term) <= 80:
-            tokens.append(f'"{term}"')
+            tokens.append(f'(ABSTRACT:"{term}" OR BODY:"{term}")')
     if not tokens:
-        tokens = [f'"{dto.get("display_name", "")}"']
+        display = (dto.get("display_name") or "").strip().strip('"')
+        if display:
+            tokens = [f'(ABSTRACT:"{display}" OR BODY:"{display}")']
     return " AND ".join(tokens)

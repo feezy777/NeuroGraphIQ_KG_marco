@@ -106,9 +106,9 @@ def test_build_epmc_query_uses_synonym_or_groups():
         "relation_keywords": [],
     }
     q = pes._build_epmc_query(context)
-    assert '"BLA" OR "basolateral amygdala"' in q
-    assert '"infralimbic cortex" OR "IL"' in q
-    assert '"fear extinction" OR "extinction learning"' in q
+    assert 'ABSTRACT:"BLA" OR BODY:"BLA" OR ABSTRACT:"basolateral amygdala" OR BODY:"basolateral amygdala"' in q
+    assert 'ABSTRACT:"infralimbic cortex" OR BODY:"infralimbic cortex" OR ABSTRACT:"IL" OR BODY:"IL"' in q
+    assert 'ABSTRACT:"fear extinction" OR BODY:"fear extinction" OR ABSTRACT:"extinction learning" OR BODY:"extinction learning"' in q
     assert q.count(" AND ") == 2
 
 
