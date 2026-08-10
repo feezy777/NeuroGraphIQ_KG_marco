@@ -15,6 +15,7 @@ vi.mock('../../api/endpoints', () => ({
   listPaperEvidenceTaskItems: vi.fn(),
   writeEvidenceAudit: vi.fn(),
   getEvidenceTarget: vi.fn(),
+  extractSelectedPaperEvidence: vi.fn(),
 }))
 
 const ITEM_A = {
@@ -191,6 +192,66 @@ describe('EvidenceReviewModal 论文佐证工作台', () => {
         { component_type: 'function', statement: 'participates in fear extinction', required: true, metadata: {} },
       ],
       claim_version: 'claim_v1',
+    })
+    vi.mocked(endpoints.extractSelectedPaperEvidence).mockResolvedValue({
+      claim: 'c',
+      claim_components: [],
+      llm_model: 'test',
+      results: [
+        {
+          paper_id: 'p-1',
+          pmid: '12345',
+          doi: '10.1000/xyz',
+          pmcid: '',
+          title: 'Paper A',
+          journal: 'J Neuro',
+          year: '2026',
+          is_oa: true,
+          paper_match_score: 12,
+          model_direction: 'supports',
+          model_assessment: 'a',
+          coverage_summary: {
+            required_components: ['source_region', 'target_region', 'relation'],
+            supported_components: ['source_region', 'target_region', 'relation'],
+            contradicted_components: [],
+            uncovered_components: [],
+            coverage_ratio: 1,
+            has_conflict: false,
+            full_claim_supported: true,
+            overall_direction: 'supports',
+          },
+          passages: [
+            {
+              source_scope: 'abstract',
+              paragraph_id: 'abstract_p001',
+              paper_passage_id: 'pp-1',
+              passage: 'A real abstract sentence about connectivity and function.',
+              direction: 'supports',
+              evidence_level: 'direct',
+              reason: 'r',
+              confidence: 0.8,
+              semantic_confidence: 0.8,
+              source_verified: true,
+              source_verification_method: 'exact',
+              supported_components: ['source_region', 'target_region', 'relation'],
+            },
+          ],
+        },
+        {
+          paper_id: 'p-2',
+          pmid: '99999',
+          doi: '',
+          pmcid: '',
+          title: 'Broken Paper',
+          journal: 'J',
+          year: '2025',
+          is_oa: false,
+          paper_match_score: 5,
+          error_code: 'PAPER_FETCH_FAILED',
+          error_message: 'paper not found',
+          passages: [],
+        },
+      ],
     })
   })
 
@@ -481,5 +542,27 @@ describe('EvidenceReviewModal 论文佐证工作台', () => {
     await new Promise(r => setTimeout(r, 100))
     // new object must NOT show old passages
     expect(screen.queryAllByTestId('ew-passage')).toHaveLength(0)
+  })
+
+  it('多选论文批量提取：结果按论文分组展示，失败论文隔离，可载入成功论文片段', async () => {
+    renderWorkbench([ITEM_A])
+    await waitFor(() => expect(screen.getByText('Paper A')).toBeTruthy())
+    // select the paper via checkbox
+    const checkbox = screen.getByTestId('ew-paper').querySelector('input[type="checkbox"]') as HTMLInputElement
+    fireEvent.click(checkbox)
+    expect(checkbox.checked).toBe(true)
+    fireEvent.click(screen.getByTestId('ew-extract-selected'))
+    await waitFor(() => expect(screen.getByTestId('ew-extract-all-results')).toBeTruthy())
+    expect(screen.getByText(/批量提取结果（2 篇）/)).toBeTruthy()
+    expect(screen.getByText(/PAPER_FETCH_FAILED/)).toBeTruthy()
+    fireEvent.click(screen.getByText('选择此论文并载入片段'))
+    await waitFor(() => expect(screen.getAllByTestId('ew-passage')).toHaveLength(1))
+    expect(screen.getByTestId('ew-step-label').textContent).toContain('步骤 4/5')
+    expect(vi.mocked(endpoints.extractSelectedPaperEvidence)).toHaveBeenCalledWith(
+      expect.objectContaining({
+        target_id: ITEM_A.target_id,
+        papers: [expect.objectContaining({ pmid: '12345' })],
+      }),
+    )
   })
 })

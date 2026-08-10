@@ -4,6 +4,7 @@ import {
   attachPaperEvidencePreview,
   completePaperEvidenceTaskItem,
   extractPaperPassage,
+  extractSelectedPaperEvidence,
   getEvidenceQueue,
   getEvidenceTarget,
   listPaperEvidence,
@@ -95,6 +96,22 @@ export function EvidenceReviewModal({ open, onClose, initialItems, initialTaskId
 
   const [dto, setDto] = useState<EvidenceTargetDto | null>(null)
   const [result, setResult] = useState<PaperSearchResponse | null>(null)
+  const [selectedPaperIds, setSelectedPaperIds] = useState<Set<string>>(new Set())
+  const [extractAllResults, setExtractAllResults] = useState<Array<{
+    paper_id: string
+    pmid: string
+    doi: string
+    title: string
+    journal: string
+    year: string
+    is_oa: boolean
+    model_direction: string | null
+    model_assessment: string | null
+    coverage_summary: Record<string, unknown> | null
+    passages: Array<Record<string, unknown>>
+    error_code?: string | null
+    error_message?: string | null
+  }>>([])
   const [query, setQuery] = useState('')
   const [chips, setChips] = useState<string[]>([])
   const [excludedPmids, setExcludedPmids] = useState<Set<string>>(new Set())
@@ -554,6 +571,63 @@ export function EvidenceReviewModal({ open, onClose, initialItems, initialTaskId
     }
   }, [passages, updatePassage])
 
+  const extractSelected = useCallback(async () => {
+    if (!current || selectedPaperIds.size === 0) return
+    setBusy('extract-all')
+    setMessage(null)
+    try {
+      const selected = (result?.papers ?? []).filter(p => selectedPaperIds.has(p.pmid))
+      const r = await extractSelectedPaperEvidence({
+        target_type: current.target_type,
+        target_id: current.target_id,
+        papers: selected.map(p => ({
+          pmid: p.pmid || '',
+          doi: p.doi || null,
+          title: p.title || null,
+        })),
+      })
+      setExtractAllResults(r.results)
+      const okCount = r.results.filter(x => !x.error_code && (x.passages ?? []).some(p => p.source_verified)).length
+      setMessage(`已处理 ${r.results.length} 篇论文：${okCount} 篇找到有效片段`)
+    } catch (err) {
+      setMessage(`批量提取失败：${err instanceof Error ? err.message : String(err)}`)
+    } finally {
+      setBusy(null)
+    }
+  }, [current, selectedPaperIds, result])
+
+  const loadExtractedPaper = useCallback((cand: typeof extractAllResults[number]) => {
+    const mapped: WorkbenchPassage[] = (cand.passages ?? []).map((p, i) => ({
+      hash: `${cand.paper_id}-${i}`,
+      paper_id: cand.paper_id,
+      paper_passage_id: (p.paper_passage_id as string | null) ?? null,
+      source_scope: (p.source_scope === 'fulltext' ? 'fulltext' : 'abstract') as 'abstract' | 'fulltext',
+      section_title: (p.section_title as string | null) ?? null,
+      paragraph_index: (p.paragraph_index as number | null) ?? null,
+      paragraph_id: (p.paragraph_id as string | null) ?? null,
+      passage: String(p.passage ?? ''),
+      translation_zh: null,
+      direction: (p.direction as WorkbenchPassage['direction']) ?? 'supports',
+      evidence_level: (p.evidence_level as EvidenceLevel) ?? 'indirect',
+      reason: String(p.reason ?? ''),
+      confidence: Number(p.confidence ?? 0),
+      semantic_confidence: p.semantic_confidence != null ? Number(p.semantic_confidence) : null,
+      source_locator: (p.source_locator as string | null) ?? null,
+      source_verified: Boolean(p.source_verified),
+      source_verification_method: (p.source_verification_method as string | null) ?? null,
+      supported_components: Array.isArray(p.supported_components) ? (p.supported_components as string[]) : [],
+    }))
+    setSelectedPmid(cand.pmid)
+    setPassages(mapped)
+    setSelectedHashes(new Set(mapped.filter(p => p.source_verified).map(p => p.hash)))
+    setDirection((cand.model_direction as Direction) ?? 'supports')
+    setModelDirection((cand.model_direction as Direction) ?? null)
+    setModelAssessment(cand.model_assessment ?? null)
+    setStep(3)
+    setDirty(true)
+    setMessage(`已载入「${cand.title}」的 ${mapped.length} 个候选片段，请人工审核`)
+  }, [])
+
   const runPreview = useCallback(async () => {
     if (!current || !selectedPmid) return
     if (selectedPassages.length === 0) {
@@ -838,6 +912,11 @@ export function EvidenceReviewModal({ open, onClose, initialItems, initialTaskId
                 </select>
                 <button type="button" className="btn btn-xs" onClick={() => setExcludedPmids(new Set())}>恢复排除</button>
               </div>
+              <div className="ontology-form-row">
+                <button type="button" className="btn btn-xs" disabled={visiblePapers.length === 0} onClick={() => setSelectedPaperIds(new Set(visiblePapers.map(p => p.pmid).filter(Boolean)))}>全选</button>
+                <button type="button" data-testid="ew-extract-selected" className="btn btn-sm" disabled={selectedPaperIds.size === 0 || busy !== null} onClick={extractSelected}>提取所选论文（{selectedPaperIds.size}）</button>
+                <span className="ew-meta">按相关性选择多篇论文后一次性提取，结果按论文分组供人工选择</span>
+              </div>
               {result && result.papers.length === 0 && (
                 <div className="ontology-empty">没有找到符合当前检索式的论文，请修改检索词、放宽搜索或恢复系统推荐检索式后重新搜索。</div>
               )}
@@ -849,7 +928,16 @@ export function EvidenceReviewModal({ open, onClose, initialItems, initialTaskId
                   onClick={() => { setSelectedPmid(p.pmid); setPassages([]); setStep(2); setDirty(true); audit('EVIDENCE_PAPER_SELECT', { pmid: p.pmid, title: p.title }) }}>
                   <strong>{p.title}</strong>
                   <div className="ew-meta">{p.authors}（{p.year}）· {p.journal}</div>
+                  <div className="ew-meta">
+                    {p.paper_match_score != null && <span className="ew-match">匹配度 {p.paper_match_score}</span>}
+                    {p.match_reason && <span> · {p.match_reason}</span>}
+                  </div>
                   <div className="ontology-form-row">
+                    <label onClick={e => e.stopPropagation()}>
+                      <input type="checkbox" disabled={!p.pmid} checked={selectedPaperIds.has(p.pmid)}
+                        onChange={e => setSelectedPaperIds(prev => { const n = new Set(prev); if (e.target.checked) n.add(p.pmid); else n.delete(p.pmid); return n })} />
+                      选择
+                    </label>
                     {p.pmid && <a href={`https://pubmed.ncbi.nlm.nih.gov/${p.pmid}/`} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()}>PubMed {p.pmid}</a>}
                     {p.doi && <a href={`https://doi.org/${p.doi}`} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()}>DOI</a>}
                     {p.is_open_access ? <span className="ew-oa">OA Full Text</span> : <span className="ew-meta">非 OA</span>}
@@ -858,6 +946,34 @@ export function EvidenceReviewModal({ open, onClose, initialItems, initialTaskId
                   </div>
                 </div>
               ))}
+              {extractAllResults.length > 0 && (
+                <div className="ew-section" data-testid="ew-extract-all-results">
+                  <h4>批量提取结果（{extractAllResults.length} 篇）</h4>
+                  {extractAllResults.map(c => {
+                    const cov = c.coverage_summary as Record<string, unknown> | null
+                    const supportedCount = Array.isArray(cov?.supported_components) ? (cov.supported_components as string[]).length : 0
+                    const requiredCount = Array.isArray(cov?.required_components) ? (cov.required_components as string[]).length : 0
+                    const verifiedCount = (c.passages ?? []).filter(p => p.source_verified).length
+                    return (
+                      <div key={c.paper_id || c.pmid || c.doi} className="ew-paper">
+                        <strong>{c.title || '未命名论文'}</strong>
+                        <div className="ew-meta">{c.journal} · {c.year} · PMID {c.pmid || '—'} · DOI {c.doi || '—'}</div>
+                        {c.error_code ? (
+                          <div className="ew-bad">{c.error_code}: {c.error_message}</div>
+                        ) : (
+                          <>
+                            <div className="ew-meta">模型判断：{c.model_direction ?? '—'} · 覆盖 {supportedCount}/{requiredCount} · 候选片段 {c.passages?.length ?? 0} · 已核验 {verifiedCount}</div>
+                            <div className="ontology-form-row">
+                              <button type="button" className="btn btn-sm" disabled={verifiedCount === 0} onClick={() => loadExtractedPaper(c)}>选择此论文并载入片段</button>
+                              {verifiedCount === 0 && <span className="ew-bad">无有效核验片段</span>}
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
             </div>
 
             {(selectedPaper || (current?.draftPassages?.length ?? 0) > 0 || passages.length > 0) && (

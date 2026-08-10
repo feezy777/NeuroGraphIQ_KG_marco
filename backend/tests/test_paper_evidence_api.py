@@ -253,3 +253,33 @@ def test_extract_doi_only_paper(monkeypatch, client):
     body = resp.json()
     assert body["overall_direction"] == "not_found"
     assert body["paper"]["doi"] == "10.1000/doi-only"
+
+
+def test_extract_selected_multi_paper(monkeypatch, client):
+    monkeypatch.setattr(
+        "app.routers.ontology.pes.build_retrieval_context",
+        AsyncMock(return_value={"claim_text": "c", "claim_components": [], "function_term": "f"}),
+    )
+    monkeypatch.setattr(
+        "app.routers.ontology.pes.extract_candidates_for_target",
+        AsyncMock(return_value=(
+            [
+                {"paper_id": "p1", "title": "A", "model_direction": "supports", "passages": []},
+                {"paper_id": "p2", "title": "B", "error_code": "PAPER_FETCH_FAILED", "passages": []},
+            ],
+            "deepseek-v4-flash-test",
+        )),
+    )
+    resp = client.post("/api/ontology/evidence/extract-selected", json={
+        "target_type": "connection",
+        "target_id": str(uuid.uuid4()),
+        "papers": [
+            {"pmid": "11111", "title": "A"},
+            {"pmid": "22222", "title": "B"},
+        ],
+    })
+    assert resp.status_code == 200
+    body = resp.json()
+    assert len(body["results"]) == 2
+    assert body["results"][1]["error_code"] == "PAPER_FETCH_FAILED"
+    assert body["llm_model"] == "deepseek-v4-flash-test"

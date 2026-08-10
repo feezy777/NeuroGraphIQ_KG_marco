@@ -2329,6 +2329,153 @@ async def _extract_from_paper_with_retry(*, claim: dict, title: str, windows: li
     raise last_exc or RuntimeError("extraction failed")
 
 
+async def extract_candidates_for_target(
+    session: AsyncSession,
+    *,
+    context: dict,
+    papers: list[dict],
+    max_papers: int,
+    only_oa: bool = False,
+    stop_after_strong_support: bool = False,
+    sem_fetch: asyncio.Semaphore,
+    sem_deepseek: asyncio.Semaphore,
+    on_stage=None,
+) -> tuple[list[dict], str | None]:
+    """Run the full fetch→parse→retrieve→DeepSeek→verify pipeline for multiple papers.
+
+    Returns (candidates, last_llm_model). Each candidate keeps paper metadata,
+    model judgment, coverage and verified passages. A single paper failure is
+    captured with an error code and does not stop the remaining papers.
+    """
+    ranked = _rank_papers(papers, context)
+    selected = ranked[:max_papers]
+    candidates: list[dict] = []
+    last_llm_model: str | None = None
+    for paper in selected:
+        pmid = (paper.get("pmid") or "").strip()
+        doi = (paper.get("doi") or "").strip()
+        pmcid = (paper.get("pmcid") or "").strip()
+        if not (pmid or doi or pmcid):
+            continue
+        if on_stage is not None:
+            await on_stage("fetching")
+        try:
+            async with sem_fetch:
+                meta = await _verify_paper_with_retry(pmid) if pmid else None
+                if meta is None and (doi or pmcid):
+                    meta = await pfs.fetch_paper_metadata(doi=doi, pmcid=pmcid)
+                if meta is None:
+                    candidates.append(
+                        {**paper, "error_code": "PAPER_FETCH_FAILED", "error_message": "paper not found", "passages": []}
+                    )
+                    continue
+                xml_text = await pfs.fetch_oa_fulltext_xml(
+                    pmid=pmid or meta.get("pmid") or None,
+                    pmcid=pmcid or meta.get("pmcid") or None,
+                )
+            if only_oa and not meta.get("is_open_access"):
+                continue
+            abstract = (meta.get("abstract") or "").strip()
+            paper_source = await ensure_paper_source(
+                session, {**meta, "abstract": abstract, "fulltext": ""}
+            )
+            if on_stage is not None:
+                await on_stage("retrieving")
+            paragraphs: list[dict] = []
+            if abstract:
+                paragraphs.append(
+                    {
+                        "source_scope": "abstract",
+                        "section_title": "Abstract",
+                        "paragraph_id": "abstract_p001",
+                        "paragraph_index": 0,
+                        "passage_text": abstract,
+                        "text_hash": passage_hash(abstract),
+                        "locator": "abstract:paragraph:0",
+                    }
+                )
+            if xml_text.strip():
+                paragraphs.extend(oa_xml_parser.parse_oa_xml(xml_text))
+            await ensure_paper_passages(session, paper_source.id, paragraphs)
+            await session.commit()
+            all_paragraphs = await load_paper_passages(session, paper_source.id)
+            ranked_paras = score_paragraphs(
+                all_paragraphs,
+                source_region=context.get("source_region") or "",
+                target_region=context.get("target_region") or "",
+                source_region_synonyms=context.get("source_region_synonyms") or [],
+                target_region_synonyms=context.get("target_region_synonyms") or [],
+                function_terms=context.get("function_terms") or [],
+                function_synonyms=context.get("function_synonyms") or [],
+                relation_keywords=context.get("relation_keywords") or [],
+            )
+            windows = build_windows(ranked_paras, all_paragraphs, top_k=20, window=1)
+            if on_stage is not None:
+                await on_stage("extracting")
+            async with sem_deepseek:
+                extraction = await _extract_from_paper_with_retry(
+                    claim=context,
+                    title=meta.get("title") or paper.get("title") or "",
+                    windows=windows,
+                )
+            last_llm_model = extraction.get("llm_model") or last_llm_model
+            if on_stage is not None:
+                await on_stage("verifying")
+            coverage = compute_coverage_summary(
+                context.get("claim_components") or [],
+                extraction.get("passages") or [],
+            )
+            coverage_overall = aggregate_overall_direction(
+                coverage, extraction.get("passages") or []
+            )
+            passage_id_map: dict[str, uuid.UUID] = {}
+            for p in extraction.get("passages") or []:
+                p["paper_id"] = str(paper_source.id)
+                if p.get("source_verified"):
+                    found = (
+                        await session.execute(
+                            text(
+                                "SELECT id FROM paper_passages WHERE paper_id=:pid AND text_hash=:h"
+                            ),
+                            {"pid": paper_source.id, "h": passage_hash(p.get("passage") or "")},
+                        )
+                    ).first()
+                    p["paper_passage_id"] = str(found[0]) if found else None
+            candidates.append(
+                {
+                    "paper_id": str(paper_source.id),
+                    "pmid": meta.get("pmid") or pmid or "",
+                    "doi": meta.get("doi") or doi or "",
+                    "pmcid": meta.get("pmcid") or pmcid or "",
+                    "title": meta.get("title") or "",
+                    "journal": meta.get("journal") or "",
+                    "year": meta.get("year") or "",
+                    "is_oa": bool(meta.get("is_open_access")),
+                    "paper_match_score": paper.get("paper_match_score", 0),
+                    "model_direction": extraction.get("overall_direction"),
+                    "model_assessment": extraction.get("assessment"),
+                    "coverage_summary": {**coverage, "overall_direction": coverage_overall},
+                    "passages": extraction.get("passages") or [],
+                }
+            )
+            if (
+                stop_after_strong_support
+                and coverage_overall == "supports"
+                and coverage.get("full_claim_supported")
+            ):
+                break
+        except Exception as exc:  # noqa: BLE001
+            candidates.append(
+                {
+                    **paper,
+                    "error_code": _classify_error(exc, "extract"),
+                    "error_message": str(exc)[:500],
+                    "passages": [],
+                }
+            )
+    return candidates, last_llm_model
+
+
 async def _run_batch_loop(session: AsyncSession, task_id: str) -> None:
     cfg = get_settings()
     while True:

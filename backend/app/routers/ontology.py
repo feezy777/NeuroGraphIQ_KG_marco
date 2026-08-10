@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import uuid
 
 import httpx
@@ -24,6 +25,7 @@ from app.schemas.ontology import (
     EvidenceRollbackRequest,
     BatchTaskCreateRequest,
     EvidenceAuditRequest,
+    ExtractSelectedRequest,
     PassageSelectionRequest,
     TaskItemDraftRequest,
     TranslateRequest,
@@ -631,6 +633,21 @@ async def paper_evidence_search(
         )
         query = (body.query_override or "").strip() or info["query"]
         papers = await pes.search_papers(query, limit=body.limit)
+        context = await pes.build_retrieval_context(session, body.target_type, body.target_id)
+        ranked = pes._rank_papers(papers, context)
+        for p in ranked:
+            text_blob = f"{p.get('title') or ''} {p.get('abstract') or ''} {p.get('journal') or ''}".lower()
+            reasons = []
+            src = (context.get("source_region") or "").lower()
+            tgt = (context.get("target_region") or "").lower()
+            if src and src in text_blob:
+                reasons.append("源脑区")
+            if tgt and tgt in text_blob:
+                reasons.append("靶脑区")
+            if any(fn and fn.lower() in text_blob for fn in (context.get("function_terms") or [])):
+                reasons.append("功能词")
+            p["match_reason"] = "、".join(reasons) or "检索式命中"
+        papers = ranked
         if body.query_override and (body.query_override or "").strip():
             info = {**info, "query": query}
         return {"target_info": info, "papers": papers}
@@ -638,6 +655,39 @@ async def paper_evidence_search(
         raise HTTPException(status_code=400, detail={"code": "INVALID_REQUEST", "message": str(exc)})
     except httpx.HTTPError as exc:
         raise HTTPException(status_code=502, detail={"code": "PAPER_API_ERROR", "message": str(exc)})
+
+
+@router.post("/evidence/extract-selected")
+async def paper_evidence_extract_selected(
+    body: ExtractSelectedRequest,
+    session: AsyncSession = Depends(get_db),
+    _auth: str = Depends(require_role("reviewer")),
+):
+    try:
+        context = await pes.build_retrieval_context(session, body.target_type, body.target_id)
+        cfg = pes.get_settings()
+        sem_fetch = asyncio.Semaphore(cfg.paper_fetch_concurrency)
+        sem_deepseek = asyncio.Semaphore(cfg.ontology_residual_concurrency)
+        papers = [p.model_dump() for p in body.papers]
+        results, llm_model = await pes.extract_candidates_for_target(
+            session,
+            context=context,
+            papers=papers,
+            max_papers=len(papers),
+            only_oa=body.only_oa,
+            stop_after_strong_support=body.stop_after_strong_support,
+            sem_fetch=sem_fetch,
+            sem_deepseek=sem_deepseek,
+        )
+        await session.commit()
+        return {
+            "claim": context.get("claim_text") or "",
+            "claim_components": context.get("claim_components") or [],
+            "results": results,
+            "llm_model": llm_model,
+        }
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail={"code": "INVALID_REQUEST", "message": str(exc)})
 
 
 @router.post("/evidence/attach")

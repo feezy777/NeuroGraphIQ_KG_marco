@@ -130,6 +130,21 @@ class PaperSearchRequest(BaseModel):
     query_override: str | None = None
 
 
+class PaperRef(BaseModel):
+    pmid: str = ""
+    doi: str | None = None
+    pmcid: str | None = None
+    title: str | None = None
+
+
+class ExtractSelectedRequest(BaseModel):
+    target_type: str
+    target_id: uuid.UUID
+    papers: list[PaperRef] = Field(min_length=1, max_length=20)
+    only_oa: bool = False
+    stop_after_strong_support: bool = False
+
+
 class EvidenceAttachRequest(BaseModel):
     target_type: str
     target_id: uuid.UUID

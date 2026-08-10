@@ -5226,6 +5226,8 @@ export interface PaperSearchResult {
   abstract: string
   source: string
   is_open_access?: boolean
+  paper_match_score?: number
+  match_reason?: string
 }
 
 export interface PaperSearchResponse {
@@ -5396,6 +5398,37 @@ export const extractPaperPassage = (body: {
   retry_count: number
   links?: { pubmed: string | null }
 }>('/api/ontology/evidence/extract', body, undefined, signal)
+
+export interface ExtractedPaperCandidate {
+  paper_id: string
+  pmid: string
+  doi: string
+  pmcid: string
+  title: string
+  journal: string
+  year: string
+  is_oa: boolean
+  paper_match_score: number
+  model_direction: string | null
+  model_assessment: string | null
+  coverage_summary: Record<string, unknown> | null
+  passages: Array<Record<string, unknown>>
+  error_code?: string | null
+  error_message?: string | null
+}
+
+export const extractSelectedPaperEvidence = (body: {
+  target_type: string
+  target_id: string
+  papers: Array<{ pmid: string; doi?: string | null; pmcid?: string | null; title?: string | null }>
+  only_oa?: boolean
+  stop_after_strong_support?: boolean
+}) => postJson<{
+  claim: string
+  claim_components: Array<Record<string, unknown>>
+  results: ExtractedPaperCandidate[]
+  llm_model: string | null
+}>('/api/ontology/evidence/extract-selected', body)
 
 export const getEvidenceQueue = (p: { target_type: string; scope?: string; limit?: number }) =>
   getJson<{ items: Array<{ target_type: string; target_id: string; label: string; confidence: number | null }> }>(
