@@ -1,5 +1,5 @@
 import type { AttachPreviewResponse } from '../../../api/endpoints'
-import { computeConfidenceImpact } from './confidenceImpact'
+import { clampConfidence, computeConfidenceImpact } from './confidenceImpact'
 import type { ReviewStatusRecord } from './ReviewStatusStore'
 import type { CoverageSummary, Direction, EvidenceLevel } from './types'
 import { DIRECTION_LABEL, LEVEL_HINT, LEVEL_LABEL } from './types'
@@ -56,7 +56,8 @@ export function ReviewerDecisionPanel({
   onApprove,
   onReject,
 }: ReviewerDecisionPanelProps) {
-  const reviewer = parseFloat(confidence) || 0
+  // reviewer 钳制 [0,1] 后再入公式(与后端 confidence_rules 一致)
+  const reviewer = clampConfidence(parseFloat(confidence) || 0)
   // 置信度影响:preview 可用时以服务端 attach-preview 结果为准,否则本地按方向公式计算
   const impact = preview
     ? {
