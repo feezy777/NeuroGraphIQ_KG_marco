@@ -12,7 +12,8 @@ import { useEvidenceCenter } from '../EvidenceCenterContext'
 import { ClaimPanel } from '../components/ClaimPanel'
 import { CoveragePanel } from '../components/CoveragePanel'
 import { PassageEvidenceCard } from '../components/PassageEvidenceCard'
-import { ReviewerDecisionPanel } from '../components/ReviewerDecisionPanel'
+import { loadReviewStatus, saveReviewStatus, type ReviewStatusMeta, type ReviewStatusRecord } from '../components/ReviewStatusStore'
+import type { ReviewDecisionState } from '../components/ReviewerDecisionPanel'
 import { aggregateTmpDirection, computeTmpCoverage } from '../components/claimCoverage'
 import type { Direction, EvidenceLevel, WorkbenchPassage } from '../components/types'
 
@@ -34,7 +35,7 @@ interface ReviewDraft {
 }
 
 export function EvidenceReviewModule() {
-  const { state, queue, openTarget } = useEvidenceCenter()
+  const { state, queue, openTarget, setReviewDecision } = useEvidenceCenter()
   const [dto, setDto] = useState<EvidenceTargetDto | null>(null)
   const [passages, setPassages] = useState<WorkbenchPassage[]>([])
   const [selectedHashes, setSelectedHashes] = useState<Set<string>>(new Set())
@@ -53,12 +54,13 @@ export function EvidenceReviewModule() {
   const [showContextHash, setShowContextHash] = useState<string | null>(null)
   const [message, setMessage] = useState<string | null>(null)
   const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
+  const [reviewStatus, setReviewStatus] = useState<ReviewStatusRecord | null>(null)
   const abortRef = useRef<AbortController | null>(null)
 
   const targetType = state.targetType
   const targetId = state.targetId
 
-  // ─── 目标切换:恢复 sessionStorage 审核草稿(刷新不丢) ───
+  // ─── 目标切换:恢复 sessionStorage 审核草稿 + 审核状态(刷新不丢) ───
   useEffect(() => {
     setDto(null)
     setPassages([])
@@ -78,7 +80,9 @@ export function EvidenceReviewModule() {
     setShowContextHash(null)
     setMessage(null)
     setSaveState('idle')
+    setReviewStatus(null)
     if (!targetId) return
+    setReviewStatus(loadReviewStatus(targetId))
     const raw = sessionStorage.getItem(`${DRAFT_PREFIX}${targetId}`)
     if (!raw) return
     try {
@@ -121,7 +125,8 @@ export function EvidenceReviewModule() {
     [passages, selectedHashes],
   )
 
-  const claimComponents = dto?.claim_components ?? []
+  // 必须 memo 稳定引用:dto 未加载时为 [] 的新引用会让下游 useMemo 每渲染重建,导致 reviewDecision 推送 effect 无限循环
+  const claimComponents = useMemo(() => dto?.claim_components ?? [], [dto])
   const tmpCoverage = useMemo(() => computeTmpCoverage(claimComponents, selectedPassages), [claimComponents, selectedPassages])
   const tmpDirection = useMemo(() => aggregateTmpDirection(tmpCoverage, selectedPassages), [tmpCoverage, selectedPassages])
 
@@ -270,6 +275,57 @@ export function EvidenceReviewModule() {
     }
   }, [targetId, buildDraft, taskItem?.taskItemId])
 
+  // ─── 审核 ≠ 晋升:只写前端 review_approved/rejected 状态,不调 attach ───
+  const commitReviewStatus = useCallback((status: 'review_approved' | 'rejected', at: string) => {
+    if (!targetId) return
+    persistDraft()
+    const meta: ReviewStatusMeta = { direction, evidenceLevel, confidence, note, at }
+    saveReviewStatus(targetId, status, meta)
+    setReviewStatus({ targetId, status, meta })
+  }, [targetId, persistDraft, direction, evidenceLevel, confidence, note])
+
+  const handleApprove = useCallback(() => {
+    commitReviewStatus('review_approved', new Date().toISOString())
+    setMessage('已审核通过，进入「证据晋升」模块待晋升')
+  }, [commitReviewStatus])
+
+  const handleReject = useCallback(() => {
+    commitReviewStatus('rejected', new Date().toISOString())
+    setMessage('已驳回该证据，不会进入晋升')
+  }, [commitReviewStatus])
+
+  // ─── 右栏接入:把人工审核决策状态推送给 Context,RightPanel 渲染 ReviewerDecisionPanel ───
+  const reviewDecision = useMemo<ReviewDecisionState>(() => ({
+    direction,
+    modelDirection,
+    evidenceLevel,
+    confidence,
+    note,
+    selectedCount: selectedHashes.size,
+    preview,
+    previewBusy,
+    coverage: selectedPassages.length > 0 ? tmpCoverage : null,
+    currentConfidence: dto?.current_confidence ?? null,
+    reviewStatus,
+    onDirectionChange: setDirection,
+    onEvidenceLevelChange: setEvidenceLevel,
+    onConfidenceChange: setConfidence,
+    onNoteChange: setNote,
+    onApprove: handleApprove,
+    onReject: handleReject,
+  }), [direction, modelDirection, evidenceLevel, confidence, note, selectedHashes, preview, previewBusy,
+    selectedPassages, tmpCoverage, dto, reviewStatus, handleApprove, handleReject])
+
+  useEffect(() => {
+    if (!targetType || !targetId) {
+      setReviewDecision(null)
+      return
+    }
+    setReviewDecision(reviewDecision)
+  }, [targetType, targetId, reviewDecision, setReviewDecision])
+
+  useEffect(() => () => { setReviewDecision(null) }, [setReviewDecision])
+
   if (!targetType || !targetId) {
     return (
       <div className="evidence-review">
@@ -285,6 +341,14 @@ export function EvidenceReviewModule() {
   return (
     <div className="evidence-review" data-testid="evidence-review">
       <div className="evidence-review-main">
+        <div className="evidence-review-toolbar">
+          <button type="button" className="btn btn-sm" onClick={handleBack}>返回证据候选</button>
+          <button type="button" className="btn btn-sm" onClick={() => void handleSaveDraft()}>保存草稿</button>
+          {saveState === 'saving' && <span className="ew-meta">保存中…</span>}
+          {saveState === 'saved' && <span className="ew-ok">已保存</span>}
+          {saveState === 'error' && <span className="ew-bad">保存失败</span>}
+        </div>
+
         <ClaimPanel
           claimText={dto?.claim_text ?? ''}
           components={claimComponents}
@@ -344,30 +408,6 @@ export function EvidenceReviewModule() {
         {selectedPassages.length > 0 && (
           <CoveragePanel coverage={tmpCoverage} direction={tmpDirection} />
         )}
-      </div>
-
-      <div className="evidence-review-side">
-        <ReviewerDecisionPanel
-          direction={direction}
-          modelDirection={modelDirection}
-          onDirectionChange={setDirection}
-          evidenceLevel={evidenceLevel}
-          onEvidenceLevelChange={setEvidenceLevel}
-          confidence={confidence}
-          onConfidenceChange={setConfidence}
-          note={note}
-          onNoteChange={setNote}
-          selectedCount={selectedHashes.size}
-          preview={preview}
-          previewBusy={previewBusy}
-        />
-        <div className="evidence-review-actions">
-          <button type="button" className="btn btn-sm" onClick={handleBack}>返回证据候选</button>
-          <button type="button" className="btn btn-sm btn-primary" onClick={() => void handleSaveDraft()}>保存草稿</button>
-          {saveState === 'saving' && <span className="ew-meta">保存中…</span>}
-          {saveState === 'saved' && <span className="ew-ok">已保存</span>}
-          {saveState === 'error' && <span className="ew-bad">保存失败</span>}
-        </div>
       </div>
     </div>
   )

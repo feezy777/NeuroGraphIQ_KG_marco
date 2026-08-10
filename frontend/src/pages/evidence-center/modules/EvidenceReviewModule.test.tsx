@@ -3,18 +3,21 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { useEffect } from 'react'
 import * as endpoints from '../../../api/endpoints'
 import { EvidenceCenterProvider, useEvidenceCenter } from '../EvidenceCenterContext'
+import { RightPanel } from '../components/RightPanel'
 import type { EvidenceLevel, QueueStatus, WorkbenchPassage } from '../components/types'
 import { EvidenceReviewModule } from './EvidenceReviewModule'
 
 vi.mock('../../../api/endpoints', () => ({
   getEvidenceTarget: vi.fn(),
   attachPaperEvidencePreview: vi.fn(),
+  attachPaperEvidence: vi.fn(),
   translateEvidenceText: vi.fn(),
   validatePassageSelection: vi.fn(),
   saveTaskItemDraft: vi.fn(),
 }))
 
 const DRAFT_KEY = 'evidence-center.review-draft.r1-r2'
+const REVIEW_STATUS_KEY = 'evidence-center.review-approved.r1-r2'
 
 const PASSAGE_VERIFIED: WorkbenchPassage = {
   hash: 'h1',
@@ -100,6 +103,7 @@ function renderModule(hash = REVIEW_HASH) {
   return render(
     <EvidenceCenterProvider>
       <EvidenceReviewModule />
+      <RightPanel module="review" />
     </EvidenceCenterProvider>,
   )
 }
@@ -144,12 +148,12 @@ describe('EvidenceReviewModule', () => {
     vi.mocked(endpoints.saveTaskItemDraft).mockResolvedValue({ item_id: 'item-1', saved: true, server_revision: 1 })
   })
 
-  it('从 sessionStorage draft 恢复 passages 并渲染 PassageEvidenceCard + AI 推荐灰字', async () => {
+  it('从 sessionStorage draft 恢复 passages 并渲染 PassageEvidenceCard + AI 初判', async () => {
     renderModule()
     await waitFor(() => expect(screen.getByText('We observed that R1 projects to R2 in the macaque.')).toBeTruthy())
     expect(screen.getByText('A secondary passage without verification.')).toBeTruthy()
     expect(screen.getByText('未通过原文校验，请人工核对或重新截取')).toBeTruthy()
-    expect(screen.getByText('AI 推荐：支持')).toBeTruthy()
+    await waitFor(() => expect(screen.getByTestId('ew-ai-direction').textContent).toBe('支持'))
     // 未核验片段不可勾选
     const cards = screen.getAllByTestId('ew-passage')
     const checkboxes = cards.map(c => c.querySelector('input[type="checkbox"]')) as HTMLInputElement[]
@@ -197,7 +201,7 @@ describe('EvidenceReviewModule', () => {
     cleanup()
     renderModule()
     await waitFor(() => expect(screen.getByText('We observed that R1 projects to R2 in the macaque.')).toBeTruthy())
-    expect(screen.getByText('AI 推荐：支持')).toBeTruthy()
+    await waitFor(() => expect(screen.getByTestId('ew-ai-direction').textContent).toBe('支持'))
   })
 
   it('「返回证据候选」在 debounce(500ms)窗口内同步落盘最后编辑(草稿不丢失)', async () => {
@@ -214,21 +218,28 @@ describe('EvidenceReviewModule', () => {
     expect(JSON.parse(raw!).note).toBe('最新人工备注')
   })
 
-  it('AI 推荐与人工确认视觉:modelDirection 灰字 + 人工方向 radio 独立高亮', async () => {
+  it('AI 初判区:modelDirection 灰字展示 + 人工方向 radio 独立高亮 + 分隔线「人工最终判断」', async () => {
     const { container } = renderModule()
-    await waitFor(() => expect(screen.getByText('AI 推荐：支持')).toBeTruthy())
-    const badge = container.querySelector('.ew-ai-recommend')
-    expect(badge).toBeTruthy()
-    expect(badge!.textContent).toBe('AI 推荐：支持')
-    // 人工方向 radio 独立于 AI 推荐存在,当前选择高亮
+    await waitFor(() => expect(screen.getByTestId('ew-ai-direction').textContent).toBe('支持'))
+    expect(screen.getByText('AI 初判')).toBeTruthy()
+    expect(container.querySelector('.ew-ai-recommend')).toBeTruthy()
+    expect(screen.getByText('人工最终判断')).toBeTruthy()
+    // 人工方向 radio 独立于 AI 初判存在,当前选择高亮
     const radios = container.querySelectorAll('input[name="dir"]')
     expect(radios.length).toBe(5)
     const checked = [...radios].find(r => (r as HTMLInputElement).checked) as HTMLInputElement
     expect(checked.value).toBe('supports')
-    const supportsChip = screen.getByText('支持')
-    expect(supportsChip.className).toContain('ew-dir-chip')
+    const chips = container.querySelectorAll('.ew-dir-chip')
+    const supportsChip = [...chips].find(c => c.textContent?.trim() === '支持') as HTMLElement
     expect(supportsChip.className).toContain('ew-dir-chip-active')
-    expect(screen.getByText('矛盾').className).not.toContain('ew-dir-chip-active')
+    const contradictsChip = [...chips].find(c => c.textContent?.trim() === '矛盾') as HTMLElement
+    expect(contradictsChip.className).not.toContain('ew-dir-chip-active')
+  })
+
+  it('AI 初判区展示 Coverage(已核验片段支撑的组件数/必需组件数)', async () => {
+    renderModule()
+    await waitFor(() => expect(screen.getByTestId('ew-ai-coverage').textContent).toBe('1/2'))
+    expect(screen.getByText('Coverage')).toBeTruthy()
   })
 
   it('禁止项:无 Europe PMC 搜索控件 / 无 attach / 无正式确认文案', async () => {
@@ -248,6 +259,7 @@ describe('EvidenceReviewModule', () => {
       <EvidenceCenterProvider>
         <QueueSeeder />
         <EvidenceReviewModule />
+        <RightPanel module="review" />
       </EvidenceCenterProvider>,
     )
     await waitFor(() => expect(screen.getByText('We observed that R1 projects to R2 in the macaque.')).toBeTruthy())
@@ -281,5 +293,77 @@ describe('EvidenceReviewModule', () => {
       }),
     )
     await waitFor(() => expect(screen.getByText('R1 projects to R2.')).toBeTruthy())
+  })
+
+  // ─── V2-S3:审核 ≠ 晋升 ───
+
+  it('审核通过:写 ReviewStatusStore(review_approved) + 提示进入晋升 + 不调 attach', async () => {
+    renderModule()
+    await waitFor(() => expect(screen.getByText('We observed that R1 projects to R2 in the macaque.')).toBeTruthy())
+    fireEvent.click(screen.getByRole('button', { name: '审核通过' }))
+    await waitFor(() => expect(sessionStorage.getItem(REVIEW_STATUS_KEY)).toBeTruthy())
+    const record = JSON.parse(sessionStorage.getItem(REVIEW_STATUS_KEY)!)
+    expect(record.status).toBe('review_approved')
+    expect(record.targetId).toBe('r1-r2')
+    expect(record.meta.direction).toBe('supports')
+    expect(record.meta.evidenceLevel).toBe('indirect')
+    expect(record.meta.confidence).toBe('0.8')
+    expect(typeof record.meta.at).toBe('string')
+    expect(screen.getByText(/进入「证据晋升」/)).toBeTruthy()
+    // 审核只写前端状态,不调正式 attach
+    expect(endpoints.attachPaperEvidence).not.toHaveBeenCalled()
+  })
+
+  it('驳回证据:写 rejected + 提示 + 不调 attach', async () => {
+    renderModule()
+    await waitFor(() => expect(screen.getByText('We observed that R1 projects to R2 in the macaque.')).toBeTruthy())
+    fireEvent.click(screen.getByRole('button', { name: '驳回证据' }))
+    await waitFor(() => expect(sessionStorage.getItem(REVIEW_STATUS_KEY)).toBeTruthy())
+    const record = JSON.parse(sessionStorage.getItem(REVIEW_STATUS_KEY)!)
+    expect(record.status).toBe('rejected')
+    expect(record.meta.direction).toBe('supports')
+    expect(screen.getByText(/不会进入晋升/)).toBeTruthy()
+    expect(endpoints.attachPaperEvidence).not.toHaveBeenCalled()
+  })
+
+  it('审核通过后重新进入:右栏面板显示已审核通过状态标记', async () => {
+    sessionStorage.setItem(REVIEW_STATUS_KEY, JSON.stringify({
+      targetId: 'r1-r2',
+      status: 'review_approved',
+      meta: { direction: 'supports', evidenceLevel: 'direct', confidence: '0.8', note: '', at: '2026-08-10T00:00:00.000Z' },
+    }))
+    renderModule()
+    await waitFor(() => expect(screen.getByTestId('ew-review-status')).toBeTruthy())
+    expect(screen.getByTestId('ew-review-status').textContent).toContain('已审核通过')
+  })
+
+  it('置信度影响区:preview 可用时展示 preview 的 Current/Reviewer/Rule/Final', async () => {
+    renderModule()
+    await waitFor(() => expect(endpoints.attachPaperEvidencePreview).toHaveBeenCalled())
+    expect(screen.getByText('置信度影响')).toBeTruthy()
+    expect(screen.getByTestId('ew-impact-current').textContent).toContain('0.7')
+    expect(screen.getByTestId('ew-impact-reviewer').textContent).toContain('0.8')
+    expect(screen.getByTestId('ew-impact-rule').textContent).toContain('0.85')
+    expect(screen.getByTestId('ew-impact-final').textContent).toContain('0.85')
+  })
+
+  it('无 preview 时置信度影响本地计算:partial 方向 Rule cap 0.75 / Final 0.75', async () => {
+    sessionStorage.setItem(DRAFT_KEY, JSON.stringify({ ...DRAFT, passages: [], modelDirection: 'partial' }))
+    renderModule()
+    await waitFor(() => expect(screen.getByText('人工最终判断')).toBeTruthy())
+    fireEvent.click(screen.getByLabelText('部分支持'))
+    expect(screen.getByTestId('ew-impact-rule').textContent).toContain('0.75')
+    expect(screen.getByTestId('ew-impact-final').textContent).toContain('0.75')
+  })
+
+  it('sticky 底部按钮:驳回证据(次要) + 审核通过(primary)', async () => {
+    const { container } = renderModule()
+    await waitFor(() => expect(screen.getByTestId('ew-approve-btn')).toBeTruthy())
+    const actions = container.querySelector('.ew-sticky-actions')
+    expect(actions).toBeTruthy()
+    const reject = screen.getByRole('button', { name: '驳回证据' })
+    const approve = screen.getByRole('button', { name: '审核通过' })
+    expect(reject.className).not.toContain('btn-primary')
+    expect(approve.className).toContain('btn-primary')
   })
 })

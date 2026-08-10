@@ -101,7 +101,7 @@ export const DIRECTION_LABEL: Record<Direction, string> = {
   partial: '部分支持',
   contradicts: '矛盾',
   mixed: '混合证据',
-  not_found: '未找到',
+  not_found: '不采用',
 }
 
 export const LEVEL_LABEL: Record<EvidenceLevel, string> = {

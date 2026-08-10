@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
 import type { CandidateSummaryData } from './components/CandidateSummary'
+import type { ReviewDecisionState } from './components/ReviewerDecisionPanel'
 import type { QueueEntry } from './components/types'
 import { buildEvidenceUrl, parseEvidenceUrl, type EvidenceCenterState } from './evidenceCenterUrl'
 
@@ -16,6 +17,9 @@ interface EvidenceCenterContextValue {
   /** 候选模块推送的右栏摘要(仅 candidates 模块使用) */
   candidateSummary: CandidateSummaryData | null
   setCandidateSummary: (s: CandidateSummaryData | null) => void
+  /** 审核模块推送的人工审核决策状态(仅 review 模块使用,RightPanel 渲染 ReviewerDecisionPanel) */
+  reviewDecision: ReviewDecisionState | null
+  setReviewDecision: (s: ReviewDecisionState | null) => void
 }
 
 const EvidenceCenterContext = createContext<EvidenceCenterContextValue | null>(null)
@@ -24,6 +28,7 @@ export function EvidenceCenterProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<EvidenceCenterState>(() => parseEvidenceUrl(window.location.hash))
   const [queue, setQueue] = useState<QueueEntry[]>([])
   const [candidateSummary, setCandidateSummary] = useState<CandidateSummaryData | null>(null)
+  const [reviewDecision, setReviewDecision] = useState<ReviewDecisionState | null>(null)
 
   useEffect(() => {
     const handler = () => setState(parseEvidenceUrl(window.location.hash))
@@ -50,7 +55,9 @@ export function EvidenceCenterProvider({ children }: { children: ReactNode }) {
     selectPaper: paperId => apply({ paperId }),
     candidateSummary,
     setCandidateSummary,
-  }), [state, queue, apply, candidateSummary])
+    reviewDecision,
+    setReviewDecision,
+  }), [state, queue, apply, candidateSummary, reviewDecision])
 
   return <EvidenceCenterContext.Provider value={value}>{children}</EvidenceCenterContext.Provider>
 }

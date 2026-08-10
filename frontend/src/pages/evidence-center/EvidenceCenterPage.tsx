@@ -79,7 +79,12 @@ function EvidenceCenterBody() {
             <ObjectQueue
               queue={queue}
               currentIndex={currentIndex}
-              onSelect={e => openTarget(e.target_type, e.target_id, 'candidates')}
+              onSelect={e => openTarget(
+                e.target_type,
+                e.target_id,
+                // 审核/晋升模块内切换队列项时留在当前模块,其余模块统一回候选视图
+                state.module === 'review' || state.module === 'promotion' ? state.module : 'candidates',
+              )}
             />
           </aside>
         )}
