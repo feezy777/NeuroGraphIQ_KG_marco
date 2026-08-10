@@ -22,6 +22,7 @@ import {
 } from '../../api/endpoints'
 import { ConfirmDialog } from '../../components/ConfirmDialog'
 import { AttachDialog } from '../evidence-center/components/AttachDialog'
+import { candidatePassagesToWorkbench } from '../evidence-center/components/candidatePassages'
 import { ClaimPanel } from '../evidence-center/components/ClaimPanel'
 import { CoveragePanel } from '../evidence-center/components/CoveragePanel'
 import { PassageEvidenceCard } from '../evidence-center/components/PassageEvidenceCard'
@@ -65,35 +66,6 @@ const DEFAULT_DRAFT: WorkbenchDraft = {
   reviewerConfidence: '0.8',
   note: '',
   step: 0,
-}
-
-function candidatePassagesToWorkbench(
-  passages: Array<Record<string, unknown>>,
-  paperId: string | null,
-): WorkbenchPassage[] {
-  return passages
-    .filter((p): p is Record<string, unknown> & { passage: string } => Boolean(p.passage))
-    .map((p, i) => ({
-      hash: `${paperId ?? 'paper'}-${i}-${p.passage}`,
-      source_scope: (p.source_scope === 'fulltext' ? 'fulltext' : 'abstract') as 'abstract' | 'fulltext',
-      section_title: (p.section_title as string | null) ?? null,
-      paragraph_index: (p.paragraph_index as number | null) ?? null,
-      paragraph_id: (p.paragraph_id as string | null) ?? null,
-      paper_id: (p.paper_id as string | null) ?? null,
-      paper_passage_id: (p.paper_passage_id as string | null) ?? null,
-      passage: p.passage,
-      translation_zh: null,
-      direction: (p.direction as WorkbenchPassage['direction']) ?? 'supports',
-      evidence_level: (p.evidence_level as EvidenceLevel) ?? 'indirect',
-      reason: String(p.reason ?? ''),
-      confidence: Number(p.confidence ?? 0),
-      semantic_confidence: p.semantic_confidence != null ? Number(p.semantic_confidence) : null,
-      source_locator: (p.source_locator as string | null) ?? null,
-      source_verified: Boolean(p.source_verified),
-      source_verification_method: (p.source_verification_method as string | null) ?? null,
-      supported_components: Array.isArray(p.supported_components) ? (p.supported_components as string[]) : [],
-      evidence_dimension: (p.evidence_dimension as WorkbenchPassage['evidence_dimension']) ?? null,
-    }))
 }
 
 function loadSaved(): { queue: QueueEntry[]; idx: number } | null {

@@ -11651,3 +11651,98 @@ input[type="range"]::-webkit-slider-thumb {
 }
 .paper-drawer-target-chip:hover { background: #eff6ff; border-color: var(--primary); }
 
+
+/* ── 证据候选模块 (Evidence Candidates) ─────────────────────────────────── */
+.evidence-candidates { display: flex; align-items: flex-start; gap: 14px; }
+.evidence-candidates-queue {
+  width: 240px;
+  flex-shrink: 0;
+  background: var(--white);
+  border: 1px solid var(--border);
+  border-radius: var(--card-radius);
+  box-shadow: var(--shadow);
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: calc(100vh - 220px);
+  overflow-y: auto;
+}
+.evidence-candidates-queue-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px; }
+.evidence-candidates-queue-head h4 { font-size: 14px; color: var(--text); }
+.evidence-candidates-queue-count { background: #eff6ff; color: var(--primary); border-radius: 999px; padding: 1px 8px; font-size: 11px; font-weight: 600; }
+.evidence-candidates-queue-item {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 10px;
+  cursor: pointer;
+  transition: border-color .15s ease, box-shadow .15s ease, background .15s ease;
+}
+.evidence-candidates-queue-item:hover { border-color: var(--primary); box-shadow: var(--shadow); }
+.evidence-candidates-queue-item-active { border-color: var(--primary); background: #eff6ff; }
+.evidence-candidates-queue-label { font-size: 13px; font-weight: 600; color: var(--text); }
+.evidence-candidates-queue-meta { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+.evidence-candidates-queue-status { font-size: 11px; font-weight: 600; color: var(--primary); }
+.evidence-candidates-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 14px; }
+.evidence-candidates-papers { display: flex; flex-direction: column; gap: 10px; }
+.evidence-candidates-papers-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.evidence-candidates-papers-head h4 { font-size: 15px; color: var(--text); }
+.evidence-candidate-paper {
+  background: var(--white);
+  border: 1px solid var(--border);
+  border-radius: var(--card-radius);
+  box-shadow: var(--shadow);
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.evidence-candidate-paper-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.evidence-candidate-paper-title { display: flex; flex-direction: column; gap: 3px; min-width: 200px; }
+.evidence-candidate-paper-title strong { font-size: 14px; color: var(--text); line-height: 1.5; }
+.evidence-candidate-paper-badges { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+.evidence-candidate-badge {
+  font-size: 11px;
+  font-weight: 600;
+  border-radius: 6px;
+  padding: 2px 8px;
+  color: var(--text-muted);
+  background: #f1f5f9;
+  white-space: nowrap;
+}
+.evidence-candidate-badge-ok { color: #15803d; background: #dcfce7; }
+.evidence-candidate-badge-warn { color: #b45309; background: #fef3c7; }
+.evidence-candidate-badge-bad { color: var(--danger); background: #fff1f0; }
+.evidence-candidate-badge-info { color: var(--primary); background: #eff6ff; }
+.evidence-candidate-passages { display: flex; flex-direction: column; gap: 8px; border-top: 1px dashed var(--border); padding-top: 10px; }
+.evidence-candidate-passage { border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; background: #f8fafc; }
+.evidence-candidate-passage-invalid { border-color: #fecaca; background: #fff7f7; }
+.evidence-candidate-passage-meta { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 12px; }
+.evidence-candidate-passage-meta label { display: inline-flex; align-items: center; gap: 4px; cursor: pointer; color: var(--text); font-weight: 500; }
+.evidence-candidate-passage .ew-passage-en { margin-top: 6px; font-size: 13px; line-height: 1.7; color: var(--text); }
+.evidence-candidate-paper-actions { display: flex; gap: 8px; align-items: center; }
+.evidence-candidates-manual {
+  background: var(--white);
+  border: 1px dashed var(--border);
+  border-radius: var(--card-radius);
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.evidence-candidates-manual h4 { font-size: 15px; color: var(--text); }
+.evidence-candidates-manual-papers { display: flex; flex-direction: column; gap: 8px; }
+.evidence-candidates-manual-paper {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text);
+  cursor: pointer;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: #f8fafc;
+}
+.evidence-candidates-manual-paper strong { font-weight: 600; }
+.evidence-candidates-empty { padding: 24px 12px; text-align: center; color: var(--text-muted); font-size: 13px; }
