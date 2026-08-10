@@ -11747,6 +11747,198 @@ input[type="range"]::-webkit-slider-thumb {
 .evidence-candidates-manual-paper strong { font-weight: 600; }
 .evidence-candidates-empty { padding: 24px 12px; text-align: center; color: var(--text-muted); font-size: 13px; }
 
+/* ── 证据候选 V2:Claim chips / 搜索三层 / PaperCard 分层 / 证据视图 / 右栏摘要 ── */
+.evidence-claim {
+  background: var(--white);
+  border: 1px solid var(--border);
+  border-radius: var(--card-radius);
+  box-shadow: var(--shadow);
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.evidence-claim-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.evidence-claim-head h4 { font-size: 14px; color: var(--text); }
+.evidence-claim-text {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text);
+  line-height: 1.6;
+  padding: 10px 12px;
+  background: #f0f7ff;
+  border-left: 3px solid var(--primary);
+  border-radius: 8px;
+}
+.evidence-claim-chips { display: flex; gap: 8px; flex-wrap: wrap; }
+.evidence-claim-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text);
+  background: #eff6ff;
+  border: 1px solid #dbeafe;
+  border-radius: 999px;
+  padding: 3px 10px;
+}
+.evidence-claim-chip b { color: var(--primary); font-weight: 600; white-space: nowrap; }
+.evidence-claim-chip span { white-space: nowrap; }
+.evidence-claim-chip-optional { background: #f8fafc; border-color: var(--border); }
+.evidence-claim-chip-optional b { color: var(--text-muted); }
+
+/* 搜索区三层 */
+.evidence-search {
+  background: var(--white);
+  border: 1px solid var(--border);
+  border-radius: var(--card-radius);
+  box-shadow: var(--shadow);
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.evidence-search-layer { display: flex; flex-direction: column; gap: 6px; }
+.evidence-search-layer + .evidence-search-layer {
+  border-top: 1px dashed var(--border);
+  padding-top: 12px;
+}
+.evidence-search-title { font-size: 13px; font-weight: 700; color: var(--text); }
+.evidence-search-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.evidence-search-query { flex: 1; min-width: 220px; }
+.evidence-search-year { width: 140px; }
+.evidence-search-filter { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: var(--text); cursor: pointer; }
+.evidence-search-terms { display: flex; gap: 6px; flex-wrap: wrap; }
+.evidence-query-term {
+  font-size: 11px;
+  font-family: var(--font-mono, monospace);
+  color: var(--text-muted);
+  background: #f1f5f9;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 2px 8px;
+}
+
+/* PaperCard 分层(候选) */
+.paper-card-candidate {
+  background: var(--white);
+  border: 1px solid var(--border);
+  border-radius: var(--card-radius);
+  box-shadow: var(--shadow);
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.paper-card-title-row .paper-card-title { font-size: 14px; font-weight: 700; color: var(--text); line-height: 1.5; }
+.paper-card-cite-row .paper-card-meta { font-size: 12px; color: var(--text-muted); }
+.paper-card-match-row { display: flex; align-items: center; gap: 8px; font-size: 12px; flex-wrap: wrap; }
+.paper-card-match-score { color: #15803d; background: #dcfce7; border-radius: 999px; padding: 1px 8px; font-weight: 600; }
+.paper-card-match-reason { color: var(--text-muted); }
+.paper-card-tags-row { display: flex; gap: 6px; flex-wrap: wrap; }
+.paper-card-tag {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  background: #f1f5f9;
+  border-radius: 999px;
+  padding: 2px 8px;
+  font-family: var(--font-mono, monospace);
+}
+.paper-card-tag-ok { color: var(--primary); background: #eff6ff; }
+.paper-card-tag-oa { color: #15803d; background: #dcfce7; }
+.paper-card-result-row { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.paper-card-result-badge {
+  font-size: 11px;
+  font-weight: 600;
+  border-radius: 6px;
+  padding: 2px 8px;
+  color: var(--text-muted);
+  background: #f1f5f9;
+  white-space: nowrap;
+}
+.paper-card-result-badge-ok { color: #15803d; background: #dcfce7; }
+.paper-card-actions-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; border-top: 1px dashed var(--border); padding-top: 8px; }
+.paper-card-select { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: var(--text); cursor: pointer; }
+
+/* 论文↔证据视图 */
+.evidence-paper-view { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.evidence-paper-back { align-self: flex-start; font-size: 13px; color: var(--primary); background: none; border: none; cursor: pointer; padding: 2px 0; }
+.evidence-paper-back:hover { text-decoration: underline; }
+.evidence-paper-summary {
+  background: var(--white);
+  border: 1px solid var(--border);
+  border-radius: var(--card-radius);
+  box-shadow: var(--shadow);
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.evidence-paper-title { font-size: 15px; font-weight: 700; color: var(--text); line-height: 1.5; }
+.evidence-paper-coverage {
+  background: var(--white);
+  border: 1px solid var(--border);
+  border-radius: var(--card-radius);
+  box-shadow: var(--shadow);
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.evidence-paper-coverage h4 { font-size: 14px; color: var(--text); }
+.evidence-coverage-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.evidence-coverage-table th {
+  text-align: left;
+  font-size: 12px;
+  color: var(--text-muted);
+  font-weight: 600;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border);
+}
+.evidence-coverage-table td { padding: 6px 8px; border-bottom: 1px solid #f1f5f9; color: var(--text); }
+.evidence-coverage-value { color: var(--text-muted); }
+.evidence-coverage-ok { color: #15803d; font-weight: 700; }
+.evidence-coverage-miss { color: var(--text-muted); }
+.evidence-coverage-footer { align-self: flex-end; font-size: 12px; font-weight: 700; color: var(--text); }
+.evidence-paper-passages { display: flex; flex-direction: column; gap: 8px; }
+.evidence-paper-passages h4 { font-size: 14px; color: var(--text); }
+
+/* 右栏候选摘要 */
+.evidence-candidate-summary { display: flex; flex-direction: column; gap: 10px; }
+.evidence-candidate-summary h4 { font-size: 14px; color: var(--text); margin-bottom: 2px; }
+.evidence-summary-claim { display: flex; flex-direction: column; gap: 4px; }
+.evidence-summary-label { font-size: 11px; color: var(--text-muted); font-weight: 600; }
+.evidence-summary-claim-text {
+  font-size: 13px;
+  color: var(--text);
+  line-height: 1.6;
+  background: #f0f7ff;
+  border-radius: 8px;
+  padding: 8px 10px;
+}
+.evidence-summary-stats {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  margin: 0;
+}
+.evidence-summary-stat {
+  background: #f8fafc;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.evidence-summary-stat dt { font-size: 11px; color: var(--text-muted); }
+.evidence-summary-stat dd { font-size: 16px; font-weight: 700; color: var(--text); margin: 0; }
+.evidence-summary-model { display: flex; align-items: baseline; gap: 8px; }
+.evidence-summary-direction { font-size: 13px; font-weight: 700; color: var(--primary); }
+.evidence-summary-assessment { font-size: 12px; color: var(--text-muted); margin: 0; }
+.evidence-summary-review { margin-top: 4px; }
+
 /* ── 人工审核模块(EvidenceReviewModule) ─────────────────────────────────── */
 .evidence-review { display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 16px; align-items: start; }
 .evidence-review-main { display: flex; flex-direction: column; gap: 12px; min-width: 0; }

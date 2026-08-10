@@ -1,4 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
+import type { CandidateSummaryData } from './components/CandidateSummary'
 import type { QueueEntry } from './components/types'
 import { buildEvidenceUrl, parseEvidenceUrl, type EvidenceCenterState } from './evidenceCenterUrl'
 
@@ -12,6 +13,9 @@ interface EvidenceCenterContextValue {
   openTask: (taskId: string) => void
   openTarget: (targetType: string, targetId: string, module?: ModuleKey) => void
   selectPaper: (paperId: string | null) => void
+  /** 候选模块推送的右栏摘要(仅 candidates 模块使用) */
+  candidateSummary: CandidateSummaryData | null
+  setCandidateSummary: (s: CandidateSummaryData | null) => void
 }
 
 const EvidenceCenterContext = createContext<EvidenceCenterContextValue | null>(null)
@@ -19,6 +23,7 @@ const EvidenceCenterContext = createContext<EvidenceCenterContextValue | null>(n
 export function EvidenceCenterProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<EvidenceCenterState>(() => parseEvidenceUrl(window.location.hash))
   const [queue, setQueue] = useState<QueueEntry[]>([])
+  const [candidateSummary, setCandidateSummary] = useState<CandidateSummaryData | null>(null)
 
   useEffect(() => {
     const handler = () => setState(parseEvidenceUrl(window.location.hash))
@@ -43,7 +48,9 @@ export function EvidenceCenterProvider({ children }: { children: ReactNode }) {
     openTask: taskId => apply({ taskId, module: 'candidates' }),
     openTarget: (targetType, targetId, module = 'candidates') => apply({ targetType, targetId, module }),
     selectPaper: paperId => apply({ paperId }),
-  }), [state, queue, apply])
+    candidateSummary,
+    setCandidateSummary,
+  }), [state, queue, apply, candidateSummary])
 
   return <EvidenceCenterContext.Provider value={value}>{children}</EvidenceCenterContext.Provider>
 }

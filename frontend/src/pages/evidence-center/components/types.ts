@@ -65,6 +65,8 @@ export interface QueueEntry {
   draftPmid?: string
   preprocessOutcome?: string | null
   modelDirection?: Direction | null
+  /** 粒度(候选模块从 getEvidenceTarget DTO 填充,ContextBar 展示用) */
+  granularity?: string | null
   draftPassages?: WorkbenchPassage[]
   draftDirection?: Direction
   draft?: WorkbenchDraft

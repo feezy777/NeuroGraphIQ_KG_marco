@@ -1,4 +1,5 @@
-import type { ModuleKey } from '../EvidenceCenterContext'
+import { useEvidenceCenter, type ModuleKey } from '../EvidenceCenterContext'
+import { CandidateSummary } from './CandidateSummary'
 
 const RIGHT_TITLES: Record<ModuleKey, string> = {
   tasks: '任务与队列概览',
@@ -8,8 +9,23 @@ const RIGHT_TITLES: Record<ModuleKey, string> = {
   promotion: '晋升确认',
 }
 
-/** 右栏插槽:S2-S5 各模块将在此填充具体内容,本轮仅渲染占位标题 */
+/** 右栏插槽:候选模块渲染 CandidateSummary,其余模块暂为占位标题 */
 export function RightPanel({ module }: { module: ModuleKey }) {
+  const { state, candidateSummary, openTarget } = useEvidenceCenter()
+
+  if (module === 'candidates') {
+    return (
+      <aside className="evidence-right-panel" data-testid="evidence-right-panel">
+        <CandidateSummary
+          data={candidateSummary}
+          onEnterReview={() => {
+            if (state.targetType && state.targetId) openTarget(state.targetType, state.targetId, 'review')
+          }}
+        />
+      </aside>
+    )
+  }
+
   const title = RIGHT_TITLES[module]
   return (
     <aside className="evidence-right-panel" data-testid="evidence-right-panel">

@@ -93,12 +93,13 @@ const DTO = {
   relation: 'projects_to',
   directionality: '',
   circuit_context: '',
-  function_context: '',
+  function_context: '影响功能',
   current_confidence: 0.7,
   existing_evidence: 0,
   structured_claim: {},
   claim_text: 'R1 投射到 R2 且影响功能',
   claim_components: [
+    { component_type: 'source_region', statement: 'R1', required: true, metadata: {} },
     { component_type: 'relation', statement: '存在投射关系', required: true, metadata: {} },
   ],
   claim_version: 'v1',
@@ -136,73 +137,89 @@ describe('EvidenceCandidatesModule', () => {
     })
   })
 
-  it('渲染左侧候选队列(label + 状态)', async () => {
+  it('不再自渲染左队列(队列由页面级 ObjectQueue 渲染)', async () => {
     renderModule()
-    await waitFor(() => expect(screen.getByText('R1 → R2 连接')).toBeTruthy())
-    expect(screen.getByText('待人工审核')).toBeTruthy()
-    expect(screen.getByText('connection')).toBeTruthy()
-    expect(endpoints.listPaperEvidenceTaskItems).toHaveBeenCalledWith('t1', { limit: 100 })
+    await waitFor(() => expect(endpoints.listPaperEvidenceTaskItems).toHaveBeenCalledWith('t1', { limit: 100 }))
+    expect(screen.queryByTestId('candidates-queue')).toBeNull()
+    expect(screen.queryByTestId('candidates-queue-item')).toBeNull()
   })
 
-  it('主区渲染 ClaimPanel(claim_text + components)', async () => {
+  it('Claim 区重排:当前需要验证的事实 + Claim 单行 + Component Chips(标签 + 值)', async () => {
     renderModule()
     await waitFor(() => expect(screen.getByText('R1 投射到 R2 且影响功能')).toBeTruthy())
-    expect(screen.getByTestId('ew-claim-panel')).toBeTruthy()
-    expect(screen.getByText('connection · macro_clinical')).toBeTruthy()
-    expect(screen.getByText('存在投射关系')).toBeTruthy()
+    expect(screen.getByText('当前需要验证的事实')).toBeTruthy()
+    const chips = screen.getAllByTestId('evidence-claim-chip')
+    expect(chips).toHaveLength(2)
+    expect(chips[0].textContent).toContain('源脑区')
+    expect(chips[0].textContent).toContain('R1')
+    expect(chips[1].textContent).toContain('连接关系')
+    expect(chips[1].textContent).toContain('存在投射关系')
   })
 
-  it('Candidate Paper 卡渲染 title/model_direction/覆盖度/片段数与已核验数', async () => {
+  it('PaperCard 分层:标题粗体 / 作者·期刊·年份 / 标签(PMID/DOI/摘要/OA 全文) / 提取结果行', async () => {
     renderModule()
     await waitFor(() => expect(screen.getByText('A Study of R1 to R2 Projection')).toBeTruthy())
-    expect(screen.getByText('Brain Journal · 2024 · PMID 12345678')).toBeTruthy()
-    expect(screen.getByText('模型判断 支持')).toBeTruthy()
+    // 引用行
+    expect(screen.getByText(/Brain Journal · 2024/)).toBeTruthy()
+    // 标签行
+    expect(screen.getByText('PMID 12345678')).toBeTruthy()
+    expect(screen.getByText('DOI 10.1234/test')).toBeTruthy()
+    expect(screen.getByText('摘要')).toBeTruthy()
+    expect(screen.getByText('OA 全文')).toBeTruthy()
+    // 提取结果:AI 判断 + 覆盖度 + 片段数 + 已核验数 + [查看证据候选]
+    expect(screen.getByText(/AI 判断 支持/)).toBeTruthy()
     expect(screen.getByText('覆盖度 50%')).toBeTruthy()
     expect(screen.getByText('片段 2')).toBeTruthy()
     expect(screen.getByText('已核验 1')).toBeTruthy()
+    expect(screen.getByRole('button', { name: /查看证据候选/ })).toBeTruthy()
   })
 
-  it('查看候选证据展开片段列表,展示已核验标记', async () => {
+  it('查看证据候选 → 中栏切换 PaperEvidenceView,← 返回论文列表恢复列表', async () => {
     renderModule()
     await waitFor(() => expect(screen.getByText('A Study of R1 to R2 Projection')).toBeTruthy())
-    expect(screen.queryByTestId('cand-passages')).toBeNull()
-    fireEvent.click(screen.getByText('查看候选证据'))
-    expect(screen.getByTestId('cand-passages')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: /查看证据候选/ }))
+    // 论文列表隐藏,证据视图出现
+    expect(screen.queryByRole('button', { name: /查看证据候选/ })).toBeNull()
+    expect(screen.getByTestId('evidence-paper-view')).toBeTruthy()
+    expect(screen.getByText('Claim Coverage')).toBeTruthy()
+    expect(screen.getByText('候选佐证原文')).toBeTruthy()
     expect(screen.getByText('We observed that R1 projects to R2 in the macaque.')).toBeTruthy()
-    expect(screen.getByText('已核验')).toBeTruthy()
+    // 返回
+    fireEvent.click(screen.getByTestId('evidence-paper-back'))
+    expect(screen.queryByTestId('evidence-paper-view')).toBeNull()
+    expect(screen.getByRole('button', { name: /查看证据候选/ })).toBeTruthy()
   })
 
-  it('加入人工审核:勾选片段后写入 sessionStorage draft 并跳转 module=review', async () => {
+  it('勾选已核验片段 → 自动写入 sessionStorage 审核草稿', async () => {
     renderModule()
     await waitFor(() => expect(screen.getByText('A Study of R1 to R2 Projection')).toBeTruthy())
-    fireEvent.click(screen.getByText('查看候选证据'))
-    const boxes = screen.getAllByTestId('cand-passage-checkbox')
-    expect(boxes.length).toBe(2)
+    fireEvent.click(screen.getByRole('button', { name: /查看证据候选/ }))
+    const boxes = screen.getAllByRole('checkbox')
+    expect(boxes).toHaveLength(2)
     fireEvent.click(boxes[0])
-    fireEvent.click(screen.getByRole('button', { name: /加入人工审核/ }))
-    await waitFor(() => expect(window.location.hash).toContain('module=review'))
-    expect(window.location.hash).toContain('target_id=r1-r2')
-    const raw = sessionStorage.getItem('evidence-center.review-draft.r1-r2')
-    expect(raw).toBeTruthy()
-    const draft = JSON.parse(raw!) as {
-      passages: Array<{ hash: string; source_verified: boolean }>
-      modelDirection: string | null
-      modelAssessment: string | null
-      paperTitle: string
-      pmid: string
-    }
-    expect(draft.passages.length).toBe(1)
-    expect(draft.passages[0].source_verified).toBe(true)
-    expect(draft.modelDirection).toBe('supports')
-    expect(draft.modelAssessment).toBe('支持连接存在')
-    expect(draft.paperTitle).toBe('A Study of R1 to R2 Projection')
-    expect(draft.pmid).toBe('12345678')
+    await waitFor(() => {
+      const raw = sessionStorage.getItem('evidence-center.review-draft.r1-r2')
+      expect(raw).toBeTruthy()
+      const draft = JSON.parse(raw!) as {
+        passages: Array<{ hash: string; source_verified: boolean }>
+        modelDirection: string | null
+        modelAssessment: string | null
+        paperTitle: string
+        pmid: string
+      }
+      expect(draft.passages.length).toBe(1)
+      expect(draft.passages[0].source_verified).toBe(true)
+      expect(draft.modelDirection).toBe('supports')
+      expect(draft.modelAssessment).toBe('支持连接存在')
+      expect(draft.paperTitle).toBe('A Study of R1 to R2 Projection')
+      expect(draft.pmid).toBe('12345678')
+    })
   })
 
-  it('排除从列表移除候选论文卡', async () => {
+  it('排除此候选从列表移除论文卡', async () => {
     renderModule()
     await waitFor(() => expect(screen.getByText('A Study of R1 to R2 Projection')).toBeTruthy())
-    fireEvent.click(screen.getByText('排除'))
+    fireEvent.click(screen.getByRole('button', { name: /排除此候选/ }))
     expect(screen.queryByText('A Study of R1 to R2 Projection')).toBeNull()
     expect(screen.getByText(/当前对象暂无候选证据/)).toBeTruthy()
   })
@@ -223,7 +240,7 @@ describe('EvidenceCandidatesModule', () => {
       results: [fresh],
       llm_model: null,
     })
-    fireEvent.click(screen.getByText('重新提取'))
+    fireEvent.click(screen.getByRole('button', { name: /重新提取/ }))
     await waitFor(() =>
       expect(endpoints.extractSelectedPaperEvidence).toHaveBeenCalledWith(expect.objectContaining({
         target_type: 'connection',
@@ -244,7 +261,7 @@ describe('EvidenceCandidatesModule', () => {
     expect(screen.queryByTestId('ew-attach')).toBeNull()
   })
 
-  it('队列为空时显示手动检索/提取入口(不渲染候选卡)', async () => {
+  it('队列为空时显示搜索区三层(查找相关论文/检索过滤/批量操作)与 Query Terms Chips', async () => {
     vi.mocked(endpoints.listPaperEvidenceTaskItems).mockResolvedValue({ items: [] })
     window.location.hash = '#/evidence-center?module=candidates&task_id=t1&target_type=connection&target_id=r1-r2'
     render(
@@ -252,10 +269,137 @@ describe('EvidenceCandidatesModule', () => {
         <EvidenceCandidatesModule />
       </EvidenceCenterProvider>,
     )
-    await waitFor(() => expect(screen.getByText(/手动检索与提取/)).toBeTruthy())
-    fireEvent.click(screen.getByText('检索'))
-    await waitFor(() => expect(endpoints.searchPaperEvidence).toHaveBeenCalled())
-    expect(screen.queryByText('A Study of R1 to R2 Projection')).toBeNull()
+    await waitFor(() => expect(screen.getByText('查找相关论文')).toBeTruthy())
+    // 三层标题
+    expect(screen.getByText('查找相关论文')).toBeTruthy()
+    expect(screen.getByText('检索过滤')).toBeTruthy()
+    expect(screen.getByText('批量操作')).toBeTruthy()
+    // Query Terms Chips 来自 DTO(源脑区/目标脑区/连接关系/功能)
+    const terms = screen.getAllByTestId('evidence-query-term')
+    expect(terms.map(t => t.textContent)).toEqual(expect.arrayContaining(['R1', 'R2', 'projects_to', '影响功能']))
+    // 过滤控件
+    expect(screen.getByLabelText('仅 OA')).toBeTruthy()
+    expect(screen.getByLabelText('佐证模式')).toBeTruthy()
+    expect(screen.getByPlaceholderText(/年份/)).toBeTruthy()
+    expect(screen.getByRole('button', { name: /恢复排除/ })).toBeTruthy()
+  })
+
+  it('手动检索:重新搜索携带 query_override;搜索结果显示为候选卡可勾选「加入提取」', async () => {
+    vi.mocked(endpoints.listPaperEvidenceTaskItems).mockResolvedValue({ items: [] })
+    vi.mocked(endpoints.searchPaperEvidence).mockResolvedValue({
+      target_info: { target_type: 'connection', target_id: 'r1-r2', function_term: '', mode: 'existence', query: 'R1 AND R2', info: {} },
+      papers: [{
+        pmid: '99999999',
+        doi: '10.9999/abc',
+        title: 'A Newly Found Paper',
+        journal: 'Nature',
+        year: '2025',
+        authors: 'Doe J',
+        abstract: 'Abstract text.',
+        source: 'europepmc',
+        is_open_access: true,
+        fulltext_available: true,
+        paper_match_score: 0.93,
+        match_reason: '标题与 R1/R2 高度匹配',
+      }],
+    })
+    window.location.hash = '#/evidence-center?module=candidates&task_id=t1&target_type=connection&target_id=r1-r2'
+    render(
+      <EvidenceCenterProvider>
+        <EvidenceCandidatesModule />
+      </EvidenceCenterProvider>,
+    )
+    await waitFor(() => expect(screen.getByText('查找相关论文')).toBeTruthy())
+    fireEvent.change(screen.getByTestId('evidence-search-query'), { target: { value: 'R1 projection' } })
+    fireEvent.click(screen.getByRole('button', { name: /重新搜索/ }))
+    await waitFor(() =>
+      expect(endpoints.searchPaperEvidence).toHaveBeenCalledWith(expect.objectContaining({
+        target_type: 'connection',
+        target_id: 'r1-r2',
+        query_override: 'R1 projection',
+      })),
+    )
+    // 搜索结果卡:标题 + 匹配信息 + 加入提取 checkbox
+    expect(screen.getByText('A Newly Found Paper')).toBeTruthy()
+    expect(screen.getByText(/Doe J · Nature · 2025/)).toBeTruthy()
+    expect(screen.getByTestId('paper-card-match').textContent).toContain('匹配 93%')
+    expect(screen.getByTestId('paper-card-match').textContent).toContain('标题与 R1/R2 高度匹配')
+    expect(screen.getAllByTestId('paper-card-select')).toHaveLength(1)
+  })
+
+  it('恢复系统推荐:清空 Query 并以无 query_override 重新检索', async () => {
+    vi.mocked(endpoints.listPaperEvidenceTaskItems).mockResolvedValue({ items: [] })
+    window.location.hash = '#/evidence-center?module=candidates&task_id=t1&target_type=connection&target_id=r1-r2'
+    render(
+      <EvidenceCenterProvider>
+        <EvidenceCandidatesModule />
+      </EvidenceCenterProvider>,
+    )
+    await waitFor(() => expect(screen.getByText('查找相关论文')).toBeTruthy())
+    fireEvent.change(screen.getByTestId('evidence-search-query'), { target: { value: 'my query' } })
+    fireEvent.click(screen.getByRole('button', { name: /恢复系统推荐/ }))
+    await waitFor(() =>
+      expect(endpoints.searchPaperEvidence).toHaveBeenCalledWith(expect.objectContaining({ query_override: undefined })),
+    )
+    expect((screen.getByTestId('evidence-search-query') as HTMLInputElement).value).toBe('')
+  })
+
+  it('批量操作:全选 + 提取所选论文(N)', async () => {
+    vi.mocked(endpoints.listPaperEvidenceTaskItems).mockResolvedValue({ items: [] })
+    vi.mocked(endpoints.searchPaperEvidence).mockResolvedValue({
+      target_info: { target_type: 'connection', target_id: 'r1-r2', function_term: '', mode: 'existence', query: '', info: {} },
+      papers: [
+        { pmid: '111', doi: '10.1/a', title: 'Paper A', journal: 'J', year: '2024', authors: '', abstract: '', source: 'europepmc' },
+        { pmid: '222', doi: '10.2/b', title: 'Paper B', journal: 'J', year: '2023', authors: '', abstract: '', source: 'europepmc' },
+      ],
+    })
+    window.location.hash = '#/evidence-center?module=candidates&task_id=t1&target_type=connection&target_id=r1-r2'
+    render(
+      <EvidenceCenterProvider>
+        <EvidenceCandidatesModule />
+      </EvidenceCenterProvider>,
+    )
+    await waitFor(() => expect(screen.getByText('查找相关论文')).toBeTruthy())
+    fireEvent.click(screen.getByRole('button', { name: /重新搜索/ }))
+    await waitFor(() => expect(screen.getByText('Paper A')).toBeTruthy())
+    fireEvent.click(screen.getByRole('button', { name: /全选/ }))
+    fireEvent.click(screen.getByRole('button', { name: /提取所选论文（2）/ }))
+    await waitFor(() =>
+      expect(endpoints.extractSelectedPaperEvidence).toHaveBeenCalledWith(expect.objectContaining({
+        papers: expect.arrayContaining([
+          expect.objectContaining({ pmid: '111' }),
+          expect.objectContaining({ pmid: '222' }),
+        ]),
+      })),
+    )
+  })
+
+  it('OA Only / 年份过滤在客户端过滤搜索结果', async () => {
+    vi.mocked(endpoints.listPaperEvidenceTaskItems).mockResolvedValue({ items: [] })
+    vi.mocked(endpoints.searchPaperEvidence).mockResolvedValue({
+      target_info: { target_type: 'connection', target_id: 'r1-r2', function_term: '', mode: 'existence', query: '', info: {} },
+      papers: [
+        { pmid: '111', doi: '10.1/a', title: 'OA Paper', journal: 'J', year: '2024', authors: '', abstract: '', source: 'europepmc', is_open_access: true },
+        { pmid: '222', doi: '10.2/b', title: 'Closed Paper', journal: 'J', year: '2020', authors: '', abstract: '', source: 'europepmc', is_open_access: false },
+      ],
+    })
+    window.location.hash = '#/evidence-center?module=candidates&task_id=t1&target_type=connection&target_id=r1-r2'
+    render(
+      <EvidenceCenterProvider>
+        <EvidenceCandidatesModule />
+      </EvidenceCenterProvider>,
+    )
+    await waitFor(() => expect(screen.getByText('查找相关论文')).toBeTruthy())
+    fireEvent.click(screen.getByRole('button', { name: /重新搜索/ }))
+    await waitFor(() => expect(screen.getByText('OA Paper')).toBeTruthy())
+    expect(screen.getByText('Closed Paper')).toBeTruthy()
+    fireEvent.click(screen.getByLabelText('仅 OA'))
+    expect(screen.queryByText('Closed Paper')).toBeNull()
+    expect(screen.getByText('OA Paper')).toBeTruthy()
+    fireEvent.click(screen.getByLabelText('仅 OA'))
+    fireEvent.change(screen.getByPlaceholderText(/年份/), { target: { value: '2023' } })
+    expect(screen.queryByText('Closed Paper')).toBeNull()
+    expect(screen.getByText('OA Paper')).toBeTruthy()
   })
 
   it('无任务时从 sessionStorage initial-queue 一次性恢复队列(数据中心入口交接)', async () => {
@@ -275,9 +419,7 @@ describe('EvidenceCandidatesModule', () => {
         <EvidenceCandidatesModule />
       </EvidenceCenterProvider>,
     )
-    await waitFor(() => expect(screen.getByText('R1 功能')).toBeTruthy())
-    expect(screen.getByText('R1 → R2 连接')).toBeTruthy()
-    expect(screen.getByText(/已从数据中心恢复 2 个待处理对象/)).toBeTruthy()
+    await waitFor(() => expect(screen.getByText(/已从数据中心恢复 2 个待处理对象/)).toBeTruthy())
     expect(sessionStorage.getItem('evidence-center.initial-queue')).toBeNull()
   })
 })

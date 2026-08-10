@@ -132,15 +132,82 @@ describe('EvidenceCenterPage', () => {
     expect(container.querySelector('.evidence-right')).toBeNull()
   })
 
-  it('右栏占位标题随 module 切换', () => {
+  it('右栏随 module 切换:占位标题(任务/审核)与候选摘要(candidates)', () => {
     window.location.hash = '#/evidence-center?module=tasks'
     const { container } = render(<EvidenceCenterPage />)
     const title = () => container.querySelector('.evidence-right-panel h4')?.textContent ?? ''
     expect(title()).toContain('任务')
     fireEvent.click(screen.getByText('证据候选'))
-    expect(title()).toContain('检索')
+    expect(title()).toContain('候选摘要')
     fireEvent.click(screen.getAllByText('人工审核')[0])
     expect(title()).toContain('审核')
+  })
+
+  it('candidates 右栏渲染 CandidateSummary,点击 [进入人工审核] 跳转 review', async () => {
+    vi.mocked(listPaperEvidenceTaskItems).mockResolvedValue({ items: TASK_ITEMS })
+    window.location.hash = '#/evidence-center?module=candidates&task_id=t1'
+    render(<EvidenceCenterPage />)
+    await waitFor(() => expect(screen.getByTestId('evidence-candidate-summary')).toBeTruthy())
+    fireEvent.click(screen.getByRole('button', { name: /进入人工审核/ }))
+    await waitFor(() => expect(window.location.hash).toContain('module=review'))
+    expect(window.location.hash).toContain('target_id=r1-r2')
+  })
+
+  it('候选摘要禁止项:无 Reviewer Confidence / Direction 控件', async () => {
+    vi.mocked(listPaperEvidenceTaskItems).mockResolvedValue({ items: TASK_ITEMS })
+    window.location.hash = '#/evidence-center?module=candidates&task_id=t1'
+    render(<EvidenceCenterPage />)
+    await waitFor(() => expect(screen.getByTestId('evidence-candidate-summary')).toBeTruthy())
+    expect(screen.queryByText(/Reviewer Confidence/i)).toBeNull()
+    expect(screen.queryByText(/Reviewer Direction/i)).toBeNull()
+    expect(screen.queryByRole('slider')).toBeNull()
+  })
+
+  it('granularity 从候选模块 DTO 填充队列并显示在 ContextBar', async () => {
+    vi.mocked(listPaperEvidenceTaskItems).mockResolvedValue({ items: TASK_ITEMS })
+    const { getEvidenceTarget } = await import('../../api/endpoints')
+    vi.mocked(getEvidenceTarget).mockResolvedValue({
+      target_type: 'connection',
+      target_id: 'r1-r2',
+      granularity: 'macro_clinical',
+      display_name: 'R1→R2',
+      source_region: 'R1',
+      target_region: 'R2',
+      canonical_terms: [],
+      relation: 'projects_to',
+      directionality: '',
+      circuit_context: '',
+      function_context: '',
+      current_confidence: 0.85,
+      existing_evidence: 0,
+      structured_claim: {},
+      claim_text: 'R1 投射到 R2',
+      claim_components: [],
+      claim_version: 'v1',
+    })
+    window.location.hash = '#/evidence-center?module=candidates&task_id=t1'
+    render(<EvidenceCenterPage />)
+    const bar = await screen.findByTestId('evidence-context-bar')
+    await waitFor(() => expect(within(bar).getByText(/粒度 macro_clinical/)).toBeTruthy())
+  })
+
+  it('无任务时 initial-queue 恢复的条目渲染在页面级左栏 ObjectQueue', async () => {
+    sessionStorage.setItem(
+      'evidence-center.initial-queue',
+      JSON.stringify({
+        items: [
+          { target_type: 'connection', target_id: 'r1-r2', label: 'R1 → R2 连接', confidence: 0.7 },
+          { target_type: 'region_function', target_id: 'f-1', label: 'R1 功能', confidence: 0.5 },
+        ],
+        taskId: null,
+      }),
+    )
+    window.location.hash = '#/evidence-center?module=candidates&target_type=connection&target_id=r1-r2'
+    render(<EvidenceCenterPage />)
+    await waitFor(() => expect(screen.getByText('R1 功能')).toBeTruthy())
+    // 队列条目渲染在页面级左栏 ObjectQueue(上下文条中也出现 label,需在队列内断言)
+    expect(within(screen.getByTestId('evidence-queue')).getByText('R1 → R2 连接')).toBeTruthy()
+    expect(screen.getByText(/已从数据中心恢复 2 个待处理对象/)).toBeTruthy()
   })
 
   it('ContextBar 显示当前对象、类型、置信度、证据数与队列进度', async () => {

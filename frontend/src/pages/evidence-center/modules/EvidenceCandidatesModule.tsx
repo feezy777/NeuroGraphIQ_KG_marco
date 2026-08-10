@@ -11,37 +11,31 @@ import {
 import { useEvidenceCenter } from '../EvidenceCenterContext'
 import { INITIAL_QUEUE_KEY } from '../evidenceCenterUrl'
 import { candidatePassagesToWorkbench } from '../components/candidatePassages'
-import { ClaimPanel } from '../components/ClaimPanel'
-import { DIRECTION_LABEL, type Direction, type QueueEntry, type QueueStatus, type WorkbenchPassage } from '../components/types'
-
-const ITEM_STATUS_LABEL: Record<string, string> = {
-  pending: '待处理',
-  searching: '检索中',
-  extracting: '提取中',
-  awaiting_review: '待人工审核',
-  completed: '已审核',
-  skipped: '已跳过',
-  failed: '失败',
-}
-
-const PREPROCESS_HINTS: Record<string, string> = {
-  no_evidence_found: '系统未找到有效论文证据',
-  no_available_papers: '未找到可用论文',
-  parse_error: '预处理解析失败',
-}
+import { aggregateTmpDirection, computeTmpCoverage } from '../components/claimCoverage'
+import { CandidatePaperCard, type CandidatePaperData } from '../components/PaperCard'
+import { CandidateSummaryData } from '../components/CandidateSummary'
+import { ClaimView } from '../components/ClaimView'
+import { PaperDetailDrawer } from '../components/PaperDetailDrawer'
+import { PaperEvidenceView } from '../components/PaperEvidenceView'
+import type { QueueEntry, QueueStatus, WorkbenchPassage } from '../components/types'
 
 const DRAFT_PREFIX = 'evidence-center.review-draft.'
+
+type EvidenceMode = 'auto' | 'function' | 'existence'
 
 /** 候选论文(任务 item 的 candidate_papers 与手动提取的 ExtractedPaperCandidate 的公共子集) */
 interface CandidatePaper {
   paper_id: string
   pmid: string
   doi?: string | null
+  pmcid?: string | null
   title: string
   journal: string
   year: string
   is_oa: boolean
   fulltext_fetched?: boolean | null
+  paper_match_score?: number | null
+  match_reason?: string | null
   model_direction: string | null
   model_assessment: string | null
   coverage_summary: Record<string, unknown> | null
@@ -66,136 +60,68 @@ function itemToQueueEntry(it: PaperEvidenceTaskItem): QueueEntry {
     evidenceCount: it.candidate_papers?.length ?? 0,
     taskItemId: it.id,
     preprocessOutcome: it.preprocess_outcome,
-    modelDirection: (it.model_direction as Direction | null) ?? null,
+    modelDirection: it.model_direction as QueueEntry['modelDirection'],
   }
 }
 
-function directionTone(direction: string | null): string {
-  switch (direction) {
-    case 'supports': return 'ok'
-    case 'partial': return 'warn'
-    case 'contradicts':
-    case 'mixed': return 'bad'
-    default: return 'muted'
+/** 任务候选 / 手动提取结果 → 分层卡片数据(已提取) */
+function extractedToCardData(cand: CandidatePaper): CandidatePaperData {
+  return {
+    paperId: cand.paper_id,
+    pmid: cand.pmid,
+    doi: cand.doi ?? null,
+    pmcid: cand.pmcid ?? null,
+    title: cand.title,
+    journal: cand.journal,
+    year: cand.year,
+    authors: null,
+    isOa: cand.is_oa,
+    abstractAvailable: true,
+    fulltextAvailable: cand.is_oa && cand.fulltext_fetched !== false,
+    matchReason: cand.match_reason ?? null,
+    matchScore: cand.paper_match_score ?? null,
+    extracted: true,
+    modelDirection: cand.model_direction,
+    modelAssessment: cand.model_assessment,
+    coverageSummary: cand.coverage_summary,
+    passageCount: cand.passages?.length ?? 0,
+    verifiedCount: (cand.passages ?? []).filter(p => Boolean(p.source_verified)).length,
   }
 }
 
-interface CandidatePaperCardProps {
-  cand: CandidatePaper
-  expanded: boolean
-  selectedHashes: Set<string>
-  reExtracting: boolean
-  onToggleExpand: () => void
-  onTogglePassage: (hash: string, checked: boolean) => void
-  onReview: () => void
-  onExclude: () => void
-  onReExtract: () => void
-}
-
-function CandidatePaperCard({
-  cand, expanded, selectedHashes, reExtracting,
-  onToggleExpand, onTogglePassage, onReview, onExclude, onReExtract,
-}: CandidatePaperCardProps) {
-  const passages = useMemo(
-    () => candidatePassagesToWorkbench(cand.passages ?? [], cand.paper_id),
-    [cand.passages, cand.paper_id],
-  )
-  const selectedCount = passages.filter(p => selectedHashes.has(p.hash)).length
-  const verifiedCount = passages.filter(p => p.source_verified).length
-  const coverage = (cand.coverage_summary ?? null) as {
-    coverage_ratio?: number
-    supported_components?: string[]
-    required_components?: string[]
-  } | null
-  const dirLabel = cand.model_direction
-    ? (DIRECTION_LABEL[cand.model_direction as Direction] ?? cand.model_direction)
-    : null
-
-  return (
-    <div className="evidence-candidate-paper" data-testid="evidence-candidate-paper">
-      <div className="evidence-candidate-paper-head">
-        <div className="evidence-candidate-paper-title">
-          <strong>{cand.title}</strong>
-          <span className="ew-meta">{cand.journal} · {cand.year} · PMID {cand.pmid}</span>
-        </div>
-        <div className="evidence-candidate-paper-badges">
-          {dirLabel && (
-            <span className={`evidence-candidate-badge evidence-candidate-badge-${directionTone(cand.model_direction)}`}>
-              模型判断 {dirLabel}
-            </span>
-          )}
-          {coverage?.coverage_ratio != null && (
-            <span className="evidence-candidate-badge" title={coverage.supported_components?.join('、')}>
-              覆盖度 {Math.round(coverage.coverage_ratio * 100)}%
-            </span>
-          )}
-          <span className="evidence-candidate-badge">片段 {passages.length}</span>
-          <span className="evidence-candidate-badge evidence-candidate-badge-ok">已核验 {verifiedCount}</span>
-          {cand.fulltext_fetched === false && (
-            <span className="evidence-candidate-badge evidence-candidate-badge-warn" title="未获取到 OA 全文,仅基于摘要提取">仅摘要</span>
-          )}
-        </div>
-      </div>
-
-      {expanded && (
-        <div className="evidence-candidate-passages" data-testid="cand-passages">
-          {passages.length === 0 && <div className="evidence-candidates-empty">该论文暂无候选片段</div>}
-          {passages.map(p => (
-            <div key={p.hash} className={`evidence-candidate-passage${p.source_verified ? '' : ' evidence-candidate-passage-invalid'}`} data-testid="cand-passage">
-              <div className="evidence-candidate-passage-meta">
-                <label>
-                  <input
-                    type="checkbox"
-                    data-testid="cand-passage-checkbox"
-                    checked={selectedHashes.has(p.hash)}
-                    onChange={e => onTogglePassage(p.hash, e.target.checked)}
-                  />
-                  选择片段
-                </label>
-                <span className="ew-passage-direction">{p.direction}</span>
-                <span className="ew-meta">{p.source_scope}{p.section_title ? ` · ${p.section_title}` : ''}</span>
-                {p.source_verified
-                  ? <span className="ew-ok">已核验</span>
-                  : <span className="ew-bad">未核验</span>}
-              </div>
-              <p className="ew-passage-en">{p.passage}</p>
-            </div>
-          ))}
-        </div>
-      )}
-
-      <div className="evidence-candidate-paper-actions">
-        <button type="button" className="btn btn-xs" onClick={onToggleExpand}>
-          {expanded ? '收起候选证据' : '查看候选证据'}
-        </button>
-        <button
-          type="button"
-          className="btn btn-xs btn-primary"
-          data-testid="review-submit"
-          disabled={selectedCount === 0}
-          title={selectedCount === 0 ? '请先勾选已核验的候选片段' : '将所选片段作为人工审核草稿提交'}
-          onClick={onReview}
-        >
-          加入人工审核{selectedCount > 0 ? `（${selectedCount}）` : ''}
-        </button>
-        <button type="button" className="btn btn-xs" onClick={onExclude}>排除</button>
-        <button type="button" className="btn btn-xs" disabled={reExtracting} onClick={onReExtract}>
-          {reExtracting ? '重新提取中…' : '重新提取'}
-        </button>
-      </div>
-    </div>
-  )
+/** 手动检索结果 → 分层卡片数据(未提取,仅匹配信息) */
+function searchToCardData(p: PaperSearchResponse['papers'][number]): CandidatePaperData {
+  return {
+    paperId: null,
+    pmid: p.pmid,
+    doi: p.doi,
+    pmcid: p.pmcid ?? null,
+    title: p.title,
+    journal: p.journal,
+    year: p.year,
+    authors: p.authors || null,
+    isOa: Boolean(p.is_open_access),
+    abstractAvailable: Boolean(p.abstract),
+    fulltextAvailable: Boolean(p.fulltext_available),
+    matchReason: p.match_reason ?? null,
+    matchScore: p.paper_match_score ?? null,
+    extracted: false,
+    modelDirection: null,
+    modelAssessment: null,
+    coverageSummary: null,
+    passageCount: 0,
+    verifiedCount: 0,
+  }
 }
 
 export function EvidenceCandidatesModule() {
-  const { state, queue, setQueue, openTarget } = useEvidenceCenter()
+  const { state, queue, setQueue, openTarget, setCandidateSummary } = useEvidenceCenter()
   const [items, setItems] = useState<PaperEvidenceTaskItem[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [message, setMessage] = useState<string | null>(null)
   const [dto, setDto] = useState<EvidenceTargetDto | null>(null)
   const [excludedPaperIds, setExcludedPaperIds] = useState<Set<string>>(new Set())
-  const [expandedPaperId, setExpandedPaperId] = useState<string | null>(null)
   const [selectedHashes, setSelectedHashes] = useState<Set<string>>(new Set())
   const [reExtractBusy, setReExtractBusy] = useState<string | null>(null)
   const [manualQuery, setManualQuery] = useState('')
@@ -203,6 +129,12 @@ export function EvidenceCandidatesModule() {
   const [manualBusy, setManualBusy] = useState(false)
   const [manualSelected, setManualSelected] = useState<Set<string>>(new Set())
   const [manualResults, setManualResults] = useState<CandidatePaper[]>([])
+  const [evidenceViewPaperId, setEvidenceViewPaperId] = useState<string | null>(null)
+  const [detailPaperId, setDetailPaperId] = useState<string | null>(null)
+  // 搜索过滤(第二层)
+  const [oaOnly, setOaOnly] = useState(false)
+  const [modeOverride, setModeOverride] = useState<EvidenceMode>('auto')
+  const [yearFilter, setYearFilter] = useState('')
 
   const loadItems = useCallback(async () => {
     if (!state.taskId) {
@@ -271,16 +203,27 @@ export function EvidenceCandidatesModule() {
     return () => { cancelled = true }
   }, [current?.target_type, current?.target_id])
 
+  // granularity 兑现:DTO 加载后填充队列条目,页面 ContextBar 读取(仅实际变更时 setQueue,避免重渲染循环)
+  useEffect(() => {
+    if (!dto?.granularity) return
+    const next = queue.map(e =>
+      e.target_type === dto.target_type && e.target_id === dto.target_id && e.granularity !== dto.granularity
+        ? { ...e, granularity: dto.granularity }
+        : e,
+    )
+    if (next.some((e, i) => e !== queue[i])) setQueue(next)
+  }, [dto, queue, setQueue])
+
   // 切换目标时重置选择状态
   useEffect(() => {
-    setExpandedPaperId(null)
+    setEvidenceViewPaperId(null)
+    setDetailPaperId(null)
     setSelectedHashes(new Set())
     setExcludedPaperIds(new Set())
     setMessage(null)
   }, [current?.target_id])
 
   // 数据中心跳转兼容:无任务时从 sessionStorage initial-queue 一次性恢复队列
-  // (loadItems 无 taskId 时已清空队列、目标切换 effect 已清 message,此 effect 声明最晚,恢复覆盖之)
   useEffect(() => {
     if (state.taskId) return
     try {
@@ -310,7 +253,9 @@ export function EvidenceCandidatesModule() {
     }
   }, [state.taskId, setQueue])
 
-  const mode = current?.target_type === 'connection' || current?.target_type === 'projection' ? 'existence' : 'function'
+  const derivedMode: 'function' | 'existence' =
+    current?.target_type === 'connection' || current?.target_type === 'projection' ? 'existence' : 'function'
+  const effectiveMode: 'function' | 'existence' = modeOverride === 'auto' ? derivedMode : modeOverride
 
   const candidates: CandidatePaper[] = useMemo(() => {
     const papers = current?.candidate_papers ?? []
@@ -318,6 +263,80 @@ export function EvidenceCandidatesModule() {
       .map(p => ({ ...p, passages: p.passages ?? [] }))
       .filter(c => !excludedPaperIds.has(c.paper_id || c.pmid))
   }, [current, excludedPaperIds])
+
+  // useMemo:保证引用稳定(否则作为 summary 计算依赖会触发无限重渲染循环)
+  const claimComponents = useMemo(() => dto?.claim_components ?? [], [dto])
+
+  // ─── 搜索区(仅任务为空时的手动兜底入口;三层:查找论文/过滤/批量) ───
+  const manualTarget = current && items.length === 0
+    ? { target_type: current.target_type, target_id: current.target_id }
+    : null
+
+  const queryTerms = useMemo(() => {
+    if (!dto) return []
+    return [dto.source_region, dto.target_region, dto.relation, dto.function_context, dto.circuit_context]
+      .filter((t): t is string => Boolean(t))
+      .filter((t, i, arr) => arr.indexOf(t) === i)
+  }, [dto])
+
+  const visibleSearchPapers = useMemo(() => {
+    const papers = manualResult?.papers ?? []
+    return papers.filter(p =>
+      !excludedPaperIds.has(p.pmid)
+      && (!oaOnly || p.is_open_access)
+      && (!yearFilter || Number(p.year) >= Number(yearFilter)),
+    )
+  }, [manualResult, oaOnly, yearFilter, excludedPaperIds])
+
+  const runSearch = useCallback(async (query: string) => {
+    if (!manualTarget) return
+    setManualBusy(true)
+    setMessage(null)
+    try {
+      const resp = await searchPaperEvidence({
+        target_type: manualTarget.target_type,
+        target_id: manualTarget.target_id,
+        limit: 10,
+        mode: effectiveMode,
+        query_override: query.trim() || undefined,
+      })
+      setManualResult(resp)
+      setManualSelected(new Set())
+    } catch (err) {
+      setMessage(`检索失败：${err instanceof Error ? err.message : String(err)}`)
+    } finally {
+      setManualBusy(false)
+    }
+  }, [manualTarget, effectiveMode])
+
+  const handleManualSearch = useCallback(() => { void runSearch(manualQuery) }, [runSearch, manualQuery])
+
+  const handleRestoreRecommended = useCallback(() => {
+    setManualQuery('')
+    void runSearch('')
+  }, [runSearch])
+
+  const handleManualExtract = useCallback(async () => {
+    if (!manualTarget) return
+    const papers = visibleSearchPapers.filter(p => manualSelected.has(p.pmid) && Boolean(p.pmid || p.doi))
+    if (papers.length === 0) return
+    setManualBusy(true)
+    setMessage(null)
+    try {
+      const resp = await extractSelectedPaperEvidence({
+        target_type: manualTarget.target_type,
+        target_id: manualTarget.target_id,
+        papers: papers.map(p => ({ pmid: p.pmid, doi: p.doi, title: p.title })),
+        mode: effectiveMode,
+      })
+      setManualResults(resp.results)
+      setMessage(`已提取 ${resp.results.length} 篇论文，请勾选片段后加入人工审核`)
+    } catch (err) {
+      setMessage(`批量提取失败：${err instanceof Error ? err.message : String(err)}`)
+    } finally {
+      setManualBusy(false)
+    }
+  }, [manualTarget, manualSelected, visibleSearchPapers, effectiveMode])
 
   const handleTogglePassage = useCallback((hash: string, checked: boolean) => {
     setSelectedHashes(prev => {
@@ -328,22 +347,6 @@ export function EvidenceCandidatesModule() {
     })
   }, [])
 
-  const handleReview = useCallback((cand: CandidatePaper) => {
-    if (!current) return
-    const passages = candidatePassagesToWorkbench(cand.passages ?? [], cand.paper_id)
-      .filter(p => selectedHashes.has(p.hash))
-    if (passages.length === 0) return
-    const draft: ReviewDraft = {
-      passages,
-      modelDirection: cand.model_direction,
-      modelAssessment: cand.model_assessment,
-      paperTitle: cand.title,
-      pmid: cand.pmid,
-    }
-    sessionStorage.setItem(`${DRAFT_PREFIX}${current.target_id}`, JSON.stringify(draft))
-    openTarget(current.target_type, current.target_id, 'review')
-  }, [current, selectedHashes, openTarget])
-
   const handleReExtract = useCallback(async (cand: CandidatePaper) => {
     if (!current) return
     setReExtractBusy(cand.paper_id || cand.pmid)
@@ -353,7 +356,7 @@ export function EvidenceCandidatesModule() {
         target_type: current.target_type,
         target_id: current.target_id,
         papers: [{ pmid: cand.pmid, doi: cand.doi ?? null, title: cand.title }],
-        mode,
+        mode: effectiveMode,
       })
       const fresh = resp.results[0]
       if (fresh) {
@@ -385,83 +388,63 @@ export function EvidenceCandidatesModule() {
     } finally {
       setReExtractBusy(null)
     }
-  }, [current, mode])
+  }, [current, effectiveMode])
 
-  // ─── 手动检索/提取(任务 items 为空时的兜底入口) ───
-  const manualTarget = current && items.length === 0
-    ? { target_type: current.target_type, target_id: current.target_id }
-    : null
+  // ─── 论文↔证据视图:勾选已核验片段时自动写审核草稿(进入人工审核即恢复) ───
+  const evidencePaper = useMemo(() => {
+    if (!evidenceViewPaperId) return null
+    return [...candidates, ...manualResults].find(c => (c.paper_id || c.pmid) === evidenceViewPaperId) ?? null
+  }, [evidenceViewPaperId, candidates, manualResults])
 
-  const handleManualSearch = useCallback(async () => {
-    if (!manualTarget) return
-    setManualBusy(true)
-    setMessage(null)
-    try {
-      const resp = await searchPaperEvidence({
-        target_type: manualTarget.target_type,
-        target_id: manualTarget.target_id,
-        limit: 10,
-        mode,
-        query_override: manualQuery.trim() || undefined,
-      })
-      setManualResult(resp)
-      setManualSelected(new Set())
-    } catch (err) {
-      setMessage(`检索失败：${err instanceof Error ? err.message : String(err)}`)
-    } finally {
-      setManualBusy(false)
+  const evidencePassages = useMemo(
+    () => candidatePassagesToWorkbench(evidencePaper?.passages ?? [], evidencePaper?.paper_id ?? null),
+    [evidencePaper],
+  )
+
+  useEffect(() => {
+    if (!current || !evidencePaper) return
+    const passages = candidatePassagesToWorkbench(evidencePaper.passages ?? [], evidencePaper.paper_id)
+      .filter(p => selectedHashes.has(p.hash))
+    const key = `${DRAFT_PREFIX}${current.target_id}`
+    if (passages.length === 0) {
+      sessionStorage.removeItem(key)
+      return
     }
-  }, [manualTarget, mode, manualQuery])
-
-  const handleManualExtract = useCallback(async () => {
-    if (!manualTarget) return
-    const papers = (manualResult?.papers ?? []).filter(p => manualSelected.has(p.pmid) && Boolean(p.pmid || p.doi))
-    if (papers.length === 0) return
-    setManualBusy(true)
-    setMessage(null)
-    try {
-      const resp = await extractSelectedPaperEvidence({
-        target_type: manualTarget.target_type,
-        target_id: manualTarget.target_id,
-        papers: papers.map(p => ({ pmid: p.pmid, doi: p.doi, title: p.title })),
-        mode,
-      })
-      setManualResults(resp.results)
-      setMessage(`已提取 ${resp.results.length} 篇论文，请勾选片段后加入人工审核`)
-    } catch (err) {
-      setMessage(`批量提取失败：${err instanceof Error ? err.message : String(err)}`)
-    } finally {
-      setManualBusy(false)
+    const draft: ReviewDraft = {
+      passages,
+      modelDirection: evidencePaper.model_direction,
+      modelAssessment: evidencePaper.model_assessment,
+      paperTitle: evidencePaper.title,
+      pmid: evidencePaper.pmid,
     }
-  }, [manualTarget, manualSelected, manualResult, mode])
+    sessionStorage.setItem(key, JSON.stringify(draft))
+  }, [current, evidencePaper, selectedHashes])
 
-  const claimComponents = dto?.claim_components ?? []
+  // ─── 右栏候选摘要(Context → RightPanel) ───
+  const summary = useMemo<CandidateSummaryData | null>(() => {
+    if (!current) return null
+    const all = [...candidates, ...manualResults]
+    const passages = all.flatMap(c => candidatePassagesToWorkbench(c.passages ?? [], c.paper_id))
+    const verified = passages.filter(p => p.source_verified)
+    const coverage = computeTmpCoverage(claimComponents, verified)
+    return {
+      claimText: dto?.claim_text ?? current.label ?? '',
+      foundPapers: all.length + (manualResult?.papers.length ?? 0),
+      extractedPapers: all.length,
+      verifiedPassages: verified.length,
+      coverageRatio: coverage.coverage_ratio,
+      direction: aggregateTmpDirection(coverage, verified),
+      modelAssessment: all[0]?.model_assessment ?? null,
+    }
+  }, [current, dto, candidates, manualResults, manualResult, claimComponents])
+
+  useEffect(() => { setCandidateSummary(summary) }, [summary, setCandidateSummary])
+  useEffect(() => () => { setCandidateSummary(null) }, [setCandidateSummary])
+
+  const totalPapers = candidates.length + visibleSearchPapers.length
 
   return (
     <div className="evidence-candidates">
-      <div className="evidence-candidates-queue" data-testid="candidates-queue">
-        <div className="evidence-candidates-queue-head">
-          <h4>候选队列</h4>
-          <span className="evidence-candidates-queue-count">{queue.length}</span>
-        </div>
-        {queue.map(e => (
-          <div
-            key={e.target_id}
-            className={`evidence-candidates-queue-item${current?.target_id === e.target_id ? ' evidence-candidates-queue-item-active' : ''}`}
-            data-testid="candidates-queue-item"
-            onClick={() => openTarget(e.target_type, e.target_id, 'candidates')}
-          >
-            <div className="evidence-candidates-queue-label">{e.label}</div>
-            <div className="evidence-candidates-queue-meta">{e.target_type}</div>
-            <span className="evidence-candidates-queue-status">{ITEM_STATUS_LABEL[e.status] ?? e.status}</span>
-            {e.preprocessOutcome && PREPROCESS_HINTS[e.preprocessOutcome] && (
-              <div className="ew-meta">{PREPROCESS_HINTS[e.preprocessOutcome]}</div>
-            )}
-          </div>
-        ))}
-        {queue.length === 0 && !loading && <div className="evidence-candidates-empty">队列为空</div>}
-      </div>
-
       <div className="evidence-candidates-main">
         {loading && <div className="evidence-task-loading">加载中…</div>}
         {!loading && error && (
@@ -477,115 +460,165 @@ export function EvidenceCandidatesModule() {
         )}
         {!loading && !error && current && (
           <>
-            <ClaimPanel
+            <ClaimView
               claimText={dto?.claim_text ?? ''}
               components={claimComponents}
-              confidence={current.current_confidence}
-              evidenceCount={candidates.length}
               targetType={current.target_type}
-              granularity={dto?.granularity ?? ''}
             />
 
             {message && <div className="ontology-page-message">{message}</div>}
 
-            {items.length > 0 && (
-              <div className="evidence-candidates-papers">
-                <div className="evidence-candidates-papers-head">
-                  <h4>候选论文（{candidates.length}）</h4>
-                  <span className="evidence-module-hint">
-                    以下为 DeepSeek 从检索到的论文中提取的候选佐证原文。勾选片段后「加入人工审核」进入人工确认；重新提取会再次调用模型提取该论文。
-                  </span>
-                </div>
-                {candidates.length === 0 && (
-                  <div className="evidence-candidates-empty">
-                    当前对象暂无候选证据，可尝试重新提取或切换其他对象。
+            {evidencePaper ? (
+              <PaperEvidenceView
+                paper={{
+                  paperId: evidencePaper.paper_id,
+                  pmid: evidencePaper.pmid,
+                  doi: evidencePaper.doi ?? null,
+                  title: evidencePaper.title,
+                  journal: evidencePaper.journal,
+                  year: evidencePaper.year,
+                }}
+                components={claimComponents}
+                passages={evidencePassages}
+                selectedHashes={selectedHashes}
+                onTogglePassage={handleTogglePassage}
+                onBack={() => setEvidenceViewPaperId(null)}
+              />
+            ) : (
+              <>
+                {manualTarget && (
+                  <div className="evidence-search" data-testid="evidence-search">
+                    <div className="evidence-search-layer">
+                      <h4 className="evidence-search-title">查找相关论文</h4>
+                      <div className="evidence-search-row">
+                        <input
+                          className="filter-input evidence-search-query"
+                          data-testid="evidence-search-query"
+                          value={manualQuery}
+                          onChange={e => setManualQuery(e.target.value)}
+                          placeholder="检索式 / 关键词（留空使用系统推荐检索式）"
+                        />
+                        <button type="button" className="btn btn-sm" disabled={manualBusy} onClick={() => void handleManualSearch()}>
+                          {manualBusy ? '检索中…' : '重新搜索'}
+                        </button>
+                        <button type="button" className="btn btn-sm" disabled={manualBusy} onClick={() => void handleRestoreRecommended()}>
+                          恢复系统推荐
+                        </button>
+                      </div>
+                      {queryTerms.length > 0 && (
+                        <div className="evidence-search-terms">
+                          {queryTerms.map(t => (
+                            <span key={t} className="evidence-query-term" data-testid="evidence-query-term">{t}</span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                    <div className="evidence-search-layer">
+                      <h4 className="evidence-search-title">检索过滤</h4>
+                      <div className="evidence-search-row">
+                        <label className="evidence-search-filter">
+                          <input type="checkbox" checked={oaOnly} onChange={e => setOaOnly(e.target.checked)} />
+                          仅 OA
+                        </label>
+                        <label className="evidence-search-filter">
+                          佐证模式
+                          <select
+                            className="filter-select"
+                            value={modeOverride}
+                            onChange={e => setModeOverride(e.target.value as EvidenceMode)}
+                          >
+                            <option value="auto">自动</option>
+                            <option value="existence">存在性</option>
+                            <option value="function">功能性</option>
+                          </select>
+                        </label>
+                        <input
+                          className="filter-input evidence-search-year"
+                          value={yearFilter}
+                          onChange={e => setYearFilter(e.target.value)}
+                          placeholder="年份（如 2020）"
+                        />
+                        <button type="button" className="btn btn-xs" onClick={() => setExcludedPaperIds(new Set())}>
+                          恢复排除
+                        </button>
+                      </div>
+                    </div>
+                    <div className="evidence-search-layer">
+                      <h4 className="evidence-search-title">批量操作</h4>
+                      <div className="evidence-search-row">
+                        <button
+                          type="button"
+                          className="btn btn-sm"
+                          disabled={visibleSearchPapers.length === 0}
+                          onClick={() => setManualSelected(new Set(visibleSearchPapers.map(p => p.pmid)))}
+                        >
+                          全选
+                        </button>
+                        <button
+                          type="button"
+                          className="btn btn-sm btn-primary"
+                          disabled={manualBusy || manualSelected.size === 0}
+                          onClick={() => void handleManualExtract()}
+                        >
+                          提取所选论文（{manualSelected.size}）
+                        </button>
+                      </div>
+                    </div>
                   </div>
                 )}
-                {candidates.map(cand => (
-                  <CandidatePaperCard
-                    key={cand.paper_id || cand.pmid}
-                    cand={cand}
-                    expanded={expandedPaperId === (cand.paper_id || cand.pmid)}
-                    selectedHashes={selectedHashes}
-                    reExtracting={reExtractBusy === (cand.paper_id || cand.pmid)}
-                    onToggleExpand={() => setExpandedPaperId(prev => (prev === (cand.paper_id || cand.pmid) ? null : (cand.paper_id || cand.pmid)))}
-                    onTogglePassage={handleTogglePassage}
-                    onReview={() => handleReview(cand)}
-                    onExclude={() => setExcludedPaperIds(prev => new Set(prev).add(cand.paper_id || cand.pmid))}
-                    onReExtract={() => void handleReExtract(cand)}
-                  />
-                ))}
-              </div>
+
+                <div className="evidence-candidates-papers">
+                  <div className="evidence-candidates-papers-head">
+                    <h4>候选论文（{totalPapers}）</h4>
+                    <span className="evidence-module-hint">
+                      勾选已核验片段后可从右栏「进入人工审核」；排除的论文可用「恢复排除」找回。
+                    </span>
+                  </div>
+                  {totalPapers === 0 && (
+                    <div className="evidence-candidates-empty">
+                      {manualTarget
+                        ? '没有找到候选论文，可先在上方检索相关论文或切换其他对象。'
+                        : '当前对象暂无候选证据，可尝试重新提取或切换其他对象。'}
+                    </div>
+                  )}
+                  {visibleSearchPapers.map(p => (
+                    <CandidatePaperCard
+                      key={`s-${p.pmid}`}
+                      paper={searchToCardData(p)}
+                      selected={manualSelected.has(p.pmid)}
+                      reExtracting={false}
+                      onToggleSelected={checked => {
+                        setManualSelected(prev => {
+                          const next = new Set(prev)
+                          if (checked) next.add(p.pmid)
+                          else next.delete(p.pmid)
+                          return next
+                        })
+                      }}
+                      onOpenDetail={() => undefined}
+                      onExclude={() => setExcludedPaperIds(prev => new Set(prev).add(p.pmid))}
+                      onReExtract={() => undefined}
+                      onViewEvidence={() => undefined}
+                    />
+                  ))}
+                  {candidates.map(cand => (
+                    <CandidatePaperCard
+                      key={cand.paper_id || cand.pmid}
+                      paper={extractedToCardData(cand)}
+                      selected={false}
+                      reExtracting={reExtractBusy === (cand.paper_id || cand.pmid)}
+                      onToggleSelected={() => undefined}
+                      onOpenDetail={() => setDetailPaperId(cand.paper_id)}
+                      onExclude={() => setExcludedPaperIds(prev => new Set(prev).add(cand.paper_id || cand.pmid))}
+                      onReExtract={() => void handleReExtract(cand)}
+                      onViewEvidence={() => setEvidenceViewPaperId(cand.paper_id || cand.pmid)}
+                    />
+                  ))}
+                </div>
+              </>
             )}
 
-            {manualTarget && (
-              <div className="evidence-candidates-manual" data-testid="candidates-manual">
-                <h4>手动检索与提取</h4>
-                <p className="evidence-module-hint">
-                  当前任务没有候选论文。可手动检索 Europe PMC 并逐篇提取候选证据；结果仅为候选，仍需人工审核后才能入库。
-                </p>
-                <div className="ontology-form-row">
-                  <input
-                    className="filter-input"
-                    value={manualQuery}
-                    onChange={e => setManualQuery(e.target.value)}
-                    placeholder="检索式 / 关键词（留空使用系统推荐检索式）"
-                  />
-                  <button type="button" className="btn btn-sm" disabled={manualBusy} onClick={() => void handleManualSearch()}>
-                    {manualBusy ? '检索中…' : '检索'}
-                  </button>
-                </div>
-                {manualResult && manualResult.papers.length === 0 && (
-                  <div className="evidence-candidates-empty">没有找到符合检索式的论文，请修改检索词后重试。</div>
-                )}
-                {manualResult && manualResult.papers.length > 0 && (
-                  <div className="evidence-candidates-manual-papers">
-                    {manualResult.papers.map(p => (
-                      <label key={p.pmid} className="evidence-candidates-manual-paper">
-                        <input
-                          type="checkbox"
-                          checked={manualSelected.has(p.pmid)}
-                          onChange={e => {
-                            setManualSelected(prev => {
-                              const next = new Set(prev)
-                              if (e.target.checked) next.add(p.pmid)
-                              else next.delete(p.pmid)
-                              return next
-                            })
-                          }}
-                        />
-                        <span>
-                          <strong>{p.title}</strong>
-                          <span className="ew-meta"> · {p.journal} · {p.year} · PMID {p.pmid}</span>
-                        </span>
-                      </label>
-                    ))}
-                    <button
-                      type="button"
-                      className="btn btn-sm btn-primary"
-                      disabled={manualBusy || manualSelected.size === 0}
-                      onClick={() => void handleManualExtract()}
-                    >
-                      提取所选论文（{manualSelected.size}）
-                    </button>
-                  </div>
-                )}
-                {manualResults.map(cand => (
-                  <CandidatePaperCard
-                    key={cand.paper_id || cand.pmid}
-                    cand={cand}
-                    expanded={expandedPaperId === (cand.paper_id || cand.pmid)}
-                    selectedHashes={selectedHashes}
-                    reExtracting={reExtractBusy === (cand.paper_id || cand.pmid)}
-                    onToggleExpand={() => setExpandedPaperId(prev => (prev === (cand.paper_id || cand.pmid) ? null : (cand.paper_id || cand.pmid)))}
-                    onTogglePassage={handleTogglePassage}
-                    onReview={() => handleReview(cand)}
-                    onExclude={() => setExcludedPaperIds(prev => new Set(prev).add(cand.paper_id || cand.pmid))}
-                    onReExtract={() => void handleReExtract(cand)}
-                  />
-                ))}
-              </div>
-            )}
+            {detailPaperId && <PaperDetailDrawer paperId={detailPaperId} onClose={() => setDetailPaperId(null)} />}
           </>
         )}
       </div>

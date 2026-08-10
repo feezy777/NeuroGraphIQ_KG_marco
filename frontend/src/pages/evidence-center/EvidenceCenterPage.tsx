@@ -62,7 +62,7 @@ function EvidenceCenterBody() {
       <ContextBar
         targetLabel={current?.label ?? null}
         targetType={current?.target_type ?? null}
-        granularity={null}
+        granularity={current?.granularity ?? null}
         confidence={current?.confidence ?? null}
         evidenceCount={current?.evidenceCount ?? null}
         taskName={taskName}

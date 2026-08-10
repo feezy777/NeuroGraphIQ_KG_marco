@@ -16,6 +16,8 @@ interface Props {
   onShowContext: () => void
   showContext: boolean
   onReselect?: (paperPassageId: string, text: string) => Promise<boolean>
+  /** 只读展示模式(证据候选模块):隐藏翻译/证据等级/组件勾选等编辑控件 */
+  readOnly?: boolean
 }
 
 function VerificationBadge({ passage }: { passage: WorkbenchPassage }) {
@@ -50,6 +52,7 @@ export function PassageEvidenceCard({
   onShowContext,
   showContext,
   onReselect,
+  readOnly = false,
 }: Props) {
   const allowed = components.map(c => c.component_type)
   const isContradict = passage.direction === 'contradicts'
@@ -72,15 +75,21 @@ export function PassageEvidenceCard({
         <span className="ew-passage-direction">{passage.direction}</span>
         <span className="ew-meta">{passage.source_scope}{passage.section_title ? ` · ${passage.section_title}` : ''}{passage.paragraph_index != null ? ` · ¶${passage.paragraph_index}` : ''}</span>
         <VerificationBadge passage={passage} />
+        {readOnly && (
+          <button type="button" className="btn btn-xs" onClick={onShowContext}>
+            {showContext ? '收起详细信息' : '详细信息'}
+          </button>
+        )}
       </div>
       <p className="ew-passage-en">{passage.passage}</p>
       {showContext && (
         <details open className="ew-passage-context">
-          <summary>展开上下文</summary>
-          <p className="ew-meta">focus paragraph: {passage.paragraph_id ?? '—'} · locator: {passage.source_locator ?? '—'}</p>
+          <summary>详细信息</summary>
+          <p className="ew-meta">paragraph_id: {passage.paragraph_id ?? '—'} · locator: {passage.source_locator ?? '—'}</p>
+          <p className="ew-meta">paragraph_index: {passage.paragraph_index ?? '—'} · 校验方式: {passage.source_verification_method ?? '—'}</p>
         </details>
       )}
-      {passage.source_verified && (
+      {passage.source_verified && !readOnly && (
         <>
           <div className="ontology-form-row">
             <textarea className="filter-input ew-trans" value={translation}
