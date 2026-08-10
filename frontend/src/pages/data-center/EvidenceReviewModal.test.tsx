@@ -565,4 +565,29 @@ describe('EvidenceReviewModal 论文佐证工作台', () => {
       }),
     )
   })
+
+  it('缺少 PMID/DOI 的论文：单篇提取禁用，批量提取自动跳过并提示', async () => {
+    vi.mocked(endpoints.searchPaperEvidence).mockResolvedValue({
+      ...SEARCH_OK,
+      papers: [
+        PAPER,
+        { ...PAPER, pmid: '', doi: '', title: 'No Identifier Paper' },
+      ],
+    })
+    renderWorkbench([ITEM_A])
+    await waitFor(() => expect(screen.getAllByText('No Identifier Paper').length).toBeGreaterThan(0))
+    // single extract disabled for identifier-less paper
+    fireEvent.click(screen.getAllByText('No Identifier Paper')[0])
+    expect((screen.getByText('AI 提取原文') as HTMLButtonElement).disabled).toBe(true)
+    expect(screen.getByText(/该论文缺少 PMID\/DOI，无法提取/)).toBeTruthy()
+    // select all -> identifier-less paper skipped automatically
+    fireEvent.click(screen.getByText('全选'))
+    fireEvent.click(screen.getByTestId('ew-extract-selected'))
+    await waitFor(() => expect(screen.getByText(/已处理 2 篇论文：1 篇找到有效片段/)).toBeTruthy())
+    expect(vi.mocked(endpoints.extractSelectedPaperEvidence)).toHaveBeenCalledWith(
+      expect.objectContaining({
+        papers: [expect.objectContaining({ pmid: '12345' })], // identifier-less paper excluded
+      }),
+    )
+  })
 })

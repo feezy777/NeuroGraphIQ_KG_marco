@@ -2356,6 +2356,14 @@ async def extract_candidates_for_target(
         doi = (paper.get("doi") or "").strip()
         pmcid = (paper.get("pmcid") or "").strip()
         if not (pmid or doi or pmcid):
+            candidates.append(
+                {
+                    **paper,
+                    "error_code": "PAPER_FETCH_FAILED",
+                    "error_message": "paper has no identifier (pmid / pmcid / doi)",
+                    "passages": [],
+                }
+            )
             continue
         if on_stage is not None:
             await on_stage("fetching")

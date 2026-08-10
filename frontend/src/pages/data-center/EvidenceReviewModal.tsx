@@ -577,10 +577,18 @@ export function EvidenceReviewModal({ open, onClose, initialItems, initialTaskId
     setMessage(null)
     try {
       const selected = (result?.papers ?? []).filter(p => selectedPaperIds.has(p.pmid))
+      const extractable = selected.filter(p => p.pmid || p.doi)
+      if (extractable.length === 0) {
+        setMessage('所选论文均缺少 PMID/DOI，无法提取')
+        return
+      }
+      if (extractable.length < selected.length) {
+        setMessage(`已跳过 ${selected.length - extractable.length} 篇缺少 PMID/DOI 的论文`)
+      }
       const r = await extractSelectedPaperEvidence({
         target_type: current.target_type,
         target_id: current.target_id,
-        papers: selected.map(p => ({
+        papers: extractable.map(p => ({
           pmid: p.pmid || '',
           doi: p.doi || null,
           title: p.title || null,
@@ -986,7 +994,10 @@ export function EvidenceReviewModal({ open, onClose, initialItems, initialTaskId
                   </div>
                 )}
                 <div className="ontology-form-row">
-                  <button type="button" className="btn btn-sm" disabled={!selectedPaper || busy !== null} onClick={extract}>AI 提取原文</button>
+                  <button type="button" className="btn btn-sm" disabled={!selectedPaper || (!selectedPaper.pmid && !selectedPaper.doi) || busy !== null} onClick={extract}>AI 提取原文</button>
+                  {selectedPaper && !selectedPaper.pmid && !selectedPaper.doi && (
+                    <span className="ew-bad">该论文缺少 PMID/DOI，无法提取</span>
+                  )}
                   <button type="button" className="btn btn-sm" disabled={busy !== null || selectedHashes.size === 0} onClick={() => { void (async () => {
                     setBusy('translate')
                     try {
