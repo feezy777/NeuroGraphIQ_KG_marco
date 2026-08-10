@@ -29,6 +29,7 @@ export interface WorkbenchPassage {
   source_verified: boolean
   source_verification_method: string | null
   supported_components: string[]
+  evidence_dimension?: 'existence' | 'function' | 'mixed' | null
 }
 
 export interface CoverageSummary {
@@ -89,6 +90,20 @@ export const LEVEL_HINT: Record<EvidenceLevel, string> = {
   indirect: '实验结果支持关键部分，但需要合理推断',
   interpretive: '作者 Discussion/Conclusion 中的解释',
   background: '背景性陈述或引用已有研究',
+}
+
+export type EvidenceDimension = 'existence' | 'function' | 'mixed'
+
+export const DIMENSION_LABEL: Record<EvidenceDimension, string> = {
+  existence: '存在性证据',
+  function: '功能性证据',
+  mixed: '混合证据',
+}
+
+export const DIMENSION_HINT: Record<EvidenceDimension, string> = {
+  existence: '论文证明该对象本身存在（如解剖投射、回路存在），不涉及功能',
+  function: '论文描述该对象的功能/效应/角色',
+  mixed: '论文同时涉及存在性与功能性',
 }
 
 export const COMPONENT_LABEL: Record<string, string> = {

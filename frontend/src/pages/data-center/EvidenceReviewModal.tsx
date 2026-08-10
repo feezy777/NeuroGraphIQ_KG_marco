@@ -4,6 +4,7 @@ import {
   attachPaperEvidencePreview,
   completePaperEvidenceTaskItem,
   extractPaperPassage,
+  extractSelectedPaperEvidence,
   getEvidenceQueue,
   getEvidenceTarget,
   listPaperEvidence,
@@ -16,15 +17,16 @@ import {
   type AttachPreviewResponse,
   type EvidencePassageInput,
   type EvidenceTargetDto,
+  type PaperEvidenceItem,
   type PaperSearchResponse,
 } from '../../api/endpoints'
 import { ConfirmDialog } from '../../components/ConfirmDialog'
-import { AttachDialog } from './evidence-workbench/AttachDialog'
-import { ClaimPanel } from './evidence-workbench/ClaimPanel'
-import { CoveragePanel } from './evidence-workbench/CoveragePanel'
-import { PassageEvidenceCard } from './evidence-workbench/PassageEvidenceCard'
-import { ReviewerPanel } from './evidence-workbench/ReviewerPanel'
-import { aggregateTmpDirection, computeTmpCoverage } from './evidence-workbench/claimCoverage'
+import { AttachDialog } from '../evidence-center/components/AttachDialog'
+import { ClaimPanel } from '../evidence-center/components/ClaimPanel'
+import { CoveragePanel } from '../evidence-center/components/CoveragePanel'
+import { PassageEvidenceCard } from '../evidence-center/components/PassageEvidenceCard'
+import { ReviewerPanel } from '../evidence-center/components/ReviewerPanel'
+import { aggregateTmpDirection, computeTmpCoverage } from '../evidence-center/components/claimCoverage'
 import {
   DIRECTION_LABEL,
   type ClaimComponent,
@@ -34,7 +36,7 @@ import {
   type QueueStatus,
   type WorkbenchDraft,
   type WorkbenchPassage,
-} from './evidence-workbench/types'
+} from '../evidence-center/components/types'
 
 interface QueueItem {
   target_type: string
@@ -63,6 +65,35 @@ const DEFAULT_DRAFT: WorkbenchDraft = {
   reviewerConfidence: '0.8',
   note: '',
   step: 0,
+}
+
+function candidatePassagesToWorkbench(
+  passages: Array<Record<string, unknown>>,
+  paperId: string | null,
+): WorkbenchPassage[] {
+  return passages
+    .filter((p): p is Record<string, unknown> & { passage: string } => Boolean(p.passage))
+    .map((p, i) => ({
+      hash: `${paperId ?? 'paper'}-${i}-${p.passage}`,
+      source_scope: (p.source_scope === 'fulltext' ? 'fulltext' : 'abstract') as 'abstract' | 'fulltext',
+      section_title: (p.section_title as string | null) ?? null,
+      paragraph_index: (p.paragraph_index as number | null) ?? null,
+      paragraph_id: (p.paragraph_id as string | null) ?? null,
+      paper_id: (p.paper_id as string | null) ?? null,
+      paper_passage_id: (p.paper_passage_id as string | null) ?? null,
+      passage: p.passage,
+      translation_zh: null,
+      direction: (p.direction as WorkbenchPassage['direction']) ?? 'supports',
+      evidence_level: (p.evidence_level as EvidenceLevel) ?? 'indirect',
+      reason: String(p.reason ?? ''),
+      confidence: Number(p.confidence ?? 0),
+      semantic_confidence: p.semantic_confidence != null ? Number(p.semantic_confidence) : null,
+      source_locator: (p.source_locator as string | null) ?? null,
+      source_verified: Boolean(p.source_verified),
+      source_verification_method: (p.source_verification_method as string | null) ?? null,
+      supported_components: Array.isArray(p.supported_components) ? (p.supported_components as string[]) : [],
+      evidence_dimension: (p.evidence_dimension as WorkbenchPassage['evidence_dimension']) ?? null,
+    }))
 }
 
 function loadSaved(): { queue: QueueEntry[]; idx: number } | null {
@@ -100,6 +131,7 @@ export function EvidenceReviewModal({ open, onClose, initialItems, initialTaskId
     busy?: boolean
     error?: string
     model_direction?: string | null
+    fulltext_fetched?: boolean | null
     passages?: WorkbenchPassage[]
   }>>({})
   const [query, setQuery] = useState('')
@@ -107,6 +139,8 @@ export function EvidenceReviewModal({ open, onClose, initialItems, initialTaskId
   const [excludedPmids, setExcludedPmids] = useState<Set<string>>(new Set())
   const [oaOnly, setOaOnly] = useState(false)
   const [yearFilter, setYearFilter] = useState('')
+  const [claimMode, setClaimMode] = useState<'function' | 'existence'>('function')
+  const claimModeTouchedRef = useRef(false)
   const [selectedPmid, setSelectedPmid] = useState('')
   const [passages, setPassages] = useState<WorkbenchPassage[]>([])
   const [selectedHashes, setSelectedHashes] = useState<Set<string>>(new Set())
@@ -124,6 +158,7 @@ export function EvidenceReviewModal({ open, onClose, initialItems, initialTaskId
   const [showContextHash, setShowContextHash] = useState<string | null>(null)
   const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
   const [serverDraftConfirm, setServerDraftConfirm] = useState(false)
+  const [existingEvidence, setExistingEvidence] = useState<PaperEvidenceItem[]>([])
 
   const taskIdRef = useRef<string | null>(null)
   const abortRef = useRef<AbortController | null>(null)
@@ -237,10 +272,14 @@ export function EvidenceReviewModal({ open, onClose, initialItems, initialTaskId
     setBusy('search')
     setMessage(null)
     try {
+      const effectiveMode = claimModeTouchedRef.current
+        ? claimMode
+        : (item.target_type === 'connection' || item.target_type === 'projection' ? 'existence' : 'function')
       const resp = await searchPaperEvidence({
         target_type: item.target_type,
         target_id: item.target_id,
         limit: 10,
+        mode: effectiveMode,
         query_override: q.trim() || undefined,
       }, abortRef.current.signal)
       if (targetRef.current !== item.target_id) return false
@@ -260,7 +299,7 @@ export function EvidenceReviewModal({ open, onClose, initialItems, initialTaskId
     } finally {
       setBusy(null)
     }
-  }, [mark])
+  }, [mark, claimMode])
 
   const goto = useCallback(async (i: number) => {
     if (i < 0 || i >= queueRef.current.length) return
@@ -347,29 +386,9 @@ export function EvidenceReviewModal({ open, onClose, initialItems, initialTaskId
       const r = await listPaperEvidenceTaskItems(taskId, { limit: 200 })
       const items: Array<QueueItem & { taskItemId: string; draftPmid?: string; draftPassages?: WorkbenchPassage[]; draftDirection?: Direction; draft?: WorkbenchDraft; preprocessOutcome?: string | null; modelDirection?: Direction | null }> = []
       for (const it of r.items) {
-        const draftPassages: WorkbenchPassage[] = (it.candidate_papers ?? [])
-          .flatMap((cand): Array<Record<string, unknown>> => (cand.passages ?? []).map(p => ({ ...p, paper_id: cand.paper_id })))
-          .filter((p): p is Record<string, unknown> & { passage: string } => Boolean(p.passage))
-          .map((p, i) => ({
-            hash: `${it.target_id}-${String(p.paper_id ?? '')}-${i}`,
-            source_scope: (p.source_scope === 'fulltext' ? 'fulltext' : 'abstract') as 'abstract' | 'fulltext',
-            section_title: (p.section_title as string | null) ?? null,
-            paragraph_index: (p.paragraph_index as number | null) ?? null,
-            paragraph_id: (p.paragraph_id as string | null) ?? null,
-            paper_id: (p.paper_id as string | null) ?? null,
-            paper_passage_id: (p.paper_passage_id as string | null) ?? null,
-            passage: p.passage,
-            translation_zh: null,
-            direction: (p.direction as WorkbenchPassage['direction']) ?? 'supports',
-            evidence_level: (p.evidence_level as EvidenceLevel) ?? 'indirect',
-            reason: String(p.reason ?? ''),
-            confidence: Number(p.confidence ?? 0),
-            semantic_confidence: p.semantic_confidence != null ? Number(p.semantic_confidence) : null,
-            source_locator: (p.source_locator as string | null) ?? null,
-            source_verified: Boolean(p.source_verified),
-            source_verification_method: (p.source_verification_method as string | null) ?? null,
-            supported_components: Array.isArray(p.supported_components) ? (p.supported_components as string[]) : [],
-          }))
+        const draftPassages: WorkbenchPassage[] = (it.candidate_papers ?? []).flatMap(
+          (cand): WorkbenchPassage[] => candidatePassagesToWorkbench(cand.passages ?? [], cand.paper_id),
+        )
         items.push({
           target_type: it.target_type,
           target_id: it.target_id,
@@ -513,29 +532,54 @@ export function EvidenceReviewModal({ open, onClose, initialItems, initialTaskId
     }
     setPaperExtractResults({})
     setMessage(null)
-    let done = 0
-    let okCount = 0
-    for (const paper of extractable) {
-      setPaperExtractResults(prev => ({ ...prev, [paper.pmid]: { busy: true } }))
-      setMessage(`正在逐篇提取 ${done + 1}/${extractable.length}：${paper.title.slice(0, 40)}…`)
-      try {
-        const r = await extractOneForPaper(paper)
-        if (!r) continue
-        if (r.passages.some(p => p.source_verified)) okCount += 1
-        setPaperExtractResults(prev => ({
-          ...prev,
-          [paper.pmid]: { busy: false, model_direction: r.model_direction, passages: r.passages },
-        }))
-      } catch (err) {
-        setPaperExtractResults(prev => ({
-          ...prev,
-          [paper.pmid]: { busy: false, error: err instanceof Error ? err.message : String(err) },
-        }))
+    setBusy('extract')
+    try {
+      const resp = await extractSelectedPaperEvidence({
+        target_type: current.target_type,
+        target_id: current.target_id,
+        papers: extractable.map(p => ({ pmid: p.pmid, doi: p.doi, pmcid: p.pmcid, title: p.title })),
+        mode: claimMode,
+      })
+      const next: Record<string, {
+        busy?: boolean
+        error?: string
+        model_direction?: string | null
+        fulltext_fetched?: boolean | null
+        passages?: WorkbenchPassage[]
+      }> = {}
+      let okCount = 0
+      for (const cand of resp.results) {
+        const pmid = cand.pmid
+        if (cand.error_code === 'SEMANTIC_SKIPPED') {
+          next[pmid] = {
+            busy: false,
+            error: `相关性评分过低已跳过（${cand.semantic_relevance ?? '—'}）：${cand.error_message ?? ''}`,
+          }
+          continue
+        }
+        if (cand.error_code) {
+          next[pmid] = { busy: false, error: `提取失败（${cand.error_code}）：${cand.error_message ?? ''}` }
+          continue
+        }
+        const passages = candidatePassagesToWorkbench(cand.passages ?? [], cand.paper_id)
+        if (passages.some(p => p.source_verified)) okCount += 1
+        next[pmid] = {
+          busy: false,
+          model_direction: cand.model_direction,
+          fulltext_fetched: cand.fulltext_fetched ?? null,
+          passages,
+        }
       }
-      done += 1
+      setPaperExtractResults(next)
+      setMessage(
+        `已提取 ${extractable.length} 篇论文，${okCount} 篇找到有效片段；点击论文下方「载入片段」进入审核`,
+      )
+    } catch (err) {
+      setMessage(`批量提取失败：${err instanceof Error ? err.message : String(err)}`)
+    } finally {
+      setBusy(null)
     }
-    setMessage(`已逐篇提取 ${extractable.length} 篇论文，${okCount} 篇找到有效片段；点击论文下方「载入片段」进入审核`)
-  }, [current, selectedPaperIds, result, extractOneForPaper])
+  }, [current, selectedPaperIds, result, claimMode])
 
   const loadPaperResult = useCallback((paper: NonNullable<PaperSearchResponse['papers'][number]>, passages: WorkbenchPassage[]) => {
     setPassages(passages)
@@ -711,6 +755,9 @@ export function EvidenceReviewModal({ open, onClose, initialItems, initialTaskId
       })
       const meta = await loadEvidenceMeta(current)
       setQueue(q => q.map((e, j) => j === idx ? { ...e, status: 'completed' as const, evidenceCount: meta.count } : e))
+      void listPaperEvidence({ target_type: current.target_type, target_id: current.target_id, limit: 20 })
+        .then(r => setExistingEvidence(r.items))
+        .catch(() => undefined)
       setConfirmOpen(false)
       setDirty(false)
       if (taskIdRef.current && current.taskItemId) {
@@ -785,6 +832,24 @@ export function EvidenceReviewModal({ open, onClose, initialItems, initialTaskId
   }, [idx, saveCurrentDraft, mark, queue, goto])
 
   useEffect(() => {
+    if (!current) {
+      setExistingEvidence([])
+      return
+    }
+    void listPaperEvidence({ target_type: current.target_type, target_id: current.target_id, limit: 20 })
+      .then(r => setExistingEvidence(r.items))
+      .catch(() => setExistingEvidence([]))
+  }, [current])
+
+  // connection/projection objects verify OBJECT EXISTENCE by default (retrieval
+  // without function terms); user can override and the choice sticks.
+  useEffect(() => {
+    if (claimModeTouchedRef.current) return
+    const t = current?.target_type
+    setClaimMode(t === 'connection' || t === 'projection' ? 'existence' : 'function')
+  }, [current])
+
+  useEffect(() => {
     return () => { abortRef.current?.abort() }
   }, [])
 
@@ -811,16 +876,26 @@ export function EvidenceReviewModal({ open, onClose, initialItems, initialTaskId
     .filter(p => !oaOnly || p.is_open_access)
     .filter(p => !yearFilter || p.year === yearFilter)
   const allDone = queue.length > 0 && queue.every(e => e.status === 'completed' || e.status === 'skipped')
-  const attachDisabled = !current || direction === 'not_found' || selectedHashes.size === 0 || busy !== null
+  const hasSimilarityPassage = selectedPassages.some(
+    p => p.source_verification_method === 'similarity' || p.source_verification_method === 'similarity_located',
+  )
+  const attachDisabled =
+    !current ||
+    direction === 'not_found' ||
+    selectedHashes.size === 0 ||
+    busy !== null ||
+    (hasSimilarityPassage && !note.trim())
   const attachDisabledReason = !current
     ? '当前没有对象'
     : direction === 'not_found'
       ? '未找到不能作为正式论文佐证入库'
       : selectedHashes.size === 0
         ? '至少选择一个已通过原文校验的证据片段'
-        : busy !== null
-          ? '正在处理中'
-          : ''
+        : hasSimilarityPassage && !note.trim()
+          ? '存在近似匹配片段，请在备注中确认已核对原文'
+          : busy !== null
+            ? '正在处理中'
+            : ''
 
   return (
     <div className="evidence-workbench" style={{ height: `${heightPct}vh` }} data-testid="ew-workbench">
@@ -886,6 +961,19 @@ export function EvidenceReviewModal({ open, onClose, initialItems, initialTaskId
               granularity={dto?.granularity ?? ''}
             />
 
+            {existingEvidence.length > 0 && (
+              <div className="ew-section" data-testid="ew-existing-evidence">
+                <h4>已有论文证据（{existingEvidence.length}）</h4>
+                {existingEvidence.map(e => (
+                  <div key={e.evidence_id} className="ew-meta">
+                    <span className={`ew-${e.direction === 'contradicts' || e.direction === 'mixed' ? 'bad' : 'ok'}`}>{e.direction}</span>
+                    {' '}{e.title ?? '—'}（PMID {e.pmid ?? '—'}）· 调整状态 {e.confidence_adjustment_status ?? '—'}
+                    {e.invalidated_at && <span className="ew-bad"> · 已回滚</span>}
+                  </div>
+                ))}
+              </div>
+            )}
+
             <div className="ew-section">
               <h4>论文搜索 Query（可修改，同时检索摘要与 OA 全文，仅影响检索，不影响正式 Claim）</h4>
               <div className="ontology-form-row">
@@ -900,6 +988,11 @@ export function EvidenceReviewModal({ open, onClose, initialItems, initialTaskId
               </div>
               <div className="ontology-form-row">
                 <label className="ew-meta"><input type="checkbox" checked={oaOnly} onChange={e => setOaOnly(e.target.checked)} /> OA Only</label>
+                <select className="filter-select" data-testid="ew-mode-select" value={claimMode} title="存在性佐证：检索只用源/靶脑区，判断论文是否证明对象存在"
+                  onChange={e => { claimModeTouchedRef.current = true; setClaimMode(e.target.value as 'function' | 'existence'); setDirty(true); audit('EVIDENCE_MODE_EDIT', { mode: e.target.value }) }}>
+                  <option value="function">功能佐证</option>
+                  <option value="existence">存在性佐证</option>
+                </select>
                 <select className="filter-select" value={yearFilter} onChange={e => setYearFilter(e.target.value)}>
                   <option value="">全部年份</option>
                   {years.map(y => <option key={y} value={y}>{y}</option>)}
@@ -932,7 +1025,7 @@ export function EvidenceReviewModal({ open, onClose, initialItems, initialTaskId
                     <label onClick={e => e.stopPropagation()}>
                       <input type="checkbox" disabled={!p.pmid} checked={selectedPaperIds.has(p.pmid)}
                         onChange={e => setSelectedPaperIds(prev => { const n = new Set(prev); if (e.target.checked) n.add(p.pmid); else n.delete(p.pmid); return n })} />
-                      选择
+                      加入提取
                     </label>
                     {p.pmid && <a href={`https://pubmed.ncbi.nlm.nih.gov/${p.pmid}/`} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()}>PubMed {p.pmid}</a>}
                     {p.doi && <a href={`https://doi.org/${p.doi}`} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()}>DOI</a>}
@@ -949,6 +1042,7 @@ export function EvidenceReviewModal({ open, onClose, initialItems, initialTaskId
                           <span className="ew-meta">
                             模型判断：{paperResult.model_direction ?? '—'} · 候选片段 {paperResult.passages.length} ·
                             已核验 {paperResult.passages.filter(x => x.source_verified).length}
+                            {paperResult.fulltext_fetched === false && <span className="ew-warn"> · 仅摘要（无 OA 全文）</span>}
                           </span>
                           <div className="ontology-form-row">
                             <button type="button" className="btn btn-xs" disabled={!paperResult.passages.some(x => x.source_verified)}

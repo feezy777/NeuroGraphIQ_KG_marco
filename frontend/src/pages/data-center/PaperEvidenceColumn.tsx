@@ -13,8 +13,8 @@ import {
   type EvidenceTargetDto,
 } from '../../api/endpoints'
 import { ConfirmDialog } from '../../components/ConfirmDialog'
-import { computeTmpCoverage } from './evidence-workbench/claimCoverage'
-import { COMPONENT_LABEL, LEVEL_LABEL } from './evidence-workbench/types'
+import { computeTmpCoverage } from '../evidence-center/components/claimCoverage'
+import { COMPONENT_LABEL, LEVEL_LABEL } from '../evidence-center/components/types'
 
 type Direction = 'supports' | 'partial' | 'contradicts' | 'mixed' | 'not_found'
 

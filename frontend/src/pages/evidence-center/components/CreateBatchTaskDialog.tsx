@@ -12,6 +12,7 @@ interface Props {
 export function CreateBatchTaskDialog({ open, granularity, onClose, onCreated, selectedIds = [] }: Props) {
   const [name, setName] = useState('')
   const [targetType, setTargetType] = useState('connection')
+  const [mode, setMode] = useState<'function' | 'existence'>('function')
   const [scope, setScope] = useState('low_confidence')
   const [confidenceLt, setConfidenceLt] = useState('0.5')
   const [maxPapers, setMaxPapers] = useState('3')
@@ -52,6 +53,7 @@ export function CreateBatchTaskDialog({ open, granularity, onClose, onCreated, s
       const r = await createPaperEvidenceBatch({
         target_type: targetType,
         scope: scope === 'selected' ? 'selected' : scope,
+        mode,
         max_papers_per_object: parseInt(maxPapers, 10) || 3,
         limit: parseInt(limit, 10) || 20,
         name: name || undefined,
@@ -85,8 +87,19 @@ export function CreateBatchTaskDialog({ open, granularity, onClose, onCreated, s
         <div className="ontology-modal-body">
           <div className="ontology-detail-row"><span>任务名称</span><input className="filter-input" value={name} onChange={e => setName(e.target.value)} placeholder="可选" /></div>
           <div className="ontology-detail-row"><span>对象类型</span>
-            <select className="filter-select" value={targetType} onChange={e => setTargetType(e.target.value)}>
+            <select className="filter-select" value={targetType} onChange={e => {
+              const t = e.target.value
+              setTargetType(t)
+              // connection/projection verify object existence by default
+              if (t === 'connection' || t === 'projection') setMode('existence')
+            }}>
               {['connection', 'projection_function', 'circuit', 'circuit_function', 'circuit_step', 'region_function'].map(t => <option key={t} value={t}>{t}</option>)}
+            </select>
+          </div>
+          <div className="ontology-detail-row"><span>佐证模式</span>
+            <select className="filter-select" value={mode} onChange={e => setMode(e.target.value as 'function' | 'existence')}>
+              <option value="function">功能佐证</option>
+              <option value="existence">存在性佐证（只用区域检索，判断对象存在）</option>
             </select>
           </div>
           <div className="ontology-detail-row"><span>目标范围</span>

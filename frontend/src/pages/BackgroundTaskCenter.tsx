@@ -6,7 +6,7 @@ import { ModelBadge } from '../components/ModelBadge'
 import { CancelConfirmDialog } from '../components/CancelConfirmDialog'
 import { getTaskDef, cancelTask, pauseTask, resumeTask, retryTask, TASK_TYPE_OPTIONS } from '../services/taskRegistry'
 import { EvidenceReviewModal } from './data-center/EvidenceReviewModal'
-import { CreateBatchTaskDialog } from './data-center/evidence-workbench/CreateBatchTaskDialog'
+import { CreateBatchTaskDialog } from './evidence-center/components/CreateBatchTaskDialog'
 import { useGlobalGranularity } from '../hooks/useGlobalGranularity'
 
 // ── Types ───────────────────────────────────────────────────────────────────

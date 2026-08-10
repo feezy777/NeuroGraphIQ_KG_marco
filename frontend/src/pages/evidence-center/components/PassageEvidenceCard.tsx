@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import type { ClaimComponent, EvidenceLevel, WorkbenchPassage } from './types'
-import { COMPONENT_LABEL, LEVEL_HINT, LEVEL_LABEL } from './types'
+import { COMPONENT_LABEL, DIMENSION_HINT, DIMENSION_LABEL, LEVEL_HINT, LEVEL_LABEL } from './types'
 
 interface Props {
   passage: WorkbenchPassage
@@ -20,7 +20,7 @@ interface Props {
 
 function VerificationBadge({ passage }: { passage: WorkbenchPassage }) {
   if (!passage.source_verified) {
-    return <span className="ew-bad">无法在论文原文定位</span>
+    return <span className="ew-bad">未通过原文校验，请人工核对或重新截取</span>
   }
   const method =
     passage.source_verification_method === 'exact'
@@ -30,6 +30,9 @@ function VerificationBadge({ passage }: { passage: WorkbenchPassage }) {
         : passage.source_verification_method === 'normalized_unicode'
           ? 'Unicode normalized'
           : passage.source_verification_method ?? 'Exact'
+  if (passage.source_verification_method === 'similarity' || passage.source_verification_method === 'similarity_located') {
+    return <span className="ew-warn" title="近似匹配：与原文存在轻微改写，请人工核对后确认">近似匹配（{method}）· 请核对原文</span>
+  }
   return <span className="ew-ok">已核验原文 · {method}</span>
 }
 
@@ -61,6 +64,11 @@ export function PassageEvidenceCard({
           选择片段
         </label>
         <span className="ew-level-badge">{LEVEL_LABEL[passage.evidence_level]}</span>
+        {passage.evidence_dimension && passage.evidence_dimension !== 'mixed' && (
+          <span className="ew-dimension-badge" title={DIMENSION_HINT[passage.evidence_dimension]}>
+            {DIMENSION_LABEL[passage.evidence_dimension]}
+          </span>
+        )}
         <span className="ew-passage-direction">{passage.direction}</span>
         <span className="ew-meta">{passage.source_scope}{passage.section_title ? ` · ${passage.section_title}` : ''}{passage.paragraph_index != null ? ` · ¶${passage.paragraph_index}` : ''}</span>
         <VerificationBadge passage={passage} />
