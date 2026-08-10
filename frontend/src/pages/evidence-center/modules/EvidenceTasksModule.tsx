@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { getPaperEvidenceTask, listPaperEvidenceTasks, type PaperEvidenceTask } from '../../../api/endpoints'
+import { listPaperEvidenceTasks, type PaperEvidenceTask } from '../../../api/endpoints'
 import { useGlobalGranularity } from '../../../hooks/useGlobalGranularity'
 import { useEvidenceCenter } from '../EvidenceCenterContext'
 import { CreateBatchTaskDialog } from '../components/CreateBatchTaskDialog'
@@ -109,9 +109,8 @@ export function EvidenceTasksModule() {
 
   useEffect(() => { void loadTasks() }, [loadTasks])
 
-  // 任务无 target_id 列表,简化为 openTask(taskId) 跳候选模块;先拉一次详情刷新统计
-  const handleStartReview = useCallback(async (task: PaperEvidenceTask) => {
-    try { await getPaperEvidenceTask(task.id) } catch { /* 详情失败不阻塞跳转 */ }
+  // 进入证据候选模块,由该模块加载 task 的候选论文
+  const handleStartReview = useCallback((task: PaperEvidenceTask) => {
     openTask(task.id)
   }, [openTask])
 

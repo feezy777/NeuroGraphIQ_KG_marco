@@ -6,7 +6,6 @@ import { EvidenceTasksModule } from './EvidenceTasksModule'
 
 vi.mock('../../../api/endpoints', () => ({
   listPaperEvidenceTasks: vi.fn(),
-  getPaperEvidenceTask: vi.fn(),
   createPaperEvidenceBatch: vi.fn(),
   previewEvidenceBatchScope: vi.fn(),
 }))
@@ -33,7 +32,6 @@ describe('EvidenceTasksModule', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     vi.mocked(endpoints.listPaperEvidenceTasks).mockResolvedValue({ items: [TASK], total: 1 })
-    vi.mocked(endpoints.getPaperEvidenceTask).mockResolvedValue({ task: TASK, counts: {} })
     vi.mocked(endpoints.previewEvidenceBatchScope).mockResolvedValue({ estimated_target_count: 2, over_limit: false, message: null })
     vi.mocked(endpoints.createPaperEvidenceBatch).mockResolvedValue({ task_id: 'new1', target_count: 2, skipped_active_targets: 0, auto_started: true })
   })
@@ -92,7 +90,6 @@ describe('EvidenceTasksModule', () => {
     fireEvent.click(screen.getByText('开始人工处理'))
     await waitFor(() => expect(window.location.hash).toContain('module=candidates'))
     expect(window.location.hash).toContain('task_id=t1')
-    expect(endpoints.getPaperEvidenceTask).toHaveBeenCalledWith('t1')
   })
 
   it('加载失败显示错误并可重试', async () => {
