@@ -280,9 +280,10 @@ export function EvidenceReviewModule() {
     if (!targetId) return
     persistDraft()
     const meta: ReviewStatusMeta = { direction, evidenceLevel, confidence, note, at }
-    saveReviewStatus(targetId, status, meta)
+    // 携带 targetType:晋升模块据此 attach/退回跳转
+    saveReviewStatus(targetId, status, meta, state.targetType ?? undefined)
     setReviewStatus({ targetId, status, meta })
-  }, [targetId, persistDraft, direction, evidenceLevel, confidence, note])
+  }, [targetId, persistDraft, direction, evidenceLevel, confidence, note, state.targetType])
 
   const handleApprove = useCallback(() => {
     commitReviewStatus('review_approved', new Date().toISOString())

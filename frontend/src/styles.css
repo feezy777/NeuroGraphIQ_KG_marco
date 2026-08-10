@@ -12147,6 +12147,26 @@ input[type="range"]::-webkit-slider-thumb {
   border: 1px dashed var(--border);
   border-radius: var(--card-radius);
 }
+.evidence-promotion-row-selected { border-color: var(--primary); background: #f0f7ff; }
+.evidence-promotion-row-selected:hover { box-shadow: none; }
+
+/* ── 晋升影响右栏(PromotionImpact) ────────────────────────────────────────── */
+.evidence-promotion-impact { display: flex; flex-direction: column; gap: 10px; }
+.evidence-promotion-impact h4 { margin: 0; }
+.evidence-promotion-impact .ew-promo-field {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  border-bottom: 1px dashed var(--border);
+  padding: 6px 0;
+  font-size: 12px;
+}
+.evidence-promotion-impact .ew-promo-field:last-of-type { border-bottom: none; }
+.evidence-promotion-impact .ew-promo-key { color: var(--text-muted); flex-shrink: 0; }
+.evidence-promotion-impact .ew-promo-val { font-weight: 600; color: var(--text); }
+.evidence-promotion-impact .ew-promo-final { color: var(--primary); }
+.evidence-promotion-impact .ew-sticky-actions { margin-top: 8px; }
 
 /* ── 证据详情抽屉(EvidenceDetailDrawer) ─────────────────────────────────── */
 .evidence-detail-body { gap: 14px; }

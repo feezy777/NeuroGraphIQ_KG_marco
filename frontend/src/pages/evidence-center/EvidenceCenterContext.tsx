@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
 import type { CandidateSummaryData } from './components/CandidateSummary'
+import type { PromotionImpactState } from './components/PromotionImpact'
 import type { ReviewDecisionState } from './components/ReviewerDecisionPanel'
 import type { QueueEntry } from './components/types'
 import { buildEvidenceUrl, parseEvidenceUrl, type EvidenceCenterState } from './evidenceCenterUrl'
@@ -20,6 +21,9 @@ interface EvidenceCenterContextValue {
   /** 审核模块推送的人工审核决策状态(仅 review 模块使用,RightPanel 渲染 ReviewerDecisionPanel) */
   reviewDecision: ReviewDecisionState | null
   setReviewDecision: (s: ReviewDecisionState | null) => void
+  /** 晋升模块推送的晋升影响状态(仅 promotion 模块使用,RightPanel 渲染 PromotionImpact) */
+  promotionImpact: PromotionImpactState | null
+  setPromotionImpact: (s: PromotionImpactState | null) => void
 }
 
 const EvidenceCenterContext = createContext<EvidenceCenterContextValue | null>(null)
@@ -29,6 +33,7 @@ export function EvidenceCenterProvider({ children }: { children: ReactNode }) {
   const [queue, setQueue] = useState<QueueEntry[]>([])
   const [candidateSummary, setCandidateSummary] = useState<CandidateSummaryData | null>(null)
   const [reviewDecision, setReviewDecision] = useState<ReviewDecisionState | null>(null)
+  const [promotionImpact, setPromotionImpact] = useState<PromotionImpactState | null>(null)
 
   useEffect(() => {
     const handler = () => setState(parseEvidenceUrl(window.location.hash))
@@ -45,19 +50,31 @@ export function EvidenceCenterProvider({ children }: { children: ReactNode }) {
     })
   }, [])
 
+  // 导航回调必须 useCallback 稳定引用:消费方(如晋升模块)把 openTarget 放入 useCallback/memo 依赖,
+  // 内联箭头会随 context value 每次重建 → 下游 memo 每渲染重建 → effect 推送 context → 无限循环
+  const gotoModule = useCallback((m: ModuleKey) => apply({ module: m }), [apply])
+  const openTask = useCallback((taskId: string) => apply({ taskId, module: 'candidates' }), [apply])
+  const openTarget = useCallback(
+    (targetType: string, targetId: string, module: ModuleKey = 'candidates') => apply({ targetType, targetId, module }),
+    [apply],
+  )
+  const selectPaper = useCallback((paperId: string | null) => apply({ paperId }), [apply])
+
   const value = useMemo<EvidenceCenterContextValue>(() => ({
     state,
     queue,
     setQueue,
-    gotoModule: m => apply({ module: m }),
-    openTask: taskId => apply({ taskId, module: 'candidates' }),
-    openTarget: (targetType, targetId, module = 'candidates') => apply({ targetType, targetId, module }),
-    selectPaper: paperId => apply({ paperId }),
+    gotoModule,
+    openTask,
+    openTarget,
+    selectPaper,
     candidateSummary,
     setCandidateSummary,
     reviewDecision,
     setReviewDecision,
-  }), [state, queue, apply, candidateSummary, reviewDecision])
+    promotionImpact,
+    setPromotionImpact,
+  }), [state, queue, gotoModule, openTask, openTarget, selectPaper, candidateSummary, reviewDecision, promotionImpact])
 
   return <EvidenceCenterContext.Provider value={value}>{children}</EvidenceCenterContext.Provider>
 }

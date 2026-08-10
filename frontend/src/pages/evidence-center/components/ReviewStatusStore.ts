@@ -18,10 +18,17 @@ export interface ReviewStatusRecord {
   targetId: string
   status: ReviewStatus
   meta: ReviewStatusMeta
+  /** 对象类型(审核模块写入;晋升模块用于 attach/退回跳转) */
+  targetType?: string
 }
 
-export function saveReviewStatus(targetId: string, status: ReviewStatus, meta: ReviewStatusMeta): void {
-  sessionStorage.setItem(`${REVIEW_STATUS_KEY_PREFIX}${targetId}`, JSON.stringify({ targetId, status, meta }))
+export function saveReviewStatus(targetId: string, status: ReviewStatus, meta: ReviewStatusMeta, targetType?: string): void {
+  sessionStorage.setItem(`${REVIEW_STATUS_KEY_PREFIX}${targetId}`, JSON.stringify({
+    targetId,
+    status,
+    meta,
+    ...(targetType ? { targetType } : {}),
+  }))
 }
 
 export function loadReviewStatus(targetId: string): ReviewStatusRecord | null {

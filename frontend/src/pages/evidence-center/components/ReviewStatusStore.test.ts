@@ -70,4 +70,11 @@ describe('ReviewStatusStore', () => {
     saveReviewStatus('a', 'review_approved', META)
     expect(listReviewApproved()).toHaveLength(1)
   })
+
+  it('saveReviewStatus 支持携带 targetType(晋升模块 attach/跳转用),缺省时不写入', () => {
+    saveReviewStatus('r1-r2', 'review_approved', META, 'connection')
+    expect(loadReviewStatus('r1-r2')!.targetType).toBe('connection')
+    saveReviewStatus('other', 'rejected', META)
+    expect(loadReviewStatus('other')!.targetType).toBeUndefined()
+  })
 })

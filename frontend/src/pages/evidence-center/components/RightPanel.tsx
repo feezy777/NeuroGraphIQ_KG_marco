@@ -1,5 +1,6 @@
 import { useEvidenceCenter, type ModuleKey } from '../EvidenceCenterContext'
 import { CandidateSummary } from './CandidateSummary'
+import { PromotionImpact } from './PromotionImpact'
 import { ReviewerDecisionPanel } from './ReviewerDecisionPanel'
 
 const RIGHT_TITLES: Record<ModuleKey, string> = {
@@ -10,9 +11,9 @@ const RIGHT_TITLES: Record<ModuleKey, string> = {
   promotion: '晋升确认',
 }
 
-/** 右栏插槽:候选模块渲染 CandidateSummary,审核模块渲染 ReviewerDecisionPanel,其余模块暂为占位标题 */
+/** 右栏插槽:候选模块渲染 CandidateSummary,审核模块渲染 ReviewerDecisionPanel,晋升模块渲染 PromotionImpact,其余模块暂为占位标题 */
 export function RightPanel({ module }: { module: ModuleKey }) {
-  const { state, candidateSummary, reviewDecision, openTarget } = useEvidenceCenter()
+  const { state, candidateSummary, reviewDecision, promotionImpact, openTarget } = useEvidenceCenter()
 
   if (module === 'candidates') {
     return (
@@ -36,6 +37,21 @@ export function RightPanel({ module }: { module: ModuleKey }) {
           <>
             <h4>人工审核</h4>
             <p className="evidence-module-hint">进入目标对象后，此处显示人工审核决策面板。</p>
+          </>
+        )}
+      </aside>
+    )
+  }
+
+  if (module === 'promotion') {
+    return (
+      <aside className="evidence-right-panel" data-testid="evidence-right-panel">
+        {promotionImpact ? (
+          <PromotionImpact {...promotionImpact} />
+        ) : (
+          <>
+            <h4>晋升确认</h4>
+            <p className="evidence-module-hint">进入目标对象后，此处显示晋升影响与确认操作。</p>
           </>
         )}
       </aside>
