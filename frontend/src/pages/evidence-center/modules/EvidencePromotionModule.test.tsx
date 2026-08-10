@@ -1,21 +1,24 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { useEffect } from 'react'
 import * as endpoints from '../../../api/endpoints'
 import type { PaperEvidenceItem } from '../../../api/endpoints'
-import { EvidenceCenterProvider } from '../EvidenceCenterContext'
-import type { EvidenceLevel, WorkbenchPassage } from '../components/types'
+import { EvidenceCenterProvider, useEvidenceCenter } from '../EvidenceCenterContext'
+import type { EvidenceLevel, QueueStatus, WorkbenchPassage } from '../components/types'
 import { EvidencePromotionModule } from './EvidencePromotionModule'
 
 vi.mock('../../../api/endpoints', () => ({
   getEvidenceTarget: vi.fn(),
   attachPaperEvidencePreview: vi.fn(),
   attachPaperEvidence: vi.fn(),
+  completePaperEvidenceTaskItem: vi.fn(),
   listPaperEvidence: vi.fn(),
   rollbackPaperEvidence: vi.fn(),
 }))
 
 const DRAFT_KEY = 'evidence-center.review-draft.r1-r2'
 const HASH = '#/evidence-center?module=promotion&task_id=t1&target_type=connection&target_id=r1-r2'
+const HASH_NO_TASK = '#/evidence-center?module=promotion&target_type=connection&target_id=r1-r2'
 
 const PASSAGE_VERIFIED: WorkbenchPassage = {
   hash: 'h1',
@@ -159,6 +162,23 @@ function renderModule(hash = HASH) {
   )
 }
 
+/** 模拟候选模块已把带 taskItemId 的队列同步到 context */
+function QueueSeeder() {
+  const { setQueue } = useEvidenceCenter()
+  useEffect(() => {
+    setQueue([{
+      target_type: 'connection',
+      target_id: 'r1-r2',
+      label: 'R1 → R2 连接',
+      confidence: 0.7,
+      status: 'awaiting_review' as QueueStatus,
+      evidenceCount: 1,
+      taskItemId: 'item-1',
+    }])
+  }, [setQueue])
+  return null
+}
+
 describe('EvidencePromotionModule', () => {
   afterEach(() => {
     cleanup()
@@ -260,6 +280,48 @@ describe('EvidencePromotionModule', () => {
     expect(sessionStorage.getItem(DRAFT_KEY)).toBeNull()
     // 待晋升组消失(草稿已清)
     expect(screen.queryByText('人工核对通过，允许晋升')).toBeNull()
+  })
+
+  it('晋升成功:有 taskId 且 queue 带 taskItemId 时调用 completePaperEvidenceTaskItem 标记后端完成', async () => {
+    // 标记接口失败不阻断主流程:先 mock reject,再断言列表仍刷新、成功消息仍出现
+    vi.mocked(endpoints.completePaperEvidenceTaskItem).mockRejectedValueOnce(new Error('boom'))
+    window.location.hash = HASH
+    render(
+      <EvidenceCenterProvider>
+        <QueueSeeder />
+        <EvidencePromotionModule />
+      </EvidenceCenterProvider>,
+    )
+    await waitFor(() => expect(endpoints.attachPaperEvidencePreview).toHaveBeenCalled())
+    fireEvent.click(screen.getAllByRole('button', { name: '确认晋升' })[0])
+    const confirmBtn = screen.getByTestId('ew-confirm-attach') as HTMLButtonElement
+    await waitFor(() => expect(confirmBtn.disabled).toBe(false))
+    fireEvent.click(confirmBtn)
+    await waitFor(() => expect(endpoints.attachPaperEvidence).toHaveBeenCalled())
+    await waitFor(() =>
+      expect(endpoints.completePaperEvidenceTaskItem).toHaveBeenCalledWith('t1', 'item-1', 'ev-new'),
+    )
+    // 尽管标记接口 reject,主流程仍完成:列表刷新 + 成功消息
+    await waitFor(() => expect(endpoints.listPaperEvidence).toHaveBeenCalledTimes(2))
+    expect(screen.getByText('证据已晋升并应用到知识对象')).toBeTruthy()
+    expect(sessionStorage.getItem(DRAFT_KEY)).toBeNull()
+  })
+
+  it('晋升成功:URL 无 task_id 时不调用 completePaperEvidenceTaskItem', async () => {
+    window.location.hash = HASH_NO_TASK
+    render(
+      <EvidenceCenterProvider>
+        <QueueSeeder />
+        <EvidencePromotionModule />
+      </EvidenceCenterProvider>,
+    )
+    await waitFor(() => expect(endpoints.attachPaperEvidencePreview).toHaveBeenCalled())
+    fireEvent.click(screen.getAllByRole('button', { name: '确认晋升' })[0])
+    const confirmBtn = screen.getByTestId('ew-confirm-attach') as HTMLButtonElement
+    await waitFor(() => expect(confirmBtn.disabled).toBe(false))
+    fireEvent.click(confirmBtn)
+    await waitFor(() => expect(endpoints.attachPaperEvidence).toHaveBeenCalled())
+    expect(endpoints.completePaperEvidenceTaskItem).not.toHaveBeenCalled()
   })
 
   it('已晋升:点击记录打开 EvidenceDetailDrawer;「回滚」→ ConfirmDialog 输入原因 → rollbackPaperEvidence', async () => {

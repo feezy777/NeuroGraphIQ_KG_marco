@@ -186,13 +186,26 @@ export function EvidenceReviewModule() {
     note,
   }), [passages, modelDirection, modelAssessment, paperTitle, pmid, doi, translations, direction, evidenceLevel, confidence, note])
 
+  /** 同步落盘当前草稿(debounce 定时器与退出路径共用,保证草稿不丢失) */
+  const persistDraft = useCallback(() => {
+    if (!targetId || passages.length === 0) return
+    sessionStorage.setItem(`${DRAFT_PREFIX}${targetId}`, JSON.stringify(buildDraft()))
+  }, [targetId, passages.length, buildDraft])
+
   useEffect(() => {
     if (!targetId || passages.length === 0) return
-    const t = setTimeout(() => {
-      sessionStorage.setItem(`${DRAFT_PREFIX}${targetId}`, JSON.stringify(buildDraft()))
-    }, 500)
+    const t = setTimeout(() => persistDraft(), 500)
     return () => clearTimeout(t)
-  }, [targetId, buildDraft])
+  }, [targetId, passages.length, persistDraft])
+
+  // 模块卸载/切换时同步落盘最后一次编辑(绕过 debounce 清理窗口)
+  const persistDraftRef = useRef(persistDraft)
+  useEffect(() => {
+    persistDraftRef.current = persistDraft
+  })
+  useEffect(() => {
+    return () => { persistDraftRef.current() }
+  }, [])
 
   // ─── 片段操作 ───
   const translatePassage = useCallback(async (hash: string, text: string) => {
@@ -233,8 +246,9 @@ export function EvidenceReviewModule() {
 
   // ─── 顶部操作 ───
   const handleBack = useCallback(() => {
+    persistDraft()
     if (targetType && targetId) openTarget(targetType, targetId, 'candidates')
-  }, [targetType, targetId, openTarget])
+  }, [targetType, targetId, openTarget, persistDraft])
 
   const taskItem = queue.find(q => q.target_type === targetType && q.target_id === targetId)
 

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   attachPaperEvidence,
   attachPaperEvidencePreview,
+  completePaperEvidenceTaskItem,
   getEvidenceTarget,
   listPaperEvidence,
   rollbackPaperEvidence,
@@ -164,7 +165,7 @@ export function EvidencePromotionModule() {
     setAttachBusy(true)
     setMessage(null)
     try {
-      await attachPaperEvidence({
+      const resp = await attachPaperEvidence({
         target_type: targetType,
         target_id: targetId,
         pmid: draft.pmid,
@@ -194,13 +195,24 @@ export function EvidencePromotionModule() {
       setQueue(queue.map(q =>
         q.target_type === targetType && q.target_id === targetId ? { ...q, status: 'completed' } : q,
       ))
+      // 标记后端 task item 完成(镜像旧 Modal 条件调用),失败静默,不阻断晋升主流程
+      if (state.taskId) {
+        const entry = queue.find(q => q.target_type === targetType && q.target_id === targetId)
+        if (entry?.taskItemId) {
+          try {
+            await completePaperEvidenceTaskItem(state.taskId, entry.taskItemId, resp.evidence_id)
+          } catch {
+            // 标记失败不影响已入库证据
+          }
+        }
+      }
       await loadList()
     } catch (err) {
       setMessage(`晋升失败：${err instanceof Error ? err.message : String(err)}`)
     } finally {
       setAttachBusy(false)
     }
-  }, [targetType, targetId, draft, selectedPassages, queue, setQueue, loadList])
+  }, [targetType, targetId, draft, selectedPassages, queue, setQueue, loadList, state.taskId])
 
   // ─── 回滚:抽屉内 ConfirmDialog 输入原因 → rollback → 刷新列表 ───
   const handleRollback = useCallback(async (reason: string) => {

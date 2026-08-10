@@ -200,6 +200,20 @@ describe('EvidenceReviewModule', () => {
     expect(screen.getByText('AI 推荐：支持')).toBeTruthy()
   })
 
+  it('「返回证据候选」在 debounce(500ms)窗口内同步落盘最后编辑(草稿不丢失)', async () => {
+    renderModule()
+    await waitFor(() => expect(screen.getByText('We observed that R1 projects to R2 in the macaque.')).toBeTruthy())
+    // 修改备注(触发 debounce 重排 500ms 定时器)
+    const note = screen.getByPlaceholderText('为什么接受/调整方向/修改组件等（可选）') as HTMLTextAreaElement
+    fireEvent.change(note, { target: { value: '最新人工备注' } })
+    // 立即返回(不等待 debounce 触发)—— handleBack 必须同步落盘
+    fireEvent.click(screen.getByRole('button', { name: '返回证据候选' }))
+    await waitFor(() => expect(window.location.hash).toContain('module=candidates'))
+    const raw = sessionStorage.getItem(DRAFT_KEY)
+    expect(raw).toBeTruthy()
+    expect(JSON.parse(raw!).note).toBe('最新人工备注')
+  })
+
   it('AI 推荐与人工确认视觉:modelDirection 灰字 + 人工方向 radio 独立高亮', async () => {
     const { container } = renderModule()
     await waitFor(() => expect(screen.getByText('AI 推荐：支持')).toBeTruthy())
