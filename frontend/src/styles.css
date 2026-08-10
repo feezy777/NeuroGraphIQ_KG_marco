@@ -11353,9 +11353,117 @@ input[type="range"]::-webkit-slider-thumb {
 .ew-trans { width: 100%; min-height: 54px; font-size: 12px; }
 .ew-ok { color: var(--success); font-weight: 600; font-size: 11px; }
 .ew-bad { color: var(--danger); font-weight: 600; font-size: 11px; }
+.ew-warn { color: var(--warning, #b8860b); font-weight: 600; font-size: 11px; }
+.ew-dimension-badge { color: var(--primary); background: rgba(59, 130, 246, .1); border: 1px solid rgba(59, 130, 246, .35); border-radius: 4px; padding: 0 6px; font-size: 11px; font-weight: 600; }
 .ew-right { border-left: 1px solid var(--border); overflow-y: auto; padding: 12px; display: flex; flex-direction: column; gap: 10px; }
 .ew-field { display: flex; flex-direction: column; gap: 4px; font-size: 12px; }
 .ew-radio { display: inline-flex; align-items: center; gap: 4px; margin-right: 10px; }
 .ew-preview { background: #f8fafc; border: 1px solid var(--border); border-radius: 10px; padding: 10px; }
 .ew-preview-flow { font-size: 14px; font-weight: 700; }
 .ew-bottom { display: flex; gap: 8px; padding: 10px 16px; border-top: 1px solid var(--border); align-items: center; }
+
+/* ── Evidence Center (佐证中心) ─────────────────────────────────────────── */
+.evidence-center { display: flex; flex-direction: column; gap: 12px; }
+.evidence-center-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 10px 14px;
+  background: var(--white);
+  border: 1px solid var(--border);
+  border-radius: var(--card-radius);
+  box-shadow: var(--shadow);
+}
+.evidence-module-nav { display: flex; gap: 8px; flex-wrap: wrap; }
+.evidence-module-btn {
+  border: 1px solid var(--border);
+  background: #f1f5f9;
+  color: var(--text-muted);
+  border-radius: 999px;
+  padding: 6px 16px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all .15s ease;
+}
+.evidence-module-btn:hover { color: var(--primary); border-color: var(--primary); background: #eff6ff; }
+.evidence-module-btn.active { background: var(--primary); border-color: var(--primary); color: #fff; box-shadow: 0 2px 8px rgba(22, 119, 255, .35); }
+.evidence-center-body { display: flex; flex-direction: column; gap: 12px; }
+.evidence-module-hint { font-size: 12px; color: var(--text-muted); line-height: 1.6; }
+
+/* 佐证任务模块 */
+.evidence-task-module { display: flex; flex-direction: column; gap: 12px; }
+.evidence-task-toolbar { display: flex; align-items: flex-end; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.evidence-task-toolbar-title h3 { font-size: 15px; color: var(--text); margin-bottom: 2px; }
+.evidence-task-toolbar-actions { display: flex; gap: 8px; }
+.evidence-task-groups { display: flex; flex-direction: column; gap: 14px; }
+.evidence-task-group {
+  background: var(--white);
+  border: 1px solid var(--border);
+  border-radius: var(--card-radius);
+  padding: 12px 14px;
+  box-shadow: var(--shadow);
+}
+.evidence-task-group-head { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+.evidence-task-group-title { font-size: 13px; font-weight: 600; color: var(--text); }
+.evidence-task-group-title::before {
+  content: '';
+  display: inline-block;
+  width: 4px;
+  height: 14px;
+  border-radius: 2px;
+  background: var(--primary);
+  margin-right: 8px;
+  vertical-align: -2px;
+}
+.evidence-task-group-count { background: #eff6ff; color: var(--primary); border-radius: 999px; padding: 1px 8px; font-size: 11px; font-weight: 600; }
+.evidence-task-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  margin-bottom: 8px;
+  transition: border-color .15s ease, box-shadow .15s ease;
+}
+.evidence-task-row:hover { border-color: var(--primary); box-shadow: var(--shadow); }
+.evidence-task-row:last-child { margin-bottom: 0; }
+.evidence-task-main { display: flex; flex-direction: column; gap: 4px; min-width: 160px; }
+.evidence-task-name { font-size: 14px; font-weight: 600; color: var(--text); }
+.evidence-task-type {
+  display: inline-block;
+  align-self: flex-start;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--primary);
+  background: rgba(59, 130, 246, .1);
+  border: 1px solid rgba(59, 130, 246, .35);
+  border-radius: 4px;
+  padding: 0 6px;
+}
+.evidence-task-stats { display: flex; gap: 14px; flex-wrap: wrap; }
+.evidence-task-stat { font-size: 12px; color: var(--text-muted); }
+.evidence-task-stat b { color: var(--text); font-size: 13px; margin-left: 2px; }
+.evidence-task-chips { display: flex; gap: 6px; flex-wrap: wrap; }
+.evidence-task-chip { font-size: 11px; font-weight: 600; border-radius: 6px; padding: 2px 8px; }
+.evidence-task-chip-ok { color: #15803d; background: #dcfce7; }
+.evidence-task-chip-bad { color: var(--danger); background: #fff1f0; }
+.evidence-task-chip-warn { color: #b45309; background: #fef3c7; }
+.evidence-task-chip-info { color: var(--primary); background: #eff6ff; }
+.evidence-task-chip-muted { color: var(--text-muted); background: #f1f5f9; }
+.evidence-task-actions { margin-left: auto; display: flex; gap: 8px; }
+.evidence-task-loading { padding: 40px 20px; text-align: center; color: var(--text-muted); }
+.evidence-task-error { padding: 24px; text-align: center; color: var(--danger); display: flex; flex-direction: column; gap: 10px; align-items: center; }
+.evidence-task-empty {
+  padding: 40px 20px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 13px;
+  background: var(--white);
+  border: 1px dashed var(--border);
+  border-radius: var(--card-radius);
+}
