@@ -1,6 +1,6 @@
 import { DIRECTION_LABEL, type Direction } from './types'
 
-/** 候选模块中栏统计条数据(模块内从现有状态推导,页面级测试经模块渲染断言) */
+/** 候选模块中栏状态条数据(模块内从现有状态推导,页面级测试经模块渲染断言) */
 export interface CandidateStats {
   /** 找到论文总数(已提取候选 + 手动检索结果) */
   foundPapers: number
@@ -31,8 +31,8 @@ function formatCoverage(stats: CandidateStats | null): string {
   return `${stats.coverageSupported}/${stats.coverageRequired}`
 }
 
-/** 中栏统计信息条:找到论文 / AI 提取论文 / 已核验片段 / Coverage / 模型判断 + [进入人工审核] */
-export function CandidateStatsBar({ stats, onEnterReview }: Props) {
+/** 浅蓝状态条:找到论文 / AI提取 / 已核验 / Coverage / 模型判断(加粗)+ 右侧 [进入人工审核] */
+export function PaperStatusSummary({ stats, onEnterReview }: Props) {
   return (
     <div className="evidence-stats-bar" data-testid="evidence-stats-bar">
       <div className="evidence-stats-item">
@@ -40,11 +40,11 @@ export function CandidateStatsBar({ stats, onEnterReview }: Props) {
         <span className="evidence-stats-value" data-testid="evidence-stats-found">{stats?.foundPapers ?? 0}</span>
       </div>
       <div className="evidence-stats-item">
-        <span className="evidence-stats-label">AI 提取论文</span>
+        <span className="evidence-stats-label">AI提取</span>
         <span className="evidence-stats-value" data-testid="evidence-stats-extracted">{stats?.extractedPapers ?? 0}</span>
       </div>
       <div className="evidence-stats-item">
-        <span className="evidence-stats-label">已核验片段</span>
+        <span className="evidence-stats-label">已核验</span>
         <span className="evidence-stats-value" data-testid="evidence-stats-verified">{stats?.verifiedPassages ?? 0}</span>
       </div>
       <div className="evidence-stats-item">

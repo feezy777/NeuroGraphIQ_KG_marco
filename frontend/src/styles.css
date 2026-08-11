@@ -11873,8 +11873,10 @@ input[type="range"]::-webkit-slider-thumb {
 .evidence-candidates { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
 .evidence-candidates-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 12px; }
 .evidence-candidates-papers { display: flex; flex-direction: column; gap: 8px; }
-.evidence-candidates-papers-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.evidence-candidates-papers-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
 .evidence-candidates-papers-head h4 { font-size: 15px; color: var(--text); }
+/* 空态底部轻提示(批量操作 / 恢复排除) */
+.evidence-candidates-hint { font-size: 11px; color: var(--text-muted); text-align: center; }
 .evidence-candidates-empty {
   padding: 24px 12px;
   text-align: center;
@@ -11904,18 +11906,39 @@ input[type="range"]::-webkit-slider-thumb {
 .evidence-search-title { font-size: 13px; font-weight: 700; color: var(--text); }
 .evidence-search-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .evidence-search-query { flex: 1; min-width: 220px; }
-.evidence-search-year { width: 140px; }
+.evidence-search-year { width: 118px; }
 .evidence-search-filter { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: var(--text); cursor: pointer; }
 .evidence-search-terms { display: flex; gap: 6px; flex-wrap: wrap; }
+/* 系统推荐关键词 Chip:浅蓝圆角 + ×清空,可换行 */
 .evidence-query-term {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   font-size: 11px;
   font-family: var(--font-mono, monospace);
-  color: var(--text-muted);
-  background: var(--muted-bg);
-  border: 1px solid var(--border);
+  color: var(--primary);
+  background: var(--info-bg);
+  border: 1px solid rgba(22, 119, 255, .28);
   border-radius: 999px;
-  padding: 2px 8px;
+  padding: 2px 4px 2px 9px;
 }
+.evidence-query-term-clear {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: rgba(22, 119, 255, .14);
+  color: var(--primary);
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+  transition: background .12s ease;
+}
+.evidence-query-term-clear:hover { background: rgba(22, 119, 255, .28); }
 
 /* ── 检索区折叠条(有检索结果后默认收起,候选列表占据主视区) ── */
 .evidence-search-collapsed {
@@ -11947,17 +11970,18 @@ input[type="range"]::-webkit-slider-thumb {
   margin-left: auto;
 }
 
-/* ── 中栏统计信息条(CandidateStatsBar) ── */
+/* ── 中栏状态信息条(PaperStatusSummary) ── */
+/* 浅蓝状态条:高 48-54px,模型判断加粗 */
 .evidence-stats-bar {
   display: flex;
   align-items: center;
   gap: 18px;
   flex-wrap: wrap;
-  background: var(--white);
-  border: 1px solid var(--border);
+  background: var(--info-bg);
+  border: 1px solid rgba(22, 119, 255, .22);
   border-radius: var(--card-radius);
-  box-shadow: var(--shadow);
-  padding: 8px 14px;
+  padding: 6px 14px;
+  min-height: 48px;
 }
 .evidence-stats-item { display: flex; align-items: baseline; gap: 6px; }
 .evidence-stats-label { font-size: 12px; color: var(--text-muted); white-space: nowrap; }
@@ -11967,12 +11991,13 @@ input[type="range"]::-webkit-slider-thumb {
   font-size: 12px;
   font-weight: 700;
   color: var(--primary);
-  background: var(--info-bg);
+  background: var(--white);
+  border: 1px solid rgba(22, 119, 255, .28);
   border-radius: 999px;
   padding: 1px 8px;
   white-space: nowrap;
 }
-.evidence-stats-assessment { font-size: 12px; color: var(--text-muted); }
+.evidence-stats-assessment { font-size: 12px; font-weight: 600; color: var(--text); }
 .evidence-stats-actions { margin-left: auto; display: flex; align-items: center; }
 
 /* ── 候选论文分层卡(PaperCard) ── */
@@ -12017,6 +12042,33 @@ input[type="range"]::-webkit-slider-thumb {
   white-space: nowrap;
 }
 .paper-card-result-badge-ok { color: var(--success-fg); background: var(--success-bg); }
+.paper-card-result-badge-ai { color: var(--primary); background: var(--info-bg); }
+
+/* ── 统一空态(EmptyState) ── */
+.evidence-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 40px 20px;
+  text-align: center;
+  background: var(--white);
+  border: 1px dashed var(--border);
+  border-radius: var(--card-radius);
+}
+.evidence-empty-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: var(--info-bg);
+  color: var(--primary);
+}
+.evidence-empty-icon svg { width: 24px; height: 24px; }
+.evidence-empty-title { font-size: 14px; font-weight: 700; color: var(--text); }
+.evidence-empty-desc { font-size: 12px; color: var(--text-muted); max-width: 380px; line-height: 1.6; }
 .paper-card-actions-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; border-top: 1px dashed var(--border); padding-top: 8px; }
 .paper-card-select { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: var(--text); cursor: pointer; }
 

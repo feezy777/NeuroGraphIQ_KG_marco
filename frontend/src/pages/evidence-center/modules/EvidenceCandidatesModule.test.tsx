@@ -208,11 +208,10 @@ describe('EvidenceCandidatesModule', () => {
     expect(screen.getByText('DOI 10.1234/test')).toBeTruthy()
     expect(screen.getByText('摘要')).toBeTruthy()
     expect(screen.getByText('OA 全文')).toBeTruthy()
-    // 提取结果:AI 判断 + 覆盖度 + 片段数 + 已核验数 + [查看证据候选]
-    expect(screen.getByText(/AI 判断 支持/)).toBeTruthy()
-    expect(screen.getByText('覆盖度 50%')).toBeTruthy()
-    expect(screen.getByText('片段 2')).toBeTruthy()
-    expect(screen.getByText('已核验 1')).toBeTruthy()
+    // 提取结果:AI判断 + Coverage(N/M) + 已核验片段数 + [查看证据候选]
+    expect(screen.getByText(/AI判断：支持/)).toBeTruthy()
+    expect(screen.getByText('Coverage 1/3')).toBeTruthy()
+    expect(screen.getByText('已核验片段 1')).toBeTruthy()
     expect(screen.getByRole('button', { name: /查看证据候选/ })).toBeTruthy()
   })
 
@@ -359,12 +358,16 @@ describe('EvidenceCandidatesModule', () => {
     await waitFor(() => expect(sessionStorage.getItem('evidence-center.review-draft.r1-r2')).toBeNull())
   })
 
-  it('排除此候选从列表移除论文卡', async () => {
+  it('排除此候选从列表移除论文卡;列表头出现 [恢复排除(1)] 可找回', async () => {
     renderModule()
     await waitFor(() => expect(screen.getByText('A Study of R1 to R2 Projection')).toBeTruthy())
     fireEvent.click(screen.getByRole('button', { name: /排除此候选/ }))
     expect(screen.queryByText('A Study of R1 to R2 Projection')).toBeNull()
     expect(screen.getByText(/当前对象暂无候选证据/)).toBeTruthy()
+    // 空态提示 + 列表头恢复入口
+    expect(screen.getByTestId('evidence-candidates-hint').textContent).toContain('恢复排除')
+    fireEvent.click(screen.getByRole('button', { name: /恢复排除（1）/ }))
+    expect(screen.getByText('A Study of R1 to R2 Projection')).toBeTruthy()
   })
 
   it('重新提取触发 extractSelectedPaperEvidence 并更新片段数', async () => {
@@ -391,8 +394,7 @@ describe('EvidenceCandidatesModule', () => {
         papers: [expect.objectContaining({ pmid: '12345678' })],
       })),
     )
-    await waitFor(() => expect(screen.getByText('片段 3')).toBeTruthy())
-    expect(screen.getByText('已核验 2')).toBeTruthy()
+    await waitFor(() => expect(screen.getByText('已核验片段 2')).toBeTruthy())
   })
 
   it('禁止项:无正式 attach / confirm 文案与控件', async () => {
@@ -419,11 +421,12 @@ describe('EvidenceCandidatesModule', () => {
     expect(screen.getByText('批量操作')).toBeTruthy()
     // Query Terms Chips 来自 DTO(源脑区/目标脑区/连接关系/功能)
     const terms = screen.getAllByTestId('evidence-query-term')
-    expect(terms.map(t => t.textContent)).toEqual(expect.arrayContaining(['R1', 'R2', 'projects_to', '影响功能']))
-    // 过滤控件
+    expect(terms.map(t => t.textContent)).toEqual(expect.arrayContaining(['R1×', 'R2×', 'projects_to×', '影响功能×']))
+    // 过滤控件:☐仅OA / 证据模式 / 年份(下拉) / [恢复默认] + [恢复排除]
     expect(screen.getByLabelText('仅 OA')).toBeTruthy()
-    expect(screen.getByLabelText('佐证模式')).toBeTruthy()
-    expect(screen.getByPlaceholderText(/年份/)).toBeTruthy()
+    expect(screen.getByLabelText('证据模式')).toBeTruthy()
+    expect(screen.getByLabelText(/年份/)).toBeTruthy()
+    expect(screen.getByRole('button', { name: /恢复默认/ })).toBeTruthy()
     expect(screen.getByRole('button', { name: /恢复排除/ })).toBeTruthy()
   })
 
@@ -626,7 +629,7 @@ describe('EvidenceCandidatesModule', () => {
     await waitFor(() => expect(screen.getByText('Paper A')).toBeTruthy())
     // 检索成功 → 检索区自动折叠,批量操作需先展开
     fireEvent.click(screen.getByRole('button', { name: /展开检索/ }))
-    fireEvent.click(screen.getByRole('button', { name: /全选/ }))
+    fireEvent.click(screen.getByRole('checkbox', { name: /全选/ }))
     fireEvent.click(screen.getByRole('button', { name: /提取所选论文（2）/ }))
     await waitFor(() =>
       expect(endpoints.extractSelectedPaperEvidence).toHaveBeenCalledWith(expect.objectContaining({
@@ -693,13 +696,12 @@ describe('EvidenceCandidatesModule', () => {
     await waitFor(() => expect(screen.getByText('A Newly Found Paper')).toBeTruthy())
     // 检索成功 → 检索区自动折叠,批量操作需先展开
     fireEvent.click(screen.getByRole('button', { name: /展开检索/ }))
-    fireEvent.click(screen.getByRole('button', { name: /全选/ }))
+    fireEvent.click(screen.getByRole('checkbox', { name: /全选/ }))
     fireEvent.click(screen.getByRole('button', { name: /提取所选论文（1）/ }))
-    // 提取结果卡:AI 判断 / 片段 / 已核验 + [查看证据候选];检索卡保留(标题出现两处)
+    // 提取结果卡:AI判断 / 已核验片段 + [查看证据候选];检索卡保留(标题出现两处)
     await waitFor(() => expect(screen.getByRole('button', { name: /查看证据候选/ })).toBeTruthy())
-    expect(screen.getByText(/AI 判断 支持/)).toBeTruthy()
-    expect(screen.getByText('片段 1')).toBeTruthy()
-    expect(screen.getByText('已核验 1')).toBeTruthy()
+    expect(screen.getByText(/AI判断：支持/)).toBeTruthy()
+    expect(screen.getByText('已核验片段 1')).toBeTruthy()
     expect(screen.getByText(/候选论文（2）/)).toBeTruthy()
     expect(screen.getAllByText('A Newly Found Paper')).toHaveLength(2)
   })
@@ -729,7 +731,7 @@ describe('EvidenceCandidatesModule', () => {
     expect(screen.queryByText('Closed Paper')).toBeNull()
     expect(screen.getByText('OA Paper')).toBeTruthy()
     fireEvent.click(screen.getByLabelText('仅 OA'))
-    fireEvent.change(screen.getByPlaceholderText(/年份/), { target: { value: '2023' } })
+    fireEvent.change(screen.getByLabelText(/年份/), { target: { value: '2023' } })
     expect(screen.queryByText('Closed Paper')).toBeNull()
     expect(screen.getByText('OA Paper')).toBeTruthy()
   })
@@ -816,5 +818,94 @@ describe('EvidenceCandidatesModule', () => {
     expect(screen.getByText('查找相关论文')).toBeTruthy()
     expect((screen.getByTestId('evidence-search-query') as HTMLInputElement).value).toBe('')
     expect(screen.queryByText('Found Paper')).toBeNull()
+  })
+
+  it('Query Chip ×清空:移除该关键词;恢复系统推荐恢复全部推荐词', async () => {
+    vi.mocked(endpoints.listPaperEvidenceTaskItems).mockResolvedValue({ items: [] })
+    window.location.hash = '#/evidence-center?module=candidates&task_id=t1&target_type=connection&target_id=r1-r2'
+    render(
+      <EvidenceCenterProvider>
+        <EvidenceCandidatesModule />
+      </EvidenceCenterProvider>,
+    )
+    await waitFor(() => expect(screen.getByText('查找相关论文')).toBeTruthy())
+    const terms = () => screen.getAllByTestId('evidence-query-term').map(t => t.textContent)
+    expect(terms()).toEqual(expect.arrayContaining(['R1×', 'R2×', 'projects_to×', '影响功能×']))
+    fireEvent.click(screen.getByRole('button', { name: '清空关键词 R1' }))
+    expect(terms()).not.toContain('R1×')
+    expect(terms()).toEqual(expect.arrayContaining(['R2×', 'projects_to×', '影响功能×']))
+    // 恢复系统推荐:清空 Query + 恢复全部推荐词并重新检索
+    fireEvent.click(screen.getByRole('button', { name: /恢复系统推荐/ }))
+    await waitFor(() => expect(endpoints.searchPaperEvidence).toHaveBeenCalled())
+    expect(terms()).toEqual(expect.arrayContaining(['R1×', 'R2×', 'projects_to×', '影响功能×']))
+  })
+
+  it('检索过滤 [恢复默认]:重置 仅OA / 年份 过滤条件', async () => {
+    vi.mocked(endpoints.listPaperEvidenceTaskItems).mockResolvedValue({ items: [] })
+    vi.mocked(endpoints.searchPaperEvidence).mockResolvedValue({
+      target_info: { target_type: 'connection', target_id: 'r1-r2', function_term: '', mode: 'existence', query: '', info: {} },
+      papers: [
+        { pmid: '111', doi: '10.1/a', title: 'OA Paper', journal: 'J', year: '2024', authors: '', abstract: '', source: 'europepmc', is_open_access: true },
+        { pmid: '222', doi: '10.2/b', title: 'Closed Paper', journal: 'J', year: '2020', authors: '', abstract: '', source: 'europepmc', is_open_access: false },
+      ],
+    })
+    window.location.hash = '#/evidence-center?module=candidates&task_id=t1&target_type=connection&target_id=r1-r2'
+    render(
+      <EvidenceCenterProvider>
+        <EvidenceCandidatesModule />
+      </EvidenceCenterProvider>,
+    )
+    await waitFor(() => expect(screen.getByText('查找相关论文')).toBeTruthy())
+    fireEvent.click(screen.getByRole('button', { name: /重新搜索/ }))
+    await waitFor(() => expect(screen.getByText('OA Paper')).toBeTruthy())
+    fireEvent.click(screen.getByRole('button', { name: /展开检索/ }))
+    // 仅OA + 年份 2024 → 只剩 OA Paper
+    fireEvent.click(screen.getByLabelText('仅 OA'))
+    fireEvent.change(screen.getByLabelText(/年份/), { target: { value: '2024' } })
+    expect(screen.queryByText('Closed Paper')).toBeNull()
+    // [恢复默认] → 全部过滤重置 → 两篇论文均恢复
+    fireEvent.click(screen.getByRole('button', { name: /恢复默认/ }))
+    expect((screen.getByLabelText('仅 OA') as HTMLInputElement).checked).toBe(false)
+    expect((screen.getByLabelText(/年份/) as HTMLSelectElement).value).toBe('')
+    expect(screen.getByText('Closed Paper')).toBeTruthy()
+    expect(screen.getByText('OA Paper')).toBeTruthy()
+  })
+
+  it('空态(手动检索场景):暂无候选论文 + 调整检索条件 + 轻提示;排除后可恢复', async () => {
+    vi.mocked(endpoints.listPaperEvidenceTaskItems).mockResolvedValue({ items: [] })
+    vi.mocked(endpoints.searchPaperEvidence).mockResolvedValue({
+      target_info: { target_type: 'connection', target_id: 'r1-r2', function_term: '', mode: 'existence', query: '', info: {} },
+      papers: [{
+        pmid: '99999999',
+        doi: '10.9999/abc',
+        title: 'Only Paper',
+        journal: 'Nature',
+        year: '2025',
+        authors: '',
+        abstract: '',
+        source: 'europepmc',
+        is_open_access: true,
+      }],
+    })
+    window.location.hash = '#/evidence-center?module=candidates&task_id=t1&target_type=connection&target_id=r1-r2'
+    render(
+      <EvidenceCenterProvider>
+        <EvidenceCandidatesModule />
+      </EvidenceCenterProvider>,
+    )
+    await waitFor(() => expect(screen.getByText('查找相关论文')).toBeTruthy())
+    fireEvent.click(screen.getByRole('button', { name: /重新搜索/ }))
+    await waitFor(() => expect(screen.getByText('Only Paper')).toBeTruthy())
+    // 排除唯一论文 → 空态:标题/说明/调整检索条件/轻提示 + 列表头恢复入口
+    fireEvent.click(screen.getByRole('button', { name: /排除此候选/ }))
+    expect(screen.getByText('候选论文（0）')).toBeTruthy()
+    expect(screen.getByText('暂无候选论文')).toBeTruthy()
+    expect(screen.getByText('当前还没有找到相关论文，可尝试调整检索条件后重新搜索。')).toBeTruthy()
+    expect(screen.getByTestId('evidence-candidates-hint').textContent).toContain('勾选论文后可批量操作')
+    expect(screen.getByRole('button', { name: /恢复排除（1）/ })).toBeTruthy()
+    // [调整检索条件] → 展开完整检索区
+    fireEvent.click(screen.getByRole('button', { name: /调整检索条件/ }))
+    expect(screen.getByTestId('evidence-search-query')).toBeTruthy()
+    expect(screen.getByText('检索过滤')).toBeTruthy()
   })
 })
