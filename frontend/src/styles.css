@@ -11407,6 +11407,11 @@ input[type="range"]::-webkit-slider-thumb {
   grid-template-columns: 240px minmax(640px, 1fr) 340px;
   gap: 12px;
 }
+/* 分辨率兜底(视觉稿 §19/§25:1366 无横向滚动):1440 及以下右栏 340→300、中栏下限 640→530,
+   最小总宽 240+530+300+24 = 1094 ≤ 1366 内容宽 1098,三栏不再溢出;1600/1920 保持原三栏数值 */
+@media (max-width: 1440px) {
+  .evidence-center-layout { grid-template-columns: 240px minmax(530px, 1fr) 300px; }
+}
 .evidence-center-layout-full { grid-template-columns: 1fr; }
 .evidence-center-layout-full .evidence-left,
 .evidence-center-layout-full .evidence-right { display: none; }
