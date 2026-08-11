@@ -120,6 +120,22 @@ describe('PaperCandidateCard(已提取卡)', () => {
     expect(result.textContent).not.toContain('Coverage')
   })
 
+  it('required_components 为空数组但 coverage_ratio 存在时回退显示百分比', () => {
+    renderCard({
+      ...EXTRACTED_PAPER,
+      coverageSummary: { coverage_ratio: 0.5, required_components: [], supported_components: [] },
+    })
+    expect(screen.getByTestId('paper-card-result').textContent).toContain('Coverage 50%')
+  })
+
+  it('required_components 缺失但 coverage_ratio 存在时回退显示百分比', () => {
+    renderCard({
+      ...EXTRACTED_PAPER,
+      coverageSummary: { coverage_ratio: 0.5 },
+    })
+    expect(screen.getByTestId('paper-card-result').textContent).toContain('Coverage 50%')
+  })
+
   it('重新提取中禁用按钮显示进度文案', () => {
     renderCard(EXTRACTED_PAPER, { reExtracting: true })
     expect((screen.getByRole('button', { name: '重新提取中…' }) as HTMLButtonElement).disabled).toBe(true)

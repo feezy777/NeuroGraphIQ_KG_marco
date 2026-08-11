@@ -36,14 +36,19 @@ interface Props {
   reExtracting: boolean
 }
 
-/** Coverage N/M 取自模型 coverage_summary 的 supported/required 组件数;无数据时返回 null */
+/** Coverage 展示:正常路径 N/M(required>0);required 为空/缺失时回退 coverage_ratio 百分比;两者皆无时返回 null */
 function coverageSummaryCounts(
   coverage: Record<string, unknown> | null,
-): { supported: number; required: number } | null {
-  const c = coverage as { supported_components?: unknown[]; required_components?: unknown[] } | null
+): { supported: number; required: number; ratio: number } | null {
+  const c = coverage as {
+    supported_components?: unknown[]
+    required_components?: unknown[]
+    coverage_ratio?: number
+  } | null
   const required = c?.required_components?.length ?? 0
-  if (required === 0) return null
-  return { supported: c?.supported_components?.length ?? 0, required }
+  const ratio = typeof c?.coverage_ratio === 'number' ? c.coverage_ratio : null
+  if (required === 0 && ratio == null) return null
+  return { supported: c?.supported_components?.length ?? 0, required, ratio: ratio ?? 0 }
 }
 
 /** 候选论文分层卡:标题 / 作者·期刊·年份 / 匹配度·理由 / PMID·DOI·摘要·OA / 操作行(+提取结果) */
@@ -86,7 +91,13 @@ export function PaperCandidateCard({
       {paper.extracted && (
         <div className="paper-card-result-row" data-testid="paper-card-result">
           {dirLabel && <span className="paper-card-result-badge paper-card-result-badge-ai">AI判断：{dirLabel}</span>}
-          {coverage && <span className="paper-card-result-badge">Coverage {coverage.supported}/{coverage.required}</span>}
+          {coverage && (
+            <span className="paper-card-result-badge">
+              {coverage.required > 0
+                ? `Coverage ${coverage.supported}/${coverage.required}`
+                : `Coverage ${Math.round(coverage.ratio * 100)}%`}
+            </span>
+          )}
           <span className="paper-card-result-badge paper-card-result-badge-ok">已核验片段 {paper.verifiedCount}</span>
         </div>
       )}
