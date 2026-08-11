@@ -58,6 +58,15 @@ describe('ClaimSummaryPanel', () => {
     expect(blocks[0].textContent).toContain('R1 投射到 R2')
   })
 
+  it('components 为空但 targetType 非空时,仍回退为 claimText 单块(类型块不独占)', () => {
+    render(<ClaimSummaryPanel claimText="R1 投射到 R2" components={[]} targetType="connection" />)
+    const blocks = screen.getAllByTestId('evidence-claim-block')
+    expect(blocks).toHaveLength(1)
+    expect(blocks[0].textContent).toContain('事实')
+    expect(blocks[0].textContent).toContain('R1 投射到 R2')
+    expect(blocks[0].textContent).not.toContain('类型')
+  })
+
   it('granularity 展示在标题旁徽章', () => {
     render(<ClaimSummaryPanel claimText="" components={[]} targetType="connection" granularity="macro_clinical" />)
     expect(screen.getByText('macro_clinical')).toBeTruthy()

@@ -45,7 +45,9 @@ export function ClaimSummaryPanel({ claimText, components, targetType, granulari
     return out
   }, [components, targetType])
 
-  const fallback = blocks.length === 0
+  // 规格:无 claim_components 时回退 claimText 单块 —— 基于 components 而非 blocks,
+  // 否则 targetType 恒非空时类型块会独占左栏、隐藏 claimText
+  const fallback = (components?.length ?? 0) === 0
 
   return (
     <section className="evidence-claim-summary" data-testid="evidence-claim-summary">
