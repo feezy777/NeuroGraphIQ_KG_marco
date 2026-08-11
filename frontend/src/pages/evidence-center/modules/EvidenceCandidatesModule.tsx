@@ -603,7 +603,6 @@ export function EvidenceCandidatesModule() {
                     onClearTerm={handleClearTerm}
                     querySummary={querySummary}
                     onExpand={() => setSearchExpanded(true)}
-                    onCollapse={() => setSearchExpanded(false)}
                     selectedCount={manualSelected.size}
                     onExtractSelected={() => void handleManualExtract()}
                     filters={

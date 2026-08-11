@@ -15,7 +15,6 @@ interface Props {
   /** 折叠条 Query 摘要(手动检索式 → 推荐词 → 占位) */
   querySummary: string
   onExpand: () => void
-  onCollapse: () => void
   /** 已勾选论文数(折叠条 [提取所选论文(N)] 计数) */
   selectedCount: number
   onExtractSelected: () => void
@@ -40,7 +39,6 @@ export function PaperSearchPanel({
   onClearTerm,
   querySummary,
   onExpand,
-  onCollapse,
   selectedCount,
   onExtractSelected,
   filters,

@@ -14,7 +14,6 @@ function renderPanel(overrides: Partial<Parameters<typeof PaperSearchPanel>[0]> 
     onClearTerm: vi.fn(),
     querySummary: 'R1 · R2',
     onExpand: vi.fn(),
-    onCollapse: vi.fn(),
     selectedCount: 0,
     onExtractSelected: vi.fn(),
     filters: <div data-testid="filters-slot">filters</div>,
