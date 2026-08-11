@@ -38,6 +38,9 @@
   --danger-bg: #fff1f0;
   --muted-bg: #f1f5f9;
   --evidence-bg: #f5f7fa;   /* 证据中心页面背景(浅蓝灰,视觉稿) */
+  --progress-ok: #34c77b;   /* 证据进度条-正常(柔和薄荷绿,设计稿) */
+  --progress-warn: #f2b13b; /* 证据进度条-警告(柔和琥珀,设计稿) */
+  --progress-bad: #f2685f;  /* 证据进度条-异常(柔和鲑鱼红,设计稿) */
   --font-mono: 'Consolas', 'Menlo', 'Courier New', monospace;
 }
 
@@ -11736,9 +11739,9 @@ input[type="range"]::-webkit-slider-thumb {
   background: var(--muted-bg);
 }
 .evidence-progress-seg { height: 100%; transition: width .2s ease; }
-.evidence-progress-ok { background: var(--success); }
-.evidence-progress-warn { background: var(--warning); }
-.evidence-progress-bad { background: var(--danger); }
+.evidence-progress-ok { background: var(--progress-ok); }
+.evidence-progress-warn { background: var(--progress-warn); }
+.evidence-progress-bad { background: var(--progress-bad); }
 .evidence-task-progress-stats { display: flex; gap: 12px; flex-wrap: wrap; font-size: 12px; color: var(--text-muted); }
 .evidence-task-progress-stats b { color: var(--text); font-size: 13px; margin-left: 2px; }
 .evidence-task-summary-actions { display: flex; gap: 8px; flex-wrap: wrap; }
