@@ -8,10 +8,12 @@ import type { EvidenceLevel, QueueStatus, WorkbenchPassage } from '../components
 import { EvidenceReviewModule } from './EvidenceReviewModule'
 
 vi.mock('../../../api/endpoints', () => ({
+  approveReview: vi.fn(),
   getEvidenceTarget: vi.fn(),
   attachPaperEvidencePreview: vi.fn(),
   attachPaperEvidence: vi.fn(),
   buildReview: vi.fn(),
+  rejectReview: vi.fn(),
   translateEvidenceText: vi.fn(),
   validatePassageSelection: vi.fn(),
   saveTaskItemDraft: vi.fn(),
@@ -148,6 +150,7 @@ describe('EvidenceReviewModule', () => {
     })
     vi.mocked(endpoints.saveTaskItemDraft).mockResolvedValue({ item_id: 'item-1', saved: true, server_revision: 1 })
     vi.mocked(endpoints.buildReview).mockResolvedValue({ review_id: 'rev-1', status: 'approved' })
+    vi.mocked(endpoints.rejectReview).mockResolvedValue({ review_id: 'rev-1', status: 'rejected' })
   })
 
   it('从 sessionStorage draft 恢复 passages 并渲染 PassageEvidenceCard + AI 初判', async () => {
@@ -326,12 +329,13 @@ describe('EvidenceReviewModule', () => {
     }))
   })
 
-  it('驳回证据:写 rejected + 调 buildReview + 提示 + 不调 attach', async () => {
+  it('驳回证据:写 rejected + 调 buildReview + rejectReview + 提示 + 不调 attach', async () => {
     renderModule()
     await waitFor(() => expect(screen.getByText('We observed that R1 projects to R2 in the macaque.')).toBeTruthy())
     fireEvent.click(screen.getByRole('button', { name: '驳回证据' }))
     await waitFor(() => expect(sessionStorage.getItem(REVIEW_STATUS_KEY)).toBeTruthy())
     await waitFor(() => expect(endpoints.buildReview).toHaveBeenCalled())
+    await waitFor(() => expect(endpoints.rejectReview).toHaveBeenCalledWith('rev-1'))
     const record = JSON.parse(sessionStorage.getItem(REVIEW_STATUS_KEY)!)
     expect(record.status).toBe('rejected')
     expect(record.meta.direction).toBe('supports')

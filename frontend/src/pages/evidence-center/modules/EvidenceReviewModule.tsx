@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { MousePointerClick } from 'lucide-react'
 import {
+  approveReview,
   attachPaperEvidencePreview,
   buildReview,
   getEvidenceTarget,
+  rejectReview,
   saveTaskItemDraft,
   translateEvidenceText,
   validatePassageSelection,
@@ -280,7 +282,11 @@ export function EvidenceReviewModule() {
   }, [targetId, buildDraft, taskItem?.taskItemId])
 
   // ─── 审核:sessionStorage(兼容) + 后端 Review(权威) ───
-  const commitReviewStatus = useCallback(async (status: 'review_approved' | 'rejected', at: string) => {
+  const commitReviewStatus = useCallback(async (
+    status: 'review_approved' | 'rejected',
+    at: string,
+    overrideDirection?: Direction,
+  ): Promise<string | undefined> => {
     if (!targetId || !targetType) return
     persistDraft()
     const meta: ReviewStatusMeta = { direction, evidenceLevel, confidence, note, at }
@@ -294,7 +300,7 @@ export function EvidenceReviewModule() {
     const taskItem = queue.find(q => q.target_type === targetType && q.target_id === targetId)
     const taskId: string | null = state.taskId ?? null
     const taskItemId: string | null = taskItem?.taskItemId ?? null
-    await buildReview({
+    const result = await buildReview({
       target_type: targetType!,
       target_id: targetId!,
       paper_id: paperId,
@@ -306,7 +312,7 @@ export function EvidenceReviewModule() {
       claim_components_snapshot: (dto?.claim_components ?? []) as Record<string, unknown>[],
       model_direction: modelDirection as string | null,
       model_assessment: modelAssessment as string | null,
-      reviewer_direction: direction,
+      reviewer_direction: overrideDirection ?? direction,
       reviewer_evidence_level: evidenceLevel,
       reviewer_confidence: parseFloat(confidence) || 0,
       reviewer_note: (note || null) as string | null,
@@ -337,13 +343,17 @@ export function EvidenceReviewModule() {
     })
     // 审核通过/驳回 → 推进 StepPills → 人工审核
     setProgress({ reviewed: true })
+    return result.review_id
   }, [targetId, targetType, persistDraft, direction, evidenceLevel, confidence, note, state.targetType, state.taskId, passages, modelDirection, modelAssessment, dto, tmpCoverage, selectedPassages, queue, setProgress])
 
   const handleApprove = useCallback(async () => {
     setReviewBusy(true)
     setMessage(null)
     try {
-      await commitReviewStatus('review_approved', new Date().toISOString())
+      const reviewId = await commitReviewStatus('review_approved', new Date().toISOString())
+      if (reviewId) {
+        await approveReview(reviewId)
+      }
       setMessage('已审核通过，进入「证据晋升」模块待晋升')
     } catch (err) {
       setMessage(`审核失败：${err instanceof Error ? err.message : String(err)}`)
@@ -356,7 +366,10 @@ export function EvidenceReviewModule() {
     setReviewBusy(true)
     setMessage(null)
     try {
-      await commitReviewStatus('rejected', new Date().toISOString())
+      const reviewId = await commitReviewStatus('rejected', new Date().toISOString(), 'not_found')
+      if (reviewId) {
+        await rejectReview(reviewId)
+      }
       setMessage('已驳回该证据，不会进入晋升')
     } catch (err) {
       setMessage(`驳回失败：${err instanceof Error ? err.message : String(err)}`)
