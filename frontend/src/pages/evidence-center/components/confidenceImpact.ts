@@ -31,6 +31,8 @@ export interface ConfidenceImpact {
   current: number | null
   reviewer: number
   cap: number | null
+  /** 公式中间值 max(current, reviewer):规则上限前的最大可达值(视觉稿 Maximum 格) */
+  maximum: number
   final: number
 }
 
@@ -41,5 +43,11 @@ export function computeConfidenceImpact(
 ): ConfidenceImpact {
   const rev = clampConfidence(reviewer)
   const cap = ruleCapForDirection(direction)
-  return { current, reviewer: rev, cap, final: computeFinalConfidence(direction, current, rev) }
+  return {
+    current,
+    reviewer: rev,
+    cap,
+    maximum: Math.max(current ?? 0, rev),
+    final: computeFinalConfidence(direction, current, rev),
+  }
 }

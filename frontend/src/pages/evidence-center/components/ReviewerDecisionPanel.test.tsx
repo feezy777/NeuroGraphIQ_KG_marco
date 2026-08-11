@@ -53,4 +53,35 @@ describe('ReviewerDecisionPanel 审核通过 guard', () => {
     fireEvent.click(btn)
     expect(onReject).toHaveBeenCalledTimes(1)
   })
+
+  it('置信度影响 5 格:Current/Reviewer/Rule/Maximum/Final(无 preview 本地计算)', () => {
+    render(<ReviewerDecisionPanel {...baseProps({ currentConfidence: 0.7 })} />)
+    expect(screen.getByText('置信度影响')).toBeTruthy()
+    expect(screen.getByTestId('ew-impact-current').textContent).toBe('0.70')
+    expect(screen.getByTestId('ew-impact-reviewer').textContent).toBe('0.80')
+    expect(screen.getByTestId('ew-impact-rule').textContent).toBe('≤0.85')
+    // Maximum = max(current, reviewer)(规则上限前中间值)
+    expect(screen.getByTestId('ew-impact-maximum').textContent).toBe('0.80')
+    expect(screen.getByTestId('ew-impact-final').textContent).toBe('0.80')
+  })
+
+  it('Maximum 格:reviewer 高于 current 时显示 reviewer;contradicts 时仍为 max 不随 final', () => {
+    render(<ReviewerDecisionPanel {...baseProps({ direction: 'contradicts', currentConfidence: 0.7 })} />)
+    // contradicts → final = current(0.70),但 Maximum = max(0.7, 0.8) = 0.80
+    expect(screen.getByTestId('ew-impact-maximum').textContent).toBe('0.80')
+    expect(screen.getByTestId('ew-impact-final').textContent).toBe('0.70')
+  })
+
+  it('preview 可用时 Maximum 取 max(preview.current, preview.reviewer)', () => {
+    render(<ReviewerDecisionPanel {...baseProps({
+      currentConfidence: 0.7,
+      preview: {
+        target_type: 'connection', target_id: 'r1-r2',
+        current_confidence: 0.6, direction: 'supports', reviewer_confidence: 0.8,
+        final_confidence: 0.85, cap: 0.85, selected_passage_count: 1,
+        duplicate_passage_count: 0, evidence_text_preview: '...', allow: true, block_reasons: [],
+      },
+    })} />)
+    expect(screen.getByTestId('ew-impact-maximum').textContent).toBe('0.80')
+  })
 })

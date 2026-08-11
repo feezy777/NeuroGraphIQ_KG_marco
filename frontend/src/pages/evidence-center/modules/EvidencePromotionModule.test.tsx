@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { useEffect } from 'react'
 import * as endpoints from '../../../api/endpoints'
 import type { PaperEvidenceItem } from '../../../api/endpoints'
@@ -293,6 +293,31 @@ describe('EvidencePromotionModule', () => {
     expect(screen.getByTestId('pi-evidence-new').textContent).toBe('+1')
     expect(screen.getByTestId('pi-passages-new').textContent).toBe('+1')
     expect(screen.getByTestId('pi-status').textContent).toContain('human_verified')
+  })
+
+  it('右栏 PromotionImpact 字段齐全:当前/Reviewer/晋升后/新增 Evidence/新增 Passage/最终状态 + sticky Primary 仅确认晋升', async () => {
+    renderModule()
+    await waitFor(() => expect(screen.getByTestId('evidence-promotion-impact')).toBeTruthy())
+    const panel = screen.getByTestId('evidence-promotion-impact')
+    // 6 字段标签与值(与视觉稿 §16 逐项核对)
+    expect(within(panel).getByText('当前置信度')).toBeTruthy()
+    expect(panel.querySelector('[data-testid="pi-current"]')?.textContent).toBe('0.70')
+    expect(within(panel).getByText('Reviewer 置信度')).toBeTruthy()
+    expect(panel.querySelector('[data-testid="pi-reviewer"]')?.textContent).toBe('0.80')
+    expect(within(panel).getByText('晋升后置信度')).toBeTruthy()
+    await waitFor(() => expect(panel.querySelector('[data-testid="pi-final"]')?.textContent).toBe('0.85'))
+    expect(within(panel).getByText('新增 Evidence 数量')).toBeTruthy()
+    expect(panel.querySelector('[data-testid="pi-evidence-new"]')?.textContent).toBe('+1')
+    expect(within(panel).getByText('新增 Passage 数量')).toBeTruthy()
+    expect(panel.querySelector('[data-testid="pi-passages-new"]')?.textContent).toBe('+1')
+    expect(within(panel).getByText('最终状态')).toBeTruthy()
+    expect(panel.querySelector('[data-testid="pi-status"]')?.textContent).toContain('human_verified')
+    // sticky 操作区存在;Primary 仅「确认晋升」一个
+    expect(panel.querySelector('.ew-sticky-actions')).toBeTruthy()
+    const primaryBtns = panel.querySelectorAll('.btn-primary')
+    expect(primaryBtns.length).toBe(1)
+    expect((primaryBtns[0] as HTMLElement).textContent).toContain('确认晋升')
+    expect((panel.querySelector('[data-testid="pi-return-btn"]') as HTMLElement).className).not.toContain('btn-primary')
   })
 
   it('多待晋升项:列表来自 store,点击行切换选中项(中栏与右栏跟随切换)', async () => {

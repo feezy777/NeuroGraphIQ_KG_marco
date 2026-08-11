@@ -42,11 +42,12 @@ describe('confidenceImpact', () => {
     expect(computeConfidenceImpact('supports', 0.5, 2).reviewer).toBe(1)
   })
 
-  it('computeConfidenceImpact 组合输出 Current/Reviewer/Rule/Final', () => {
+  it('computeConfidenceImpact 组合输出 Current/Reviewer/Rule/Maximum/Final', () => {
     expect(computeConfidenceImpact('supports', 0.7, 0.8)).toEqual({
       current: 0.7,
       reviewer: 0.8,
       cap: 0.85,
+      maximum: 0.8,
       final: 0.8,
     })
     // partial 方向 cap 0.75 → 0.85 被截断为 0.75
@@ -54,6 +55,7 @@ describe('confidenceImpact', () => {
       current: 0.8,
       reviewer: 0.85,
       cap: 0.75,
+      maximum: 0.85,
       final: 0.75,
     })
     // 矛盾方向 → final = current(不自动修改)
@@ -61,6 +63,7 @@ describe('confidenceImpact', () => {
       current: 0.7,
       reviewer: 0.8,
       cap: null,
+      maximum: 0.8,
       final: 0.7,
     })
     // 弱证据:supports 且 reviewer < current → final = current
@@ -68,7 +71,17 @@ describe('confidenceImpact', () => {
       current: 0.95,
       reviewer: 0.8,
       cap: 0.85,
+      maximum: 0.95,
       final: 0.95,
     })
+  })
+
+  it('Maximum = max(current, reviewer):规则上限前的中间值(视觉稿 Maximum 格)', () => {
+    // reviewer 更高 → maximum = reviewer(后续被 cap 截断)
+    expect(computeConfidenceImpact('supports', 0.7, 0.9).maximum).toBe(0.9)
+    // current 更高 → maximum = current(弱证据场景)
+    expect(computeConfidenceImpact('supports', 0.95, 0.8).maximum).toBe(0.95)
+    // 无当前置信度 → maximum = reviewer
+    expect(computeConfidenceImpact('supports', null, 0.6).maximum).toBe(0.6)
   })
 })

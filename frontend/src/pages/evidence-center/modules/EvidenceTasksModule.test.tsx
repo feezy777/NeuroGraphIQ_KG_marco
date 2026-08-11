@@ -208,4 +208,40 @@ describe('EvidenceTasksModule', () => {
     expect(within(summary).getByText('存在性')).toBeTruthy()
     expect(summaryStat('总数', 2)).toBeTruthy()
   })
+
+  // ─── U4:模块标题体系 + TaskSummary 视觉语言一致 ───
+
+  it('模块标题体系:工具栏 h3「任务列表」+ 说明句 + 分组白卡', async () => {
+    const { container } = render(<EvidenceCenterProvider><EvidenceTasksModule /></EvidenceCenterProvider>)
+    await waitFor(() => expect(screen.getByText('任务一')).toBeTruthy())
+    // 与论文库/人工审核同语言的工具栏标题
+    expect(container.querySelector('.evidence-task-toolbar-title h3')?.textContent).toBe('任务列表')
+    expect(screen.getByText(/共 1 个任务/)).toBeTruthy()
+    // 分组卡:白底 + 标题 + 数量徽标(与晋升模块同语言)
+    const group = container.querySelector('.evidence-task-group') as HTMLElement
+    expect(group).toBeTruthy()
+    expect(group.querySelector('.evidence-task-group-title')?.textContent).toBe('待处理')
+    expect(group.querySelector('.evidence-task-group-count')?.textContent).toBe('1')
+    // 任务行卡
+    expect(container.querySelector('.evidence-task-row')).toBeTruthy()
+  })
+
+  it('TaskSummary 视觉语言:标题/进度区/分隔线/统计卡 + Primary 仅「开始人工处理」', async () => {
+    renderWithRightPanel()
+    await waitFor(() => expect(screen.getByText('任务一')).toBeTruthy())
+    fireEvent.click(screen.getByTestId('evidence-task-row-t1'))
+    const summary = screen.getByTestId('evidence-task-summary')
+    // 标题
+    expect(within(summary).getByText('任务摘要')).toBeTruthy()
+    // 进度区 + 分隔线 + 统计卡(与右栏其他面板同语言)
+    expect(within(summary).getByTestId('evidence-progress-bar')).toBeTruthy()
+    expect(summary.querySelector('.evidence-section-divider')).toBeTruthy()
+    expect(summary.querySelector('.evidence-summary-stats')).toBeTruthy()
+    // Primary 唯一:「开始人工处理」,创建批量预处理/刷新为次要
+    const primaryBtns = summary.querySelectorAll('.btn-primary')
+    expect(primaryBtns.length).toBe(1)
+    expect((primaryBtns[0] as HTMLElement).textContent).toContain('开始人工处理')
+    const createBtn = within(summary).getByText('创建批量预处理') as HTMLButtonElement
+    expect(createBtn.className).not.toContain('btn-primary')
+  })
 })

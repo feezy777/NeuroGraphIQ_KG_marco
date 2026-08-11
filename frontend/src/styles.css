@@ -11438,7 +11438,8 @@ input[type="range"]::-webkit-slider-thumb {
   padding: 12px 14px;
 }
 .evidence-main { display: flex; flex-direction: column; gap: 12px; }
-.evidence-right-panel h4 { font-size: 14px; color: var(--text); margin-bottom: 6px; }
+/* 右栏标题统一 13px(Reviewer/Promotion/TaskSummary 面板同语言) */
+.evidence-right-panel h4 { font-size: 13px; color: var(--text); margin-bottom: 4px; }
 .evidence-module-hint { font-size: 12px; color: var(--text-muted); line-height: 1.6; }
 
 /* ── 模块导航(顶部胶囊):选中 = 蓝实底白字;未选 = 浅灰底深灰字;高 34px 紧凑 ── */
@@ -11760,8 +11761,8 @@ input[type="range"]::-webkit-slider-thumb {
 }
 
 /* ── 右栏任务摘要(TaskSummary,S5) ── */
-.evidence-task-summary { display: flex; flex-direction: column; gap: 12px; }
-.evidence-task-summary h4 { margin: 0; }
+.evidence-task-summary { display: flex; flex-direction: column; gap: 10px; }
+.evidence-task-summary h4 { margin: 0 0 4px; }
 .evidence-task-summary-name { font-size: 14px; font-weight: 700; color: var(--text); line-height: 1.45; }
 .evidence-task-summary-meta { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .evidence-task-summary-section { display: flex; flex-direction: column; gap: 8px; }
@@ -12118,7 +12119,20 @@ input[type="range"]::-webkit-slider-thumb {
 /* ── 人工审核模块(EvidenceReviewModule) ── */
 .evidence-review { min-width: 0; }
 .evidence-review-main { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
-.evidence-review-toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.evidence-review-toolbar { display: flex; align-items: flex-end; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.evidence-review-toolbar-title h3 { font-size: 15px; color: var(--text); margin-bottom: 2px; }
+.evidence-review-toolbar-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+/* 中栏分区标题:与候选「候选论文(N)」同语言,h4 + 数量徽标 */
+.evidence-review-passages-head { display: flex; align-items: center; gap: 8px; }
+.evidence-review-passages-head h4 { margin: 0; font-size: 14px; color: var(--text); }
+.evidence-review-passages-count {
+  background: var(--info-bg);
+  color: var(--primary);
+  border-radius: 999px;
+  padding: 1px 8px;
+  font-size: 11px;
+  font-weight: 600;
+}
 .evidence-review-passages { display: flex; flex-direction: column; gap: 8px; }
 .evidence-review-paper {
   background: var(--white);
@@ -12138,7 +12152,6 @@ input[type="range"]::-webkit-slider-thumb {
   flex-direction: column;
   gap: 10px;
 }
-.evidence-right-panel .ew-right-inner h4 { margin: 0 0 4px; font-size: 13px; }
 .ew-ai-section {
   background: var(--bg-soft);
   border: 1px dashed var(--border);
@@ -12170,7 +12183,8 @@ input[type="range"]::-webkit-slider-thumb {
 }
 .ew-divider::before,
 .ew-divider::after { content: ''; flex: 1; height: 1px; background: var(--border); }
-.ew-impact-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+/* 置信度影响 5 格(Current/Reviewer/Rule/Maximum/Final):340px 右栏 5 等分,紧凑字号 */
+.ew-impact-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px; }
 .ew-impact-cell {
   display: flex;
   flex-direction: column;
@@ -12178,11 +12192,12 @@ input[type="range"]::-webkit-slider-thumb {
   gap: 2px;
   border: 1px solid var(--border);
   border-radius: 8px;
-  padding: 6px 4px;
+  padding: 5px 2px;
   background: var(--bg-soft);
+  min-width: 0;
 }
-.ew-impact-key { font-size: 11px; color: var(--text-muted); }
-.ew-impact-val { font-size: 13px; font-weight: 700; color: var(--text); }
+.ew-impact-key { font-size: 10px; color: var(--text-muted); white-space: nowrap; }
+.ew-impact-val { font-size: 12px; font-weight: 700; color: var(--text); white-space: nowrap; }
 .ew-impact-final { color: var(--primary); }
 .ew-sticky-actions {
   position: sticky;

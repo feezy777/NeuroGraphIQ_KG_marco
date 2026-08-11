@@ -59,11 +59,13 @@ export function ReviewerDecisionPanel({
   // reviewer 钳制 [0,1] 后再入公式(与后端 confidence_rules 一致)
   const reviewer = clampConfidence(parseFloat(confidence) || 0)
   // 置信度影响:preview 可用时以服务端 attach-preview 结果为准,否则本地按方向公式计算
+  // Maximum = max(current, reviewer)(规则上限前的中间值,视觉稿 5 格)
   const impact = preview
     ? {
         current: preview.current_confidence,
         reviewer: preview.reviewer_confidence,
         cap: preview.cap,
+        maximum: Math.max(preview.current_confidence ?? 0, preview.reviewer_confidence ?? 0),
         final: preview.final_confidence,
       }
     : computeConfidenceImpact(direction, currentConfidence, reviewer)
@@ -153,6 +155,10 @@ export function ReviewerDecisionPanel({
             <span className="ew-impact-val" data-testid="ew-impact-rule">
               {impact.cap != null ? `≤${fmt(impact.cap)}` : '—'}
             </span>
+          </div>
+          <div className="ew-impact-cell">
+            <span className="ew-impact-key">Maximum</span>
+            <span className="ew-impact-val" data-testid="ew-impact-maximum">{fmt(impact.maximum)}</span>
           </div>
           <div className="ew-impact-cell">
             <span className="ew-impact-key">Final</span>

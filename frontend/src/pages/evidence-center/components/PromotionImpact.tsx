@@ -69,8 +69,12 @@ export function PromotionImpact({
         <span className="ew-promo-val">{DIRECTION_LABEL[direction]}</span>
       </div>
       <div className="ew-promo-field">
-        <span className="ew-promo-key">KG 当前置信度</span>
+        <span className="ew-promo-key">当前置信度</span>
         <span className="ew-promo-val" data-testid="pi-current">{fmt(impact.current)}</span>
+      </div>
+      <div className="ew-promo-field">
+        <span className="ew-promo-key">Reviewer 置信度</span>
+        <span className="ew-promo-val" data-testid="pi-reviewer">{fmt(impact.reviewer)}</span>
       </div>
       <div className="ew-promo-field">
         <span className="ew-promo-key">晋升后置信度</span>
@@ -78,15 +82,15 @@ export function PromotionImpact({
         {impact.cap != null && <span className="ew-meta">上限 {fmt(impact.cap)}</span>}
       </div>
       <div className="ew-promo-field">
-        <span className="ew-promo-key">Evidence 新增</span>
+        <span className="ew-promo-key">新增 Evidence 数量</span>
         <span className="ew-promo-val" data-testid="pi-evidence-new">+{evidenceNewCount}</span>
       </div>
       <div className="ew-promo-field">
-        <span className="ew-promo-key">Passages 新增</span>
+        <span className="ew-promo-key">新增 Passage 数量</span>
         <span className="ew-promo-val" data-testid="pi-passages-new">+{passagesNewCount}</span>
       </div>
       <div className="ew-promo-field">
-        <span className="ew-promo-key">晋升后状态</span>
+        <span className="ew-promo-key">最终状态</span>
         <span className="ew-promo-val ew-ok" data-testid="pi-status">{statusLabel}</span>
       </div>
 

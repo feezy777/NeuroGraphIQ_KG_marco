@@ -329,10 +329,20 @@ export function EvidenceReviewModule() {
 
   useEffect(() => () => { setReviewDecision(null) }, [setReviewDecision])
 
+  const reviewToolbarTitle = (
+    <div className="evidence-review-toolbar-title">
+      <h3>人工审核</h3>
+      <p className="evidence-module-hint">
+        勾选已核验片段，设置人工方向/证据等级/置信度后完成审核；审核通过 ≠ 晋升入库，将进入「证据晋升」待晋升队列。
+      </p>
+    </div>
+  )
+
   if (!targetType || !targetId) {
     return (
       <div className="evidence-review">
         <div className="evidence-review-main">
+          <div className="evidence-review-toolbar">{reviewToolbarTitle}</div>
           <div className="evidence-candidates-empty">
             请先从「佐证任务」或「证据候选」进入一个目标对象。
           </div>
@@ -345,11 +355,14 @@ export function EvidenceReviewModule() {
     <div className="evidence-review" data-testid="evidence-review">
       <div className="evidence-review-main">
         <div className="evidence-review-toolbar">
-          <button type="button" className="btn btn-sm" onClick={handleBack}>返回证据候选</button>
-          <button type="button" className="btn btn-sm" onClick={() => void handleSaveDraft()}>保存草稿</button>
-          {saveState === 'saving' && <span className="ew-meta">保存中…</span>}
-          {saveState === 'saved' && <span className="ew-ok">已保存</span>}
-          {saveState === 'error' && <span className="ew-bad">保存失败</span>}
+          {reviewToolbarTitle}
+          <div className="evidence-review-toolbar-actions">
+            <button type="button" className="btn btn-sm" onClick={handleBack}>返回证据候选</button>
+            <button type="button" className="btn btn-sm" onClick={() => void handleSaveDraft()}>保存草稿</button>
+            {saveState === 'saving' && <span className="ew-meta">保存中…</span>}
+            {saveState === 'saved' && <span className="ew-ok">已保存</span>}
+            {saveState === 'error' && <span className="ew-bad">保存失败</span>}
+          </div>
         </div>
 
         <ClaimPanel
@@ -371,6 +384,10 @@ export function EvidenceReviewModule() {
         {message && <div className="ontology-page-message">{message}</div>}
 
         <div className="evidence-review-passages">
+          <div className="evidence-review-passages-head" data-testid="evidence-review-passages-head">
+            <h4>已选佐证原文</h4>
+            <span className="evidence-review-passages-count" data-testid="evidence-review-passages-count">{passages.length}</span>
+          </div>
           {passages.length === 0 && (
             <div className="evidence-candidates-empty">
               暂无审核草稿。请先在「证据候选」中勾选片段并「加入人工审核」。

@@ -309,7 +309,7 @@ describe('EvidenceReviewModule', () => {
     expect(record.meta.evidenceLevel).toBe('indirect')
     expect(record.meta.confidence).toBe('0.8')
     expect(typeof record.meta.at).toBe('string')
-    expect(screen.getByText(/进入「证据晋升」/)).toBeTruthy()
+    expect(screen.getByText('已审核通过，进入「证据晋升」模块待晋升')).toBeTruthy()
     // 审核只写前端状态,不调正式 attach
     expect(endpoints.attachPaperEvidence).not.toHaveBeenCalled()
   })
@@ -365,5 +365,41 @@ describe('EvidenceReviewModule', () => {
     const approve = screen.getByRole('button', { name: '审核通过' })
     expect(reject.className).not.toContain('btn-primary')
     expect(approve.className).toContain('btn-primary')
+  })
+
+  // ─── U4:中栏标题体系 + 右栏置信度影响 5 格 ───
+
+  it('中栏标题体系:模块标题「人工审核」+ Claim/Paper/Passage/Coverage 四分区标题齐全', async () => {
+    renderModule()
+    await waitFor(() => expect(screen.getByText('We observed that R1 projects to R2 in the macaque.')).toBeTruthy())
+    // 模块标题(与佐证任务「任务列表」同语言;右栏面板标题同名,取中栏 h3)
+    expect(screen.getAllByText('人工审核').length).toBeGreaterThan(0)
+    // 分区一:Claim(ClaimPanel)
+    expect(screen.getByText('当前需要验证的事实')).toBeTruthy()
+    // 分区二:Paper
+    expect(screen.getByText('当前论文')).toBeTruthy()
+    // 分区三:PassageEvidenceCard(已选佐证原文 + 数量徽标)
+    expect(screen.getByText('已选佐证原文')).toBeTruthy()
+    expect(screen.getByTestId('evidence-review-passages-count').textContent).toBe('2')
+    // 分区四:CoveragePanel
+    expect(screen.getByText('Claim 覆盖情况')).toBeTruthy()
+  })
+
+  it('置信度影响 5 格:Current/Reviewer/Rule/Maximum/Final(preview 可用时 Maximum = max(current, reviewer))', async () => {
+    renderModule()
+    await waitFor(() => expect(endpoints.attachPaperEvidencePreview).toHaveBeenCalled())
+    expect(screen.getByTestId('ew-impact-current').textContent).toContain('0.7')
+    expect(screen.getByTestId('ew-impact-reviewer').textContent).toContain('0.8')
+    expect(screen.getByTestId('ew-impact-rule').textContent).toContain('0.85')
+    // max(0.7, 0.8) = 0.80
+    expect(screen.getByTestId('ew-impact-maximum').textContent).toContain('0.80')
+    expect(screen.getByTestId('ew-impact-final').textContent).toContain('0.85')
+  })
+
+  it('无 preview 时本地计算 Maximum(partial 方向:reviewer 0.8 高于 current 0.7)', async () => {
+    sessionStorage.setItem(DRAFT_KEY, JSON.stringify({ ...DRAFT, passages: [] }))
+    renderModule()
+    await waitFor(() => expect(screen.getByText('人工最终判断')).toBeTruthy())
+    expect(screen.getByTestId('ew-impact-maximum').textContent).toContain('0.80')
   })
 })
