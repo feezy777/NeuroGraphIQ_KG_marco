@@ -3,7 +3,7 @@ import { listPaperEvidenceTasks } from '../../api/endpoints'
 import { EvidenceCenterProvider, useEvidenceCenter, type ModuleKey } from './EvidenceCenterContext'
 import { EvidenceCenterHeader } from './EvidenceCenterHeader'
 import { ClaimView } from './components/ClaimView'
-import { ContextBar } from './components/ContextBar'
+import { composeClaimSentence, ContextBar } from './components/ContextBar'
 import { ObjectQueue } from './components/ObjectQueue'
 import { RightPanel } from './components/RightPanel'
 import { StepPills } from './components/StepPills'
@@ -58,6 +58,12 @@ function EvidenceCenterBody() {
   const current = currentIndex >= 0 ? queue[currentIndex] : null
   const isPapers = state.module === 'papers'
 
+  // ContextBar 完整事实句:优先候选模块推送的 claim(组件拼装),其余模块回退当前队列对象 label
+  const claimSentence = useMemo(
+    () => composeClaimSentence(candidateClaim?.claimText ?? '', candidateClaim?.components ?? [], current?.label ?? null),
+    [candidateClaim, current],
+  )
+
   return (
     <>
       <ContextBar
@@ -70,6 +76,7 @@ function EvidenceCenterBody() {
         queueIndex={currentIndex}
         queueTotal={queue.length}
         taskStatus={current ? (QUEUE_STATUS_LABEL[current.status] ?? current.status) : null}
+        claimSentence={claimSentence}
         onBackToDataCenter={() => { window.location.hash = '#/data-center' }}
         onRefresh={() => { window.location.reload() }}
       />

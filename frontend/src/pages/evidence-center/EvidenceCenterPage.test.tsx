@@ -124,6 +124,9 @@ describe('EvidenceCenterPage', () => {
     expect(within(nav).getByText('证据候选')).toBeTruthy()
     expect(within(nav).getByText('人工审核')).toBeTruthy()
     expect(within(nav).getByText('证据晋升')).toBeTruthy()
+    // 导航选中态:默认模块 tasks 的胶囊为 active
+    expect(within(nav).getByRole('button', { name: '佐证任务' }).className).toContain('evidence-module-btn active')
+    expect(within(nav).getByRole('button', { name: '论文库' }).className).not.toContain('active')
   })
 
   it('模块导航切换更新 URL 与内容区', async () => {
@@ -153,6 +156,8 @@ describe('EvidenceCenterPage', () => {
   it('渲染三栏骨架:candidates 左栏 Claim / 主内容 / 右栏队列', () => {
     window.location.hash = '#/evidence-center?module=candidates'
     const { container } = render(<EvidenceCenterPage />)
+    // 页面根:背景面板 + 三栏布局(背景类随 .evidence-center 生效)
+    expect(container.querySelector('.evidence-center')).toBeTruthy()
     expect(container.querySelector('.evidence-center-layout')).toBeTruthy()
     expect(container.querySelector('.evidence-left')).toBeTruthy()
     expect(container.querySelector('.evidence-main')).toBeTruthy()
@@ -254,6 +259,41 @@ describe('EvidenceCenterPage', () => {
     render(<EvidenceCenterPage />)
     const bar = await screen.findByTestId('evidence-context-bar')
     await waitFor(() => expect(within(bar).getByText(/粒度 macro_clinical/)).toBeTruthy())
+  })
+
+  it('ContextBar 渲染完整事实句(candidates DTO claim 组件拼装,含方向)', async () => {
+    vi.mocked(listPaperEvidenceTaskItems).mockResolvedValue({ items: TASK_ITEMS })
+    const { getEvidenceTarget } = await import('../../api/endpoints')
+    vi.mocked(getEvidenceTarget).mockResolvedValue({
+      target_type: 'connection',
+      target_id: 'r1-r2',
+      granularity: 'macro_clinical',
+      display_name: 'R1→R2',
+      source_region: 'R1',
+      target_region: 'R2',
+      canonical_terms: [],
+      relation: 'projects_to',
+      directionality: '',
+      circuit_context: '',
+      function_context: '',
+      current_confidence: 0.85,
+      existing_evidence: 0,
+      structured_claim: {},
+      claim_text: 'R1 投射到 R2',
+      claim_components: [
+        { component_type: 'source_region', statement: 'R1', required: true, metadata: {} },
+        { component_type: 'target_region', statement: 'R2', required: true, metadata: {} },
+        { component_type: 'relation', statement: '存在投射连接', required: true, metadata: {} },
+        { component_type: 'direction', statement: 'directed', required: false, metadata: {} },
+      ],
+      claim_version: 'v1',
+    })
+    window.location.hash = '#/evidence-center?module=candidates&task_id=t1'
+    render(<EvidenceCenterPage />)
+    const bar = await screen.findByTestId('evidence-context-bar')
+    await waitFor(() =>
+      expect(within(bar).getByText('需要验证:R1 到 R2 存在投射连接(方向性:directed)')).toBeTruthy(),
+    )
   })
 
   it('candidates 左栏渲染 ClaimView(页面级):DTO 加载后显示 Claim 单行 + Component Chips;中栏不再渲染', async () => {

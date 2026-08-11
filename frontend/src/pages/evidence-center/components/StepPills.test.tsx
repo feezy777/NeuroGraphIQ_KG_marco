@@ -76,4 +76,19 @@ describe('StepPills', () => {
     expect(pills.querySelectorAll('.evidence-step-pill.done')).toHaveLength(3)
     expect(pills.querySelector('.evidence-step-pill.done')?.textContent).toContain('确认对象')
   })
+
+  it('三态渲染:当前 = active(蓝) / 完成 = done(绿) / 未到 = 无状态类(浅灰),圆形数字三态齐全', () => {
+    render(<StepPills module="candidates" progress={{ ...NO_PROGRESS, reviewed: true }} />)
+    const pills = screen.getByTestId('evidence-step-pills')
+    const items = Array.from(pills.querySelectorAll('.evidence-step-pill'))
+    expect(items).toHaveLength(5)
+    // 步骤 1-3 done(绿圆),步骤 4 active(蓝圆),步骤 5 无状态类(浅灰圆)
+    expect(items.slice(0, 3).every(p => p.classList.contains('done'))).toBe(true)
+    expect(items[3].classList.contains('active')).toBe(true)
+    expect(items[4].classList.contains('done') || items[4].classList.contains('active')).toBe(false)
+    // 每个 pill 都含圆形数字
+    for (const p of items) {
+      expect(p.querySelector('.evidence-step-num')).toBeTruthy()
+    }
+  })
 })
