@@ -14,7 +14,6 @@ import { candidatePassagesToWorkbench } from '../components/candidatePassages'
 import { aggregateTmpDirection, computeTmpCoverage } from '../components/claimCoverage'
 import { CandidatePaperCard, type CandidatePaperData } from '../components/PaperCard'
 import { CandidateStatsBar, type CandidateStats } from '../components/CandidateStatsBar'
-import { CandidateSummaryData } from '../components/CandidateSummary'
 import { PaperDetailDrawer } from '../components/PaperDetailDrawer'
 import { PaperEvidenceView } from '../components/PaperEvidenceView'
 import { loadReviewStatus } from '../components/ReviewStatusStore'
@@ -116,7 +115,7 @@ function searchToCardData(p: PaperSearchResponse['papers'][number]): CandidatePa
 }
 
 export function EvidenceCandidatesModule() {
-  const { state, queue, setQueue, openTarget, setCandidateSummary, setCandidateClaim, setProgress } = useEvidenceCenter()
+  const { state, queue, setQueue, openTarget, setCandidateClaim, setProgress } = useEvidenceCenter()
   const [items, setItems] = useState<PaperEvidenceTaskItem[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -496,7 +495,7 @@ export function EvidenceCandidatesModule() {
     draftWrittenRef.current = { key }
   }, [current, candidates, manualResults, selectedHashes])
 
-  // ─── 中栏统计条数据(候选/已提取/已核验/覆盖/模型判断;右栏摘要 Context 推送同源) ───
+  // ─── 中栏统计条数据(候选/已提取/已核验/覆盖/模型判断) ───
   const stats = useMemo<CandidateStats | null>(() => {
     if (!current) return null
     const all = [...candidates, ...manualResults]
@@ -515,18 +514,6 @@ export function EvidenceCandidatesModule() {
       modelAssessment: all[0]?.model_assessment ?? null,
     }
   }, [current, candidates, manualResults, manualResult, claimComponents, selectedHashes])
-
-  // 右栏候选摘要(Context → RightPanel;当前无消费者,保留推送与既有模式一致)
-  const summary = useMemo<CandidateSummaryData | null>(() => {
-    if (!current || !stats) return null
-    return {
-      claimText: dto?.claim_text ?? current.label ?? '',
-      ...stats,
-    }
-  }, [current, dto, stats])
-
-  useEffect(() => { setCandidateSummary(summary) }, [summary, setCandidateSummary])
-  useEffect(() => () => { setCandidateSummary(null) }, [setCandidateSummary])
 
   const totalPapers = candidates.length + manualResults.length + visibleSearchPapers.length
 

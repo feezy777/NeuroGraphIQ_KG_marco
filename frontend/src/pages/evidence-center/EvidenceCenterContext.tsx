@@ -1,5 +1,4 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
-import type { CandidateSummaryData } from './components/CandidateSummary'
 import type { PromotionImpactState } from './components/PromotionImpact'
 import type { ReviewDecisionState } from './components/ReviewerDecisionPanel'
 import type { TaskSummaryActions, TaskSummaryData } from './components/TaskSummary'
@@ -35,9 +34,6 @@ interface EvidenceCenterContextValue {
   openTask: (taskId: string) => void
   openTarget: (targetType: string, targetId: string, module?: ModuleKey) => void
   selectPaper: (paperId: string | null) => void
-  /** 候选模块推送的右栏摘要(仅 candidates 模块使用) */
-  candidateSummary: CandidateSummaryData | null
-  setCandidateSummary: (s: CandidateSummaryData | null) => void
   /** 候选模块推送的当前对象验证事实(仅 candidates 模块使用,页面左栏渲染 ClaimView) */
   candidateClaim: {
     claimText: string
@@ -66,7 +62,6 @@ export function EvidenceCenterProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<EvidenceCenterState>(() => parseEvidenceUrl(window.location.hash))
   const [queue, setQueue] = useState<QueueEntry[]>([])
   const [progress, setProgressState] = useState<ObjectProgress>(INITIAL_OBJECT_PROGRESS)
-  const [candidateSummary, setCandidateSummary] = useState<CandidateSummaryData | null>(null)
   const [candidateClaim, setCandidateClaim] = useState<{
     claimText: string
     components: ClaimComponent[]
@@ -130,8 +125,6 @@ export function EvidenceCenterProvider({ children }: { children: ReactNode }) {
     openTask,
     openTarget,
     selectPaper,
-    candidateSummary,
-    setCandidateSummary,
     candidateClaim,
     setCandidateClaim,
     reviewDecision,
@@ -142,7 +135,7 @@ export function EvidenceCenterProvider({ children }: { children: ReactNode }) {
     setTaskSummary,
     taskSummaryActions,
     setTaskSummaryActions,
-  }), [state, queue, progress, setProgress, gotoModule, openTask, openTarget, selectPaper, candidateSummary, candidateClaim, reviewDecision, promotionImpact, taskSummary, taskSummaryActions])
+  }), [state, queue, progress, setProgress, gotoModule, openTask, openTarget, selectPaper, candidateClaim, reviewDecision, promotionImpact, taskSummary, taskSummaryActions])
 
   return <EvidenceCenterContext.Provider value={value}>{children}</EvidenceCenterContext.Provider>
 }
