@@ -122,6 +122,19 @@ export async function postJson<T>(path: string, body?: unknown, params?: QueryPa
   return res.json() as Promise<T>
 }
 
+export async function putJson<T>(path: string, body?: unknown, params?: QueryParams, signal?: AbortSignal): Promise<T> {
+  const url = buildUrl(path, params)
+  const res = await fetch(url, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    body: body !== undefined ? JSON.stringify(body) : undefined,
+    signal,
+  })
+  if (!res.ok) return handleError(res, { url, method: 'PUT', requestBodyPreview: previewBody(body) })
+  if (res.status === 204) return undefined as T
+  return res.json() as Promise<T>
+}
+
 export async function patchJson<T>(path: string, body?: unknown, params?: QueryParams): Promise<T> {
   const url = buildUrl(path, params)
   const res = await fetch(url, {

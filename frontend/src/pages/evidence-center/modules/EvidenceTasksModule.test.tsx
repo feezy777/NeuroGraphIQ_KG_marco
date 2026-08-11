@@ -99,6 +99,17 @@ describe('EvidenceTasksModule', () => {
     expect(window.location.hash).toContain('task_id=t1')
   })
 
+  it('打开任务清除 URL 残留的陈旧 target(避免审核/晋升打开上一任务的对象)', async () => {
+    window.location.hash = '#/evidence-center?module=tasks&task_id=t1&target_type=connection&target_id=stale-target'
+    render(<EvidenceCenterProvider><EvidenceTasksModule /></EvidenceCenterProvider>)
+    await waitFor(() => expect(screen.getByText('任务一')).toBeTruthy())
+    fireEvent.click(screen.getByText('打开任务'))
+    await waitFor(() => expect(window.location.hash).toContain('module=candidates'))
+    expect(window.location.hash).toContain('task_id=t1')
+    expect(window.location.hash).not.toContain('target_type=')
+    expect(window.location.hash).not.toContain('target_id=stale-target')
+  })
+
   it('开始人工处理跳转候选模块', async () => {
     render(<EvidenceCenterProvider><EvidenceTasksModule /></EvidenceCenterProvider>)
     await waitFor(() => expect(screen.getByText('任务一')).toBeTruthy())

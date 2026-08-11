@@ -180,13 +180,16 @@ export function EvidenceCandidatesModule() {
     return null
   }, [items, state.targetType, state.targetId])
 
-  // 自动将第一个 item 选中到 URL(便于直接进入人工审核时带上 target)
+  // 自动将当前项同步到 URL(便于直接进入人工审核时带上 target):
+  // - URL 无 target 时选中首个 item;
+  // - URL 残留上一任务的陈旧 target(与 items 不匹配,current 已回退到 items[0])时,以当前项回写纠错
   useEffect(() => {
-    if (items.length > 0 && current && (!state.targetType || !state.targetId)) {
-      openTarget(current.target_type, current.target_id, 'candidates')
+    if (items.length > 0 && current) {
+      const needsSync = current.target_id !== state.targetId || current.target_type !== state.targetType
+      if (needsSync) openTarget(current.target_type, current.target_id, 'candidates')
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [current?.target_id, items.length])
+  }, [current?.target_id, current?.target_type, items.length, state.targetId, state.targetType])
 
   useEffect(() => {
     const t = current?.target_type

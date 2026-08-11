@@ -70,6 +70,11 @@ export function ObjectQueue({ queue, currentIndex, onSelect, showStats = true }:
                 </span>
                 <span className="evidence-queue-evidence">{e.evidenceCount} 证据</span>
               </div>
+              {e.preprocessOutcome === 'no_evidence_found' && (
+                <div className="evidence-queue-item-hint" data-testid="evidence-queue-item-hint">
+                  该对象预处理未找到有效证据片段
+                </div>
+              )}
             </div>
           )
         })}

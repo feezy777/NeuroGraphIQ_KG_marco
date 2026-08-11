@@ -25,6 +25,24 @@ describe('ObjectQueue', () => {
     expect(items[0].textContent).toContain('2 证据')
   })
 
+  it('preprocess_outcome=no_evidence_found 时卡片显示灰色提示,其余条目不显示', () => {
+    const withHint: QueueEntry[] = [
+      ...ENTRIES,
+      {
+        target_type: 'connection', target_id: 'd', label: '连接D', confidence: null,
+        status: 'pending', evidenceCount: 0, preprocessOutcome: 'no_evidence_found',
+      },
+    ]
+    render(<ObjectQueue queue={withHint} currentIndex={-1} onSelect={() => {}} />)
+    const hints = screen.getAllByTestId('evidence-queue-item-hint')
+    expect(hints).toHaveLength(1)
+    expect(hints[0].textContent).toContain('该对象预处理未找到有效证据片段')
+    expect(hints[0].className).toContain('evidence-queue-item-hint')
+    // 提示出现在对应条目的卡片内
+    const item = screen.getAllByTestId('evidence-queue-item').find(el => el.textContent?.includes('连接D'))
+    expect(item?.contains(hints[0])).toBe(true)
+  })
+
   it('点击条目触发 onSelect', () => {
     const onSelect = vi.fn()
     render(<ObjectQueue queue={ENTRIES} currentIndex={-1} onSelect={onSelect} />)

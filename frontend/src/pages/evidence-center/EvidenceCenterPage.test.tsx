@@ -89,6 +89,19 @@ const TASK_ITEMS = [
   }),
 ]
 
+const TASK_FIXTURE = {
+  id: 'ta', target_type: 'connection', name: '任务A', status: 'pending',
+  total_items: 2, processed_items: 0, awaiting_review_items: 2, failed_items: 0,
+  review_status: 'not_started', granularity_level: 'macro',
+  estimated_target_count: 2, materialized_target_count: 2,
+  scope: 'filter', mode: 'existence', max_papers_per_object: 3,
+  created_at: '2026-08-10T00:00:00Z', created_by: null,
+  started_at: null, finished_at: null, error_message: null, materialization_status: 'completed',
+  materialization_cursor: null, materialization_error: null, confidence_lt: null,
+  only_oa: false, stop_after_strong_support: false, summary: null,
+  scope_type: 'filter', filter_snapshot: null, versions: null,
+}
+
 describe('EvidenceCenterPage', () => {
   beforeEach(() => {
     sessionStorage.clear()
@@ -278,6 +291,28 @@ describe('EvidenceCenterPage', () => {
     expect(items[0].textContent).toContain('待审核')
     expect(items[0].className).toContain('evidence-queue-item-active')
     expect(items[1].className).not.toContain('evidence-queue-item-active')
+  })
+
+  it('切换任务后 URL 不再残留上一任务 target,候选加载后回写到新任务首个 item', async () => {
+    const taskB = { ...TASK_FIXTURE, id: 'tb', name: '任务B' }
+    vi.mocked(listPaperEvidenceTasks).mockResolvedValue({ items: [TASK_FIXTURE, taskB], total: 2 })
+    vi.mocked(listPaperEvidenceTaskItems).mockImplementation(async (taskId: string) => ({
+      items: taskId === 'tb'
+        ? [makeItem({ id: 'it-b', target_type: 'region', target_id: 'rB', label: 'RB', current_confidence: 0.5 })]
+        : [makeItem({ id: 'it-a', target_type: 'connection', target_id: 'rA', label: 'RA' })],
+    }))
+    // 模拟陈旧状态:URL 残留任务A的 target,但停留在 tasks 模块
+    window.location.hash = '#/evidence-center?module=tasks&task_id=ta&target_type=connection&target_id=stale-target'
+    render(<EvidenceCenterPage />)
+    await waitFor(() => expect(screen.getByText('任务B')).toBeTruthy())
+    fireEvent.click(within(screen.getByTestId('evidence-task-row-tb')).getByText('打开任务'))
+    // 打开任务B:task_id 更新且陈旧 target 被清除
+    await waitFor(() => expect(window.location.hash).toContain('task_id=tb'))
+    expect(window.location.hash).not.toContain('target_id=stale-target')
+    // 候选加载后 URL 回写到新任务首个 item
+    await waitFor(() => expect(window.location.hash).toContain('target_id=rB'))
+    expect(window.location.hash).toContain('target_type=region')
+    expect(window.location.hash).not.toContain('rA')
   })
 
   it('StepPills 渲染五步并随 module 高亮当前步', async () => {

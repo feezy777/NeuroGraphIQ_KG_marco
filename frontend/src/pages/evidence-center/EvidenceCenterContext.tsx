@@ -65,7 +65,11 @@ export function EvidenceCenterProvider({ children }: { children: ReactNode }) {
   // 导航回调必须 useCallback 稳定引用:消费方(如晋升模块)把 openTarget 放入 useCallback/memo 依赖,
   // 内联箭头会随 context value 每次重建 → 下游 memo 每渲染重建 → effect 推送 context → 无限循环
   const gotoModule = useCallback((m: ModuleKey) => apply({ module: m }), [apply])
-  const openTask = useCallback((taskId: string) => apply({ taskId, module: 'candidates' }), [apply])
+  // 打开新任务必须清除上一任务的 target(否则 URL 残留陈旧 target,审核/晋升会打开错误对象)
+  const openTask = useCallback(
+    (taskId: string) => apply({ taskId, targetType: null, targetId: null, module: 'candidates' }),
+    [apply],
+  )
   const openTarget = useCallback(
     (targetType: string, targetId: string, module: ModuleKey = 'candidates') => apply({ targetType, targetId, module }),
     [apply],

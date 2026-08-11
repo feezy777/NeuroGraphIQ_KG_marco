@@ -1,4 +1,4 @@
-import { ApiError, buildApiUrl, deleteJson, getJson, patchJson, postJson, uploadForm } from './client'
+import { ApiError, buildApiUrl, deleteJson, getJson, patchJson, postJson, putJson, uploadForm } from './client'
 import {
   filterNonEmptyIds,
   normalizeOptionalString,
@@ -5627,8 +5627,9 @@ export const getTaskItemDraft = (itemId: string) =>
     candidate_papers: Array<Record<string, unknown>> | null
   }>(`/api/ontology/evidence/batch/items/${itemId}/draft`)
 
+// 后端仅注册 GET + PUT(见 backend/app/routers/ontology.py),POST 会 405,故用 putJson
 export const saveTaskItemDraft = (itemId: string, draft: Record<string, unknown>, revision = 0) =>
-  postJson<{ item_id: string; saved: boolean; server_revision: number }>(
+  putJson<{ item_id: string; saved: boolean; server_revision: number }>(
     `/api/ontology/evidence/batch/items/${itemId}/draft`,
     { draft, revision },
   )
