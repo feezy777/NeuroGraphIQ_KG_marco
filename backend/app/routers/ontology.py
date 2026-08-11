@@ -46,6 +46,11 @@ from app.schemas.ontology import (
     VocabularyCreateRequest,
     VocabularyListResponse,
     VocabularyRead,
+    EvidenceReviewBuildRequest,
+    EvidenceReviewListResponse,
+    EvidenceReviewOut,
+    EvidenceReviewResponse,
+    EvidenceReviewReturnRequest,
 )
 from app.services import ontology_service as svc
 from app.services import ontology_governance_service as gov
@@ -1215,5 +1220,132 @@ async def paper_evidence_queue(
 ):
     try:
         return await pes.queue_targets(session, target_type, scope, limit)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail={"code": "INVALID_REQUEST", "message": str(exc)})
+
+
+# ---- Paper Evidence Reviews (Phase 1) ----
+
+
+@router.post("/evidence/reviews", response_model=EvidenceReviewResponse)
+async def paper_evidence_review_build(
+    body: EvidenceReviewBuildRequest,
+    session: AsyncSession = Depends(get_db),
+    _auth: str = Depends(require_role("reviewer")),
+):
+    try:
+        result = await pes.build_review(
+            session,
+            target_type=body.target_type,
+            target_id=body.target_id,
+            paper_id=body.paper_id,
+            task_id=body.task_id,
+            task_item_id=body.task_item_id,
+            reviewer_id=body.reviewer_id,
+            claim_version=body.claim_version,
+            claim_text_snapshot=body.claim_text_snapshot,
+            claim_components_snapshot=body.claim_components_snapshot,
+            model_direction=body.model_direction,
+            model_assessment=body.model_assessment,
+            reviewer_direction=body.reviewer_direction,
+            reviewer_evidence_level=body.reviewer_evidence_level,
+            reviewer_confidence=body.reviewer_confidence,
+            reviewer_note=body.reviewer_note,
+            coverage_summary_snapshot=body.coverage_summary_snapshot,
+            coverage_formula_version=body.coverage_formula_version,
+            draft_revision=body.draft_revision,
+            passages=body.passages,
+        )
+        return result
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail={"code": "INVALID_REQUEST", "message": str(exc)})
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=502, detail={"code": "PAPER_API_ERROR", "message": str(exc)})
+
+
+@router.get("/evidence/reviews", response_model=EvidenceReviewListResponse)
+async def paper_evidence_review_list(
+    review_status: str | None = Query(default=None),
+    promotion_status: str | None = Query(default=None),
+    target_type: str | None = Query(default=None),
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=20, ge=1, le=200),
+    session: AsyncSession = Depends(get_db),
+):
+    return await pes.list_reviews(
+        session,
+        review_status=review_status,
+        promotion_status=promotion_status,
+        target_type=target_type,
+        page=page,
+        page_size=page_size,
+    )
+
+
+@router.get("/evidence/reviews/{review_id}", response_model=EvidenceReviewOut)
+async def paper_evidence_review_get(
+    review_id: uuid.UUID,
+    session: AsyncSession = Depends(get_db),
+):
+    try:
+        return await pes.get_review(session, review_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail={"code": "INVALID_REQUEST", "message": str(exc)})
+
+
+@router.post("/evidence/reviews/{review_id}/approve", response_model=EvidenceReviewResponse)
+async def paper_evidence_review_approve(
+    review_id: uuid.UUID,
+    session: AsyncSession = Depends(get_db),
+    _auth: str = Depends(require_role("reviewer")),
+):
+    try:
+        return await pes.approve_review(session, review_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail={"code": "INVALID_REQUEST", "message": str(exc)})
+
+
+@router.post("/evidence/reviews/{review_id}/reject", response_model=EvidenceReviewResponse)
+async def paper_evidence_review_reject(
+    review_id: uuid.UUID,
+    session: AsyncSession = Depends(get_db),
+    _auth: str = Depends(require_role("reviewer")),
+):
+    try:
+        return await pes.reject_review(session, review_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail={"code": "INVALID_REQUEST", "message": str(exc)})
+
+
+@router.post("/evidence/reviews/{review_id}/promote", response_model=EvidenceReviewOut)
+async def paper_evidence_review_promote(
+    review_id: uuid.UUID,
+    session: AsyncSession = Depends(get_db),
+    _auth: str = Depends(require_role("reviewer")),
+):
+    try:
+        result = await pes.promote_review(session, review_id)
+        # Fetch full review for response
+        full = await pes.get_review(session, review_id)
+        return full
+    except ValueError as exc:
+        await session.rollback()
+        raise HTTPException(status_code=400, detail={"code": "INVALID_REQUEST", "message": str(exc)})
+    except httpx.HTTPError as exc:
+        await session.rollback()
+        raise HTTPException(status_code=502, detail={"code": "PAPER_API_ERROR", "message": str(exc)})
+
+
+@router.post("/evidence/reviews/{review_id}/return", response_model=EvidenceReviewResponse)
+async def paper_evidence_review_return(
+    review_id: uuid.UUID,
+    body: EvidenceReviewReturnRequest,
+    session: AsyncSession = Depends(get_db),
+    _auth: str = Depends(require_role("reviewer")),
+):
+    try:
+        return await pes.return_review(
+            session, review_id, reason=body.reason, returned_by=body.returned_by
+        )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail={"code": "INVALID_REQUEST", "message": str(exc)})

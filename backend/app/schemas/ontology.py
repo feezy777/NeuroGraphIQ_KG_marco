@@ -143,6 +143,7 @@ class ExtractSelectedRequest(BaseModel):
     papers: list[PaperRef] = Field(min_length=1, max_length=20)
     only_oa: bool = False
     stop_after_strong_support: bool = False
+    mode: str = "function"
 
 
 class EvidenceAttachRequest(BaseModel):
@@ -163,6 +164,7 @@ class EvidenceExtractRequest(BaseModel):
     pmcid: str | None = None
     title: str
     abstract: str
+    mode: str = "function"
 
 
 class EvidencePassageItem(BaseModel):
@@ -338,3 +340,104 @@ class PanoramaResponse(BaseModel):
     target_type: str
     total_distinct: int
     items: list[PanoramaItem]
+
+
+# ---- Paper Evidence Reviews (Phase 1) ----
+
+class EvidenceReviewBuildRequest(BaseModel):
+    target_type: str
+    target_id: uuid.UUID
+    paper_id: uuid.UUID | None = None
+    task_id: uuid.UUID | None = None
+    task_item_id: uuid.UUID | None = None
+    reviewer_id: str | None = None
+    claim_version: str
+    claim_text_snapshot: str
+    claim_components_snapshot: list[dict] = Field(default_factory=list)
+    model_direction: str | None = None
+    model_assessment: str | None = None
+    reviewer_direction: str
+    reviewer_evidence_level: str
+    reviewer_confidence: float = Field(ge=0.0, le=1.0)
+    reviewer_note: str | None = None
+    coverage_summary_snapshot: dict = Field(default_factory=dict)
+    coverage_formula_version: str = "paper_evidence_coverage_v1"
+    draft_revision: int = 0
+    passages: list[dict] = Field(default_factory=list)
+
+
+class EvidenceReviewResponse(BaseModel):
+    review_id: str
+    status: str
+
+
+class EvidenceReviewPassageOut(BaseModel):
+    id: str
+    review_id: str
+    paper_passage_id: str | None = None
+    passage_text: str
+    passage_text_snapshot: str
+    source_scope: str | None = None
+    section_title: str | None = None
+    paragraph_index: int | None = None
+    paragraph_id: str | None = None
+    translation_zh: str | None = None
+    direction: str | None = None
+    evidence_level: str | None = None
+    reason: str | None = None
+    confidence: float | None = None
+    semantic_confidence: float | None = None
+    source_locator: str | None = None
+    source_verified: bool = False
+    source_verification_method: str | None = None
+    supported_components: list = Field(default_factory=list)
+    passage_hash: str | None = None
+    rank: int = 0
+    is_selected: bool = True
+    created_at: str | None = None
+
+
+class EvidenceReviewOut(BaseModel):
+    id: str
+    target_type: str
+    target_id: str
+    paper_id: str | None = None
+    task_id: str | None = None
+    task_item_id: str | None = None
+    reviewer_id: str | None = None
+    review_status: str
+    promotion_status: str
+    claim_version: str | None = None
+    claim_text_snapshot: str | None = None
+    claim_components_snapshot: list | None = None
+    model_direction: str | None = None
+    model_assessment: str | None = None
+    reviewer_direction: str | None = None
+    reviewer_evidence_level: str | None = None
+    reviewer_confidence: float | None = None
+    reviewer_note: str | None = None
+    coverage_summary_snapshot: dict | None = None
+    coverage_formula_version: str | None = None
+    draft_revision: int = 0
+    reviewed_at: str | None = None
+    approved_at: str | None = None
+    rejected_at: str | None = None
+    promoted_at: str | None = None
+    promoted_by: str | None = None
+    returned_at: str | None = None
+    returned_by: str | None = None
+    return_reason: str | None = None
+    evidence_id: str | None = None
+    created_at: str | None = None
+    updated_at: str | None = None
+    passages: list[EvidenceReviewPassageOut] = Field(default_factory=list)
+
+
+class EvidenceReviewListResponse(BaseModel):
+    items: list[EvidenceReviewOut]
+    total: int
+
+
+class EvidenceReviewReturnRequest(BaseModel):
+    reason: str = Field(min_length=1, max_length=2000)
+    returned_by: str | None = None

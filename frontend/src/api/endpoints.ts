@@ -5703,6 +5703,118 @@ export const listEvidenceReviewQueue = (p?: { status?: string; limit?: number; o
 export const resolveEvidenceReviewRecord = (recordId: string, note: string) =>
   postJson<{ id: string; status: string }>(`/api/ontology/evidence/review-queue/${recordId}/resolve`, { note })
 
+// ──── Paper Evidence Reviews (Phase 1) ──────────────────────────────────────
+
+export interface EvidenceReviewPassage {
+  id: string
+  review_id: string
+  paper_passage_id: string | null
+  passage_text: string
+  passage_text_snapshot: string
+  source_scope: string | null
+  section_title: string | null
+  paragraph_index: number | null
+  paragraph_id: string | null
+  translation_zh: string | null
+  direction: string | null
+  evidence_level: string | null
+  reason: string | null
+  confidence: number | null
+  semantic_confidence: number | null
+  source_locator: string | null
+  source_verified: boolean
+  source_verification_method: string | null
+  supported_components: string[]
+  passage_hash: string | null
+  rank: number
+  is_selected: boolean
+  created_at: string | null
+}
+
+export interface EvidenceReviewItem {
+  id: string
+  target_type: string
+  target_id: string
+  paper_id: string | null
+  task_id: string | null
+  task_item_id: string | null
+  reviewer_id: string | null
+  review_status: string
+  promotion_status: string
+  claim_version: string | null
+  claim_text_snapshot: string | null
+  claim_components_snapshot: Record<string, unknown>[] | null
+  model_direction: string | null
+  model_assessment: string | null
+  reviewer_direction: string | null
+  reviewer_evidence_level: string | null
+  reviewer_confidence: number | null
+  reviewer_note: string | null
+  coverage_summary_snapshot: Record<string, unknown> | null
+  coverage_formula_version: string | null
+  draft_revision: number
+  reviewed_at: string | null
+  approved_at: string | null
+  rejected_at: string | null
+  promoted_at: string | null
+  promoted_by: string | null
+  returned_at: string | null
+  returned_by: string | null
+  return_reason: string | null
+  evidence_id: string | null
+  created_at: string | null
+  updated_at: string | null
+  passages?: EvidenceReviewPassage[]
+}
+
+interface EvidenceReviewBuildBody {
+  target_type: string
+  target_id: string
+  paper_id: string | null
+  task_id?: string | null
+  task_item_id?: string | null
+  reviewer_id?: string | null
+  claim_version: string
+  claim_text_snapshot: string
+  claim_components_snapshot: Record<string, unknown>[]
+  model_direction: string | null
+  model_assessment: string | null
+  reviewer_direction: string
+  reviewer_evidence_level: string
+  reviewer_confidence: number
+  reviewer_note: string | null
+  coverage_summary_snapshot: Record<string, unknown>
+  coverage_formula_version: string
+  draft_revision: number
+  passages: Record<string, unknown>[]
+}
+
+export const buildReview = (body: EvidenceReviewBuildBody) =>
+  postJson<{ review_id: string; status: string }>('/api/ontology/evidence/reviews', body)
+
+export const listEvidenceReviews = (p?: {
+  review_status?: string
+  promotion_status?: string
+  target_type?: string
+  page?: number
+  page_size?: number
+}) => getJson<{ items: EvidenceReviewItem[]; total: number }>('/api/ontology/evidence/reviews', p)
+
+export const getEvidenceReview = (id: string) =>
+  getJson<EvidenceReviewItem>(`/api/ontology/evidence/reviews/${id}`)
+
+export const approveReview = (id: string) =>
+  postJson<{ review_id: string; status: string }>(`/api/ontology/evidence/reviews/${id}/approve`)
+
+export const rejectReview = (id: string) =>
+  postJson<{ review_id: string; status: string }>(`/api/ontology/evidence/reviews/${id}/reject`)
+
+export const promoteReview = (id: string) =>
+  postJson<EvidenceReviewItem>(`/api/ontology/evidence/reviews/${id}/promote`)
+
+export const returnReview = (id: string, reason: string) =>
+  postJson<{ review_id: string; status: string }>(`/api/ontology/evidence/reviews/${id}/return`, { reason })
+
 export interface ConfidenceAdjustmentItem {
   id: string
   evidence_id: string | null

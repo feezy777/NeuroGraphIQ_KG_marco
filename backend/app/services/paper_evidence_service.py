@@ -4687,3 +4687,570 @@ async def get_paper_detail(session: AsyncSession, paper_id: uuid.UUID) -> dict:
         "evidence_count": len(evidence),
         "targets": [{"target_type": t[0], "target_id": str(t[1])} for t in evidence],
     }
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# Review/Promotion Lifecycle (Phase 1: paper_evidence_reviews)
+# ════════════════════════════════════════════════════════════════════════════
+
+
+async def _map_review_passage(p: dict, review_id: uuid.UUID, rank: int) -> dict:
+    """Convert a raw passage dict to a review_passages row params dict."""
+    return {
+        "rid": review_id,
+        "ppid": p.get("paper_passage_id") or p.get("paperPassageId"),
+        "pt": p.get("passage_text") or p.get("passage") or "",
+        "pts": p.get("passage_text_snapshot") or p.get("passage_text") or p.get("passage") or "",
+        "ss": p.get("source_scope"),
+        "st": p.get("section_title"),
+        "pi": p.get("paragraph_index"),
+        "pid": p.get("paragraph_id"),
+        "tz": p.get("translation_zh"),
+        "dir": p.get("direction"),
+        "el": p.get("evidence_level"),
+        "reason": p.get("reason"),
+        "conf": p.get("confidence"),
+        "sc": p.get("semantic_confidence") or p.get("confidence"),
+        "sl": p.get("source_locator"),
+        "sv": bool(p.get("source_verified", False)),
+        "svm": p.get("source_verification_method"),
+        "scm": json.dumps(list(p.get("supported_components") or []), ensure_ascii=False),
+        "ph": p.get("passage_hash") or passage_hash(p.get("passage") or p.get("passage_text") or ""),
+        "rank": rank,
+        "is_sel": bool(p.get("is_selected", True)),
+    }
+
+
+async def _write_evidence_audit_event(
+    session: AsyncSession,
+    *,
+    action_type: str,
+    entity_type: str,
+    entity_id: uuid.UUID,
+    before_data: dict | None = None,
+    after_data: dict | None = None,
+    operator_id: str | None = None,
+    reason: str | None = None,
+) -> None:
+    """Write an audit event (public wrapper for _write_audit)."""
+    await _write_audit(
+        session,
+        action_type=action_type,
+        entity_type=entity_type,
+        entity_id=entity_id,
+        before_data=before_data,
+        after_data=after_data,
+        operator_id=operator_id,
+        reason=reason,
+    )
+
+
+async def build_review(
+    session: AsyncSession,
+    *,
+    target_type: str,
+    target_id: uuid.UUID,
+    paper_id: uuid.UUID | None,
+    task_id: uuid.UUID | None,
+    task_item_id: uuid.UUID | None,
+    reviewer_id: str | None,
+    claim_version: str,
+    claim_text_snapshot: str,
+    claim_components_snapshot: list[dict],
+    model_direction: str | None,
+    model_assessment: str | None,
+    reviewer_direction: str,
+    reviewer_evidence_level: str,
+    reviewer_confidence: float,
+    reviewer_note: str | None,
+    coverage_summary_snapshot: dict,
+    coverage_formula_version: str,
+    draft_revision: int,
+    passages: list[dict],
+) -> dict:
+    """Create a formal review record from reviewer decision + frozen passages.
+
+    Returns {review_id, status: 'approved'|'rejected'}.
+    Side effect: never writes mirror_evidence_records, never modifies confidence.
+    """
+    # Determine review_status from reviewer_direction
+    review_status = (
+        "approved"
+        if reviewer_direction not in ("not_found",)
+        else "rejected"
+    )
+    review_id = (
+        await session.execute(
+            text(
+                "INSERT INTO paper_evidence_reviews "
+                "(target_type, target_id, paper_id, task_id, task_item_id, reviewer_id, "
+                "review_status, promotion_status, claim_version, claim_text_snapshot, "
+                "claim_components_snapshot, model_direction, model_assessment, "
+                "reviewer_direction, reviewer_evidence_level, reviewer_confidence, "
+                "reviewer_note, coverage_summary_snapshot, coverage_formula_version, "
+                "draft_revision, reviewed_at, approved_at, rejected_at) "
+                "VALUES (:tt, :tid, :pid, :taskid, :itemid, :rev_id, :rstatus, :pstatus, "
+                ":cv, :cs, CAST(:cc AS jsonb), :md, :ma, :rd, :rel, :rc, :rn, "
+                "CAST(:cov AS jsonb), :cfv, :dr, now(), "
+                "CASE WHEN :is_approved THEN now() ELSE NULL END, "
+                "CASE WHEN :is_rejected THEN now() ELSE NULL END) "
+                "RETURNING id"
+            ),
+            {
+                "tt": target_type,
+                "tid": target_id,
+                "pid": paper_id,
+                "taskid": task_id,
+                "itemid": task_item_id,
+                "rev_id": reviewer_id,
+                "rstatus": review_status,
+                "pstatus": "awaiting_promotion" if review_status == "approved" else "not_ready",
+                "cv": claim_version,
+                "cs": claim_text_snapshot,
+                "cc": json.dumps(claim_components_snapshot, ensure_ascii=False),
+                "md": model_direction,
+                "ma": model_assessment,
+                "rd": reviewer_direction,
+                "rel": reviewer_evidence_level,
+                "rc": reviewer_confidence,
+                "rn": reviewer_note,
+                "cov": json.dumps(coverage_summary_snapshot, ensure_ascii=False),
+                "cfv": coverage_formula_version,
+                "dr": draft_revision,
+                "is_approved": review_status == "approved",
+                "is_rejected": review_status == "rejected",
+            },
+        )
+    ).scalar_one()
+    # Insert frozen passages
+    for rank, p in enumerate(passages, 1):
+        params = await _map_review_passage(p, review_id, rank)
+        await session.execute(
+            text(
+                "INSERT INTO paper_evidence_review_passages "
+                "(review_id, paper_passage_id, passage_text, passage_text_snapshot, "
+                "source_scope, section_title, paragraph_index, paragraph_id, "
+                "translation_zh, direction, evidence_level, reason, confidence, "
+                "semantic_confidence, source_locator, source_verified, "
+                "source_verification_method, supported_components, passage_hash, "
+                "rank, is_selected) "
+                "VALUES (:rid, :ppid, :pt, :pts, :ss, :st, :pi, :pid, :tz, :dir, :el, "
+                ":reason, :conf, :sc, :sl, :sv, :svm, CAST(:scm AS jsonb), :ph, "
+                ":rank, :is_sel)"
+            ),
+            params,
+        )
+    # Audit
+    await _write_audit(
+        session,
+        action_type="EVIDENCE_REVIEW_CREATED",
+        entity_type="evidence_review",
+        entity_id=review_id,
+        after_data={
+            "target_type": target_type,
+            "target_id": str(target_id),
+            "review_status": review_status,
+            "promotion_status": "awaiting_promotion" if review_status == "approved" else "not_ready",
+            "passage_count": len(passages),
+        },
+        operator_id=reviewer_id,
+        reason="formal review record created",
+    )
+    await session.commit()
+    return {"review_id": str(review_id), "status": review_status}
+
+
+async def approve_review(
+    session: AsyncSession,
+    review_id: uuid.UUID,
+    *,
+    operator_id: str | None = None,
+) -> dict:
+    """Approve a review: locks snapshot, sets awaiting_promotion.
+
+    Can only be called from draft/awaiting_review/returned states.
+    """
+    row = await session.execute(
+        text(
+            "SELECT id, review_status FROM paper_evidence_reviews "
+            "WHERE id = :rid FOR UPDATE"
+        ),
+        {"rid": review_id},
+    )
+    r = row.first()
+    if r is None:
+        raise ValueError("review not found")
+    current_status = r[1]
+    if current_status not in ("draft", "awaiting_review", "returned"):
+        raise ValueError(f"cannot approve review in status '{current_status}'; must be draft/awaiting_review/returned")
+    await session.execute(
+        text(
+            "UPDATE paper_evidence_reviews "
+            "SET review_status='approved', promotion_status='awaiting_promotion', "
+            "approved_at=now(), updated_at=now() "
+            "WHERE id = :rid"
+        ),
+        {"rid": review_id},
+    )
+    await _write_audit(
+        session,
+        action_type="EVIDENCE_REVIEW_APPROVED",
+        entity_type="evidence_review",
+        entity_id=review_id,
+        after_data={"review_status": "approved", "promotion_status": "awaiting_promotion"},
+        operator_id=operator_id,
+        reason="review approved for promotion",
+    )
+    await session.commit()
+    return {"review_id": str(review_id), "status": "approved"}
+
+
+async def reject_review(
+    session: AsyncSession,
+    review_id: uuid.UUID,
+    *,
+    operator_id: str | None = None,
+) -> dict:
+    """Reject a review. Cannot be promoted from this state."""
+    row = await session.execute(
+        text(
+            "SELECT id FROM paper_evidence_reviews WHERE id = :rid FOR UPDATE"
+        ),
+        {"rid": review_id},
+    )
+    if row.first() is None:
+        raise ValueError("review not found")
+    await session.execute(
+        text(
+            "UPDATE paper_evidence_reviews "
+            "SET review_status='rejected', rejected_at=now(), updated_at=now() "
+            "WHERE id = :rid"
+        ),
+        {"rid": review_id},
+    )
+    await _write_audit(
+        session,
+        action_type="EVIDENCE_REVIEW_REJECTED",
+        entity_type="evidence_review",
+        entity_id=review_id,
+        after_data={"review_status": "rejected"},
+        operator_id=operator_id,
+        reason="review rejected",
+    )
+    await session.commit()
+    return {"review_id": str(review_id), "status": "rejected"}
+
+
+async def promote_review(
+    session: AsyncSession,
+    review_id: uuid.UUID,
+    *,
+    promoted_by: str | None = None,
+) -> dict:
+    """Promote a review: reads frozen snapshot, calls attach_evidence, updates review.
+
+    Idempotent: if already promoted (promotion_status='promoted'), returns existing
+    evidence_id without re-attaching.
+    """
+    # Lock the review row
+    row = await session.execute(
+        text(
+            "SELECT id, target_type, target_id, paper_id, promotion_status, evidence_id, "
+            "review_status, reviewer_direction, reviewer_evidence_level, "
+            "reviewer_confidence, reviewer_note, model_direction, model_assessment, "
+            "claim_version, claim_text_snapshot, claim_components_snapshot "
+            "FROM paper_evidence_reviews WHERE id = :rid FOR UPDATE"
+        ),
+        {"rid": review_id},
+    )
+    r = row.first()
+    if r is None:
+        raise ValueError("review not found")
+    review_data = r._mapping
+    # Idempotent: already promoted
+    if review_data["promotion_status"] == "promoted":
+        return {
+            "review_id": str(review_id),
+            "evidence_id": str(review_data["evidence_id"]) if review_data["evidence_id"] else None,
+            "status": "already_promoted",
+        }
+    # Must be in approved state
+    if review_data["review_status"] != "approved":
+        raise ValueError(
+            f"cannot promote review in status '{review_data['review_status']}'; must be 'approved'"
+        )
+    # Look up paper source to get pmid
+    paper_id = review_data["paper_id"]
+    if paper_id is None:
+        raise ValueError("review has no paper_id; cannot attach evidence")
+    paper_row = await session.execute(
+        text(
+            "SELECT pmid, doi, title, journal, publication_year, metadata_json "
+            "FROM paper_sources WHERE id = :pid"
+        ),
+        {"pid": paper_id},
+    )
+    paper = paper_row.first()
+    if paper is None:
+        raise ValueError("paper not found")
+    paper_info = paper._mapping
+    pmid = (paper_info["pmid"] or "").strip()
+    if not pmid:
+        raise ValueError("paper has no pmid; cannot verify via Europe PMC")
+    # Read frozen review passages
+    passage_rows = await session.execute(
+        text(
+            "SELECT passage_text, passage_text_snapshot, source_scope, section_title, "
+            "paragraph_index, paragraph_id, direction, evidence_level, reason, "
+            "confidence, semantic_confidence, source_locator, source_verified, "
+            "source_verification_method, supported_components, passage_hash, "
+            "is_selected "
+            "FROM paper_evidence_review_passages "
+            "WHERE review_id = :rid AND is_selected = true "
+            "ORDER BY rank"
+        ),
+        {"rid": review_id},
+    )
+    review_passages = passage_rows.all()
+    if not review_passages:
+        raise ValueError("review has no selected passages")
+    source_verified_passages = [
+        row._mapping for row in review_passages if row._mapping["source_verified"]
+    ]
+    if not source_verified_passages:
+        raise ValueError("review has no source_verified passages; cannot attach evidence")
+    # Build passages list in the format expected by attach_evidence
+    attach_passages = []
+    for rp in source_verified_passages:
+        attach_passages.append({
+            "passage": rp["passage_text"],
+            "source_scope": rp["source_scope"] or "abstract",
+            "section_title": rp["section_title"],
+            "paragraph_index": rp["paragraph_index"],
+            "direction": rp["direction"] or review_data["reviewer_direction"] or "partial",
+            "evidence_level": rp["evidence_level"] or review_data["reviewer_evidence_level"] or "indirect",
+            "reason": rp["reason"],
+            "confidence": float(rp["confidence"]) if rp["confidence"] is not None else None,
+            "semantic_confidence": float(rp["semantic_confidence"]) if rp["semantic_confidence"] is not None else None,
+            "source_locator": rp["source_locator"],
+            "source_verified": bool(rp["source_verified"]),
+            "source_verification_method": rp["source_verification_method"],
+            "passage_hash": rp["passage_hash"],
+            "supported_components": list(rp["supported_components"] or []),
+        })
+    # Call attach_evidence
+    result = await attach_evidence(
+        session,
+        target_type=review_data["target_type"],
+        target_id=review_data["target_id"],
+        pmid=pmid,
+        direction=review_data["reviewer_direction"] or "partial",
+        reviewer_confidence=float(review_data["reviewer_confidence"] or 0.5),
+        passages=attach_passages,
+        operator_id=promoted_by,
+        verification_status="human_verified",
+        evidence_level=review_data["reviewer_evidence_level"],
+        model_direction=review_data["model_direction"],
+        model_assessment=review_data["model_assessment"],
+        reviewer_note=review_data["reviewer_note"],
+    )
+    evidence_id = result["evidence_id"]
+    # Update review record
+    await session.execute(
+        text(
+            "UPDATE paper_evidence_reviews "
+            "SET promotion_status='promoted', evidence_id=CAST(:eid AS uuid), "
+            "promoted_at=now(), promoted_by=:pb, updated_at=now() "
+            "WHERE id = :rid"
+        ),
+        {"rid": review_id, "eid": evidence_id, "pb": promoted_by},
+    )
+    await _write_audit(
+        session,
+        action_type="EVIDENCE_REVIEW_PROMOTED",
+        entity_type="evidence_review",
+        entity_id=review_id,
+        after_data={
+            "evidence_id": evidence_id,
+            "promotion_status": "promoted",
+            "promoted_by": promoted_by,
+        },
+        operator_id=promoted_by,
+        reason="review promoted to mirror evidence",
+    )
+    await session.commit()
+    return {"review_id": str(review_id), "evidence_id": evidence_id, "status": "promoted"}
+
+
+async def return_review(
+    session: AsyncSession,
+    review_id: uuid.UUID,
+    *,
+    reason: str,
+    returned_by: str | None = None,
+) -> dict:
+    """Return a review for rework. Sets promotion_status='returned', review_status='awaiting_review'."""
+    row = await session.execute(
+        text(
+            "SELECT id FROM paper_evidence_reviews WHERE id = :rid FOR UPDATE"
+        ),
+        {"rid": review_id},
+    )
+    if row.first() is None:
+        raise ValueError("review not found")
+    await session.execute(
+        text(
+            "UPDATE paper_evidence_reviews "
+            "SET promotion_status='returned', review_status='awaiting_review', "
+            "returned_at=now(), returned_by=:rb, return_reason=:rr, updated_at=now() "
+            "WHERE id = :rid"
+        ),
+        {"rid": review_id, "rb": returned_by, "rr": reason},
+    )
+    await _write_audit(
+        session,
+        action_type="EVIDENCE_REVIEW_RETURNED",
+        entity_type="evidence_review",
+        entity_id=review_id,
+        after_data={"return_reason": reason, "returned_by": returned_by},
+        operator_id=returned_by,
+        reason=reason,
+    )
+    await session.commit()
+    return {"review_id": str(review_id), "status": "returned"}
+
+
+def _review_row_to_dict(r: dict) -> dict:
+    """Convert a raw review row mapping to a response dict."""
+    return {
+        "id": str(r["id"]),
+        "target_type": r["target_type"],
+        "target_id": str(r["target_id"]),
+        "paper_id": str(r["paper_id"]) if r.get("paper_id") else None,
+        "task_id": str(r["task_id"]) if r.get("task_id") else None,
+        "task_item_id": str(r["task_item_id"]) if r.get("task_item_id") else None,
+        "reviewer_id": r.get("reviewer_id"),
+        "review_status": r["review_status"],
+        "promotion_status": r["promotion_status"],
+        "claim_version": r.get("claim_version"),
+        "claim_text_snapshot": r.get("claim_text_snapshot"),
+        "claim_components_snapshot": r.get("claim_components_snapshot"),
+        "model_direction": r.get("model_direction"),
+        "model_assessment": r.get("model_assessment"),
+        "reviewer_direction": r.get("reviewer_direction"),
+        "reviewer_evidence_level": r.get("reviewer_evidence_level"),
+        "reviewer_confidence": float(r["reviewer_confidence"]) if r.get("reviewer_confidence") is not None else None,
+        "reviewer_note": r.get("reviewer_note"),
+        "coverage_summary_snapshot": r.get("coverage_summary_snapshot"),
+        "coverage_formula_version": r.get("coverage_formula_version"),
+        "draft_revision": int(r.get("draft_revision", 0)),
+        "reviewed_at": r["reviewed_at"].isoformat() if r.get("reviewed_at") else None,
+        "approved_at": r["approved_at"].isoformat() if r.get("approved_at") else None,
+        "rejected_at": r["rejected_at"].isoformat() if r.get("rejected_at") else None,
+        "promoted_at": r["promoted_at"].isoformat() if r.get("promoted_at") else None,
+        "promoted_by": r.get("promoted_by"),
+        "returned_at": r["returned_at"].isoformat() if r.get("returned_at") else None,
+        "returned_by": r.get("returned_by"),
+        "return_reason": r.get("return_reason"),
+        "evidence_id": str(r["evidence_id"]) if r.get("evidence_id") else None,
+        "created_at": r["created_at"].isoformat() if r.get("created_at") else None,
+        "updated_at": r["updated_at"].isoformat() if r.get("updated_at") else None,
+        "passages": [],
+    }
+
+
+def _passage_row_to_dict(p: dict) -> dict:
+    """Convert a raw review_passage row mapping to a response dict."""
+    return {
+        "id": str(p["id"]),
+        "review_id": str(p["review_id"]),
+        "paper_passage_id": str(p["paper_passage_id"]) if p.get("paper_passage_id") else None,
+        "passage_text": p.get("passage_text") or "",
+        "passage_text_snapshot": p.get("passage_text_snapshot") or "",
+        "source_scope": p.get("source_scope"),
+        "section_title": p.get("section_title"),
+        "paragraph_index": p.get("paragraph_index"),
+        "paragraph_id": p.get("paragraph_id"),
+        "translation_zh": p.get("translation_zh"),
+        "direction": p.get("direction"),
+        "evidence_level": p.get("evidence_level"),
+        "reason": p.get("reason"),
+        "confidence": float(p["confidence"]) if p.get("confidence") is not None else None,
+        "semantic_confidence": float(p["semantic_confidence"]) if p.get("semantic_confidence") is not None else None,
+        "source_locator": p.get("source_locator"),
+        "source_verified": bool(p.get("source_verified", False)),
+        "source_verification_method": p.get("source_verification_method"),
+        "supported_components": list(p.get("supported_components") or []),
+        "passage_hash": p.get("passage_hash"),
+        "rank": int(p.get("rank", 0)),
+        "is_selected": bool(p.get("is_selected", True)),
+        "created_at": p["created_at"].isoformat() if p.get("created_at") else None,
+    }
+
+
+async def list_reviews(
+    session: AsyncSession,
+    *,
+    review_status: str | None = None,
+    promotion_status: str | None = None,
+    target_type: str | None = None,
+    page: int = 1,
+    page_size: int = 20,
+) -> dict:
+    """List reviews with pagination and optional filters."""
+    where = ["1=1"]
+    params: dict = {}
+    if review_status:
+        where.append("review_status = :rs")
+        params["rs"] = review_status
+    if promotion_status:
+        where.append("promotion_status = :ps")
+        params["ps"] = promotion_status
+    if target_type:
+        where.append("target_type = :tt")
+        params["tt"] = target_type
+    clause = " AND ".join(where)
+    params["lim"] = page_size
+    params["off"] = (max(1, page) - 1) * page_size
+    rows = await session.execute(
+        text(
+            f"SELECT * FROM paper_evidence_reviews WHERE {clause} "
+            "ORDER BY created_at DESC LIMIT :lim OFFSET :off"
+        ),
+        params,
+    )
+    total = (
+        await session.execute(
+            text(f"SELECT COUNT(*) FROM paper_evidence_reviews WHERE {clause}"),
+            {k: v for k, v in params.items() if k not in ("lim", "off")},
+        )
+    ).scalar_one()
+    items = []
+    for r in rows:
+        item = _review_row_to_dict(r._mapping)
+        items.append(item)
+    return {"items": items, "total": int(total)}
+
+
+async def get_review(
+    session: AsyncSession,
+    review_id: uuid.UUID,
+) -> dict:
+    """Get a review with its frozen passages."""
+    row = await session.execute(
+        text("SELECT * FROM paper_evidence_reviews WHERE id = :rid"),
+        {"rid": review_id},
+    )
+    r = row.first()
+    if r is None:
+        raise ValueError("review not found")
+    item = _review_row_to_dict(r._mapping)
+    passage_rows = await session.execute(
+        text(
+            "SELECT * FROM paper_evidence_review_passages "
+            "WHERE review_id = :rid ORDER BY rank"
+        ),
+        {"rid": review_id},
+    )
+    item["passages"] = [_passage_row_to_dict(p._mapping) for p in passage_rows]
+    return item
