@@ -68,4 +68,12 @@ describe('StepPills', () => {
     render(<StepPills module="tasks" progress={NO_PROGRESS} />)
     expect(screen.getByTestId('evidence-step-pills').querySelector('.evidence-step-pill.active')).toBeNull()
   })
+
+  it('当前步之前的步骤标记完成态 done', () => {
+    render(<StepPills module="candidates" progress={{ ...NO_PROGRESS, reviewed: true }} />)
+    const pills = screen.getByTestId('evidence-step-pills')
+    // 步骤4 人工审核为当前态,步骤 1-3 为完成态
+    expect(pills.querySelectorAll('.evidence-step-pill.done')).toHaveLength(3)
+    expect(pills.querySelector('.evidence-step-pill.done')?.textContent).toContain('确认对象')
+  })
 })

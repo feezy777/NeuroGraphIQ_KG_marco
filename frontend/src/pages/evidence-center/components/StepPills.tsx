@@ -19,7 +19,7 @@ export function deriveStep(module: ModuleKey, progress: ObjectProgress): number 
   return 1
 }
 
-/** 五步流程小胶囊,仅当前步高亮 */
+/** 五步流程小胶囊:当前步高亮(active),已完成步标记完成态(done),其余未到态 */
 export function StepPills({ module, progress }: { module: ModuleKey; progress: ObjectProgress }) {
   const currentStep = deriveStep(module, progress)
   return (
@@ -27,7 +27,10 @@ export function StepPills({ module, progress }: { module: ModuleKey; progress: O
       {EVIDENCE_STEPS.map((label, i) => {
         const step = i + 1
         return (
-          <span key={label} className={`evidence-step-pill${currentStep === step ? ' active' : ''}`}>
+          <span
+            key={label}
+            className={`evidence-step-pill${currentStep === step ? ' active' : currentStep > step ? ' done' : ''}`}
+          >
             <span className="evidence-step-num">{step}</span>
             {label}
           </span>
