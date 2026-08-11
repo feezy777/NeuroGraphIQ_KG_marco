@@ -196,6 +196,8 @@ export function EvidenceCandidatesModule() {
 
   // StepPills 进度:从现有数据推导对象实际进度(任务候选已含片段 / 本地已有审核草稿 → 找到原文;
   // 已有审核状态 → 人工审核)。声明在 URL 同步 effect 之后,确保 openTarget 重置进度后本推导最终生效。
+  // deps 含 candidate_papers:直达 URL 进入(刷新/深链)时 effect 先对 fallback current(空候选)跑一次,
+  // items 加载后 candidate_papers 变化触发重跑,正确推导 extracted(setProgress 为稳定引用,不会重复执行)。
   useEffect(() => {
     if (!current) return
     const hasExtracted = (current.candidate_papers ?? []).some(c => (c.passages?.length ?? 0) > 0)
@@ -205,8 +207,7 @@ export function EvidenceCandidatesModule() {
     if (loadReviewStatus(current.target_id)) {
       setProgress({ reviewed: true })
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [current?.target_id])
+  }, [current?.target_id, current?.candidate_papers, setProgress])
 
   useEffect(() => {
     const t = current?.target_type
@@ -234,12 +235,16 @@ export function EvidenceCandidatesModule() {
     if (next.some((e, i) => e !== queue[i])) setQueue(next)
   }, [dto, queue, setQueue])
 
-  // 切换目标时重置选择状态
+  // 切换目标时重置选择状态与手动检索状态(防止 A 的检索结果 / query 摘要 / 已提取结果泄漏到 B)
   useEffect(() => {
     setEvidenceViewPaperId(null)
     setDetailPaperId(null)
     setSelectedHashes(new Set())
     setExcludedPaperIds(new Set())
+    setManualQuery('')
+    setManualResult(null)
+    setManualSelected(new Set())
+    setManualResults([])
     setSearchExpanded(false)
     setMessage(null)
   }, [current?.target_id])

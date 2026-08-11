@@ -1,7 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import * as endpoints from '../../../api/endpoints'
-import { EvidenceCenterProvider } from '../EvidenceCenterContext'
+import type { PaperEvidenceTaskItem } from '../../../api/endpoints'
+import { EvidenceCenterProvider, useEvidenceCenter } from '../EvidenceCenterContext'
+import { StepPills } from '../components/StepPills'
 import { EvidenceCandidatesModule } from './EvidenceCandidatesModule'
 
 vi.mock('../../../api/endpoints', () => ({
@@ -138,6 +140,12 @@ function renderModule() {
       <EvidenceCandidatesModule />
     </EvidenceCenterProvider>,
   )
+}
+
+/** StepPills 进度探针:页面级 StepPills 由 module + progress 推导,这里直接渲染以断言当前高亮步骤 */
+function StepPillsProbe() {
+  const { state, progress } = useEvidenceCenter()
+  return <StepPills module={state.module} progress={progress} />
 }
 
 describe('EvidenceCandidatesModule', () => {
@@ -665,5 +673,68 @@ describe('EvidenceCandidatesModule', () => {
     )
     await waitFor(() => expect(screen.getByText(/已从数据中心恢复 2 个待处理对象/)).toBeTruthy())
     expect(sessionStorage.getItem('evidence-center.initial-queue')).toBeNull()
+  })
+
+  it('直达 URL 进入(target 在 URL):items 异步加载后 derive effect 重跑,StepPills 高亮步骤 3「找到原文」', async () => {
+    // 模拟刷新/深链:URL 直接带 target,items 延迟到达(加载期间 fallback current 的 candidate_papers 为空)
+    let resolveItems!: (v: { items: PaperEvidenceTaskItem[] }) => void
+    vi.mocked(endpoints.listPaperEvidenceTaskItems).mockReturnValueOnce(
+      new Promise(res => { resolveItems = res }),
+    )
+    window.location.hash = '#/evidence-center?module=candidates&task_id=t1&target_type=connection&target_id=r1-r2'
+    render(
+      <EvidenceCenterProvider>
+        <EvidenceCandidatesModule />
+        <StepPillsProbe />
+      </EvidenceCenterProvider>,
+    )
+    // items 未到达:fallback current 无候选 → 进度停留在步骤 1「确认对象」
+    const pills = screen.getByTestId('evidence-step-pills')
+    expect(pills.querySelector('.evidence-step-pill.active')?.textContent).toContain('确认对象')
+    // items 到达(候选含已提取片段)→ candidate_papers 变化触发 derive effect 重跑 → 步骤 3「找到原文」
+    await act(async () => { resolveItems({ items: [ITEM] }) })
+    await waitFor(() =>
+      expect(screen.getByTestId('evidence-step-pills').querySelector('.evidence-step-pill.active')?.textContent)
+        .toContain('找到原文'),
+    )
+  })
+
+  it('切换对象后手动检索状态清空:A 的检索结果 / query 摘要不泄漏到 B(折叠条消失、query 输入为空)', async () => {
+    vi.mocked(endpoints.listPaperEvidenceTaskItems).mockResolvedValue({ items: [] })
+    vi.mocked(endpoints.searchPaperEvidence).mockResolvedValue({
+      target_info: { target_type: 'connection', target_id: 'r1-r2', function_term: '', mode: 'existence', query: '', info: {} },
+      papers: [{
+        pmid: '99999999',
+        doi: null,
+        title: 'Found Paper',
+        journal: 'Nature',
+        year: '2025',
+        authors: '',
+        abstract: '',
+        source: 'europepmc',
+        is_open_access: true,
+      }],
+    })
+    window.location.hash = '#/evidence-center?module=candidates&task_id=t1&target_type=connection&target_id=r1-r2'
+    render(
+      <EvidenceCenterProvider>
+        <EvidenceCandidatesModule />
+      </EvidenceCenterProvider>,
+    )
+    await waitFor(() => expect(screen.getByText('查找相关论文')).toBeTruthy())
+    // 对象 A(r1-r2):带 query 检索成功 → 检索区折叠,折叠条显示 A 的 query 摘要
+    fireEvent.change(screen.getByTestId('evidence-search-query'), { target: { value: 'A query' } })
+    fireEvent.click(screen.getByRole('button', { name: /重新搜索/ }))
+    await waitFor(() => expect(screen.getByTestId('evidence-search-collapsed')).toBeTruthy())
+    expect(screen.getByTestId('evidence-search-collapsed-query').textContent).toContain('A query')
+    expect(screen.getByText('Found Paper')).toBeTruthy()
+    // 切换到对象 B:manualResult / manualQuery / manualResults / manualSelected 全部重置
+    window.location.hash = '#/evidence-center?module=candidates&task_id=t1&target_type=connection&target_id=r3-r4'
+    fireEvent(window, new HashChangeEvent('hashchange'))
+    // A 的折叠条消失(不显示旧 query 摘要),检索区回到展开态且 query 输入为空,旧结果卡移除
+    await waitFor(() => expect(screen.queryByTestId('evidence-search-collapsed')).toBeNull())
+    expect(screen.getByText('查找相关论文')).toBeTruthy()
+    expect((screen.getByTestId('evidence-search-query') as HTMLInputElement).value).toBe('')
+    expect(screen.queryByText('Found Paper')).toBeNull()
   })
 })
