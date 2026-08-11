@@ -223,7 +223,7 @@ export function EvidenceCandidatesModule() {
     return () => { cancelled = true }
   }, [current?.target_type, current?.target_id])
 
-  // 左栏 ClaimView 数据源:DTO 加载后推送当前对象验证事实到 Context(页面左栏渲染);卸载/切对象清空
+  // 左栏 ClaimSummaryPanel 数据源:DTO 加载后推送当前对象验证事实到 Context(页面左栏渲染);卸载/切对象清空
   useEffect(() => {
     if (!dto) {
       setCandidateClaim(null)

@@ -34,7 +34,7 @@ interface EvidenceCenterContextValue {
   openTask: (taskId: string) => void
   openTarget: (targetType: string, targetId: string, module?: ModuleKey) => void
   selectPaper: (paperId: string | null) => void
-  /** 候选模块推送的当前对象验证事实(仅 candidates 模块使用,页面左栏渲染 ClaimView) */
+  /** 候选模块推送的当前对象验证事实(仅 candidates 模块使用,页面左栏渲染 ClaimSummaryPanel) */
   candidateClaim: {
     claimText: string
     components: ClaimComponent[]

@@ -162,11 +162,11 @@ describe('EvidenceCenterPage', () => {
     expect(container.querySelector('.evidence-left')).toBeTruthy()
     expect(container.querySelector('.evidence-main')).toBeTruthy()
     expect(container.querySelector('.evidence-right')).toBeTruthy()
-    // 候选模块:左栏 ClaimView,右栏 ObjectQueue(队列已从左侧移到右栏)
+    // 候选模块:左栏 ClaimSummaryPanel,右栏 EvidenceQueuePanel(队列已从左侧移到右栏)
     const left = container.querySelector('.evidence-left') as HTMLElement
-    expect(within(left).getByTestId('evidence-claim')).toBeTruthy()
+    expect(within(left).getByTestId('evidence-claim-summary')).toBeTruthy()
     expect(left.querySelector('.evidence-queue')).toBeNull()
-    expect(screen.getByTestId('evidence-queue')).toBeTruthy()
+    expect(screen.getByTestId('evidence-queue-panel')).toBeTruthy()
     expect(screen.getByTestId('evidence-right-panel')).toBeTruthy()
   })
 
@@ -207,7 +207,7 @@ describe('EvidenceCenterPage', () => {
     window.location.hash = '#/evidence-center?module=candidates&task_id=t1'
     render(<EvidenceCenterPage />)
     // 右栏 = 待处理对象队列(队列条目在右栏)
-    await waitFor(() => expect(screen.getByTestId('evidence-queue')).toBeTruthy())
+    await waitFor(() => expect(screen.getByTestId('evidence-queue-panel')).toBeTruthy())
     expect(screen.queryByTestId('evidence-candidate-summary')).toBeNull()
     // 中栏统计条零选中时 [进入人工审核] 禁用
     expect(screen.getByTestId('evidence-stats-bar')).toBeTruthy()
@@ -296,7 +296,7 @@ describe('EvidenceCenterPage', () => {
     )
   })
 
-  it('candidates 左栏渲染 ClaimView(页面级):DTO 加载后显示 Claim 单行 + Component Chips;中栏不再渲染', async () => {
+  it('candidates 左栏渲染 ClaimSummaryPanel(页面级):DTO 加载后显示类型/源脑区/连接关系信息块;中栏不再渲染', async () => {
     vi.mocked(listPaperEvidenceTaskItems).mockResolvedValue({ items: TASK_ITEMS })
     const { getEvidenceTarget } = await import('../../api/endpoints')
     vi.mocked(getEvidenceTarget).mockResolvedValue({
@@ -323,20 +323,25 @@ describe('EvidenceCenterPage', () => {
     })
     window.location.hash = '#/evidence-center?module=candidates&task_id=t1'
     const { container } = render(<EvidenceCenterPage />)
-    await waitFor(() => expect(screen.getByText('R1 投射到 R2')).toBeTruthy())
-    // 左栏:Claim 单行 + Component Chips
+    await waitFor(() => {
+      const left = container.querySelector('.evidence-left') as HTMLElement
+      expect(within(left).getByText('存在投射关系')).toBeTruthy()
+    })
+    // 左栏:独立信息块(类型 + 源脑区 + 连接关系)
     const left = container.querySelector('.evidence-left') as HTMLElement
-    expect(within(left).getByTestId('evidence-claim')).toBeTruthy()
+    expect(within(left).getByTestId('evidence-claim-summary')).toBeTruthy()
     expect(within(left).getByText('当前需要验证的事实')).toBeTruthy()
-    const chips = within(left).getAllByTestId('evidence-claim-chip')
-    expect(chips).toHaveLength(2)
-    expect(chips[0].textContent).toContain('源脑区')
-    expect(chips[0].textContent).toContain('R1')
-    expect(chips[1].textContent).toContain('连接关系')
-    expect(chips[1].textContent).toContain('存在投射关系')
-    // 中栏不再渲染 ClaimView
+    const blocks = within(left).getAllByTestId('evidence-claim-block')
+    expect(blocks).toHaveLength(3)
+    expect(blocks[0].textContent).toContain('类型')
+    expect(blocks[0].textContent).toContain('connection')
+    expect(blocks[1].textContent).toContain('源脑区')
+    expect(blocks[1].textContent).toContain('R1')
+    expect(blocks[2].textContent).toContain('连接关系')
+    expect(blocks[2].textContent).toContain('存在投射关系')
+    // 中栏不再渲染 ClaimSummaryPanel
     const main = container.querySelector('.evidence-main') as HTMLElement
-    expect(main.querySelector('.evidence-claim')).toBeNull()
+    expect(main.querySelector('.evidence-claim-summary')).toBeNull()
   })
 
   it('无任务时 initial-queue 恢复的条目渲染在页面级右栏 ObjectQueue(candidates)', async () => {
@@ -353,8 +358,8 @@ describe('EvidenceCenterPage', () => {
     window.location.hash = '#/evidence-center?module=candidates&target_type=connection&target_id=r1-r2'
     render(<EvidenceCenterPage />)
     await waitFor(() => expect(screen.getByText('R1 功能')).toBeTruthy())
-    // 队列条目渲染在页面级右栏 ObjectQueue(上下文条中也出现 label,需在队列内断言)
-    expect(within(screen.getByTestId('evidence-queue')).getByText('R1 → R2 连接')).toBeTruthy()
+    // 队列条目渲染在页面级右栏 EvidenceQueuePanel(上下文条中也出现 label,需在队列内断言)
+    expect(within(screen.getByTestId('evidence-queue-panel')).getByText('R1 → R2 连接')).toBeTruthy()
     expect(screen.getByText(/已从数据中心恢复 2 个待处理对象/)).toBeTruthy()
   })
 
@@ -379,17 +384,27 @@ describe('EvidenceCenterPage', () => {
     expect(within(bar).getByText(/等待处理对象/)).toBeTruthy()
   })
 
-  it('ObjectQueue 渲染待处理对象列表且当前项高亮', async () => {
+  it('candidates 右栏 EvidenceQueuePanel:默认待审核 Tab 只显示未处理项,切 Tab 显示已完成', async () => {
     vi.mocked(listPaperEvidenceTaskItems).mockResolvedValue({ items: TASK_ITEMS })
     window.location.hash = '#/evidence-center?module=candidates&task_id=t1'
     render(<EvidenceCenterPage />)
-    await waitFor(() => expect(screen.getByText('待处理对象')).toBeTruthy())
+    await waitFor(() => expect(screen.getByTestId('evidence-queue-panel')).toBeTruthy())
+    // Tabs 计数:待审核 1(连接A)/ 已完成 1(脑区R3)/ 失败 0
+    expect(screen.getByRole('tab', { name: /待审核/ }).textContent).toContain('1')
+    expect(screen.getByRole('tab', { name: /已完成/ }).textContent).toContain('1')
+    expect(screen.getByRole('tab', { name: /失败/ }).textContent).toContain('0')
+    // 默认待审核 Tab:仅 awaiting_review 的 R1→R2 可见且为当前项高亮
     const items = screen.getAllByTestId('evidence-queue-item')
-    expect(items).toHaveLength(2)
+    expect(items).toHaveLength(1)
     expect(items[0].textContent).toContain('R1→R2')
     expect(items[0].textContent).toContain('待审核')
     expect(items[0].className).toContain('evidence-queue-item-active')
-    expect(items[1].className).not.toContain('evidence-queue-item-active')
+    // 切换已完成 Tab:显示脑区 R3,当前项不高亮
+    fireEvent.click(screen.getByRole('tab', { name: /已完成/ }))
+    const doneItems = screen.getAllByTestId('evidence-queue-item')
+    expect(doneItems).toHaveLength(1)
+    expect(doneItems[0].textContent).toContain('R3')
+    expect(doneItems[0].className).not.toContain('evidence-queue-item-active')
   })
 
   it('切换任务后 URL 不再残留上一任务 target,候选加载后回写到新任务首个 item', async () => {

@@ -82,6 +82,11 @@ export const QUEUE_STATUS_LABEL: Record<QueueStatus, string> = {
   failed: '失败',
 }
 
+/** 未处理(待审核)状态组:队列统计 / 只看未处理过滤 / 待审核 Tab 共用 */
+export const PENDING_STATUSES: QueueStatus[] = ['pending', 'searching', 'extracting', 'awaiting_review']
+/** 已完成状态组:已完成 Tab 过滤 */
+export const DONE_STATUSES: QueueStatus[] = ['completed', 'skipped']
+
 /** 队列条目状态 → 语义色板(ok/warn/bad/info/muted) */
 export function queueStatusTone(status: QueueStatus): string {
   switch (status) {

@@ -1,5 +1,6 @@
 import { useMemo } from 'react'
 import { useEvidenceCenter, type ModuleKey } from '../EvidenceCenterContext'
+import { EvidenceQueuePanel } from './EvidenceQueuePanel'
 import { ObjectQueue } from './ObjectQueue'
 import { PromotionImpact } from './PromotionImpact'
 import { ReviewerDecisionPanel } from './ReviewerDecisionPanel'
@@ -49,10 +50,10 @@ export function RightPanel({ module }: { module: ModuleKey }) {
   }
 
   if (module === 'candidates') {
-    // 候选模块右栏 = 待处理对象队列(队列已从页面左栏移到右栏;左栏改渲染 ClaimView)
+    // 候选模块右栏 = 待处理对象队列(视觉稿版:状态 Tabs + 数量徽标 + 空态;队列已从页面左栏移到右栏,左栏改渲染 ClaimSummaryPanel)
     return (
       <aside className="evidence-right-panel" data-testid="evidence-right-panel">
-        <ObjectQueue
+        <EvidenceQueuePanel
           queue={queue}
           currentIndex={candidateQueueIndex}
           onSelect={e => openTarget(e.target_type, e.target_id, 'candidates')}

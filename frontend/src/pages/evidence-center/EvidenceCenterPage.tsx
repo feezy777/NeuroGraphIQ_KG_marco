@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { listPaperEvidenceTasks } from '../../api/endpoints'
 import { EvidenceCenterProvider, useEvidenceCenter, type ModuleKey } from './EvidenceCenterContext'
 import { EvidenceCenterHeader } from './EvidenceCenterHeader'
-import { ClaimView } from './components/ClaimView'
+import { ClaimSummaryPanel } from './components/ClaimSummaryPanel'
 import { composeClaimSentence, ContextBar } from './components/ContextBar'
 import { ObjectQueue } from './components/ObjectQueue'
 import { RightPanel } from './components/RightPanel'
@@ -85,11 +85,12 @@ function EvidenceCenterBody() {
         {!isPapers && (
           <aside className="evidence-left">
             {state.module === 'candidates' ? (
-              // 候选模块左栏 = 当前对象验证事实(ClaimView);队列移到右栏
-              <ClaimView
+              // 候选模块左栏 = 当前对象验证事实(独立信息块,由 claim_components 动态生成);队列移到右栏
+              <ClaimSummaryPanel
                 claimText={candidateClaim?.claimText ?? ''}
                 components={candidateClaim?.components ?? []}
                 targetType={candidateClaim?.targetType ?? ''}
+                granularity={candidateClaim?.granularity ?? null}
               />
             ) : (
               <ObjectQueue

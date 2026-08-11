@@ -1,8 +1,6 @@
 import { useMemo, useState } from 'react'
-import { QUEUE_STATUS_LABEL, queueStatusTone, type QueueEntry, type QueueStatus } from './types'
-
-const PENDING_STATUSES: QueueStatus[] = ['pending', 'searching', 'extracting', 'awaiting_review']
-const DONE_STATUSES: QueueStatus[] = ['completed', 'skipped']
+import { QueueListItem } from './QueueListItem'
+import { DONE_STATUSES, PENDING_STATUSES, type QueueEntry } from './types'
 
 interface ObjectQueueProps {
   queue: QueueEntry[]
@@ -12,7 +10,8 @@ interface ObjectQueueProps {
   showStats?: boolean
 }
 
-/** 统一左栏对象队列:统计 + 只看未处理 + 紧凑对象卡,当前对象浅背景左边强调 */
+/** 统一左栏对象队列(任务/审核/晋升模块):统计 + 只看未处理 + 紧凑对象卡,当前对象浅背景左边强调。
+ * 候选模块右栏的视觉稿版队列见 EvidenceQueuePanel。 */
 export function ObjectQueue({ queue, currentIndex, onSelect, showStats = true }: ObjectQueueProps) {
   const [onlyPending, setOnlyPending] = useState(false)
 
@@ -49,35 +48,14 @@ export function ObjectQueue({ queue, currentIndex, onSelect, showStats = true }:
         只看未处理
       </label>
       <div className="evidence-queue-list">
-        {visible.map((e, i) => {
-          const originalIndex = onlyPending ? queue.indexOf(e) : i
-          const active = originalIndex === currentIndex
-          const tone = queueStatusTone(e.status)
-          return (
-            <div
-              key={`${e.target_type}:${e.target_id}`}
-              className={`evidence-queue-item${active ? ' evidence-queue-item-active' : ''}`}
-              data-testid="evidence-queue-item"
-              onClick={() => onSelect(e)}
-            >
-              <div className="evidence-queue-item-label">{e.label}</div>
-              <div className="evidence-queue-item-meta">
-                {e.target_type} · 置信度 {e.confidence == null ? '—' : `${Math.round(e.confidence * 100)}%`}
-              </div>
-              <div className="evidence-queue-item-foot">
-                <span className={`evidence-queue-status evidence-queue-status-${tone}`}>
-                  {QUEUE_STATUS_LABEL[e.status] ?? e.status}
-                </span>
-                <span className="evidence-queue-evidence">{e.evidenceCount} 证据</span>
-              </div>
-              {e.preprocessOutcome === 'no_evidence_found' && (
-                <div className="evidence-queue-item-hint" data-testid="evidence-queue-item-hint">
-                  该对象预处理未找到有效证据片段
-                </div>
-              )}
-            </div>
-          )
-        })}
+        {visible.map(e => (
+          <QueueListItem
+            key={`${e.target_type}:${e.target_id}`}
+            entry={e}
+            active={queue.indexOf(e) === currentIndex}
+            onSelect={onSelect}
+          />
+        ))}
         {visible.length === 0 && <div className="evidence-queue-empty">队列为空</div>}
       </div>
     </aside>
