@@ -1156,7 +1156,7 @@ async def paper_evidence_audit(
     session: AsyncSession = Depends(get_db),
     _auth: str = Depends(require_role("reviewer")),
 ):
-    return await pes.write_evidence_audit_event(
+    await pes._write_audit(
         session,
         action_type=body.action_type,
         entity_type=body.entity_type,
@@ -1166,6 +1166,7 @@ async def paper_evidence_audit(
         operator_id=None,
         reason=body.reason,
     )
+    return {"status": "logged"}
 
 
 @router.get("/evidence/review-queue")

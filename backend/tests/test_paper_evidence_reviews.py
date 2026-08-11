@@ -150,17 +150,17 @@ def _sample_passages():
 
 
 def test_build_review_approved():
-    """build_review with supports direction creates an approved review."""
+    """build_review with supports direction creates a review in 'awaiting_review' status."""
     conn_id = _make_connection()
     paper_id = _make_paper_source()
     try:
         result = _run(_build_review_inner(conn_id, paper_id, "supports", _sample_passages()))
         assert result["review_id"]
-        assert result["status"] == "approved"
+        assert result["status"] == "awaiting_review"
         # Verify review exists
         review = _run(_get_review_inner(result["review_id"]))
-        assert review["review_status"] == "approved"
-        assert review["promotion_status"] == "awaiting_promotion"
+        assert review["review_status"] == "awaiting_review"
+        assert review["promotion_status"] == "not_ready"
         assert review["target_type"] == "connection"
         assert review["paper_id"] == str(paper_id)
         assert len(review["passages"]) == 1
@@ -194,16 +194,16 @@ def test_approved_does_not_create_evidence_or_modify_confidence():
     conn_id = _make_connection()
     paper_id = _make_paper_source()
     try:
-        # build with "supports" creates an already-approved review
+        # build with "supports" creates an awaiting_review review (not yet approved)
         result = _run(_build_review_inner(conn_id, paper_id, "supports", _sample_passages()))
         review_id = uuid.UUID(result["review_id"])
-        assert result["status"] == "approved"
+        assert result["status"] == "awaiting_review"
         # Count evidence records for this target — should be 0
         evidence_count = _run(_count_evidence_for_target(conn_id))
         assert evidence_count == 0, "build_review should never write mirror_evidence_records"
-        # approve on already-approved is rejected (correct behavior)
-        with pytest.raises(ValueError, match="cannot approve"):
-            _run(_approve_inner(review_id))
+        # approve transitions to 'approved' + 'awaiting_promotion' (no evidence write)
+        approve_result = _run(_approve_inner(review_id))
+        assert approve_result["status"] == "approved"
         evidence_count2 = _run(_count_evidence_for_target(conn_id))
         assert evidence_count2 == 0, "approve_review should never write mirror_evidence_records"
     finally:
@@ -214,16 +214,21 @@ def test_approved_does_not_create_evidence_or_modify_confidence():
 
 
 def test_approve_review():
-    """approve_review transitions status to 'approved'."""
+    """approve_review transitions awaiting_review → approved + awaiting_promotion."""
     conn_id = _make_connection()
     paper_id = _make_paper_source()
     try:
-        # Build as draft-like first (use returned state from return, then approve)
+        # build creates awaiting_review (not yet approved)
         result = _run(_build_review_inner(conn_id, paper_id, "supports", _sample_passages()))
         review_id = uuid.UUID(result["review_id"])
-        assert result["status"] == "approved"  # already approved from build
-        # Reject first to test approve from non-draft
-        _run(_reject_inner(review_id))
+        assert result["status"] == "awaiting_review"
+        # approve transitions to approved + awaiting_promotion
+        approve_result = _run(_approve_inner(review_id))
+        assert approve_result["status"] == "approved"
+        review = _run(_get_review_inner(review_id))
+        assert review["review_status"] == "approved"
+        assert review["promotion_status"] == "awaiting_promotion"
+        # approve again on already-approved → rejects
         with pytest.raises(ValueError, match="cannot approve"):
             _run(_approve_inner(review_id))
     finally:
@@ -306,7 +311,9 @@ def test_promote_creates_evidence():
              patch.object(pes, "_load_source", return_value=(passage_text, "abstract")):
             result = _run(_build_review_inner(conn_id, paper_id, "supports", passages))
             review_id = uuid.UUID(result["review_id"])
-            assert result["status"] == "approved"
+            assert result["status"] == "awaiting_review"
+            # approve → transitions to 'approved' + 'awaiting_promotion'
+            _run(_approve_inner(review_id))
             # promote
             promote_result = _run(_promote_inner(review_id))
             assert promote_result["status"] == "promoted"
@@ -375,6 +382,8 @@ def test_promote_idempotent():
              patch.object(pes, "_load_source", return_value=(passage_text, "abstract")):
             result = _run(_build_review_inner(conn_id, paper_id, "supports", passages))
             review_id = uuid.UUID(result["review_id"])
+            # approve → transitions to 'approved' + 'awaiting_promotion'
+            _run(_approve_inner(review_id))
             # First promote
             p1 = _run(_promote_inner(review_id))
             assert p1["status"] == "promoted"
@@ -485,6 +494,156 @@ def test_get_review_with_passages():
 
 
 # ════════════════════════════════════════════════════════════════════════════
+# C1/C2: State guard + cancel tests
+# ════════════════════════════════════════════════════════════════════════════
+
+
+def test_reject_already_promoted_raises():
+    """reject_review raises ValueError when promotion_status='promoted'."""
+    conn_id = _make_connection()
+    paper_id = _make_paper_source()
+    evidence_ids_to_cleanup = []
+    try:
+        passage_text = "The hippocampus projects to the prefrontal cortex via direct pathways."
+        passages = [
+            {
+                "passage": passage_text,
+                "source_scope": "abstract",
+                "direction": "supports",
+                "evidence_level": "direct",
+                "reason": "Explicit statement.",
+                "confidence": 0.85,
+                "source_verified": True,
+                "source_verification_method": "exact",
+                "source_locator": "abstract:0",
+                "supported_components": ["source_region", "target_region", "relation"],
+                "is_selected": True,
+            }
+        ]
+        mock_paper = {
+            "pmid": "30000001",
+            "doi": "10.1/test",
+            "title": "Test Paper Title",
+            "journal": "Neuro J",
+            "year": "2026",
+            "authors": "A B",
+            "abstract": passage_text,
+            "source": "europepmc",
+        }
+        with patch.object(pes, "verify_paper", return_value=mock_paper), \
+             patch.object(pes, "_load_source", return_value=(passage_text, "abstract")):
+            result = _run(_build_review_inner(conn_id, paper_id, "supports", passages))
+            review_id = uuid.UUID(result["review_id"])
+            # approve + promote to get to 'promoted' state
+            _run(_approve_inner(review_id))
+            promote_result = _run(_promote_inner(review_id))
+            evidence_ids_to_cleanup.append(promote_result["evidence_id"])
+            assert promote_result["status"] == "promoted"
+            # now reject should raise
+            with pytest.raises(ValueError, match="already been promoted"):
+                _run(_reject_inner(review_id))
+    finally:
+        if "result" in locals():
+            _cleanup_review(review_id)
+        _cleanup_evidence(evidence_ids_to_cleanup)
+        _cleanup_paper(paper_id)
+        _cleanup_connection(conn_id)
+
+
+def test_return_already_promoted_raises():
+    """return_review raises ValueError when promotion_status='promoted'."""
+    conn_id = _make_connection()
+    paper_id = _make_paper_source()
+    evidence_ids_to_cleanup = []
+    try:
+        passage_text = "The hippocampus projects to the prefrontal cortex via direct pathways."
+        passages = [
+            {
+                "passage": passage_text,
+                "source_scope": "abstract",
+                "direction": "supports",
+                "evidence_level": "direct",
+                "reason": "Explicit statement.",
+                "confidence": 0.85,
+                "source_verified": True,
+                "source_verification_method": "exact",
+                "source_locator": "abstract:0",
+                "supported_components": ["source_region", "target_region", "relation"],
+                "is_selected": True,
+            }
+        ]
+        mock_paper = {
+            "pmid": "30000001",
+            "doi": "10.1/test",
+            "title": "Test Paper Title",
+            "journal": "Neuro J",
+            "year": "2026",
+            "authors": "A B",
+            "abstract": passage_text,
+            "source": "europepmc",
+        }
+        with patch.object(pes, "verify_paper", return_value=mock_paper), \
+             patch.object(pes, "_load_source", return_value=(passage_text, "abstract")):
+            result = _run(_build_review_inner(conn_id, paper_id, "supports", passages))
+            review_id = uuid.UUID(result["review_id"])
+            # approve + promote to get to 'promoted' state
+            _run(_approve_inner(review_id))
+            promote_result = _run(_promote_inner(review_id))
+            evidence_ids_to_cleanup.append(promote_result["evidence_id"])
+            assert promote_result["status"] == "promoted"
+            # now return should raise
+            with pytest.raises(ValueError, match="already been promoted"):
+                _run(_return_inner(review_id, "test"))
+    finally:
+        if "result" in locals():
+            _cleanup_review(review_id)
+        _cleanup_evidence(evidence_ids_to_cleanup)
+        _cleanup_paper(paper_id)
+        _cleanup_connection(conn_id)
+
+
+def test_cancel_review():
+    """cancel_review sets promotion_status='cancelled' from awaiting_promotion."""
+    conn_id = _make_connection()
+    paper_id = _make_paper_source()
+    try:
+        result = _run(_build_review_inner(conn_id, paper_id, "supports", _sample_passages()))
+        review_id = uuid.UUID(result["review_id"])
+        assert result["status"] == "awaiting_review"
+        # approve to get to awaiting_promotion
+        _run(_approve_inner(review_id))
+        review = _run(_get_review_inner(review_id))
+        assert review["promotion_status"] == "awaiting_promotion"
+        # cancel
+        cancel_result = _run(_cancel_inner(review_id, reason="no longer needed"))
+        assert cancel_result["status"] == "cancelled"
+        review2 = _run(_get_review_inner(review_id))
+        assert review2["promotion_status"] == "cancelled"
+    finally:
+        if "result" in locals():
+            _cleanup_review(review_id)
+        _cleanup_paper(paper_id)
+        _cleanup_connection(conn_id)
+
+
+def test_cancel_review_wrong_status_raises():
+    """cancel_review raises ValueError when not in awaiting_promotion state."""
+    conn_id = _make_connection()
+    paper_id = _make_paper_source()
+    try:
+        result = _run(_build_review_inner(conn_id, paper_id, "supports", _sample_passages()))
+        review_id = uuid.UUID(result["review_id"])
+        # not yet approved → promotion_status is 'not_ready'
+        with pytest.raises(ValueError, match="cannot cancel"):
+            _run(_cancel_inner(review_id))
+    finally:
+        if "result" in locals():
+            _cleanup_review(review_id)
+        _cleanup_paper(paper_id)
+        _cleanup_connection(conn_id)
+
+
+# ════════════════════════════════════════════════════════════════════════════
 # Internal async helpers (called via _run in tests)
 # ════════════════════════════════════════════════════════════════════════════
 
@@ -546,6 +705,11 @@ async def _promote_inner(review_id):
 async def _return_inner(review_id, reason):
     async with AsyncSessionLocal() as s:
         return await pes.return_review(s, review_id, reason=reason)
+
+
+async def _cancel_inner(review_id, reason=None):
+    async with AsyncSessionLocal() as s:
+        return await pes.cancel_review(s, review_id, reason=reason)
 
 
 async def _list_inner(review_status=None, promotion_status=None, target_type=None, page=1, page_size=20):

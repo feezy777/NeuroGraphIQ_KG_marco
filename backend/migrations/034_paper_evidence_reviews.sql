@@ -10,6 +10,7 @@ CREATE TABLE IF NOT EXISTS paper_evidence_reviews (
     task_item_id UUID,
     reviewer_id VARCHAR(128),
     review_status VARCHAR(32) NOT NULL DEFAULT 'draft',
+    -- supported promotion_status values: not_ready, awaiting_promotion, promoted, returned, cancelled
     promotion_status VARCHAR(32) NOT NULL DEFAULT 'not_ready',
     claim_version VARCHAR(32),
     claim_text_snapshot TEXT,

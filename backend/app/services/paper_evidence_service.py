@@ -4721,30 +4721,6 @@ async def _map_review_passage(p: dict, review_id: uuid.UUID, rank: int) -> dict:
     }
 
 
-async def _write_evidence_audit_event(
-    session: AsyncSession,
-    *,
-    action_type: str,
-    entity_type: str,
-    entity_id: uuid.UUID,
-    before_data: dict | None = None,
-    after_data: dict | None = None,
-    operator_id: str | None = None,
-    reason: str | None = None,
-) -> None:
-    """Write an audit event (public wrapper for _write_audit)."""
-    await _write_audit(
-        session,
-        action_type=action_type,
-        entity_type=entity_type,
-        entity_id=entity_id,
-        before_data=before_data,
-        after_data=after_data,
-        operator_id=operator_id,
-        reason=reason,
-    )
-
-
 async def build_review(
     session: AsyncSession,
     *,
@@ -4770,12 +4746,16 @@ async def build_review(
 ) -> dict:
     """Create a formal review record from reviewer decision + frozen passages.
 
-    Returns {review_id, status: 'approved'|'rejected'}.
+    Returns {review_id, status: 'awaiting_review'|'rejected'}.
     Side effect: never writes mirror_evidence_records, never modifies confidence.
+    promotion_status is always 'not_ready' -- approve_review() must be called
+    explicitly to advance to 'awaiting_promotion'.
     """
-    # Determine review_status from reviewer_direction
+    # Determine review_status from reviewer_direction.
+    # 'approved' is reserved for approve_review() — build_review enters
+    # 'awaiting_review' so the explicit approve step is mandatory.
     review_status = (
-        "approved"
+        "awaiting_review"
         if reviewer_direction not in ("not_found",)
         else "rejected"
     )
@@ -4804,7 +4784,7 @@ async def build_review(
                 "itemid": task_item_id,
                 "rev_id": reviewer_id,
                 "rstatus": review_status,
-                "pstatus": "awaiting_promotion" if review_status == "approved" else "not_ready",
+                "pstatus": "not_ready",  # promotion_status always starts at not_ready
                 "cv": claim_version,
                 "cs": claim_text_snapshot,
                 "cc": json.dumps(claim_components_snapshot, ensure_ascii=False),
@@ -4850,7 +4830,7 @@ async def build_review(
             "target_type": target_type,
             "target_id": str(target_id),
             "review_status": review_status,
-            "promotion_status": "awaiting_promotion" if review_status == "approved" else "not_ready",
+            "promotion_status": "not_ready",
             "passage_count": len(passages),
         },
         operator_id=reviewer_id,
@@ -4868,7 +4848,9 @@ async def approve_review(
 ) -> dict:
     """Approve a review: locks snapshot, sets awaiting_promotion.
 
-    Can only be called from draft/awaiting_review/returned states.
+    Can only be called from awaiting_review or returned states.
+    ('draft' is reserved for future multi-step review workflows and is not
+    reachable via the current build_review path.)
     """
     row = await session.execute(
         text(
@@ -4881,8 +4863,8 @@ async def approve_review(
     if r is None:
         raise ValueError("review not found")
     current_status = r[1]
-    if current_status not in ("draft", "awaiting_review", "returned"):
-        raise ValueError(f"cannot approve review in status '{current_status}'; must be draft/awaiting_review/returned")
+    if current_status not in ("awaiting_review", "returned"):
+        raise ValueError(f"cannot approve review in status '{current_status}'; must be awaiting_review/returned")
     await session.execute(
         text(
             "UPDATE paper_evidence_reviews "
@@ -4911,15 +4893,21 @@ async def reject_review(
     *,
     operator_id: str | None = None,
 ) -> dict:
-    """Reject a review. Cannot be promoted from this state."""
+    """Reject a review. Cannot be called on already-promoted or already-rejected reviews."""
     row = await session.execute(
         text(
-            "SELECT id FROM paper_evidence_reviews WHERE id = :rid FOR UPDATE"
+            "SELECT id, review_status, promotion_status "
+            "FROM paper_evidence_reviews WHERE id = :rid FOR UPDATE"
         ),
         {"rid": review_id},
     )
-    if row.first() is None:
+    r = row.first()
+    if r is None:
         raise ValueError("review not found")
+    if r[2] == "promoted":
+        raise ValueError("review has already been promoted; cannot reject")
+    if r[1] == "rejected":
+        raise ValueError("review is already rejected")
     await session.execute(
         text(
             "UPDATE paper_evidence_reviews "
@@ -5089,15 +5077,24 @@ async def return_review(
     reason: str,
     returned_by: str | None = None,
 ) -> dict:
-    """Return a review for rework. Sets promotion_status='returned', review_status='awaiting_review'."""
+    """Return a review for rework. Sets promotion_status='returned', review_status='awaiting_review'.
+
+    Cannot be called on already-promoted or already-returned reviews.
+    """
     row = await session.execute(
         text(
-            "SELECT id FROM paper_evidence_reviews WHERE id = :rid FOR UPDATE"
+            "SELECT id, promotion_status "
+            "FROM paper_evidence_reviews WHERE id = :rid FOR UPDATE"
         ),
         {"rid": review_id},
     )
-    if row.first() is None:
+    r = row.first()
+    if r is None:
         raise ValueError("review not found")
+    if r[1] == "promoted":
+        raise ValueError("review has already been promoted; cannot return")
+    if r[1] == "returned":
+        raise ValueError("review has already been returned")
     await session.execute(
         text(
             "UPDATE paper_evidence_reviews "
@@ -5118,6 +5115,54 @@ async def return_review(
     )
     await session.commit()
     return {"review_id": str(review_id), "status": "returned"}
+
+
+async def cancel_review(
+    session: AsyncSession,
+    review_id: uuid.UUID,
+    *,
+    cancelled_by: str | None = None,
+    reason: str | None = None,
+) -> dict:
+    """Cancel a review that is awaiting_promotion. Sets promotion_status='cancelled'.
+
+    Only allowed when promotion_status='awaiting_promotion' (i.e., after
+    approve_review but before promote_review).  No route is exposed yet;
+    callers import the function directly when needed.
+    """
+    row = await session.execute(
+        text(
+            "SELECT id, promotion_status "
+            "FROM paper_evidence_reviews WHERE id = :rid FOR UPDATE"
+        ),
+        {"rid": review_id},
+    )
+    r = row.first()
+    if r is None:
+        raise ValueError("review not found")
+    if r[1] != "awaiting_promotion":
+        raise ValueError(
+            f"cannot cancel review with promotion_status '{r[1]}'; must be 'awaiting_promotion'"
+        )
+    await session.execute(
+        text(
+            "UPDATE paper_evidence_reviews "
+            "SET promotion_status='cancelled', updated_at=now() "
+            "WHERE id = :rid"
+        ),
+        {"rid": review_id},
+    )
+    await _write_audit(
+        session,
+        action_type="EVIDENCE_REVIEW_CANCELLED",
+        entity_type="evidence_review",
+        entity_id=review_id,
+        after_data={"promotion_status": "cancelled", "cancel_reason": reason},
+        operator_id=cancelled_by,
+        reason=reason or "review cancelled",
+    )
+    await session.commit()
+    return {"review_id": str(review_id), "status": "cancelled"}
 
 
 def _review_row_to_dict(r: dict) -> dict:
