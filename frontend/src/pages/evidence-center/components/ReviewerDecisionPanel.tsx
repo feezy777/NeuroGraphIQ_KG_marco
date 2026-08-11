@@ -17,6 +17,8 @@ export interface ReviewerDecisionPanelProps {
   selectedCount: number
   preview: AttachPreviewResponse | null
   previewBusy: boolean
+  /** Phase 2:后端 buildReview 进行中,按钮禁用防重复提交 */
+  reviewBusy?: boolean
   /** V2-S3 新增(可选,保持兼容):AI 初判区 Coverage(已核验片段支撑组件数/必需组件数) */
   coverage?: CoverageSummary | null
   /** 当前图谱 confidence(置信度影响 Current;preview 可用时以 preview 为准) */
@@ -50,6 +52,7 @@ export function ReviewerDecisionPanel({
   selectedCount,
   preview,
   previewBusy,
+  reviewBusy = false,
   coverage = null,
   currentConfidence = null,
   reviewStatus = null,
@@ -174,16 +177,16 @@ export function ReviewerDecisionPanel({
       )}
 
       <div className="ew-sticky-actions">
-        <button type="button" className="btn btn-sm" onClick={onReject} data-testid="ew-reject-btn">驳回证据</button>
+        <button type="button" className="btn btn-sm" onClick={onReject} disabled={reviewBusy} data-testid="ew-reject-btn">驳回证据</button>
         <button
           type="button"
           className="btn btn-sm btn-primary"
-          disabled={selectedCount === 0}
-          title={selectedCount === 0 ? '请先勾选已核验的候选片段' : '审核通过'}
+          disabled={reviewBusy || selectedCount === 0}
+          title={selectedCount === 0 ? '请先勾选已核验的候选片段' : reviewBusy ? '审核中…' : '审核通过'}
           onClick={onApprove}
           data-testid="ew-approve-btn"
         >
-          审核通过
+          {reviewBusy ? '审核中…' : '审核通过'}
         </button>
       </div>
     </div>

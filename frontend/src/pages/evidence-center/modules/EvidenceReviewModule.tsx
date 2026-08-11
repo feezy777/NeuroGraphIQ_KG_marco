@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { MousePointerClick } from 'lucide-react'
 import {
   attachPaperEvidencePreview,
+  buildReview,
   getEvidenceTarget,
   saveTaskItemDraft,
   translateEvidenceText,
@@ -57,6 +58,7 @@ export function EvidenceReviewModule() {
   const [message, setMessage] = useState<string | null>(null)
   const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
   const [reviewStatus, setReviewStatus] = useState<ReviewStatusRecord | null>(null)
+  const [reviewBusy, setReviewBusy] = useState(false)
   const abortRef = useRef<AbortController | null>(null)
 
   const targetType = state.targetType
@@ -277,26 +279,90 @@ export function EvidenceReviewModule() {
     }
   }, [targetId, buildDraft, taskItem?.taskItemId])
 
-  // ─── 审核 ≠ 晋升:只写前端 review_approved/rejected 状态,不调 attach ───
-  const commitReviewStatus = useCallback((status: 'review_approved' | 'rejected', at: string) => {
-    if (!targetId) return
+  // ─── 审核:sessionStorage(兼容) + 后端 Review(权威) ───
+  const commitReviewStatus = useCallback(async (status: 'review_approved' | 'rejected', at: string) => {
+    if (!targetId || !targetType) return
     persistDraft()
     const meta: ReviewStatusMeta = { direction, evidenceLevel, confidence, note, at }
-    // 携带 targetType:晋升模块据此 attach/退回跳转
+    // 保留 sessionStorage 兼容写入(现有晋升模块兼容读取 + 跨标签瞬时提示)
     saveReviewStatus(targetId, status, meta, state.targetType ?? undefined)
     setReviewStatus({ targetId, status, meta })
+    // 同时写后端 Review(权威持久化)
+    const paperId: string | null = passages[0]?.paper_id ?? null
+    const claimVersion: string = dto?.claim_version ?? 'v1'
+    const claimText: string = dto?.claim_text ?? ''
+    const taskItem = queue.find(q => q.target_type === targetType && q.target_id === targetId)
+    const taskId: string | null = state.taskId ?? null
+    const taskItemId: string | null = taskItem?.taskItemId ?? null
+    await buildReview({
+      target_type: targetType!,
+      target_id: targetId!,
+      paper_id: paperId,
+      task_id: taskId,
+      task_item_id: taskItemId,
+      reviewer_id: null,
+      claim_version: claimVersion,
+      claim_text_snapshot: claimText,
+      claim_components_snapshot: (dto?.claim_components ?? []) as Record<string, unknown>[],
+      model_direction: modelDirection as string | null,
+      model_assessment: modelAssessment as string | null,
+      reviewer_direction: direction,
+      reviewer_evidence_level: evidenceLevel,
+      reviewer_confidence: parseFloat(confidence) || 0,
+      reviewer_note: (note || null) as string | null,
+      coverage_summary_snapshot: tmpCoverage as unknown as Record<string, unknown>,
+      coverage_formula_version: 'v2',
+      draft_revision: 0,
+      passages: selectedPassages.map(p => ({
+        paper_passage_id: p.paper_passage_id,
+        passage_text: p.passage,
+        source_scope: p.source_scope,
+        section_title: p.section_title,
+        paragraph_index: p.paragraph_index,
+        paragraph_id: p.paragraph_id,
+        translation_zh: p.translation_zh,
+        direction: p.direction,
+        evidence_level: p.evidence_level,
+        reason: p.reason,
+        confidence: p.confidence,
+        semantic_confidence: p.semantic_confidence,
+        source_locator: p.source_locator,
+        source_verified: p.source_verified,
+        source_verification_method: p.source_verification_method,
+        supported_components: p.supported_components,
+        passage_hash: p.hash,
+        rank: 0,
+        is_selected: true,
+      })),
+    })
     // 审核通过/驳回 → 推进 StepPills → 人工审核
     setProgress({ reviewed: true })
-  }, [targetId, persistDraft, direction, evidenceLevel, confidence, note, state.targetType, setProgress])
+  }, [targetId, targetType, persistDraft, direction, evidenceLevel, confidence, note, state.targetType, state.taskId, passages, modelDirection, modelAssessment, dto, tmpCoverage, selectedPassages, queue, setProgress])
 
-  const handleApprove = useCallback(() => {
-    commitReviewStatus('review_approved', new Date().toISOString())
-    setMessage('已审核通过，进入「证据晋升」模块待晋升')
+  const handleApprove = useCallback(async () => {
+    setReviewBusy(true)
+    setMessage(null)
+    try {
+      await commitReviewStatus('review_approved', new Date().toISOString())
+      setMessage('已审核通过，进入「证据晋升」模块待晋升')
+    } catch (err) {
+      setMessage(`审核失败：${err instanceof Error ? err.message : String(err)}`)
+    } finally {
+      setReviewBusy(false)
+    }
   }, [commitReviewStatus])
 
-  const handleReject = useCallback(() => {
-    commitReviewStatus('rejected', new Date().toISOString())
-    setMessage('已驳回该证据，不会进入晋升')
+  const handleReject = useCallback(async () => {
+    setReviewBusy(true)
+    setMessage(null)
+    try {
+      await commitReviewStatus('rejected', new Date().toISOString())
+      setMessage('已驳回该证据，不会进入晋升')
+    } catch (err) {
+      setMessage(`驳回失败：${err instanceof Error ? err.message : String(err)}`)
+    } finally {
+      setReviewBusy(false)
+    }
   }, [commitReviewStatus])
 
   // ─── 右栏接入:把人工审核决策状态推送给 Context,RightPanel 渲染 ReviewerDecisionPanel ───
@@ -312,6 +378,7 @@ export function EvidenceReviewModule() {
     coverage: selectedPassages.length > 0 ? tmpCoverage : null,
     currentConfidence: dto?.current_confidence ?? null,
     reviewStatus,
+    reviewBusy,
     onDirectionChange: setDirection,
     onEvidenceLevelChange: setEvidenceLevel,
     onConfidenceChange: setConfidence,
@@ -319,7 +386,7 @@ export function EvidenceReviewModule() {
     onApprove: handleApprove,
     onReject: handleReject,
   }), [direction, modelDirection, evidenceLevel, confidence, note, selectedHashes, preview, previewBusy,
-    selectedPassages, tmpCoverage, dto, reviewStatus, handleApprove, handleReject])
+    selectedPassages, tmpCoverage, dto, reviewStatus, reviewBusy, handleApprove, handleReject])
 
   useEffect(() => {
     if (!targetType || !targetId) {

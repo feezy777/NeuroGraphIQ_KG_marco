@@ -12,8 +12,12 @@ vi.mock('../../../api/endpoints', () => ({
   getEvidenceTarget: vi.fn(),
   attachPaperEvidencePreview: vi.fn(),
   attachPaperEvidence: vi.fn(),
+  buildReview: vi.fn(),
   completePaperEvidenceTaskItem: vi.fn(),
+  listEvidenceReviews: vi.fn(),
   listPaperEvidence: vi.fn(),
+  promoteReview: vi.fn(),
+  returnReview: vi.fn(),
   rollbackPaperEvidence: vi.fn(),
 }))
 
@@ -106,6 +110,45 @@ const PREVIEW = {
   evidence_text_preview: '...',
   allow: true,
   block_reasons: [] as string[],
+}
+
+/** Phase 2:后端 EvidenceReviewItem 模拟 */
+const BACKEND_REVIEW = {
+  id: 'rev-r1-r2',
+  target_type: 'connection',
+  target_id: 'r1-r2',
+  paper_id: 'paper-1',
+  task_id: 't1',
+  task_item_id: 'item-1',
+  reviewer_id: null,
+  review_status: 'approved',
+  promotion_status: 'awaiting_promotion',
+  claim_version: 'v1',
+  claim_text_snapshot: 'R1 投射到 R2 且影响功能',
+  claim_components_snapshot: [
+    { component_type: 'relation', statement: '存在投射关系', required: true, metadata: {} },
+    { component_type: 'source_region', statement: '源脑区为 R1', required: true, metadata: {} },
+  ],
+  model_direction: 'supports',
+  model_assessment: '支持连接存在',
+  reviewer_direction: 'supports',
+  reviewer_evidence_level: 'direct',
+  reviewer_confidence: 0.8,
+  reviewer_note: '人工核对通过，允许晋升',
+  coverage_summary_snapshot: null,
+  coverage_formula_version: 'v2',
+  draft_revision: 0,
+  reviewed_at: '2026-08-10T08:00:00Z',
+  approved_at: '2026-08-10T08:00:00Z',
+  rejected_at: null,
+  promoted_at: null,
+  promoted_by: null,
+  returned_at: null,
+  returned_by: null,
+  return_reason: null,
+  evidence_id: null,
+  created_at: '2026-08-10T08:00:00Z',
+  updated_at: '2026-08-10T08:00:00Z',
 }
 
 const EVIDENCE_ACTIVE: PaperEvidenceItem = {
@@ -229,6 +272,14 @@ describe('EvidencePromotionModule', () => {
       passage_count: 1,
       paper: { links: { pubmed: null, doi: null } },
     })
+    vi.mocked(endpoints.listEvidenceReviews).mockResolvedValue({ items: [BACKEND_REVIEW] })
+    vi.mocked(endpoints.promoteReview).mockResolvedValue({
+      ...BACKEND_REVIEW,
+      promotion_status: 'promoted',
+      promoted_at: '2026-08-11T00:00:00Z',
+      evidence_id: 'ev-new',
+    })
+    vi.mocked(endpoints.returnReview).mockResolvedValue({ review_id: 'rev-r1-r2', status: 'returned' })
     vi.mocked(endpoints.listPaperEvidence).mockResolvedValue({ items: [EVIDENCE_ACTIVE, EVIDENCE_INVALIDATED] })
     vi.mocked(endpoints.rollbackPaperEvidence).mockResolvedValue({
       evidence_id: 'ev-1',
@@ -240,26 +291,31 @@ describe('EvidencePromotionModule', () => {
 
   // ─── V2-S4:待晋升来自 ReviewStatusStore(review_approved) ───
 
-  it('待晋升列表来自 ReviewStatusStore:仅渲染 review_approved,排除 rejected', async () => {
-    // rejected 记录不进入待晋升列表
-    sessionStorage.setItem('evidence-center.review-approved.x1-y1', JSON.stringify({
-      targetId: 'x1-y1',
-      targetType: 'connection',
-      status: 'rejected',
-      meta: { direction: 'contradicts', evidenceLevel: 'indirect', confidence: '0.4', note: '矛盾', at: '2026-08-10T08:00:00.000Z' },
-    }))
+  it('待晋升列表来自后端 listEvidenceReviews:渲染 approved + awaiting_promotion', async () => {
+    renderModule()
+    // listEvidenceReviews 被调用
+    await waitFor(() => expect(endpoints.listEvidenceReviews).toHaveBeenCalledWith(
+      expect.objectContaining({ review_status: 'approved', promotion_status: 'awaiting_promotion' }),
+    ))
+    await waitFor(() => expect(screen.getAllByTestId('promotion-pending-row')).toHaveLength(1))
+    // 待晋升行展示审核结果摘要(方向/等级/置信度/时间,来自 EvidenceReviewItem 映射)
+    expect(screen.getByText(/支持 · 直接证据 · 置信度 0\.8/)).toBeTruthy()
+  })
+
+  it('待晋升列表:后端失败时降级为 sessionStorage', async () => {
+    vi.mocked(endpoints.listEvidenceReviews).mockRejectedValueOnce(new Error('后端不可用'))
+    // 保留 sessionStorage 中的审核通过记录
+    sessionStorage.setItem(REVIEW_KEY, JSON.stringify(REVIEW_RECORD))
     renderModule()
     await waitFor(() => expect(screen.getAllByTestId('promotion-pending-row')).toHaveLength(1))
-    expect(screen.queryByText('x1-y1')).toBeNull()
-    // 待晋升行展示审核结果摘要(方向/等级/置信度/时间)
     expect(screen.getByText(/支持 · 直接证据 · 置信度 0\.8/)).toBeTruthy()
   })
 
   it('选中待晋升项:中栏完整审核结果(Claim/论文/Coverage/Reviewer 决策/Confidence 预览)', async () => {
     renderModule()
     await waitFor(() => expect(screen.getByText('待晋升')).toBeTruthy())
-    // Claim
-    expect(screen.getByText('R1 投射到 R2 且影响功能')).toBeTruthy()
+    // Claim(getEvidenceTarget 异步,需等待 dto 就绪)
+    await waitFor(() => expect(screen.getByText('R1 投射到 R2 且影响功能')).toBeTruthy())
     // 论文(待晋升卡片 + 已晋升列表行可能同名,取首个匹配即可)
     expect(screen.getAllByText('A Study of R1 to R2 Projection').length).toBeGreaterThan(0)
     // Coverage(复用 CoveragePanel)
@@ -320,19 +376,24 @@ describe('EvidencePromotionModule', () => {
     expect((panel.querySelector('[data-testid="pi-return-btn"]') as HTMLElement).className).not.toContain('btn-primary')
   })
 
-  it('多待晋升项:列表来自 store,点击行切换选中项(中栏与右栏跟随切换)', async () => {
+  it('多待晋升项:列表来自后端,点击行切换选中项(中栏与右栏跟随切换)', async () => {
+    // Mock 两个后端 Review
+    const secondReview = {
+      ...BACKEND_REVIEW,
+      id: 'rev-x1-y1',
+      target_id: 'x1-y1',
+      reviewer_confidence: 0.75,
+      reviewer_note: '第二篇也通过',
+      approved_at: '2026-08-10T09:00:00Z',
+    }
+    vi.mocked(endpoints.listEvidenceReviews).mockResolvedValue({ items: [BACKEND_REVIEW, secondReview] })
+    // 第二个对象的 sessionStorage 草稿(用于显示 paperTitle 等)
     sessionStorage.setItem('evidence-center.review-draft.x1-y1', JSON.stringify({
       ...DRAFT,
       paperTitle: 'Second Projection Paper',
       pmid: '99998888',
       reviewerConfidence: '0.75',
       note: '第二篇也通过',
-    }))
-    sessionStorage.setItem('evidence-center.review-approved.x1-y1', JSON.stringify({
-      targetId: 'x1-y1',
-      targetType: 'connection',
-      status: 'review_approved',
-      meta: { direction: 'supports', evidenceLevel: 'direct', confidence: '0.75', note: '第二篇也通过', at: '2026-08-10T09:00:00.000Z' },
     }))
     renderModule()
     await waitFor(() => expect(screen.getAllByTestId('promotion-pending-row')).toHaveLength(2))
@@ -349,7 +410,7 @@ describe('EvidencePromotionModule', () => {
 
   // ─── 确认晋升(唯一 attach 入口) ───
 
-  it('「确认晋升」(右栏)→ PromotionDialog(文案为 确认晋升)→ attachPaperEvidence body 断言', async () => {
+  it('「确认晋升」(右栏)→ PromotionDialog → promoteReview(后端)替换 attachPaperEvidence', async () => {
     renderModule()
     await waitFor(() => expect(endpoints.attachPaperEvidencePreview).toHaveBeenCalled())
     const confirmBtn = await openConfirmDialog()
@@ -357,40 +418,29 @@ describe('EvidencePromotionModule', () => {
     expect(confirmBtn.textContent).toContain('确认晋升')
     expect(confirmBtn.textContent).not.toContain('确认入库')
     fireEvent.click(confirmBtn)
-    await waitFor(() =>
-      expect(endpoints.attachPaperEvidence).toHaveBeenCalledWith(expect.objectContaining({
-        target_type: 'connection',
-        target_id: 'r1-r2',
-        pmid: '12345678',
-        direction: 'supports',
-        evidence_level: 'direct',
-        model_direction: 'supports',
-        model_assessment: '支持连接存在',
-        reviewer_note: '人工核对通过，允许晋升',
-        reviewer_confidence: 0.8,
-        passages: expect.arrayContaining([expect.objectContaining({
-          source_verified: true,
-          passage: PASSAGE_VERIFIED.passage,
-          supported_components: ['relation'],
-        })]),
-      })),
-    )
+    // Phase 2:调 promoteReview(reviewId) 而非 attachPaperEvidence
+    await waitFor(() => expect(endpoints.promoteReview).toHaveBeenCalledWith('rev-r1-r2'))
+    expect(endpoints.attachPaperEvidence).not.toHaveBeenCalled()
   })
 
-  it('晋升成功:清 review status + 清 draft + 刷新已晋升/已失效列表', async () => {
+  it('晋升成功:promoteReview 调后端 → 清 status + 清 draft + 刷新列表', async () => {
     renderModule()
     await waitFor(() => expect(endpoints.attachPaperEvidencePreview).toHaveBeenCalled())
+    // 晋升后后端不再返回该 pending(因为 promotion_status 变为 promoted)
+    vi.mocked(endpoints.listEvidenceReviews).mockResolvedValue({ items: [] })
     const confirmBtn = await openConfirmDialog()
     fireEvent.click(confirmBtn)
-    await waitFor(() => expect(endpoints.attachPaperEvidence).toHaveBeenCalled())
+    await waitFor(() => expect(endpoints.promoteReview).toHaveBeenCalledWith('rev-r1-r2'))
     await waitFor(() => expect(endpoints.listPaperEvidence).toHaveBeenCalledTimes(2))
+    // 刷新后重新调 listEvidenceReviews
+    await waitFor(() => expect(endpoints.listEvidenceReviews).toHaveBeenCalledTimes(2))
     expect(sessionStorage.getItem(REVIEW_KEY)).toBeNull()
     expect(sessionStorage.getItem(DRAFT_KEY)).toBeNull()
-    // 待晋升组消失(store 记录已清除)
+    // 待晋升组消失(记录已清除)
     await waitFor(() => expect(screen.queryAllByTestId('promotion-pending-row')).toHaveLength(0))
   })
 
-  it('晋升成功:有 taskId 且 queue 带 taskItemId 时调用 completePaperEvidenceTaskItem 标记后端完成', async () => {
+  it('晋升成功:有 taskId 时调用 completePaperEvidenceTaskItem 标记后端完成', async () => {
     // 标记接口失败不阻断主流程:先 mock reject,再断言列表仍刷新、成功消息仍出现
     vi.mocked(endpoints.completePaperEvidenceTaskItem).mockRejectedValueOnce(new Error('boom'))
     window.location.hash = HASH
@@ -404,7 +454,7 @@ describe('EvidencePromotionModule', () => {
     await waitFor(() => expect(endpoints.attachPaperEvidencePreview).toHaveBeenCalled())
     const confirmBtn = await openConfirmDialog()
     fireEvent.click(confirmBtn)
-    await waitFor(() => expect(endpoints.attachPaperEvidence).toHaveBeenCalled())
+    await waitFor(() => expect(endpoints.promoteReview).toHaveBeenCalledWith('rev-r1-r2'))
     await waitFor(() =>
       expect(endpoints.completePaperEvidenceTaskItem).toHaveBeenCalledWith('t1', 'item-1', 'ev-new'),
     )
@@ -427,28 +477,30 @@ describe('EvidencePromotionModule', () => {
     await waitFor(() => expect(endpoints.attachPaperEvidencePreview).toHaveBeenCalled())
     const confirmBtn = await openConfirmDialog()
     fireEvent.click(confirmBtn)
-    await waitFor(() => expect(endpoints.attachPaperEvidence).toHaveBeenCalled())
+    await waitFor(() => expect(endpoints.promoteReview).toHaveBeenCalledWith('rev-r1-r2'))
     expect(endpoints.completePaperEvidenceTaskItem).not.toHaveBeenCalled()
   })
 
-  it('唯一 attach 入口:打开弹窗不调 attach;仅弹窗确认按钮触发,且一次晋升只调一次', async () => {
+  it('唯一 promote 入口:打开弹窗不调 API;仅弹窗确认按钮触发 promoteReview', async () => {
     renderModule()
     await waitFor(() => expect(screen.getByTestId('pi-promote-btn')).toBeTruthy())
-    // 待晋升卡片内无其他 attach 按钮:全页仅右栏一个「确认晋升」触发按钮
+    // 全页仅右栏一个「确认晋升」触发按钮
     expect(screen.getAllByRole('button', { name: '确认晋升' })).toHaveLength(1)
     const confirmBtn = await openConfirmDialog()
-    // 打开弹窗本身不触发 attach
+    // 打开弹窗本身不触发 API
+    expect(endpoints.promoteReview).not.toHaveBeenCalled()
     expect(endpoints.attachPaperEvidence).not.toHaveBeenCalled()
     fireEvent.click(confirmBtn)
-    await waitFor(() => expect(endpoints.attachPaperEvidence).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(endpoints.promoteReview).toHaveBeenCalledTimes(1))
   })
 
   // ─── 退回人工审核 ───
 
-  it('退回人工审核:清除 review status + draft,openTarget 到 module=review', async () => {
+  it('退回人工审核:调 returnReview(后端) + 清 status + draft + 跳转 review', async () => {
     renderModule()
     await waitFor(() => expect(screen.getAllByTestId('promotion-pending-row')).toHaveLength(1))
     fireEvent.click(screen.getByTestId('pi-return-btn'))
+    await waitFor(() => expect(endpoints.returnReview).toHaveBeenCalledWith('rev-r1-r2', '退回人工审核'))
     await waitFor(() => expect(window.location.hash).toContain('module=review'))
     expect(window.location.hash).toContain('target_id=r1-r2')
     expect(sessionStorage.getItem(REVIEW_KEY)).toBeNull()

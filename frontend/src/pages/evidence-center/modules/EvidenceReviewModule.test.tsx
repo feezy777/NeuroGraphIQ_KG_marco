@@ -11,6 +11,7 @@ vi.mock('../../../api/endpoints', () => ({
   getEvidenceTarget: vi.fn(),
   attachPaperEvidencePreview: vi.fn(),
   attachPaperEvidence: vi.fn(),
+  buildReview: vi.fn(),
   translateEvidenceText: vi.fn(),
   validatePassageSelection: vi.fn(),
   saveTaskItemDraft: vi.fn(),
@@ -146,6 +147,7 @@ describe('EvidenceReviewModule', () => {
       char_end: 20,
     })
     vi.mocked(endpoints.saveTaskItemDraft).mockResolvedValue({ item_id: 'item-1', saved: true, server_revision: 1 })
+    vi.mocked(endpoints.buildReview).mockResolvedValue({ review_id: 'rev-1', status: 'approved' })
   })
 
   it('从 sessionStorage draft 恢复 passages 并渲染 PassageEvidenceCard + AI 初判', async () => {
@@ -297,11 +299,13 @@ describe('EvidenceReviewModule', () => {
 
   // ─── V2-S3:审核 ≠ 晋升 ───
 
-  it('审核通过:写 ReviewStatusStore(review_approved) + 提示进入晋升 + 不调 attach', async () => {
+  it('审核通过:写 sessionStorage + 调 buildReview(后端) + 提示进入晋升 + 不调 attach', async () => {
     renderModule()
     await waitFor(() => expect(screen.getByText('We observed that R1 projects to R2 in the macaque.')).toBeTruthy())
     fireEvent.click(screen.getByRole('button', { name: '审核通过' }))
+    // sessionStorage 兼容写入 + 后端 buildReview 调用
     await waitFor(() => expect(sessionStorage.getItem(REVIEW_STATUS_KEY)).toBeTruthy())
+    await waitFor(() => expect(endpoints.buildReview).toHaveBeenCalled())
     const record = JSON.parse(sessionStorage.getItem(REVIEW_STATUS_KEY)!)
     expect(record.status).toBe('review_approved')
     expect(record.targetId).toBe('r1-r2')
@@ -310,20 +314,39 @@ describe('EvidenceReviewModule', () => {
     expect(record.meta.confidence).toBe('0.8')
     expect(typeof record.meta.at).toBe('string')
     expect(screen.getByText('已审核通过，进入「证据晋升」模块待晋升')).toBeTruthy()
-    // 审核只写前端状态,不调正式 attach
+    // 审核不调旧 attach
     expect(endpoints.attachPaperEvidence).not.toHaveBeenCalled()
+    // buildReview body 断言
+    expect(endpoints.buildReview).toHaveBeenCalledWith(expect.objectContaining({
+      target_type: 'connection',
+      target_id: 'r1-r2',
+      reviewer_direction: 'supports',
+      reviewer_evidence_level: 'indirect',
+      reviewer_confidence: 0.8,
+    }))
   })
 
-  it('驳回证据:写 rejected + 提示 + 不调 attach', async () => {
+  it('驳回证据:写 rejected + 调 buildReview + 提示 + 不调 attach', async () => {
     renderModule()
     await waitFor(() => expect(screen.getByText('We observed that R1 projects to R2 in the macaque.')).toBeTruthy())
     fireEvent.click(screen.getByRole('button', { name: '驳回证据' }))
     await waitFor(() => expect(sessionStorage.getItem(REVIEW_STATUS_KEY)).toBeTruthy())
+    await waitFor(() => expect(endpoints.buildReview).toHaveBeenCalled())
     const record = JSON.parse(sessionStorage.getItem(REVIEW_STATUS_KEY)!)
     expect(record.status).toBe('rejected')
     expect(record.meta.direction).toBe('supports')
     expect(screen.getByText(/不会进入晋升/)).toBeTruthy()
     expect(endpoints.attachPaperEvidence).not.toHaveBeenCalled()
+  })
+
+  it('审核通过:buildReview 失败时提示错误,保留草稿', async () => {
+    vi.mocked(endpoints.buildReview).mockRejectedValueOnce(new Error('后端不可用'))
+    renderModule()
+    await waitFor(() => expect(screen.getByText('We observed that R1 projects to R2 in the macaque.')).toBeTruthy())
+    fireEvent.click(screen.getByRole('button', { name: '审核通过' }))
+    await waitFor(() => expect(screen.getByText(/审核失败/)).toBeTruthy())
+    // sessionStorage 仍已写入（先写 sessionStorage 再调后端）
+    expect(sessionStorage.getItem(REVIEW_STATUS_KEY)).toBeTruthy()
   })
 
   it('审核通过后重新进入:右栏面板显示已审核通过状态标记', async () => {
