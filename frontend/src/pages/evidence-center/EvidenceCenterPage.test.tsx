@@ -326,6 +326,6 @@ describe('EvidenceCenterPage', () => {
     fireEvent.click(screen.getAllByText('人工审核')[0])
     await waitFor(() => expect(window.location.hash).toContain('module=review'))
     expect(screen.getByTestId('evidence-step-pills').querySelector('.evidence-step-pill.active')?.textContent)
-      .toContain('找到原文')
+      .toContain('人工审核')
   })
 })

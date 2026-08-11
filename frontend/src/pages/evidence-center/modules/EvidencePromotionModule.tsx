@@ -49,7 +49,7 @@ function fmtDate(v: string | null | undefined): string {
 
 /** 证据晋升模块:唯一 attach 入口。待晋升(review_approved)/已晋升/已失效(按 invalidated_at 分组) */
 export function EvidencePromotionModule() {
-  const { state, queue, setQueue, openTarget, setPromotionImpact } = useEvidenceCenter()
+  const { state, queue, setQueue, openTarget, setPromotionImpact, setProgress } = useEvidenceCenter()
   const [dto, setDto] = useState<EvidenceTargetDto | null>(null)
   const [draft, setDraft] = useState<ReviewDraft | null>(null)
   const [pendingRecords, setPendingRecords] = useState<ReviewStatusRecord[]>([])
@@ -240,6 +240,8 @@ export function EvidencePromotionModule() {
       setDraft(null)
       setPreview(null)
       setConfirmOpen(false)
+      // 晋升成功 → 推进 StepPills → 确认晋升
+      setProgress({ promoted: true })
       setMessage('证据已晋升并应用到知识对象')
       setQueue(queue.map(q =>
         q.target_id === selectedPendingId ? { ...q, status: 'completed' } : q,
@@ -261,7 +263,7 @@ export function EvidencePromotionModule() {
     } finally {
       setAttachBusy(false)
     }
-  }, [selectedTargetType, selectedPendingId, draft, selectedPassages, queue, setQueue, loadList, refreshPending, state.taskId])
+  }, [selectedTargetType, selectedPendingId, draft, selectedPassages, queue, setQueue, loadList, refreshPending, state.taskId, setProgress])
 
   // ─── 退回人工审核:清 status + 清 draft,跳转 review 模块重新审核 ───
   const handleReturnToReview = useCallback(() => {

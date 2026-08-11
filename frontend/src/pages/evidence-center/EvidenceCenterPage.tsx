@@ -5,7 +5,7 @@ import { EvidenceCenterHeader } from './EvidenceCenterHeader'
 import { ContextBar } from './components/ContextBar'
 import { ObjectQueue } from './components/ObjectQueue'
 import { RightPanel } from './components/RightPanel'
-import { MODULE_TO_STEP, StepPills } from './components/StepPills'
+import { StepPills } from './components/StepPills'
 import { QUEUE_STATUS_LABEL } from './components/types'
 import { EvidenceCandidatesModule } from './modules/EvidenceCandidatesModule'
 import { EvidencePromotionModule } from './modules/EvidencePromotionModule'
@@ -29,7 +29,7 @@ const MODULE_HINT: Record<ModuleKey, string> = {
 }
 
 function EvidenceCenterBody() {
-  const { state, queue, openTarget } = useEvidenceCenter()
+  const { state, queue, openTarget, progress } = useEvidenceCenter()
   const [taskName, setTaskName] = useState<string | null>(null)
 
   // 任务名:从 tasks 列表按 state.taskId 推导(ContextBar 展示用)
@@ -72,7 +72,7 @@ function EvidenceCenterBody() {
         onBackToDataCenter={() => { window.location.hash = '#/data-center' }}
         onRefresh={() => { window.location.reload() }}
       />
-      <StepPills currentStep={MODULE_TO_STEP[state.module]} />
+      <StepPills module={state.module} progress={progress} />
       <div className={`evidence-center-layout${isPapers ? ' evidence-center-layout-full' : ''}`} data-testid="evidence-center-layout">
         {!isPapers && (
           <aside className="evidence-left">

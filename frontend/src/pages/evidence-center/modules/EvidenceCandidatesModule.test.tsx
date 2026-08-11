@@ -454,6 +454,53 @@ describe('EvidenceCandidatesModule', () => {
     expect(screen.getAllByTestId('paper-card-select')).toHaveLength(1)
   })
 
+  it('检索成功后检索区自动折叠为一条:折叠条可见、filters 不可见;展开可恢复;折叠条 [重新搜索] 直接执行', async () => {
+    vi.mocked(endpoints.listPaperEvidenceTaskItems).mockResolvedValue({ items: [] })
+    vi.mocked(endpoints.searchPaperEvidence).mockResolvedValue({
+      target_info: { target_type: 'connection', target_id: 'r1-r2', function_term: '', mode: 'existence', query: 'R1 AND R2', info: {} },
+      papers: [{
+        pmid: '99999999',
+        doi: null,
+        title: 'Found Paper',
+        journal: 'Nature',
+        year: '2025',
+        authors: '',
+        abstract: '',
+        source: 'europepmc',
+        is_open_access: true,
+      }],
+    })
+    window.location.hash = '#/evidence-center?module=candidates&task_id=t1&target_type=connection&target_id=r1-r2'
+    render(
+      <EvidenceCenterProvider>
+        <EvidenceCandidatesModule />
+      </EvidenceCenterProvider>,
+    )
+    await waitFor(() => expect(screen.getByText('查找相关论文')).toBeTruthy())
+    fireEvent.click(screen.getByRole('button', { name: /重新搜索/ }))
+    // 检索成功 → 自动收起:折叠条可见,三层检索控件不可见
+    await waitFor(() => expect(screen.getByTestId('evidence-search-collapsed')).toBeTruthy())
+    expect(screen.queryByText('查找相关论文')).toBeNull()
+    expect(screen.queryByText('检索过滤')).toBeNull()
+    expect(screen.queryByText('批量操作')).toBeNull()
+    expect(screen.queryByLabelText('仅 OA')).toBeNull()
+    expect(screen.queryByTestId('evidence-search-query')).toBeNull()
+    // 折叠条显示 Query 摘要(DTO 推荐词)
+    expect(screen.getByTestId('evidence-search-collapsed-query').textContent).toContain('projects_to')
+    // 展开可恢复:三层控件可见;展开态可 [收起检索] 回到折叠条
+    fireEvent.click(screen.getByRole('button', { name: /展开检索/ }))
+    expect(screen.getByText('查找相关论文')).toBeTruthy()
+    expect(screen.getByText('检索过滤')).toBeTruthy()
+    expect(screen.getByText('批量操作')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: /收起检索/ }))
+    expect(screen.getByTestId('evidence-search-collapsed')).toBeTruthy()
+    // 折叠条 [重新搜索] 直接执行(无需展开)
+    fireEvent.click(within(screen.getByTestId('evidence-search-collapsed')).getByRole('button', { name: /重新搜索/ }))
+    await waitFor(() => expect(endpoints.searchPaperEvidence).toHaveBeenCalledTimes(2))
+    // 结果卡仍在候选列表区
+    expect(screen.getByText('Found Paper')).toBeTruthy()
+  })
+
   it('恢复系统推荐:清空 Query 并以无 query_override 重新检索', async () => {
     vi.mocked(endpoints.listPaperEvidenceTaskItems).mockResolvedValue({ items: [] })
     window.location.hash = '#/evidence-center?module=candidates&task_id=t1&target_type=connection&target_id=r1-r2'
@@ -489,6 +536,8 @@ describe('EvidenceCandidatesModule', () => {
     await waitFor(() => expect(screen.getByText('查找相关论文')).toBeTruthy())
     fireEvent.click(screen.getByRole('button', { name: /重新搜索/ }))
     await waitFor(() => expect(screen.getByText('Paper A')).toBeTruthy())
+    // 检索成功 → 检索区自动折叠,批量操作需先展开
+    fireEvent.click(screen.getByRole('button', { name: /展开检索/ }))
     fireEvent.click(screen.getByRole('button', { name: /全选/ }))
     fireEvent.click(screen.getByRole('button', { name: /提取所选论文（2）/ }))
     await waitFor(() =>
@@ -554,6 +603,8 @@ describe('EvidenceCandidatesModule', () => {
     await waitFor(() => expect(screen.getByText('查找相关论文')).toBeTruthy())
     fireEvent.click(screen.getByRole('button', { name: /重新搜索/ }))
     await waitFor(() => expect(screen.getByText('A Newly Found Paper')).toBeTruthy())
+    // 检索成功 → 检索区自动折叠,批量操作需先展开
+    fireEvent.click(screen.getByRole('button', { name: /展开检索/ }))
     fireEvent.click(screen.getByRole('button', { name: /全选/ }))
     fireEvent.click(screen.getByRole('button', { name: /提取所选论文（1）/ }))
     // 提取结果卡:AI 判断 / 片段 / 已核验 + [查看证据候选];检索卡保留(标题出现两处)
@@ -584,6 +635,8 @@ describe('EvidenceCandidatesModule', () => {
     fireEvent.click(screen.getByRole('button', { name: /重新搜索/ }))
     await waitFor(() => expect(screen.getByText('OA Paper')).toBeTruthy())
     expect(screen.getByText('Closed Paper')).toBeTruthy()
+    // 检索成功 → 检索区自动折叠,过滤控件需先展开
+    fireEvent.click(screen.getByRole('button', { name: /展开检索/ }))
     fireEvent.click(screen.getByLabelText('仅 OA'))
     expect(screen.queryByText('Closed Paper')).toBeNull()
     expect(screen.getByText('OA Paper')).toBeTruthy()

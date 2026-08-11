@@ -35,7 +35,7 @@ interface ReviewDraft {
 }
 
 export function EvidenceReviewModule() {
-  const { state, queue, openTarget, setReviewDecision } = useEvidenceCenter()
+  const { state, queue, openTarget, setReviewDecision, setProgress } = useEvidenceCenter()
   const [dto, setDto] = useState<EvidenceTargetDto | null>(null)
   const [passages, setPassages] = useState<WorkbenchPassage[]>([])
   const [selectedHashes, setSelectedHashes] = useState<Set<string>>(new Set())
@@ -283,7 +283,9 @@ export function EvidenceReviewModule() {
     // 携带 targetType:晋升模块据此 attach/退回跳转
     saveReviewStatus(targetId, status, meta, state.targetType ?? undefined)
     setReviewStatus({ targetId, status, meta })
-  }, [targetId, persistDraft, direction, evidenceLevel, confidence, note, state.targetType])
+    // 审核通过/驳回 → 推进 StepPills → 人工审核
+    setProgress({ reviewed: true })
+  }, [targetId, persistDraft, direction, evidenceLevel, confidence, note, state.targetType, setProgress])
 
   const handleApprove = useCallback(() => {
     commitReviewStatus('review_approved', new Date().toISOString())

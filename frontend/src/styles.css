@@ -11712,8 +11712,8 @@ input[type="range"]::-webkit-slider-thumb {
 .evidence-candidates-queue-label { font-size: 13px; font-weight: 600; color: var(--text); }
 .evidence-candidates-queue-meta { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
 .evidence-candidates-queue-status { font-size: 11px; font-weight: 600; color: var(--primary); }
-.evidence-candidates-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 14px; }
-.evidence-candidates-papers { display: flex; flex-direction: column; gap: 10px; }
+.evidence-candidates-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 12px; }
+.evidence-candidates-papers { display: flex; flex-direction: column; gap: 8px; }
 .evidence-candidates-papers-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
 .evidence-candidates-papers-head h4 { font-size: 15px; color: var(--text); }
 .evidence-candidate-paper {
@@ -11721,10 +11721,10 @@ input[type="range"]::-webkit-slider-thumb {
   border: 1px solid var(--border);
   border-radius: var(--card-radius);
   box-shadow: var(--shadow);
-  padding: 12px 14px;
+  padding: 10px 14px;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
 }
 .evidence-candidate-paper-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 .evidence-candidate-paper-title { display: flex; flex-direction: column; gap: 3px; min-width: 200px; }
@@ -11782,19 +11782,20 @@ input[type="range"]::-webkit-slider-thumb {
   border: 1px solid var(--border);
   border-radius: var(--card-radius);
   box-shadow: var(--shadow);
-  padding: 14px 16px;
+  padding: 10px 14px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
 }
 .evidence-claim-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .evidence-claim-head h4 { font-size: 14px; color: var(--text); }
+.evidence-claim-head-actions { display: inline-flex; align-items: center; gap: 8px; }
 .evidence-claim-text {
-  font-size: 16px;
+  font-size: 15px;
   font-weight: 700;
   color: var(--text);
-  line-height: 1.6;
-  padding: 10px 12px;
+  line-height: 1.55;
+  padding: 8px 10px;
   background: #f0f7ff;
   border-left: 3px solid var(--primary);
   border-radius: 8px;
@@ -11848,13 +11849,36 @@ input[type="range"]::-webkit-slider-thumb {
   padding: 2px 8px;
 }
 
+/* 检索区折叠条(有检索结果后默认收起,候选列表占据主视区) */
+.evidence-search-collapsed {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.evidence-search-collapsed-label {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--primary);
+  white-space: nowrap;
+}
+.evidence-search-collapsed-query {
+  flex: 1;
+  min-width: 120px;
+  font-size: 12px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 /* PaperCard 分层(候选) */
 .paper-card-candidate {
   background: var(--white);
   border: 1px solid var(--border);
   border-radius: var(--card-radius);
   box-shadow: var(--shadow);
-  padding: 12px 14px;
+  padding: 10px 14px;
   display: flex;
   flex-direction: column;
   gap: 6px;

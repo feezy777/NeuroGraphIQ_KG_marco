@@ -17,6 +17,7 @@ import { CandidateSummaryData } from '../components/CandidateSummary'
 import { ClaimView } from '../components/ClaimView'
 import { PaperDetailDrawer } from '../components/PaperDetailDrawer'
 import { PaperEvidenceView } from '../components/PaperEvidenceView'
+import { loadReviewStatus } from '../components/ReviewStatusStore'
 import type { QueueEntry, QueueStatus, WorkbenchPassage } from '../components/types'
 
 const DRAFT_PREFIX = 'evidence-center.review-draft.'
@@ -115,7 +116,7 @@ function searchToCardData(p: PaperSearchResponse['papers'][number]): CandidatePa
 }
 
 export function EvidenceCandidatesModule() {
-  const { state, queue, setQueue, openTarget, setCandidateSummary } = useEvidenceCenter()
+  const { state, queue, setQueue, openTarget, setCandidateSummary, setProgress } = useEvidenceCenter()
   const [items, setItems] = useState<PaperEvidenceTaskItem[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -131,6 +132,8 @@ export function EvidenceCandidatesModule() {
   const [manualResults, setManualResults] = useState<CandidatePaper[]>([])
   const [evidenceViewPaperId, setEvidenceViewPaperId] = useState<string | null>(null)
   const [detailPaperId, setDetailPaperId] = useState<string | null>(null)
+  // 检索区展开态:有检索结果时默认折叠为一条(Query 摘要 + 重新搜索 + 展开)
+  const [searchExpanded, setSearchExpanded] = useState(false)
   // 搜索过滤(第二层)
   const [oaOnly, setOaOnly] = useState(false)
   const [modeOverride, setModeOverride] = useState<EvidenceMode>('auto')
@@ -191,6 +194,20 @@ export function EvidenceCandidatesModule() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [current?.target_id, current?.target_type, items.length, state.targetId, state.targetType])
 
+  // StepPills 进度:从现有数据推导对象实际进度(任务候选已含片段 / 本地已有审核草稿 → 找到原文;
+  // 已有审核状态 → 人工审核)。声明在 URL 同步 effect 之后,确保 openTarget 重置进度后本推导最终生效。
+  useEffect(() => {
+    if (!current) return
+    const hasExtracted = (current.candidate_papers ?? []).some(c => (c.passages?.length ?? 0) > 0)
+    if (hasExtracted || sessionStorage.getItem(`${DRAFT_PREFIX}${current.target_id}`)) {
+      setProgress({ extracted: true })
+    }
+    if (loadReviewStatus(current.target_id)) {
+      setProgress({ reviewed: true })
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [current?.target_id])
+
   useEffect(() => {
     const t = current?.target_type
     const id = current?.target_id
@@ -223,6 +240,7 @@ export function EvidenceCandidatesModule() {
     setDetailPaperId(null)
     setSelectedHashes(new Set())
     setExcludedPaperIds(new Set())
+    setSearchExpanded(false)
     setMessage(null)
   }, [current?.target_id])
 
@@ -291,6 +309,12 @@ export function EvidenceCandidatesModule() {
     )
   }, [manualResult, oaOnly, yearFilter, excludedPaperIds])
 
+  /** 是否有检索结果:有结果 → 检索区默认折叠为一条;无结果 → 展开完整检索区 */
+  const hasSearchResults = (manualResult?.papers.length ?? 0) > 0
+
+  /** 折叠条 Query 摘要(截断显示):手动检索式 → 推荐词 → 占位 */
+  const querySummary = manualQuery.trim() || queryTerms.join(' · ') || '系统推荐检索式'
+
   const runSearch = useCallback(async (query: string) => {
     if (!manualTarget) return
     setManualBusy(true)
@@ -305,12 +329,15 @@ export function EvidenceCandidatesModule() {
       })
       setManualResult(resp)
       setManualSelected(new Set())
+      // 检索完成自动收起检索区,候选论文列表占据主视区;同时推进 StepPills → 查找论文
+      setSearchExpanded(false)
+      setProgress({ searched: true })
     } catch (err) {
       setMessage(`检索失败：${err instanceof Error ? err.message : String(err)}`)
     } finally {
       setManualBusy(false)
     }
-  }, [manualTarget, effectiveMode])
+  }, [manualTarget, effectiveMode, setProgress])
 
   const handleManualSearch = useCallback(() => { void runSearch(manualQuery) }, [runSearch, manualQuery])
 
@@ -333,22 +360,26 @@ export function EvidenceCandidatesModule() {
         mode: effectiveMode,
       })
       setManualResults(resp.results)
+      // 已有提取片段 → 推进 StepPills → 找到原文
+      setProgress({ extracted: true })
       setMessage(`已提取 ${resp.results.length} 篇论文，请勾选片段后加入人工审核`)
     } catch (err) {
       setMessage(`批量提取失败：${err instanceof Error ? err.message : String(err)}`)
     } finally {
       setManualBusy(false)
     }
-  }, [manualTarget, manualSelected, visibleSearchPapers, effectiveMode])
+  }, [manualTarget, manualSelected, visibleSearchPapers, effectiveMode, setProgress])
 
   const handleTogglePassage = useCallback((hash: string, checked: boolean) => {
+    // 选中片段(写审核草稿)→ 推进 StepPills → 找到原文
+    if (checked) setProgress({ extracted: true })
     setSelectedHashes(prev => {
       const next = new Set(prev)
       if (checked) next.add(hash)
       else next.delete(hash)
       return next
     })
-  }, [])
+  }, [setProgress])
 
   const handleReExtract = useCallback(async (cand: CandidatePaper) => {
     if (!current) return
@@ -512,84 +543,109 @@ export function EvidenceCandidatesModule() {
             ) : (
               <>
                 {manualTarget && (
-                  <div className="evidence-search" data-testid="evidence-search">
-                    <div className="evidence-search-layer">
-                      <h4 className="evidence-search-title">查找相关论文</h4>
-                      <div className="evidence-search-row">
-                        <input
-                          className="filter-input evidence-search-query"
-                          data-testid="evidence-search-query"
-                          value={manualQuery}
-                          onChange={e => setManualQuery(e.target.value)}
-                          placeholder="检索式 / 关键词（留空使用系统推荐检索式）"
-                        />
-                        <button type="button" className="btn btn-sm" disabled={manualBusy} onClick={() => void handleManualSearch()}>
-                          {manualBusy ? '检索中…' : '重新搜索'}
-                        </button>
-                        <button type="button" className="btn btn-sm" disabled={manualBusy} onClick={() => void handleRestoreRecommended()}>
-                          恢复系统推荐
-                        </button>
-                      </div>
-                      {queryTerms.length > 0 && (
-                        <div className="evidence-search-terms">
-                          {queryTerms.map(t => (
-                            <span key={t} className="evidence-query-term" data-testid="evidence-query-term">{t}</span>
-                          ))}
+                  hasSearchResults && !searchExpanded ? (
+                    // 有检索结果 → 默认折叠为一条:Query 摘要 + [重新搜索](直接执行) + [展开检索]
+                    <div className="evidence-search evidence-search-collapsed" data-testid="evidence-search-collapsed">
+                      <span className="evidence-search-collapsed-label">已检索</span>
+                      <span
+                        className="evidence-search-collapsed-query"
+                        data-testid="evidence-search-collapsed-query"
+                        title={querySummary}
+                      >
+                        {querySummary}
+                      </span>
+                      <button type="button" className="btn btn-sm" disabled={manualBusy} onClick={() => void handleManualSearch()}>
+                        {manualBusy ? '检索中…' : '重新搜索'}
+                      </button>
+                      <button type="button" className="btn btn-sm" onClick={() => setSearchExpanded(true)}>
+                        展开检索
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="evidence-search" data-testid="evidence-search">
+                      <div className="evidence-search-layer">
+                        <h4 className="evidence-search-title">查找相关论文</h4>
+                        <div className="evidence-search-row">
+                          <input
+                            className="filter-input evidence-search-query"
+                            data-testid="evidence-search-query"
+                            value={manualQuery}
+                            onChange={e => setManualQuery(e.target.value)}
+                            placeholder="检索式 / 关键词（留空使用系统推荐检索式）"
+                          />
+                          <button type="button" className="btn btn-sm" disabled={manualBusy} onClick={() => void handleManualSearch()}>
+                            {manualBusy ? '检索中…' : '重新搜索'}
+                          </button>
+                          <button type="button" className="btn btn-sm" disabled={manualBusy} onClick={() => void handleRestoreRecommended()}>
+                            恢复系统推荐
+                          </button>
                         </div>
-                      )}
-                    </div>
-                    <div className="evidence-search-layer">
-                      <h4 className="evidence-search-title">检索过滤</h4>
-                      <div className="evidence-search-row">
-                        <label className="evidence-search-filter">
-                          <input type="checkbox" checked={oaOnly} onChange={e => setOaOnly(e.target.checked)} />
-                          仅 OA
-                        </label>
-                        <label className="evidence-search-filter">
-                          佐证模式
-                          <select
-                            className="filter-select"
-                            value={modeOverride}
-                            onChange={e => setModeOverride(e.target.value as EvidenceMode)}
+                        {queryTerms.length > 0 && (
+                          <div className="evidence-search-terms">
+                            {queryTerms.map(t => (
+                              <span key={t} className="evidence-query-term" data-testid="evidence-query-term">{t}</span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                      <div className="evidence-search-layer">
+                        <h4 className="evidence-search-title">检索过滤</h4>
+                        <div className="evidence-search-row">
+                          <label className="evidence-search-filter">
+                            <input type="checkbox" checked={oaOnly} onChange={e => setOaOnly(e.target.checked)} />
+                            仅 OA
+                          </label>
+                          <label className="evidence-search-filter">
+                            佐证模式
+                            <select
+                              className="filter-select"
+                              value={modeOverride}
+                              onChange={e => setModeOverride(e.target.value as EvidenceMode)}
+                            >
+                              <option value="auto">自动</option>
+                              <option value="existence">存在性</option>
+                              <option value="function">功能性</option>
+                            </select>
+                          </label>
+                          <input
+                            className="filter-input evidence-search-year"
+                            value={yearFilter}
+                            onChange={e => setYearFilter(e.target.value)}
+                            placeholder="年份（如 2020）"
+                          />
+                          <button type="button" className="btn btn-xs" onClick={() => setExcludedPaperIds(new Set())}>
+                            恢复排除
+                          </button>
+                        </div>
+                      </div>
+                      <div className="evidence-search-layer">
+                        <h4 className="evidence-search-title">批量操作</h4>
+                        <div className="evidence-search-row">
+                          <button
+                            type="button"
+                            className="btn btn-sm"
+                            disabled={visibleSearchPapers.length === 0}
+                            onClick={() => setManualSelected(new Set(visibleSearchPapers.map(p => p.pmid)))}
                           >
-                            <option value="auto">自动</option>
-                            <option value="existence">存在性</option>
-                            <option value="function">功能性</option>
-                          </select>
-                        </label>
-                        <input
-                          className="filter-input evidence-search-year"
-                          value={yearFilter}
-                          onChange={e => setYearFilter(e.target.value)}
-                          placeholder="年份（如 2020）"
-                        />
-                        <button type="button" className="btn btn-xs" onClick={() => setExcludedPaperIds(new Set())}>
-                          恢复排除
-                        </button>
+                            全选
+                          </button>
+                          <button
+                            type="button"
+                            className="btn btn-sm btn-primary"
+                            disabled={manualBusy || manualSelected.size === 0}
+                            onClick={() => void handleManualExtract()}
+                          >
+                            提取所选论文（{manualSelected.size}）
+                          </button>
+                          {hasSearchResults && (
+                            <button type="button" className="btn btn-xs" onClick={() => setSearchExpanded(false)}>
+                              收起检索
+                            </button>
+                          )}
+                        </div>
                       </div>
                     </div>
-                    <div className="evidence-search-layer">
-                      <h4 className="evidence-search-title">批量操作</h4>
-                      <div className="evidence-search-row">
-                        <button
-                          type="button"
-                          className="btn btn-sm"
-                          disabled={visibleSearchPapers.length === 0}
-                          onClick={() => setManualSelected(new Set(visibleSearchPapers.map(p => p.pmid)))}
-                        >
-                          全选
-                        </button>
-                        <button
-                          type="button"
-                          className="btn btn-sm btn-primary"
-                          disabled={manualBusy || manualSelected.size === 0}
-                          onClick={() => void handleManualExtract()}
-                        >
-                          提取所选论文（{manualSelected.size}）
-                        </button>
-                      </div>
-                    </div>
-                  </div>
+                  )
                 )}
 
                 <div className="evidence-candidates-papers">
