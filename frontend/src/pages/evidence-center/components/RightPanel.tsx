@@ -1,5 +1,6 @@
+import { useMemo } from 'react'
 import { useEvidenceCenter, type ModuleKey } from '../EvidenceCenterContext'
-import { CandidateSummary } from './CandidateSummary'
+import { ObjectQueue } from './ObjectQueue'
 import { PromotionImpact } from './PromotionImpact'
 import { ReviewerDecisionPanel } from './ReviewerDecisionPanel'
 import { TaskSummary } from './TaskSummary'
@@ -7,23 +8,30 @@ import { TaskSummary } from './TaskSummary'
 const RIGHT_TITLES: Record<ModuleKey, string> = {
   tasks: '任务与队列概览',
   papers: '论文详情',
-  candidates: '检索与候选',
+  candidates: '待处理对象队列',
   review: '人工审核',
   promotion: '晋升确认',
 }
 
-/** 右栏插槽:佐证任务渲染 TaskSummary,候选模块渲染 CandidateSummary,审核模块渲染 ReviewerDecisionPanel,晋升模块渲染 PromotionImpact */
+/** 右栏插槽:佐证任务渲染 TaskSummary,候选模块渲染 ObjectQueue(队列),审核模块渲染 ReviewerDecisionPanel,晋升模块渲染 PromotionImpact */
 export function RightPanel({ module }: { module: ModuleKey }) {
   const {
     state,
+    queue,
     taskSummary,
     taskSummaryActions,
-    candidateSummary,
     reviewDecision,
     promotionImpact,
     openTarget,
     openTask,
   } = useEvidenceCenter()
+
+  // 候选模块右栏队列的当前对象下标(与页面左栏队列同逻辑;仅 candidates 分支使用)
+  const candidateQueueIndex = useMemo(() => {
+    if (queue.length === 0) return -1
+    const idx = queue.findIndex(q => q.target_type === state.targetType && q.target_id === state.targetId)
+    return idx >= 0 ? idx : 0
+  }, [queue, state.targetType, state.targetId])
 
   if (module === 'tasks') {
     return (
@@ -41,13 +49,13 @@ export function RightPanel({ module }: { module: ModuleKey }) {
   }
 
   if (module === 'candidates') {
+    // 候选模块右栏 = 待处理对象队列(队列已从页面左栏移到右栏;左栏改渲染 ClaimView)
     return (
       <aside className="evidence-right-panel" data-testid="evidence-right-panel">
-        <CandidateSummary
-          data={candidateSummary}
-          onEnterReview={() => {
-            if (state.targetType && state.targetId) openTarget(state.targetType, state.targetId, 'review')
-          }}
+        <ObjectQueue
+          queue={queue}
+          currentIndex={candidateQueueIndex}
+          onSelect={e => openTarget(e.target_type, e.target_id, 'candidates')}
         />
       </aside>
     )

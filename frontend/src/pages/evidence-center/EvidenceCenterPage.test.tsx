@@ -150,15 +150,27 @@ describe('EvidenceCenterPage', () => {
 
   // ─── V2 三栏骨架 ───
 
-  it('渲染三栏骨架:左队列 / 主内容 / 右栏', () => {
+  it('渲染三栏骨架:candidates 左栏 Claim / 主内容 / 右栏队列', () => {
     window.location.hash = '#/evidence-center?module=candidates'
     const { container } = render(<EvidenceCenterPage />)
     expect(container.querySelector('.evidence-center-layout')).toBeTruthy()
     expect(container.querySelector('.evidence-left')).toBeTruthy()
     expect(container.querySelector('.evidence-main')).toBeTruthy()
     expect(container.querySelector('.evidence-right')).toBeTruthy()
+    // 候选模块:左栏 ClaimView,右栏 ObjectQueue(队列已从左侧移到右栏)
+    const left = container.querySelector('.evidence-left') as HTMLElement
+    expect(within(left).getByTestId('evidence-claim')).toBeTruthy()
+    expect(left.querySelector('.evidence-queue')).toBeNull()
     expect(screen.getByTestId('evidence-queue')).toBeTruthy()
     expect(screen.getByTestId('evidence-right-panel')).toBeTruthy()
+  })
+
+  it('其他模块左栏仍渲染 ObjectQueue(review/promotion/tasks 布局不变)', () => {
+    window.location.hash = '#/evidence-center?module=review'
+    const { container } = render(<EvidenceCenterPage />)
+    const left = container.querySelector('.evidence-left') as HTMLElement
+    expect(within(left).getByTestId('evidence-queue')).toBeTruthy()
+    expect(left.querySelector('.evidence-claim')).toBeNull()
   })
 
   it('papers 模块例外:全宽渲染并隐藏左右栏,论文库主区布局完整', async () => {
@@ -173,25 +185,29 @@ describe('EvidenceCenterPage', () => {
     await waitFor(() => expect(screen.getByText(/暂无论文/)).toBeTruthy())
   })
 
-  it('右栏随 module 切换:占位标题(任务/审核)与候选摘要(candidates)', () => {
+  it('右栏随 module 切换:占位标题(任务/审核)与队列(candidates)', () => {
     window.location.hash = '#/evidence-center?module=tasks'
     const { container } = render(<EvidenceCenterPage />)
     const title = () => container.querySelector('.evidence-right-panel h4')?.textContent ?? ''
     expect(title()).toContain('任务')
     fireEvent.click(screen.getByText('证据候选'))
-    expect(title()).toContain('候选摘要')
+    // 候选模块右栏 = 待处理对象队列
+    expect(title()).toContain('待处理对象')
     fireEvent.click(screen.getAllByText('人工审核')[0])
     expect(title()).toContain('审核')
   })
 
-  it('candidates 右栏渲染 CandidateSummary,勾选片段后点击 [进入人工审核] 跳转 review', async () => {
+  it('candidates 右栏渲染对象队列;中栏统计条 [进入人工审核] 勾选后可用并跳转 review', async () => {
     vi.mocked(listPaperEvidenceTaskItems).mockResolvedValue({ items: TASK_ITEMS })
     window.location.hash = '#/evidence-center?module=candidates&task_id=t1'
     render(<EvidenceCenterPage />)
-    await waitFor(() => expect(screen.getByTestId('evidence-candidate-summary')).toBeTruthy())
-    // 零选中时 [进入人工审核] 禁用
+    // 右栏 = 待处理对象队列(队列条目在右栏)
+    await waitFor(() => expect(screen.getByTestId('evidence-queue')).toBeTruthy())
+    expect(screen.queryByTestId('evidence-candidate-summary')).toBeNull()
+    // 中栏统计条零选中时 [进入人工审核] 禁用
+    expect(screen.getByTestId('evidence-stats-bar')).toBeTruthy()
     expect((screen.getByRole('button', { name: /进入人工审核/ }) as HTMLButtonElement).disabled).toBe(true)
-    // 勾选已核验片段后启用(左栏 ObjectQueue 也有 checkbox,需限定在证据视图内)
+    // 勾选已核验片段后启用(限定在证据视图内)
     fireEvent.click(screen.getByRole('button', { name: /查看证据候选/ }))
     fireEvent.click(within(screen.getByTestId('evidence-paper-view')).getByLabelText('选择片段'))
     await waitFor(() =>
@@ -202,11 +218,11 @@ describe('EvidenceCenterPage', () => {
     expect(window.location.hash).toContain('target_id=r1-r2')
   })
 
-  it('候选摘要禁止项:无 Reviewer Confidence / Direction 控件', async () => {
+  it('候选统计条禁止项:无 Reviewer Confidence / Direction 控件', async () => {
     vi.mocked(listPaperEvidenceTaskItems).mockResolvedValue({ items: TASK_ITEMS })
     window.location.hash = '#/evidence-center?module=candidates&task_id=t1'
     render(<EvidenceCenterPage />)
-    await waitFor(() => expect(screen.getByTestId('evidence-candidate-summary')).toBeTruthy())
+    await waitFor(() => expect(screen.getByTestId('evidence-stats-bar')).toBeTruthy())
     expect(screen.queryByText(/Reviewer Confidence/i)).toBeNull()
     expect(screen.queryByText(/Reviewer Direction/i)).toBeNull()
     expect(screen.queryByRole('slider')).toBeNull()
@@ -240,7 +256,50 @@ describe('EvidenceCenterPage', () => {
     await waitFor(() => expect(within(bar).getByText(/粒度 macro_clinical/)).toBeTruthy())
   })
 
-  it('无任务时 initial-queue 恢复的条目渲染在页面级左栏 ObjectQueue', async () => {
+  it('candidates 左栏渲染 ClaimView(页面级):DTO 加载后显示 Claim 单行 + Component Chips;中栏不再渲染', async () => {
+    vi.mocked(listPaperEvidenceTaskItems).mockResolvedValue({ items: TASK_ITEMS })
+    const { getEvidenceTarget } = await import('../../api/endpoints')
+    vi.mocked(getEvidenceTarget).mockResolvedValue({
+      target_type: 'connection',
+      target_id: 'r1-r2',
+      granularity: 'macro_clinical',
+      display_name: 'R1→R2',
+      source_region: 'R1',
+      target_region: 'R2',
+      canonical_terms: [],
+      relation: 'projects_to',
+      directionality: '',
+      circuit_context: '',
+      function_context: '',
+      current_confidence: 0.85,
+      existing_evidence: 0,
+      structured_claim: {},
+      claim_text: 'R1 投射到 R2',
+      claim_components: [
+        { component_type: 'source_region', statement: 'R1', required: true, metadata: {} },
+        { component_type: 'relation', statement: '存在投射关系', required: true, metadata: {} },
+      ],
+      claim_version: 'v1',
+    })
+    window.location.hash = '#/evidence-center?module=candidates&task_id=t1'
+    const { container } = render(<EvidenceCenterPage />)
+    await waitFor(() => expect(screen.getByText('R1 投射到 R2')).toBeTruthy())
+    // 左栏:Claim 单行 + Component Chips
+    const left = container.querySelector('.evidence-left') as HTMLElement
+    expect(within(left).getByTestId('evidence-claim')).toBeTruthy()
+    expect(within(left).getByText('当前需要验证的事实')).toBeTruthy()
+    const chips = within(left).getAllByTestId('evidence-claim-chip')
+    expect(chips).toHaveLength(2)
+    expect(chips[0].textContent).toContain('源脑区')
+    expect(chips[0].textContent).toContain('R1')
+    expect(chips[1].textContent).toContain('连接关系')
+    expect(chips[1].textContent).toContain('存在投射关系')
+    // 中栏不再渲染 ClaimView
+    const main = container.querySelector('.evidence-main') as HTMLElement
+    expect(main.querySelector('.evidence-claim')).toBeNull()
+  })
+
+  it('无任务时 initial-queue 恢复的条目渲染在页面级右栏 ObjectQueue(candidates)', async () => {
     sessionStorage.setItem(
       'evidence-center.initial-queue',
       JSON.stringify({
@@ -254,7 +313,7 @@ describe('EvidenceCenterPage', () => {
     window.location.hash = '#/evidence-center?module=candidates&target_type=connection&target_id=r1-r2'
     render(<EvidenceCenterPage />)
     await waitFor(() => expect(screen.getByText('R1 功能')).toBeTruthy())
-    // 队列条目渲染在页面级左栏 ObjectQueue(上下文条中也出现 label,需在队列内断言)
+    // 队列条目渲染在页面级右栏 ObjectQueue(上下文条中也出现 label,需在队列内断言)
     expect(within(screen.getByTestId('evidence-queue')).getByText('R1 → R2 连接')).toBeTruthy()
     expect(screen.getByText(/已从数据中心恢复 2 个待处理对象/)).toBeTruthy()
   })

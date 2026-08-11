@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { listPaperEvidenceTasks } from '../../api/endpoints'
 import { EvidenceCenterProvider, useEvidenceCenter, type ModuleKey } from './EvidenceCenterContext'
 import { EvidenceCenterHeader } from './EvidenceCenterHeader'
+import { ClaimView } from './components/ClaimView'
 import { ContextBar } from './components/ContextBar'
 import { ObjectQueue } from './components/ObjectQueue'
 import { RightPanel } from './components/RightPanel'
@@ -29,7 +30,7 @@ const MODULE_HINT: Record<ModuleKey, string> = {
 }
 
 function EvidenceCenterBody() {
-  const { state, queue, openTarget, progress } = useEvidenceCenter()
+  const { state, queue, openTarget, progress, candidateClaim } = useEvidenceCenter()
   const [taskName, setTaskName] = useState<string | null>(null)
 
   // 任务名:从 tasks 列表按 state.taskId 推导(ContextBar 展示用)
@@ -76,16 +77,25 @@ function EvidenceCenterBody() {
       <div className={`evidence-center-layout${isPapers ? ' evidence-center-layout-full' : ''}`} data-testid="evidence-center-layout">
         {!isPapers && (
           <aside className="evidence-left">
-            <ObjectQueue
-              queue={queue}
-              currentIndex={currentIndex}
-              onSelect={e => openTarget(
-                e.target_type,
-                e.target_id,
-                // 审核/晋升模块内切换队列项时留在当前模块,其余模块统一回候选视图
-                state.module === 'review' || state.module === 'promotion' ? state.module : 'candidates',
-              )}
-            />
+            {state.module === 'candidates' ? (
+              // 候选模块左栏 = 当前对象验证事实(ClaimView);队列移到右栏
+              <ClaimView
+                claimText={candidateClaim?.claimText ?? ''}
+                components={candidateClaim?.components ?? []}
+                targetType={candidateClaim?.targetType ?? ''}
+              />
+            ) : (
+              <ObjectQueue
+                queue={queue}
+                currentIndex={currentIndex}
+                onSelect={e => openTarget(
+                  e.target_type,
+                  e.target_id,
+                  // 审核/晋升模块内切换队列项时留在当前模块,其余模块统一回候选视图
+                  state.module === 'review' || state.module === 'promotion' ? state.module : 'candidates',
+                )}
+              />
+            )}
           </aside>
         )}
         <main className="evidence-main">

@@ -3,7 +3,7 @@ import type { CandidateSummaryData } from './components/CandidateSummary'
 import type { PromotionImpactState } from './components/PromotionImpact'
 import type { ReviewDecisionState } from './components/ReviewerDecisionPanel'
 import type { TaskSummaryActions, TaskSummaryData } from './components/TaskSummary'
-import type { QueueEntry } from './components/types'
+import type { ClaimComponent, QueueEntry } from './components/types'
 import { buildEvidenceUrl, parseEvidenceUrl, type EvidenceCenterState } from './evidenceCenterUrl'
 
 export type ModuleKey = 'tasks' | 'papers' | 'candidates' | 'review' | 'promotion'
@@ -38,6 +38,14 @@ interface EvidenceCenterContextValue {
   /** 候选模块推送的右栏摘要(仅 candidates 模块使用) */
   candidateSummary: CandidateSummaryData | null
   setCandidateSummary: (s: CandidateSummaryData | null) => void
+  /** 候选模块推送的当前对象验证事实(仅 candidates 模块使用,页面左栏渲染 ClaimView) */
+  candidateClaim: {
+    claimText: string
+    components: ClaimComponent[]
+    granularity: string | null
+    targetType: string
+  } | null
+  setCandidateClaim: (c: { claimText: string; components: ClaimComponent[]; granularity: string | null; targetType: string } | null) => void
   /** 审核模块推送的人工审核决策状态(仅 review 模块使用,RightPanel 渲染 ReviewerDecisionPanel) */
   reviewDecision: ReviewDecisionState | null
   setReviewDecision: (s: ReviewDecisionState | null) => void
@@ -59,6 +67,12 @@ export function EvidenceCenterProvider({ children }: { children: ReactNode }) {
   const [queue, setQueue] = useState<QueueEntry[]>([])
   const [progress, setProgressState] = useState<ObjectProgress>(INITIAL_OBJECT_PROGRESS)
   const [candidateSummary, setCandidateSummary] = useState<CandidateSummaryData | null>(null)
+  const [candidateClaim, setCandidateClaim] = useState<{
+    claimText: string
+    components: ClaimComponent[]
+    granularity: string | null
+    targetType: string
+  } | null>(null)
   const [reviewDecision, setReviewDecision] = useState<ReviewDecisionState | null>(null)
   const [promotionImpact, setPromotionImpact] = useState<PromotionImpactState | null>(null)
   const [taskSummary, setTaskSummary] = useState<TaskSummaryData | null>(null)
@@ -118,6 +132,8 @@ export function EvidenceCenterProvider({ children }: { children: ReactNode }) {
     selectPaper,
     candidateSummary,
     setCandidateSummary,
+    candidateClaim,
+    setCandidateClaim,
     reviewDecision,
     setReviewDecision,
     promotionImpact,
@@ -126,7 +142,7 @@ export function EvidenceCenterProvider({ children }: { children: ReactNode }) {
     setTaskSummary,
     taskSummaryActions,
     setTaskSummaryActions,
-  }), [state, queue, progress, setProgress, gotoModule, openTask, openTarget, selectPaper, candidateSummary, reviewDecision, promotionImpact, taskSummary, taskSummaryActions])
+  }), [state, queue, progress, setProgress, gotoModule, openTask, openTarget, selectPaper, candidateSummary, candidateClaim, reviewDecision, promotionImpact, taskSummary, taskSummaryActions])
 
   return <EvidenceCenterContext.Provider value={value}>{children}</EvidenceCenterContext.Provider>
 }

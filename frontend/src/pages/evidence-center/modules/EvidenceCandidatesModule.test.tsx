@@ -178,16 +178,24 @@ describe('EvidenceCandidatesModule', () => {
     expect(screen.queryByTestId('candidates-queue-item')).toBeNull()
   })
 
-  it('Claim 区重排:当前需要验证的事实 + Claim 单行 + Component Chips(标签 + 值)', async () => {
+  it('不再自渲染 ClaimView(已移至页面左栏;模块中栏仅保留检索/统计条/候选列表)', async () => {
     renderModule()
-    await waitFor(() => expect(screen.getByText('R1 投射到 R2 且影响功能')).toBeTruthy())
-    expect(screen.getByText('当前需要验证的事实')).toBeTruthy()
-    const chips = screen.getAllByTestId('evidence-claim-chip')
-    expect(chips).toHaveLength(2)
-    expect(chips[0].textContent).toContain('源脑区')
-    expect(chips[0].textContent).toContain('R1')
-    expect(chips[1].textContent).toContain('连接关系')
-    expect(chips[1].textContent).toContain('存在投射关系')
+    await waitFor(() => expect(screen.getByText('A Study of R1 to R2 Projection')).toBeTruthy())
+    expect(screen.queryByTestId('evidence-claim')).toBeNull()
+    expect(screen.queryByText('当前需要验证的事实')).toBeNull()
+  })
+
+  it('中栏统计条:找到论文 / AI 提取论文 / 已核验片段 / Coverage(N/M) / 模型判断', async () => {
+    renderModule()
+    await waitFor(() => expect(screen.getByTestId('evidence-stats-bar')).toBeTruthy())
+    const bar = screen.getByTestId('evidence-stats-bar')
+    // ITEM 固定装置:1 篇已提取论文(2 片段,1 已核验);DTO 必需组件 2(源脑区/连接关系),已覆盖 1(连接关系)
+    expect(within(bar).getByTestId('evidence-stats-found').textContent).toBe('1')
+    expect(within(bar).getByTestId('evidence-stats-extracted').textContent).toBe('1')
+    expect(within(bar).getByTestId('evidence-stats-verified').textContent).toBe('1')
+    expect(within(bar).getByTestId('evidence-stats-coverage').textContent).toBe('1/2')
+    expect(within(bar).getByTestId('evidence-stats-direction').textContent).toBe('部分支持')
+    expect(within(bar).getByText('支持连接存在')).toBeTruthy()
   })
 
   it('PaperCard 分层:标题粗体 / 作者·期刊·年份 / 标签(PMID/DOI/摘要/OA 全文) / 提取结果行', async () => {
@@ -507,6 +515,78 @@ describe('EvidenceCandidatesModule', () => {
     await waitFor(() => expect(endpoints.searchPaperEvidence).toHaveBeenCalledTimes(2))
     // 结果卡仍在候选列表区
     expect(screen.getByText('Found Paper')).toBeTruthy()
+  })
+
+  it('折叠条 [提取所选论文(N)]:检索折叠后从候选列表勾选论文可直接批量提取(零选中禁用)', async () => {
+    vi.mocked(endpoints.listPaperEvidenceTaskItems).mockResolvedValue({ items: [] })
+    vi.mocked(endpoints.searchPaperEvidence).mockResolvedValue({
+      target_info: { target_type: 'connection', target_id: 'r1-r2', function_term: '', mode: 'existence', query: '', info: {} },
+      papers: [{
+        pmid: '99999999',
+        doi: '10.9999/abc',
+        title: 'Found Paper',
+        journal: 'Nature',
+        year: '2025',
+        authors: '',
+        abstract: '',
+        source: 'europepmc',
+        is_open_access: true,
+      }],
+    })
+    vi.mocked(endpoints.extractSelectedPaperEvidence).mockResolvedValueOnce({
+      claim: '',
+      claim_components: [],
+      results: [{
+        paper_id: 'paper-2',
+        pmid: '99999999',
+        doi: '10.9999/abc',
+        pmcid: null,
+        title: 'Found Paper',
+        journal: 'Nature',
+        year: '2025',
+        is_oa: true,
+        fulltext_fetched: true,
+        model_direction: 'supports',
+        model_assessment: '支持连接存在',
+        coverage_summary: null,
+        passages: [{
+          passage: 'Evidence from the collapsed-bar extraction.',
+          source_scope: 'abstract',
+          section_title: null,
+          direction: 'supports',
+          evidence_level: 'direct',
+          source_verified: true,
+          supported_components: ['relation'],
+        }],
+      }],
+      llm_model: null,
+    })
+    window.location.hash = '#/evidence-center?module=candidates&task_id=t1&target_type=connection&target_id=r1-r2'
+    render(
+      <EvidenceCenterProvider>
+        <EvidenceCandidatesModule />
+      </EvidenceCenterProvider>,
+    )
+    await waitFor(() => expect(screen.getByText('查找相关论文')).toBeTruthy())
+    fireEvent.click(screen.getByRole('button', { name: /重新搜索/ }))
+    // 检索成功 → 折叠条出现;未勾选论文时 [提取所选论文] 禁用
+    await waitFor(() => expect(screen.getByTestId('evidence-search-collapsed')).toBeTruthy())
+    expect((screen.getByTestId('evidence-collapsed-extract') as HTMLButtonElement).disabled).toBe(true)
+    // 从候选列表勾选检索结果卡(无需展开检索)→ 按钮可用且计数更新
+    fireEvent.click(screen.getByTestId('paper-card-select'))
+    await waitFor(() =>
+      expect((screen.getByTestId('evidence-collapsed-extract') as HTMLButtonElement).disabled).toBe(false),
+    )
+    expect(screen.getByTestId('evidence-collapsed-extract').textContent).toContain('提取所选论文（1）')
+    // 点击 → 批量提取
+    fireEvent.click(screen.getByTestId('evidence-collapsed-extract'))
+    await waitFor(() =>
+      expect(endpoints.extractSelectedPaperEvidence).toHaveBeenCalledWith(expect.objectContaining({
+        target_type: 'connection',
+        target_id: 'r1-r2',
+        papers: [expect.objectContaining({ pmid: '99999999' })],
+      })),
+    )
   })
 
   it('恢复系统推荐:清空 Query 并以无 query_override 重新检索', async () => {

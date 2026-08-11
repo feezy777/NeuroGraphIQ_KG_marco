@@ -11816,6 +11816,13 @@ input[type="range"]::-webkit-slider-thumb {
 .evidence-claim-chip span { white-space: nowrap; }
 .evidence-claim-chip-optional { background: #f8fafc; border-color: var(--border); }
 .evidence-claim-chip-optional b { color: var(--text-muted); }
+/* 候选模块左栏窄面板(230px):Claim 紧凑排布,chips 内容允许换行 */
+.evidence-left .evidence-claim { padding: 8px 10px; gap: 5px; }
+.evidence-left .evidence-claim-head h4 { font-size: 13px; }
+.evidence-left .evidence-claim-text { font-size: 13px; padding: 6px 8px; }
+.evidence-left .evidence-claim-chip { font-size: 11px; padding: 2px 8px; max-width: 100%; }
+.evidence-left .evidence-claim-chip b,
+.evidence-left .evidence-claim-chip span { white-space: normal; word-break: break-word; }
 
 /* 搜索区三层 */
 .evidence-search {
@@ -11871,6 +11878,33 @@ input[type="range"]::-webkit-slider-thumb {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+/* 折叠条按钮组(重新搜索 / 展开检索 / 提取所选论文)右对齐 */
+.evidence-search-collapsed-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+
+/* 中栏统计信息条(候选模块):找到论文 / AI 提取论文 / 已核验片段 / Coverage / 模型判断 + 进入人工审核 */
+.evidence-stats-bar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  background: var(--white);
+  border: 1px solid var(--border);
+  border-radius: var(--card-radius);
+  box-shadow: var(--shadow);
+  padding: 8px 14px;
+}
+.evidence-stats-item { display: flex; align-items: baseline; gap: 6px; }
+.evidence-stats-label { font-size: 12px; color: var(--text-muted); white-space: nowrap; }
+.evidence-stats-value { font-size: 15px; font-weight: 700; color: var(--text); white-space: nowrap; }
+.evidence-stats-model { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.evidence-stats-direction { font-size: 12px; font-weight: 700; color: var(--primary); white-space: nowrap; }
+.evidence-stats-assessment { font-size: 12px; color: var(--text-muted); }
+.evidence-stats-actions { margin-left: auto; display: flex; align-items: center; }
 
 /* PaperCard 分层(候选) */
 .paper-card-candidate {

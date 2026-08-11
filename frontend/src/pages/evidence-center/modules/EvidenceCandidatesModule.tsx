@@ -13,8 +13,8 @@ import { INITIAL_QUEUE_KEY } from '../evidenceCenterUrl'
 import { candidatePassagesToWorkbench } from '../components/candidatePassages'
 import { aggregateTmpDirection, computeTmpCoverage } from '../components/claimCoverage'
 import { CandidatePaperCard, type CandidatePaperData } from '../components/PaperCard'
+import { CandidateStatsBar, type CandidateStats } from '../components/CandidateStatsBar'
 import { CandidateSummaryData } from '../components/CandidateSummary'
-import { ClaimView } from '../components/ClaimView'
 import { PaperDetailDrawer } from '../components/PaperDetailDrawer'
 import { PaperEvidenceView } from '../components/PaperEvidenceView'
 import { loadReviewStatus } from '../components/ReviewStatusStore'
@@ -116,7 +116,7 @@ function searchToCardData(p: PaperSearchResponse['papers'][number]): CandidatePa
 }
 
 export function EvidenceCandidatesModule() {
-  const { state, queue, setQueue, openTarget, setCandidateSummary, setProgress } = useEvidenceCenter()
+  const { state, queue, setQueue, openTarget, setCandidateSummary, setCandidateClaim, setProgress } = useEvidenceCenter()
   const [items, setItems] = useState<PaperEvidenceTaskItem[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -223,6 +223,22 @@ export function EvidenceCandidatesModule() {
       .catch(() => { if (!cancelled) setDto(null) })
     return () => { cancelled = true }
   }, [current?.target_type, current?.target_id])
+
+  // 左栏 ClaimView 数据源:DTO 加载后推送当前对象验证事实到 Context(页面左栏渲染);卸载/切对象清空
+  useEffect(() => {
+    if (!dto) {
+      setCandidateClaim(null)
+      return
+    }
+    setCandidateClaim({
+      claimText: dto.claim_text ?? '',
+      components: dto.claim_components ?? [],
+      granularity: dto.granularity ?? null,
+      targetType: dto.target_type,
+    })
+  }, [dto, setCandidateClaim])
+
+  useEffect(() => () => { setCandidateClaim(null) }, [setCandidateClaim])
 
   // granularity 兑现:DTO 加载后填充队列条目,页面 ContextBar 读取(仅实际变更时 setQueue,避免重渲染循环)
   useEffect(() => {
@@ -480,24 +496,34 @@ export function EvidenceCandidatesModule() {
     draftWrittenRef.current = { key }
   }, [current, candidates, manualResults, selectedHashes])
 
-  // ─── 右栏候选摘要(Context → RightPanel) ───
-  const summary = useMemo<CandidateSummaryData | null>(() => {
+  // ─── 中栏统计条数据(候选/已提取/已核验/覆盖/模型判断;右栏摘要 Context 推送同源) ───
+  const stats = useMemo<CandidateStats | null>(() => {
     if (!current) return null
     const all = [...candidates, ...manualResults]
     const passages = all.flatMap(c => candidatePassagesToWorkbench(c.passages ?? [], c.paper_id))
     const verified = passages.filter(p => p.source_verified)
     const coverage = computeTmpCoverage(claimComponents, verified)
     return {
-      claimText: dto?.claim_text ?? current.label ?? '',
       foundPapers: all.length + (manualResult?.papers.length ?? 0),
       extractedPapers: all.length,
       verifiedPassages: verified.length,
       selectedPassages: selectedHashes.size,
       coverageRatio: coverage.coverage_ratio,
+      coverageSupported: coverage.supported_components.length,
+      coverageRequired: coverage.required_components.length,
       direction: aggregateTmpDirection(coverage, verified),
       modelAssessment: all[0]?.model_assessment ?? null,
     }
-  }, [current, dto, candidates, manualResults, manualResult, claimComponents, selectedHashes])
+  }, [current, candidates, manualResults, manualResult, claimComponents, selectedHashes])
+
+  // 右栏候选摘要(Context → RightPanel;当前无消费者,保留推送与既有模式一致)
+  const summary = useMemo<CandidateSummaryData | null>(() => {
+    if (!current || !stats) return null
+    return {
+      claimText: dto?.claim_text ?? current.label ?? '',
+      ...stats,
+    }
+  }, [current, dto, stats])
 
   useEffect(() => { setCandidateSummary(summary) }, [summary, setCandidateSummary])
   useEffect(() => () => { setCandidateSummary(null) }, [setCandidateSummary])
@@ -521,35 +547,38 @@ export function EvidenceCandidatesModule() {
         )}
         {!loading && !error && current && (
           <>
-            <ClaimView
-              claimText={dto?.claim_text ?? ''}
-              components={claimComponents}
-              targetType={current.target_type}
-            />
-
             {message && <div className="ontology-page-message">{message}</div>}
 
             {evidencePaper ? (
-              <PaperEvidenceView
-                paper={{
-                  paperId: evidencePaper.paper_id,
-                  pmid: evidencePaper.pmid,
-                  doi: evidencePaper.doi ?? null,
-                  title: evidencePaper.title,
-                  journal: evidencePaper.journal,
-                  year: evidencePaper.year,
-                }}
-                components={claimComponents}
-                passages={evidencePassages}
-                selectedHashes={selectedHashes}
-                onTogglePassage={handleTogglePassage}
-                onBack={() => setEvidenceViewPaperId(null)}
-              />
+              <>
+                {/* 证据视图态:统计条保留在上方,[进入人工审核] 随勾选实时可用 */}
+                <CandidateStatsBar
+                  stats={stats}
+                  onEnterReview={() => {
+                    if (state.targetType && state.targetId) openTarget(state.targetType, state.targetId, 'review')
+                  }}
+                />
+                <PaperEvidenceView
+                  paper={{
+                    paperId: evidencePaper.paper_id,
+                    pmid: evidencePaper.pmid,
+                    doi: evidencePaper.doi ?? null,
+                    title: evidencePaper.title,
+                    journal: evidencePaper.journal,
+                    year: evidencePaper.year,
+                  }}
+                  components={claimComponents}
+                  passages={evidencePassages}
+                  selectedHashes={selectedHashes}
+                  onTogglePassage={handleTogglePassage}
+                  onBack={() => setEvidenceViewPaperId(null)}
+                />
+              </>
             ) : (
               <>
                 {manualTarget && (
                   hasSearchResults && !searchExpanded ? (
-                    // 有检索结果 → 默认折叠为一条:Query 摘要 + [重新搜索](直接执行) + [展开检索]
+                    // 有检索结果 → 默认折叠为一条:Query 摘要 + [重新搜索](直接执行) + [展开检索] + [提取所选论文(N)](primary)
                     <div className="evidence-search evidence-search-collapsed" data-testid="evidence-search-collapsed">
                       <span className="evidence-search-collapsed-label">已检索</span>
                       <span
@@ -559,12 +588,23 @@ export function EvidenceCandidatesModule() {
                       >
                         {querySummary}
                       </span>
-                      <button type="button" className="btn btn-sm" disabled={manualBusy} onClick={() => void handleManualSearch()}>
-                        {manualBusy ? '检索中…' : '重新搜索'}
-                      </button>
-                      <button type="button" className="btn btn-sm" onClick={() => setSearchExpanded(true)}>
-                        展开检索
-                      </button>
+                      <span className="evidence-search-collapsed-actions">
+                        <button type="button" className="btn btn-sm" disabled={manualBusy} onClick={() => void handleManualSearch()}>
+                          {manualBusy ? '检索中…' : '重新搜索'}
+                        </button>
+                        <button type="button" className="btn btn-sm" onClick={() => setSearchExpanded(true)}>
+                          展开检索
+                        </button>
+                        <button
+                          type="button"
+                          className="btn btn-sm btn-primary"
+                          data-testid="evidence-collapsed-extract"
+                          disabled={manualBusy || manualSelected.size === 0}
+                          onClick={() => void handleManualExtract()}
+                        >
+                          提取所选论文（{manualSelected.size}）
+                        </button>
+                      </span>
                     </div>
                   ) : (
                     <div className="evidence-search" data-testid="evidence-search">
@@ -653,11 +693,19 @@ export function EvidenceCandidatesModule() {
                   )
                 )}
 
+                {/* 中栏统计条:检索区下方、候选论文列表上方;Claim 事实在页面左栏 */}
+                <CandidateStatsBar
+                  stats={stats}
+                  onEnterReview={() => {
+                    if (state.targetType && state.targetId) openTarget(state.targetType, state.targetId, 'review')
+                  }}
+                />
+
                 <div className="evidence-candidates-papers">
                   <div className="evidence-candidates-papers-head">
                     <h4>候选论文（{totalPapers}）</h4>
                     <span className="evidence-module-hint">
-                      勾选已核验片段后可从右栏「进入人工审核」；排除的论文可用「恢复排除」找回。
+                      勾选已核验片段后可从中栏统计条「进入人工审核」；排除的论文可用「恢复排除」找回。
                     </span>
                   </div>
                   {totalPapers === 0 && (
