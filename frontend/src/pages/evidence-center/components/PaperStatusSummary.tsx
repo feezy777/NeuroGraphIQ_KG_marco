@@ -48,7 +48,7 @@ export function PaperStatusSummary({ stats, onEnterReview }: Props) {
         <span className="evidence-stats-value" data-testid="evidence-stats-verified">{stats?.verifiedPassages ?? 0}</span>
       </div>
       <div className="evidence-stats-item">
-        <span className="evidence-stats-label">Coverage</span>
+        <span className="evidence-stats-label">人工审核覆盖</span>
         <span className="evidence-stats-value" data-testid="evidence-stats-coverage">{formatCoverage(stats)}</span>
       </div>
       {(stats?.direction || stats?.modelAssessment) && (

@@ -210,7 +210,7 @@ describe('EvidenceCandidatesModule', () => {
     expect(screen.getByText('OA 全文')).toBeTruthy()
     // 提取结果:AI判断 + Coverage(N/M) + 已核验片段数 + [查看证据候选]
     expect(screen.getByText(/AI判断：支持/)).toBeTruthy()
-    expect(screen.getByText('Coverage 1/3')).toBeTruthy()
+    expect(screen.getByText('AI 初始覆盖 1/3')).toBeTruthy()
     expect(screen.getByText('已核验片段 1')).toBeTruthy()
     expect(screen.getByRole('button', { name: /查看证据候选/ })).toBeTruthy()
   })
@@ -358,16 +358,14 @@ describe('EvidenceCandidatesModule', () => {
     await waitFor(() => expect(sessionStorage.getItem('evidence-center.review-draft.r1-r2')).toBeNull())
   })
 
-  it('排除此候选从列表移除论文卡;列表头出现 [恢复排除(1)] 可找回', async () => {
+  it('排除此候选从列表移除论文卡;空态提示被排除论文已隐藏(列表头无恢复入口,恢复由检索过滤层提供)', async () => {
     renderModule()
     await waitFor(() => expect(screen.getByText('A Study of R1 to R2 Projection')).toBeTruthy())
     fireEvent.click(screen.getByRole('button', { name: /排除此候选/ }))
     expect(screen.queryByText('A Study of R1 to R2 Projection')).toBeNull()
     expect(screen.getByText(/当前对象暂无候选证据/)).toBeTruthy()
-    // 空态提示 + 列表头恢复入口
-    expect(screen.getByTestId('evidence-candidates-hint').textContent).toContain('恢复排除')
-    fireEvent.click(screen.getByRole('button', { name: /恢复排除（1）/ }))
-    expect(screen.getByText('A Study of R1 to R2 Projection')).toBeTruthy()
+    // 空态提示不再提及「恢复排除」,改为「已隐藏」
+    expect(screen.getByTestId('evidence-candidates-hint').textContent).toContain('已隐藏')
   })
 
   it('重新提取触发 extractSelectedPaperEvidence 并更新片段数', async () => {
@@ -896,14 +894,14 @@ describe('EvidenceCandidatesModule', () => {
     await waitFor(() => expect(screen.getByText('查找相关论文')).toBeTruthy())
     fireEvent.click(screen.getByRole('button', { name: /重新搜索/ }))
     await waitFor(() => expect(screen.getByText('Only Paper')).toBeTruthy())
-    // 排除唯一论文 → 空态:标题/说明/调整检索条件/轻提示 + 列表头恢复入口
+    // 排除唯一论文 → 空态:标题/说明/调整检索条件/轻提示(已隐藏)
     fireEvent.click(screen.getByRole('button', { name: /排除此候选/ }))
     expect(screen.getByText('候选论文（0）')).toBeTruthy()
     expect(screen.getByText('暂无候选论文')).toBeTruthy()
     expect(screen.getByText('当前还没有找到相关论文，可尝试调整检索条件后重新搜索。')).toBeTruthy()
     expect(screen.getByTestId('evidence-candidates-hint').textContent).toContain('勾选论文后可批量操作')
-    expect(screen.getByRole('button', { name: /恢复排除（1）/ })).toBeTruthy()
-    // [调整检索条件] → 展开完整检索区
+    expect(screen.getByTestId('evidence-candidates-hint').textContent).toContain('已隐藏')
+    // [调整检索条件] → 展开完整检索区,过滤行露出 [恢复排除]
     fireEvent.click(screen.getByRole('button', { name: /调整检索条件/ }))
     expect(screen.getByTestId('evidence-search-query')).toBeTruthy()
     expect(screen.getByText('检索过滤')).toBeTruthy()

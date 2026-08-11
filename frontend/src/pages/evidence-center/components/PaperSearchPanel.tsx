@@ -14,6 +14,8 @@ interface Props {
   onClearTerm: (term: string) => void
   /** 折叠条 Query 摘要(手动检索式 → 推荐词 → 占位) */
   querySummary: string
+  /** 检索式来源:系统推荐 或 自定义(manualQuery 非空 / 已清除推荐词) */
+  queryMode?: 'system' | 'custom'
   onExpand: () => void
   /** 已勾选论文数(折叠条 [提取所选论文(N)] 计数) */
   selectedCount: number
@@ -38,6 +40,7 @@ export function PaperSearchPanel({
   queryTerms,
   onClearTerm,
   querySummary,
+  queryMode,
   onExpand,
   selectedCount,
   onExtractSelected,
@@ -109,6 +112,14 @@ export function PaperSearchPanel({
                 </button>
               </span>
             ))}
+            {queryMode && (
+              <span
+                className={`evidence-query-mode${queryMode === 'custom' ? ' evidence-query-mode-custom' : ''}`}
+                data-testid="evidence-query-mode"
+              >
+                {queryMode === 'custom' ? '自定义检索式' : '系统推荐检索式'}
+              </span>
+            )}
           </div>
         )}
       </div>

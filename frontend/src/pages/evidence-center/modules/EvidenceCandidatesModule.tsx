@@ -348,6 +348,10 @@ export function EvidenceCandidatesModule() {
   /** 折叠条 Query 摘要(截断显示):手动检索式 → 推荐词 → 占位 */
   const querySummary = manualQuery.trim() || visibleQueryTerms.join(' · ') || '系统推荐检索式'
 
+  /** 是否使用自定义检索式(manualQuery 非空 或 已清除推荐词 → 自定义;否则系统推荐) */
+  const queryMode: 'system' | 'custom' =
+    manualQuery.trim().length > 0 || clearedTerms.size > 0 ? 'custom' : 'system'
+
   const runSearch = useCallback(async (query: string) => {
     if (!manualTarget) return
     setManualBusy(true)
@@ -606,6 +610,7 @@ export function EvidenceCandidatesModule() {
                     queryTerms={visibleQueryTerms}
                     onClearTerm={handleClearTerm}
                     querySummary={querySummary}
+                    queryMode={queryMode}
                     onExpand={() => setSearchExpanded(true)}
                     selectedCount={manualSelected.size}
                     onExtractSelected={() => void handleManualExtract()}
@@ -647,8 +652,6 @@ export function EvidenceCandidatesModule() {
                 <PaperCandidateList
                   total={totalPapers}
                   searchable={Boolean(manualTarget)}
-                  excludedCount={excludedPaperIds.size}
-                  onRestoreExcluded={() => setExcludedPaperIds(new Set())}
                   onAdjustSearch={() => setSearchExpanded(true)}
                 >
                   {visibleSearchPapers.map(p => (

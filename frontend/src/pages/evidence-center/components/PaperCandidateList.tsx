@@ -7,9 +7,6 @@ interface Props {
   total: number
   /** 是否可手动检索(searchable=false 时为空态提示任务候选场景;为 true 时显示 [调整检索条件]) */
   searchable: boolean
-  /** 已排除论文数 */
-  excludedCount: number
-  onRestoreExcluded: () => void
   /** [调整检索条件]:展开检索面板 */
   onAdjustSearch: () => void
   /** 候选卡列表(有结果时渲染) */
@@ -20,8 +17,6 @@ interface Props {
 export function PaperCandidateList({
   total,
   searchable,
-  excludedCount,
-  onRestoreExcluded,
   onAdjustSearch,
   children,
 }: Props) {
@@ -29,11 +24,6 @@ export function PaperCandidateList({
     <div className="evidence-candidates-papers">
       <div className="evidence-candidates-papers-head">
         <h4>候选论文（{total}）</h4>
-        {excludedCount > 0 && (
-          <button type="button" className="btn btn-xs" data-testid="evidence-restore-excluded" onClick={onRestoreExcluded}>
-            恢复排除（{excludedCount}）
-          </button>
-        )}
       </div>
       {total === 0 ? (
         <>
@@ -47,7 +37,7 @@ export function PaperCandidateList({
             onAction={searchable ? onAdjustSearch : undefined}
           />
           <div className="evidence-candidates-hint" data-testid="evidence-candidates-hint">
-            勾选论文后可批量操作；被排除的论文可通过「恢复排除」找回。
+            勾选论文后可批量操作；被排除的论文已隐藏。
           </div>
         </>
       ) : (

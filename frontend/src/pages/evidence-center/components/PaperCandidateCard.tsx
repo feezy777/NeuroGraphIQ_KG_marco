@@ -94,8 +94,8 @@ export function PaperCandidateCard({
           {coverage && (
             <span className="paper-card-result-badge">
               {coverage.required > 0
-                ? `Coverage ${coverage.supported}/${coverage.required}`
-                : `Coverage ${Math.round(coverage.ratio * 100)}%`}
+                ? `AI 初始覆盖 ${coverage.supported}/${coverage.required}`
+                : `AI 初始覆盖 ${Math.round(coverage.ratio * 100)}%`}
             </span>
           )}
           <span className="paper-card-result-badge paper-card-result-badge-ok">已核验片段 {paper.verifiedCount}</span>

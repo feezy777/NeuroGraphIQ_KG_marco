@@ -6,8 +6,6 @@ function renderList(overrides: Partial<Parameters<typeof PaperCandidateList>[0]>
   const props = {
     total: 0,
     searchable: true,
-    excludedCount: 0,
-    onRestoreExcluded: vi.fn(),
     onAdjustSearch: vi.fn(),
     children: <div data-testid="candidate-cards">cards</div>,
     ...overrides,
@@ -23,7 +21,7 @@ describe('PaperCandidateList(空态)', () => {
     expect(screen.getByText('当前还没有找到相关论文，可尝试调整检索条件后重新搜索。')).toBeTruthy()
     expect(screen.getByRole('button', { name: '调整检索条件' })).toBeTruthy()
     expect(screen.getByTestId('evidence-candidates-hint').textContent).toContain('勾选论文后可批量操作')
-    expect(screen.getByTestId('evidence-candidates-hint').textContent).toContain('恢复排除')
+    expect(screen.getByTestId('evidence-candidates-hint').textContent).toContain('已隐藏')
     expect(screen.queryByTestId('candidate-cards')).toBeNull()
   })
 
@@ -41,12 +39,6 @@ describe('PaperCandidateList(空态)', () => {
     expect(screen.queryByRole('button', { name: '调整检索条件' })).toBeNull()
   })
 
-  it('存在被排除论文时标题旁显示 [恢复排除(N)] 并可找回', () => {
-    const onRestoreExcluded = vi.fn()
-    renderList({ excludedCount: 2, onRestoreExcluded })
-    fireEvent.click(screen.getByRole('button', { name: '恢复排除（2）' }))
-    expect(onRestoreExcluded).toHaveBeenCalledTimes(1)
-  })
 })
 
 describe('PaperCandidateList(有结果)', () => {

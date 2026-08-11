@@ -94,7 +94,7 @@ describe('PaperCandidateCard(已提取卡)', () => {
     renderCard(EXTRACTED_PAPER)
     const result = screen.getByTestId('paper-card-result')
     expect(result.textContent).toContain('AI判断：支持')
-    expect(result.textContent).toContain('Coverage 1/3')
+    expect(result.textContent).toContain('AI 初始覆盖 1/3')
     expect(result.textContent).toContain('已核验片段 1')
     // 独立行,不与操作行混排
     expect(screen.getByTestId('paper-card-actions-row')?.textContent).not.toContain('AI判断')
@@ -117,7 +117,7 @@ describe('PaperCandidateCard(已提取卡)', () => {
   it('coverage_summary 为空时不渲染 Coverage 徽章', () => {
     renderCard({ ...EXTRACTED_PAPER, coverageSummary: null })
     const result = screen.getByTestId('paper-card-result')
-    expect(result.textContent).not.toContain('Coverage')
+    expect(result.textContent).not.toContain('AI 初始覆盖')
   })
 
   it('required_components 为空数组但 coverage_ratio 存在时回退显示百分比', () => {
@@ -125,7 +125,7 @@ describe('PaperCandidateCard(已提取卡)', () => {
       ...EXTRACTED_PAPER,
       coverageSummary: { coverage_ratio: 0.5, required_components: [], supported_components: [] },
     })
-    expect(screen.getByTestId('paper-card-result').textContent).toContain('Coverage 50%')
+    expect(screen.getByTestId('paper-card-result').textContent).toContain('AI 初始覆盖 50%')
   })
 
   it('required_components 缺失但 coverage_ratio 存在时回退显示百分比', () => {
@@ -133,7 +133,7 @@ describe('PaperCandidateCard(已提取卡)', () => {
       ...EXTRACTED_PAPER,
       coverageSummary: { coverage_ratio: 0.5 },
     })
-    expect(screen.getByTestId('paper-card-result').textContent).toContain('Coverage 50%')
+    expect(screen.getByTestId('paper-card-result').textContent).toContain('AI 初始覆盖 50%')
   })
 
   it('重新提取中禁用按钮显示进度文案', () => {
