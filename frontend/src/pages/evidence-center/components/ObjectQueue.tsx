@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import { EmptyState } from './EmptyState'
 import { QueueListItem } from './QueueListItem'
 import { DONE_STATUSES, PENDING_STATUSES, type QueueEntry } from './types'
 
@@ -56,7 +57,7 @@ export function ObjectQueue({ queue, currentIndex, onSelect, showStats = true }:
             onSelect={onSelect}
           />
         ))}
-        {visible.length === 0 && <div className="evidence-queue-empty">队列为空</div>}
+        {visible.length === 0 && <EmptyState compact title="队列为空" />}
       </div>
     </aside>
   )

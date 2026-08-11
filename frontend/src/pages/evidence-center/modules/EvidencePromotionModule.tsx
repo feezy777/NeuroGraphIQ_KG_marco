@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { MousePointerClick } from 'lucide-react'
 import {
   attachPaperEvidence,
   attachPaperEvidencePreview,
@@ -12,6 +13,7 @@ import {
 } from '../../../api/endpoints'
 import { useEvidenceCenter } from '../EvidenceCenterContext'
 import { ClaimPanel } from '../components/ClaimPanel'
+import { EmptyState } from '../components/EmptyState'
 import { CoveragePanel } from '../components/CoveragePanel'
 import { EvidenceDetailDrawer } from '../components/EvidenceDetailDrawer'
 import { PromotionDialog } from '../components/PromotionDialog'
@@ -337,7 +339,7 @@ export function EvidencePromotionModule() {
         <span className="ew-meta">来自人工审核通过（review_approved）</span>
       </div>
       {pendingRecords.length === 0 && (
-        <div className="evidence-promotion-empty">暂无待晋升的审核通过证据</div>
+        <EmptyState compact title="暂无待晋升的审核通过证据" />
       )}
       {pendingRecords.map(rec => {
         const entry = queue.find(q => q.target_id === rec.targetId)
@@ -412,9 +414,7 @@ export function EvidencePromotionModule() {
         </div>
       )}
       {selectedPending && !draft && (
-        <div className="evidence-promotion-empty">
-          该对象没有可晋升的审核草稿（可能已被清理），可在人工审核模块重新处理。
-        </div>
+        <EmptyState compact title="该对象没有可晋升的审核草稿" description="可能已被清理，可在人工审核模块重新处理。" />
       )}
     </section>
   )
@@ -423,9 +423,11 @@ export function EvidencePromotionModule() {
     return (
       <div className="evidence-promotion">
         {pendingGroup}
-        <div className="evidence-promotion-empty">
-          请先从「佐证任务」或「证据候选」进入一个目标对象。
-        </div>
+        <EmptyState
+          icon={<MousePointerClick size={24} />}
+          title="请先从「佐证任务」或「证据候选」进入一个目标对象"
+          description="打开任务并选择目标对象后即可晋升审核通过的证据。"
+        />
       </div>
     )
   }
@@ -442,7 +444,7 @@ export function EvidencePromotionModule() {
           <span className="evidence-promotion-group-count">{promoted.length}</span>
         </div>
         {promoted.length === 0 && (
-          <div className="evidence-promotion-empty">暂无已晋升的论文证据</div>
+          <EmptyState compact title="暂无已晋升的论文证据" />
         )}
         {promoted.map(ev => (
           <div
@@ -468,7 +470,7 @@ export function EvidencePromotionModule() {
           <span className="evidence-promotion-group-count">{invalidated.length}</span>
         </div>
         {invalidated.length === 0 && (
-          <div className="evidence-promotion-empty">暂无已失效的论文证据</div>
+          <EmptyState compact title="暂无已失效的论文证据" />
         )}
         {invalidated.map(ev => (
           <div

@@ -45,7 +45,7 @@ describe('EvidenceQueuePanel', () => {
     ]
     const { container } = render(<EvidenceQueuePanel queue={doneOnly} currentIndex={-1} onSelect={() => {}} />)
     expect(screen.getByTestId('evidence-queue-empty')).toBeTruthy()
-    expect(container.querySelector('.evidence-queue-panel-empty-icon')?.textContent).toBe('📥')
+    expect(container.querySelector('.evidence-empty-icon svg')).toBeTruthy()
     expect(screen.getByText('队列为空')).toBeTruthy()
     expect(screen.getByText('当前没有待处理的对象')).toBeTruthy()
     const viewAll = screen.getByTestId('evidence-queue-view-all')

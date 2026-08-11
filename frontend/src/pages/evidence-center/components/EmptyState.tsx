@@ -7,17 +7,23 @@ interface Props {
   description?: string
   actionLabel?: string
   onAction?: () => void
+  /** 紧凑变体(窄栏队列 / 分组内联):轻量虚线卡 */
+  compact?: boolean
+  /** 根节点 data-testid(缺省 evidence-empty) */
+  testId?: string
+  /** 操作按钮 data-testid */
+  actionTestId?: string
 }
 
 /** 统一空态:图标 + 标题 + 说明 + 可选操作按钮(证据中心各模块共用) */
-export function EmptyState({ icon, title, description, actionLabel, onAction }: Props) {
+export function EmptyState({ icon, title, description, actionLabel, onAction, compact, testId, actionTestId }: Props) {
   return (
-    <div className="evidence-empty" data-testid="evidence-empty">
+    <div className={`evidence-empty${compact ? ' evidence-empty-compact' : ''}`} data-testid={testId ?? 'evidence-empty'}>
       {icon != null && <div className="evidence-empty-icon">{icon}</div>}
       <div className="evidence-empty-title">{title}</div>
       {description && <div className="evidence-empty-desc">{description}</div>}
       {actionLabel && onAction && (
-        <button type="button" className="btn btn-sm" onClick={onAction}>
+        <button type="button" className="btn btn-sm" data-testid={actionTestId} onClick={onAction}>
           {actionLabel}
         </button>
       )}

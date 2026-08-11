@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { Inbox } from 'lucide-react'
 import { listPaperEvidenceTasks, type PaperEvidenceTask } from '../../../api/endpoints'
 import { useGlobalGranularity } from '../../../hooks/useGlobalGranularity'
 import { useEvidenceCenter } from '../EvidenceCenterContext'
 import { CreateBatchTaskDialog } from '../components/CreateBatchTaskDialog'
+import { EmptyState } from '../components/EmptyState'
 import type { TaskSummaryActions, TaskSummaryData } from '../components/TaskSummary'
 import { TASK_REVIEW_LABELS, TASK_STATUS_LABELS, taskReviewTone, taskStatusTone } from '../components/taskStatus'
 
@@ -172,7 +174,11 @@ export function EvidenceTasksModule() {
         </div>
       )}
       {!loading && !error && tasks.length === 0 && (
-        <div className="evidence-task-empty">暂无佐证任务,点击右上角「创建批量预处理」创建第一个任务。</div>
+        <EmptyState
+          icon={<Inbox size={24} />}
+          title="暂无佐证任务"
+          description="点击右上角「创建批量预处理」创建第一个任务。"
+        />
       )}
       {!loading && !error && tasks.length > 0 && (
         <div className="evidence-task-groups">

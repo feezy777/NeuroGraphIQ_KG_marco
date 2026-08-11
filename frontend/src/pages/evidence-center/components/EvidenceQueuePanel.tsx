@@ -1,4 +1,6 @@
 import { useMemo, useState } from 'react'
+import { Inbox } from 'lucide-react'
+import { EmptyState } from './EmptyState'
 import { QueueListItem } from './QueueListItem'
 import { DONE_STATUSES, PENDING_STATUSES, type QueueEntry } from './types'
 
@@ -79,19 +81,15 @@ export function EvidenceQueuePanel({ queue, currentIndex, onSelect }: EvidenceQu
           />
         ))}
         {visible.length === 0 && (
-          <div className="evidence-queue-panel-empty" data-testid="evidence-queue-empty">
-            <div className="evidence-queue-panel-empty-icon">📥</div>
-            <div className="evidence-queue-panel-empty-title">队列为空</div>
-            <div className="evidence-queue-panel-empty-hint">当前没有待处理的对象</div>
-            <button
-              type="button"
-              className="btn btn-primary btn-sm evidence-queue-panel-view-all"
-              data-testid="evidence-queue-view-all"
-              onClick={() => { setActiveTab('all'); setOnlyPending(false) }}
-            >
-              查看全部对象
-            </button>
-          </div>
+          <EmptyState
+            testId="evidence-queue-empty"
+            actionTestId="evidence-queue-view-all"
+            icon={<Inbox size={24} />}
+            title="队列为空"
+            description="当前没有待处理的对象"
+            actionLabel="查看全部对象"
+            onAction={() => { setActiveTab('all'); setOnlyPending(false) }}
+          />
         )}
       </div>
     </aside>

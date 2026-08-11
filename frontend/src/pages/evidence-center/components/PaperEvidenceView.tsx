@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import { EmptyState } from './EmptyState'
 import type { ClaimComponent, WorkbenchPassage } from './types'
 import { COMPONENT_LABEL } from './types'
 import { computeTmpCoverage } from './claimCoverage'
@@ -77,7 +78,7 @@ export function PaperEvidenceView({
 
       <div className="evidence-paper-passages">
         <h4>候选佐证原文</h4>
-        {passages.length === 0 && <div className="evidence-candidates-empty">该论文暂无候选片段</div>}
+        {passages.length === 0 && <EmptyState compact title="该论文暂无候选片段" />}
         {passages.map(p => (
           <PassageEvidenceCard
             key={p.hash}

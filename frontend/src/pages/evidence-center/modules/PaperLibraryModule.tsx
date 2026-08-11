@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
+import { FileSearch } from 'lucide-react'
 import { listEvidencePapers, type EvidencePaperItem } from '../../../api/endpoints'
+import { EmptyState } from '../components/EmptyState'
 import { PaperCard } from '../components/PaperCard'
 import { PaperDetailDrawer } from '../components/PaperDetailDrawer'
 
@@ -125,7 +127,11 @@ export function PaperLibraryModule() {
         </div>
       )}
       {!loading && !error && papers.length === 0 && (
-        <div className="paper-empty">暂无论文,先通过「佐证任务」获取并解析论文资源。</div>
+        <EmptyState
+          icon={<FileSearch size={24} />}
+          title="暂无论文"
+          description="先通过「佐证任务」获取并解析论文资源。"
+        />
       )}
       {!loading && !error && papers.length > 0 && (
         <div className="paper-list">

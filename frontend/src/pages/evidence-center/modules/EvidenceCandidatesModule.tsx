@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { MousePointerClick } from 'lucide-react'
 import {
   extractSelectedPaperEvidence,
   getEvidenceTarget,
@@ -12,6 +13,7 @@ import { useEvidenceCenter } from '../EvidenceCenterContext'
 import { INITIAL_QUEUE_KEY } from '../evidenceCenterUrl'
 import { candidatePassagesToWorkbench } from '../components/candidatePassages'
 import { aggregateTmpDirection, computeTmpCoverage } from '../components/claimCoverage'
+import { EmptyState } from '../components/EmptyState'
 import { PaperBatchActions } from '../components/PaperBatchActions'
 import { PaperCandidateCard, type CandidatePaperData } from '../components/PaperCandidateCard'
 import { PaperCandidateList } from '../components/PaperCandidateList'
@@ -561,9 +563,11 @@ export function EvidenceCandidatesModule() {
           </div>
         )}
         {!loading && !error && !current && (
-          <div className="evidence-candidates-empty">
-            请先在「佐证任务」中打开一个任务，或从上方任务列表进入。
-          </div>
+          <EmptyState
+            icon={<MousePointerClick size={24} />}
+            title="请先在「佐证任务」中打开一个任务"
+            description="或从上方任务列表进入一个目标对象。"
+          />
         )}
         {!loading && !error && current && (
           <>

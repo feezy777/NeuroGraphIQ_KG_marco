@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { MousePointerClick } from 'lucide-react'
 import {
   attachPaperEvidencePreview,
   getEvidenceTarget,
@@ -10,6 +11,7 @@ import {
 } from '../../../api/endpoints'
 import { useEvidenceCenter } from '../EvidenceCenterContext'
 import { ClaimPanel } from '../components/ClaimPanel'
+import { EmptyState } from '../components/EmptyState'
 import { CoveragePanel } from '../components/CoveragePanel'
 import { PassageEvidenceCard } from '../components/PassageEvidenceCard'
 import { loadReviewStatus, saveReviewStatus, type ReviewStatusMeta, type ReviewStatusRecord } from '../components/ReviewStatusStore'
@@ -343,9 +345,11 @@ export function EvidenceReviewModule() {
       <div className="evidence-review">
         <div className="evidence-review-main">
           <div className="evidence-review-toolbar">{reviewToolbarTitle}</div>
-          <div className="evidence-candidates-empty">
-            请先从「佐证任务」或「证据候选」进入一个目标对象。
-          </div>
+          <EmptyState
+            icon={<MousePointerClick size={24} />}
+            title="请先从「佐证任务」或「证据候选」进入一个目标对象"
+            description="打开任务并选择目标对象后即可开始人工审核。"
+          />
         </div>
       </div>
     )
@@ -389,9 +393,7 @@ export function EvidenceReviewModule() {
             <span className="evidence-review-passages-count" data-testid="evidence-review-passages-count">{passages.length}</span>
           </div>
           {passages.length === 0 && (
-            <div className="evidence-candidates-empty">
-              暂无审核草稿。请先在「证据候选」中勾选片段并「加入人工审核」。
-            </div>
+            <EmptyState compact title="暂无审核草稿" description="请先在「证据候选」中勾选片段并「加入人工审核」。" />
           )}
           {passages.map(p => (
             <PassageEvidenceCard
