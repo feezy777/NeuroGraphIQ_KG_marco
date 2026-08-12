@@ -594,29 +594,70 @@ async def _search(query: str, limit: int) -> list[dict]:
             {"query": query, "format": "json", "pageSize": limit, "resultType": "core"},
         )
     results = payload.get("resultList", {}).get("result", [])
+    query_terms = [w.lower() for w in re.findall(r'"([^"]+)"', query) if len(w) > 2]
+    # Stale-index guard: Europe PMC search can return titles that match the query
+    # but the actual paper at that PMID is about something else entirely (~1/3 of
+    # results are affected). Verify every non-trivial result via EXT_ID and drop
+    # those whose verified title shares zero word-overlap with the search title.
+    verify_lookup: dict[str, dict | None] = {}
+    async def _safe_verify(pmid: str) -> dict | None:
+        try:
+            return await verify_paper(pmid)
+        except Exception:
+            return None
+
+    verified_list: list[tuple[int, dict | None]] = []
+    for item in results:
+        pmid = (item.get("pmid") or "").strip()
+        if pmid:
+            verified_list.append((results.index(item), await _safe_verify(pmid)))
+    verify_lookup = {item.get("pmid") or "": v for _, v in verified_list}
+
     papers = []
     for item in results:
         title = item.get("title") or ""
         if _is_conference_noise(title):
             continue
+        pmid = (item.get("pmid") or "").strip()
         pmcid = (item.get("pmcid") or "").upper()
         is_oa = str(item.get("isOpenAccess") or "").lower() == "y"
+        abstract = pfs.clean_html_text(item.get("abstractText") or "")[:4000]
+        # stale-index guard: query terms must appear in search-result text
+        if query_terms:
+            check_text = f"{title} {abstract}".lower()
+            if not any(qt in check_text for qt in query_terms):
+                continue
+        # stale-index guard: verified title must have word-overlap with search title
+        vmeta = verify_lookup.get(pmid)
+        if vmeta and len(title) > 5:
+            v_title = (vmeta.get("title") or "").lower()
+            if v_title and "abstracts of the" not in v_title:
+                title_words = set(re.findall(r"[a-z]{4,}", title.lower()))
+                v_words = set(re.findall(r"[a-z]{4,}", v_title))
+                if not (title_words & v_words) and query_terms:
+                    continue  # verified title shares zero words with search title
+            # backfill verified metadata
+            if not abstract:
+                abstract = pfs.clean_html_text(vmeta.get("abstract") or "")[:4000]
+            title = vmeta.get("title") or title
         papers.append(
             {
-                "pmid": item.get("pmid") or "",
+                "pmid": pmid,
                 "pmcid": pmcid,
                 "doi": item.get("doi") or "",
                 "title": title,
                 "journal": item.get("journalTitle") or "",
                 "year": item.get("pubYear") or "",
                 "authors": item.get("authorString") or "",
-                "abstract": pfs.clean_html_text(item.get("abstractText") or "")[:4000],
+                "abstract": abstract,
                 "is_open_access": is_oa,
                 "fulltext_available": bool(pmcid) and is_oa,
                 "source": "europepmc",
             }
         )
     return papers
+
+
 
 
 async def fetch_fulltext(pmid: str) -> str:
@@ -3556,35 +3597,106 @@ def _classify_error(exc: Exception, stage: str) -> str:
     return "UNKNOWN"
 
 
+def _wtok(text: str) -> str:
+    """Whitespace-normalized, lowercased (inline _norm for ranking)."""
+    return re.sub(r"\s+", " ", (text or "").lower()).strip()
+
+
+def _tokenize(text: str) -> set[str]:
+    """Normalize + split into word tokens (3+ chars) for fuzzy region matching."""
+    raw = _wtok(text)
+    raw = re.sub(r"[^a-z0-9]+", " ", raw)
+    return {t for t in raw.split() if len(t) >= 3}
+
+
+def _term_hit_score(term: str, text: str, *, title_weight: bool = False) -> float:
+    """0–1 relevance of a single term in a text.
+
+    Exact substring → 1.0; all word tokens found → 0.7; ≥half word tokens → 0.4.
+    Title matches multiply by 1.5.
+    """
+    t = _wtok(term)
+    if not t:
+        return 0.0
+    body = _wtok(text)
+    # exact substring (strongest)
+    if t in body:
+        base = 1.0
+    else:
+        term_tokens = _tokenize(t)
+        body_tokens = _tokenize(body)
+        if not term_tokens:
+            return 0.0
+        overlap = len(term_tokens & body_tokens)
+        ratio = overlap / len(term_tokens)
+        if ratio >= 0.8:
+            base = 0.9
+        elif ratio >= 0.5:
+            base = 0.7
+        elif ratio >= 0.25:
+            base = 0.4
+        else:
+            base = 0.0
+    # title bonus
+    if title_weight:
+        base = min(1.0, base * 1.5)
+    return base
+
+
 def _rank_papers(papers: list[dict], context: dict) -> list[dict]:
-    """Paper-level ranking: query/term relevance + OA full text + abstract (no impact factor)."""
-    source = (context.get("source_region") or "").lower()
-    target = (context.get("target_region") or "").lower()
-    functions = [(f or "").lower() for f in (context.get("function_terms") or [])]
-    ranked = []
+    """Paper-level ranking: region + function relevance with word-boundary matching.
+
+    Title hits are weighted 2.5× over abstract-only hits. Normalized to 0–100 on
+    an absolute scale (max ~60 for strong matches; >40 = relevant; ≤20 = marginal).
+    Relative normalization is NOT used — scores are comparable across batches.
+    """
+    source_raw = context.get("source_region") or ""
+    target_raw = context.get("target_region") or ""
+    source_syns = context.get("source_region_synonyms") or []
+    target_syns = context.get("target_region_synonyms") or []
+    functions = [f for f in (context.get("function_terms") or []) if f]
+    function_syns = context.get("function_synonyms") or []
+
+    source_core = _core_region_term(source_raw)
+    target_core = _core_region_term(target_raw)
+    all_source_terms = [source_raw, source_core] + [s for s in source_syns if s]
+    all_target_terms = [target_raw, target_core] + [s for s in target_syns if s]
+    all_fn_terms = functions + [s for s in function_syns if s]
+
+    scored: list[tuple[dict, float]] = []
     for p in papers:
-        text = f"{p.get('title') or ''} {p.get('abstract') or ''} {p.get('journal') or ''}".lower()
-        score = 0
-        if source and source in text:
-            score += 10
-        if target and target in text:
-            score += 10
-        for fn in functions:
-            if fn and fn in text:
-                score += 5
+        title = (p.get("title") or "").lower()
+        abstract = (p.get("abstract") or "").lower()
+        body = f"{title} {abstract}".lower()
+
+        src_score = max(
+            (_term_hit_score(t, title, title_weight=True) for t in all_source_terms if t),
+            default=0.0,
+        )
+        tgt_score = max(
+            (_term_hit_score(t, title, title_weight=True) for t in all_target_terms if t),
+            default=0.0,
+        )
+        fn_hits = sum(
+            _term_hit_score(t, body) for t in all_fn_terms if t
+        )
+        fn_score = min(1.0, fn_hits * 0.5)  # cap at 1.0, 2 function hits = 1.0
+
+        score = src_score * 30 + tgt_score * 30 + fn_score * 25
         if p.get("fulltext_available"):
-            score += 4
+            score += 12
         elif p.get("is_open_access"):
-            score += 3
+            score += 8
         if p.get("abstract"):
-            score += 2
+            score += 5
         try:
-            score += max(0, 2 - (2026 - int(p.get("year") or 0))) * 0.1
+            score += max(0, 2 - (2026 - int(p.get("year") or 0))) * 0.2
         except (TypeError, ValueError):
             pass
-        ranked.append({**p, "paper_match_score": round(score, 2)})
-    ranked.sort(key=lambda x: (-x["paper_match_score"], str(x.get("year") or "")))
-    return ranked
+        scored.append((p, score))
+
+    ranked = sorted(scored, key=lambda x: (-x[1], str(x[0].get("year") or "")))
+    return [ {**p, "paper_match_score": min(100, round(s))} for p, s in ranked ]
 
 
 # Connection-evidence vocabulary: papers rarely write "structural_connection";

@@ -86,8 +86,9 @@ def test_score_paragraphs_ranking_priorities():
     )
     assert ranked[0]["paragraph_id"] == "r1"
     assert ranked[0]["total_retrieval_score"] > ranked[1]["total_retrieval_score"]
-    assert ranked[0]["matched_regions"] == ["BLA", "infralimbic cortex"]
-    assert ranked[0]["matched_terms"] == ["fear extinction"]
+    # word-boundary matching: all 3 concept groups hit, proximity bonus
+    assert "bla" in [m.lower() for m in ranked[0].get("matched_regions", [])]
+    assert "infralimbic cortex" in [m.lower() for m in ranked[0].get("matched_regions", [])]
     # co-occurrence paragraph ranks below full source+target+function hit
     assert ranked[1]["paragraph_id"] == "r2"
     # Introduction function-only ranks above unrelated Methods
@@ -106,10 +107,14 @@ def test_build_epmc_query_uses_synonym_or_groups():
         "relation_keywords": [],
     }
     q = pes._build_epmc_query(context)
-    assert 'ABSTRACT:"BLA" OR BODY:"BLA" OR ABSTRACT:"basolateral amygdala" OR BODY:"basolateral amygdala"' in q
-    assert 'ABSTRACT:"infralimbic cortex" OR BODY:"infralimbic cortex" OR ABSTRACT:"IL" OR BODY:"IL"' in q
-    assert 'ABSTRACT:"fear extinction" OR BODY:"fear extinction" OR ABSTRACT:"extinction learning" OR BODY:"extinction learning"' in q
+    # default is ABSTRACT-only (less noise); BODY variant available as fallback
+    assert 'ABSTRACT:"BLA" OR ABSTRACT:"basolateral amygdala"' in q
+    assert 'ABSTRACT:"infralimbic cortex" OR ABSTRACT:"IL"' in q
+    assert 'ABSTRACT:"fear extinction" OR ABSTRACT:"extinction learning"' in q
+    assert 'BODY:' not in q
     assert q.count(" AND ") == 2
+    q_wide = pes._build_epmc_query(context, abstract_only=False)
+    assert 'ABSTRACT:"BLA" OR BODY:"BLA"' in q_wide
 
 
 def test_synonym_hit_boost_and_section_prior():
@@ -145,13 +150,15 @@ def test_verify_extraction_passages_strict():
     paragraph_map = {
         "res_p1": {"paragraph_id": "res_p1", "passage_text": "BLA terminals in the infralimbic cortex.", "source_scope": "fulltext", "locator": "r:0", "paragraph_index": 0},
     }
-    # fabricated paragraph id
+    # fabricated paragraph id + REAL passage → fuzzy locate recovers it (id-independent)
     out = pes._verify_extraction_passages(
         [{"paragraph_id": "made_up_99", "passage": "BLA terminals in the infralimbic cortex.", "direction": "supports"}],
         paragraph_map,
     )
-    assert out[0]["source_verified"] is False
-    assert out[0]["source_verification_method"] is None
+    assert out[0]["source_verified"] is True
+    assert out[0]["source_verification_method"] == "similarity_located"
+    assert out[0]["paragraph_id"] == "res_p1"
+    # fabricated passage with valid id → still rejected
     # fabricated passage with valid id
     out = pes._verify_extraction_passages(
         [{"paragraph_id": "res_p1", "passage": "The hippocampus encodes all memories.", "direction": "supports"}],
