@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Inbox } from 'lucide-react'
 import {
   listPaperEvidenceTasks,
@@ -64,6 +64,9 @@ export function EvidenceTasksModule() {
   const [items, setItems] = useState<PaperEvidenceTaskItem[]>([])
   const [itemsLoading, setItemsLoading] = useState(true)
   const [itemsError, setItemsError] = useState<string | null>(null)
+  // 最新 taskId 引用:items 响应乱序返回时丢弃陈旧响应(防陈旧 items 写入 URL 引发竞态)
+  const latestTaskIdRef = useRef(state.taskId)
+  useEffect(() => { latestTaskIdRef.current = state.taskId }, [state.taskId])
 
   const loadTasks = useCallback(async () => {
     setTasksLoading(true)
@@ -82,17 +85,20 @@ export function EvidenceTasksModule() {
 
   const loadItems = useCallback(async () => {
     if (!state.taskId) { setItems([]); return }
+    const requestedTaskId = state.taskId
     setItemsLoading(true)
     setItemsError(null)
     setItems([])
     try {
-      const r = await listPaperEvidenceTaskItems(state.taskId, { limit: 200 })
+      const r = await listPaperEvidenceTaskItems(requestedTaskId, { limit: 200 })
+      if (latestTaskIdRef.current !== requestedTaskId) return
       setItems(r.items)
     } catch (err) {
+      if (latestTaskIdRef.current !== requestedTaskId) return
       setItems([])
       setItemsError(err instanceof Error ? err.message : String(err))
     } finally {
-      setItemsLoading(false)
+      if (latestTaskIdRef.current === requestedTaskId) setItemsLoading(false)
     }
   }, [state.taskId])
 
@@ -200,8 +206,10 @@ export function EvidenceTasksModule() {
       {!itemsLoading && !itemsError && !targetResolved && !items.some(isUnfinishedItem) && (
         <EmptyState
           icon={<Inbox size={24} />}
-          title="全部处理完成"
-          description="该任务没有待处理对象。可在右栏已完成区回退对象重新审查。"
+          title={items.length > 0 && (task?.failed_items ?? 0) > 0 ? '无待处理对象' : '全部处理完成'}
+          description={items.length > 0 && (task?.failed_items ?? 0) > 0
+            ? '该任务存在失败对象,可回到任务列表查看或重试失败项。'
+            : '该任务没有待处理对象。可在右栏已完成区回退对象重新审查。'}
           testId="evidence-tasks-all-done"
         />
       )}
