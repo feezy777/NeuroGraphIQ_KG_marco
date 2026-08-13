@@ -111,4 +111,64 @@ describe('TaskItemQueue(待处理区)', () => {
     fireEvent.click(screen.getByRole('button', { name: '重试' }))
     await waitFor(() => expect(screen.getByTestId('evidence-queue-empty')).toBeTruthy())
   })
+
+  it('已完成折叠区:展开显示 completed 条目,按完成时间倒序', async () => {
+    vi.mocked(endpoints.listPaperEvidenceTaskItems).mockResolvedValue({
+      items: [
+        makeItem({ id: 'a', target_id: 'done-old', label: 'done-old', status: 'completed', updated_at: '2026-08-09T00:00:00Z' }),
+        makeItem({ id: 'b', target_id: 'done-new', label: 'done-new', status: 'completed', updated_at: '2026-08-12T00:00:00Z' }),
+        makeItem({ id: 'c', target_id: 'live', label: 'live', status: 'awaiting_review', current_confidence: 0.5 }),
+      ],
+    })
+    window.location.hash = '#/evidence-center?module=tasks&task_id=t1'
+    const { container } = render(<EvidenceCenterProvider><TaskItemQueue /></EvidenceCenterProvider>)
+    await waitFor(() => expect(screen.getByText('live')).toBeTruthy())
+    fireEvent.click(screen.getByTestId('evidence-queue-done-toggle'))
+    await waitFor(() => expect(screen.getByText('done-new')).toBeTruthy())
+    const doneIds = Array.from(container.querySelectorAll('[data-testid^="evidence-queue-done-item-"]'))
+      .map(el => (el as HTMLElement).dataset.testid ?? '')
+    expect(doneIds).toEqual(['evidence-queue-done-item-done-new', 'evidence-queue-done-item-done-old'])
+  })
+
+  it('回退两步确认:第一次点击变确认态,第二次调用 reopen 并刷新队列', async () => {
+    vi.mocked(endpoints.listPaperEvidenceTaskItems)
+      .mockResolvedValueOnce({
+        items: [
+          makeItem({ id: 'a', target_id: 'live', label: 'live', status: 'awaiting_review', current_confidence: 0.5 }),
+          makeItem({ id: 'b', target_id: 'done-1', label: 'done-1', status: 'completed', updated_at: '2026-08-12T00:00:00Z' }),
+        ],
+      })
+      .mockResolvedValueOnce({
+        items: [
+          makeItem({ id: 'a', target_id: 'live', label: 'live', status: 'awaiting_review', current_confidence: 0.5 }),
+          makeItem({ id: 'b', target_id: 'done-1', label: 'done-1', status: 'awaiting_review', current_confidence: 0.6 }),
+        ],
+      })
+    window.location.hash = '#/evidence-center?module=tasks&task_id=t1'
+    render(<EvidenceCenterProvider><TaskItemQueue /></EvidenceCenterProvider>)
+    await waitFor(() => expect(screen.getByText('live')).toBeTruthy())
+    fireEvent.click(screen.getByTestId('evidence-queue-done-toggle'))
+    const reopenBtn = () => screen.getByTestId('evidence-queue-reopen-done-1')
+    fireEvent.click(reopenBtn())
+    expect(reopenBtn().textContent).toContain('确认回退?')
+    fireEvent.click(reopenBtn())
+    await waitFor(() => expect(vi.mocked(endpoints.reopenPaperEvidenceTaskItem)).toHaveBeenCalledWith('t1', 'b'))
+    await waitFor(() => expect(screen.getAllByTestId('evidence-queue-item-done-1')).toHaveLength(1))
+  })
+
+  it('回退接口失败 → 错误提示,已完成区不变', async () => {
+    vi.mocked(endpoints.listPaperEvidenceTaskItems).mockResolvedValue({
+      items: [makeItem({ id: 'b', target_id: 'done-1', status: 'completed', updated_at: '2026-08-12T00:00:00Z' })],
+    })
+    vi.mocked(endpoints.reopenPaperEvidenceTaskItem).mockRejectedValueOnce(new Error('boom'))
+    window.location.hash = '#/evidence-center?module=tasks&task_id=t1'
+    render(<EvidenceCenterProvider><TaskItemQueue /></EvidenceCenterProvider>)
+    await waitFor(() => expect(screen.getByTestId('evidence-queue-done-toggle')).toBeTruthy())
+    fireEvent.click(screen.getByTestId('evidence-queue-done-toggle'))
+    const btn = () => screen.getByTestId('evidence-queue-reopen-done-1')
+    fireEvent.click(btn())
+    fireEvent.click(btn())
+    await waitFor(() => expect(screen.getByText(/回退失败/)).toBeTruthy())
+    expect(screen.getByTestId('evidence-queue-done-item-done-1')).toBeTruthy()
+  })
 })

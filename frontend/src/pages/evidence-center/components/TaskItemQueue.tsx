@@ -1,6 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Inbox } from 'lucide-react'
-import { listPaperEvidenceTaskItems, type PaperEvidenceTaskItem } from '../../../api/endpoints'
+import { ChevronDown, ChevronRight, Inbox } from 'lucide-react'
+import {
+  listPaperEvidenceTaskItems,
+  reopenPaperEvidenceTaskItem,
+  type PaperEvidenceTaskItem,
+} from '../../../api/endpoints'
 import { useEvidenceCenter } from '../EvidenceCenterContext'
 import { EmptyState } from './EmptyState'
 import { TASK_STATUS_LABELS, taskStatusTone } from './taskStatus'
@@ -42,6 +46,10 @@ export function TaskItemQueue() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [group, setGroup] = useState<string>('all')
+  const [doneOpen, setDoneOpen] = useState(false)
+  const [reopeningId, setReopeningId] = useState<string | null>(null)
+  const [confirmId, setConfirmId] = useState<string | null>(null)
+  const [actionError, setActionError] = useState<string | null>(null)
 
   const loadItems = useCallback(async () => {
     if (!taskId) { setItems([]); return }
@@ -64,6 +72,32 @@ export function TaskItemQueue() {
     () => (group === 'all' ? unfinished : unfinished.filter(it => groupOf(it.target_type) === group)),
     [unfinished, group],
   )
+
+  const doneItems = useMemo(
+    () => items.filter(it => it.status === 'completed').sort((a, b) => (b.updated_at ?? '').localeCompare(a.updated_at ?? '')),
+    [items],
+  )
+
+  const handleReopen = useCallback(async (item: PaperEvidenceTaskItem) => {
+    if (confirmId !== item.id) {
+      setConfirmId(item.id)
+      window.setTimeout(() => {
+        setConfirmId(prev => (prev === item.id ? null : prev))
+      }, 3000)
+      return
+    }
+    setConfirmId(null)
+    setReopeningId(item.id)
+    setActionError(null)
+    try {
+      await reopenPaperEvidenceTaskItem(taskId ?? '', item.id)
+      await loadItems()
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setReopeningId(null)
+    }
+  }, [confirmId, taskId, loadItems])
 
   return (
     <div className="evidence-task-queue" data-testid="evidence-task-queue">
@@ -121,6 +155,41 @@ export function TaskItemQueue() {
           {items.length >= 200 && <div className="ew-meta">仅显示前 200 条(按优先级截断)</div>}
         </div>
       )}
+      <div className="evidence-queue-done" data-testid="evidence-queue-done">
+        <button
+          type="button"
+          className="evidence-queue-done-toggle"
+          data-testid="evidence-queue-done-toggle"
+          onClick={() => setDoneOpen(o => !o)}
+        >
+          <span>已完成 {doneItems.length}</span>
+          {doneOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+        </button>
+        {doneOpen && (
+          <>
+            {actionError && <div className="ew-meta" style={{ color: 'var(--danger)' }}>回退失败:{actionError}</div>}
+            {doneItems.length === 0 && <span className="ew-meta">暂无已完成对象</span>}
+            {doneItems.map(item => (
+              <div key={item.id} className="evidence-queue-done-item" data-testid={`evidence-queue-done-item-${item.target_id}`}>
+                <div className="evidence-queue-done-main">
+                  <span className="evidence-conn-card-label">{item.label || item.target_id}</span>
+                  <span className="evidence-conn-card-type">{item.target_type}</span>
+                  <span className="evidence-task-chip evidence-task-chip-ok">已完成</span>
+                </div>
+                <button
+                  type="button"
+                  className="btn btn-xs"
+                  data-testid={`evidence-queue-reopen-${item.target_id}`}
+                  disabled={reopeningId === item.id}
+                  onClick={() => void handleReopen(item)}
+                >
+                  {reopeningId === item.id ? '回退中…' : (confirmId === item.id ? '确认回退?' : '回退重新审查')}
+                </button>
+              </div>
+            ))}
+          </>
+        )}
+      </div>
     </div>
   )
 }

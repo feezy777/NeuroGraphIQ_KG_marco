@@ -5618,6 +5618,11 @@ export const completePaperEvidenceTaskItem = (taskId: string, itemId: string, ev
     { evidence_id: evidenceId ?? undefined },
   )
 
+export const reopenPaperEvidenceTaskItem = (taskId: string, itemId: string) =>
+  postJson<{ task_id: string; item_id: string; status: string }>(
+    `/api/ontology/evidence/batch/${taskId}/items/${itemId}/reopen`,
+  )
+
 export const getTaskItemDraft = (itemId: string) =>
   getJson<{
     item_id: string
