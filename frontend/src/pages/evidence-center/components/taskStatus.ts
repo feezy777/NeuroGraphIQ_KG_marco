@@ -30,3 +30,13 @@ export function taskReviewTone(reviewStatus: string | null): string {
   if (reviewStatus === 'processing' || reviewStatus === 'in_progress') return 'info'
   return 'muted'
 }
+
+/** 进行中任务状态(任务列表置顶排序第一组) */
+export const IN_PROGRESS_TASK_STATUSES = ['pending', 'running', 'paused']
+
+/** 任务列表排序秩:0=进行中,1=有等待审核,2=其他;同组内按创建时间倒序 */
+export function taskSortRank(t: { status: string; awaiting_review_items: number }): number {
+  if (IN_PROGRESS_TASK_STATUSES.includes(t.status)) return 0
+  if (t.awaiting_review_items > 0) return 1
+  return 2
+}
