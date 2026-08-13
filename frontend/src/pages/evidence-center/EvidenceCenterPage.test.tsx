@@ -418,26 +418,32 @@ describe('EvidenceCenterPage', () => {
     expect(doneItems[0].className).not.toContain('evidence-queue-item-active')
   })
 
-  it('切换任务后 URL 不再残留上一任务 target,候选加载后回写到新任务首个 item', async () => {
+  it('打开任务卡片进入详情:URL 带 task_id、无残留 target;自动回写到任务首个 item', async () => {
     const taskB = { ...TASK_FIXTURE, id: 'tb', name: '任务B' }
     vi.mocked(listPaperEvidenceTasks).mockResolvedValue({ items: [TASK_FIXTURE, taskB], total: 2 })
     vi.mocked(listPaperEvidenceTaskItems).mockImplementation(async (taskId: string) => ({
       items: taskId === 'tb'
-        ? [makeItem({ id: 'it-b', target_type: 'region', target_id: 'rB', label: 'RB', current_confidence: 0.5 })]
-        : [makeItem({ id: 'it-a', target_type: 'connection', target_id: 'rA', label: 'RA' })],
+        ? [makeItem({ id: 'it-b', target_type: 'region', target_id: 'rB', label: 'RB', status: 'awaiting_review', current_confidence: 0.5 })]
+        : [makeItem({ id: 'it-a', target_type: 'connection', target_id: 'rA', label: 'RA', status: 'awaiting_review' })],
     }))
-    // 模拟陈旧状态:URL 残留任务A的 target,但停留在 tasks 模块
-    window.location.hash = '#/evidence-center?module=tasks&task_id=ta&target_type=connection&target_id=stale-target'
+    window.location.hash = '#/evidence-center?module=tasks&target_type=connection&target_id=stale-target'
     render(<EvidenceCenterPage />)
     await waitFor(() => expect(screen.getByText('任务B')).toBeTruthy())
-    fireEvent.click(within(screen.getByTestId('evidence-task-row-tb')).getByText('打开任务'))
-    // 打开任务B:task_id 更新且陈旧 target 被清除
+    fireEvent.click(screen.getByTestId('evidence-task-card-tb'))
     await waitFor(() => expect(window.location.hash).toContain('task_id=tb'))
-    expect(window.location.hash).not.toContain('target_id=stale-target')
-    // 候选加载后 URL 回写到新任务首个 item
     await waitFor(() => expect(window.location.hash).toContain('target_id=rB'))
-    expect(window.location.hash).toContain('target_type=region')
+    expect(window.location.hash).not.toContain('stale-target')
     expect(window.location.hash).not.toContain('rA')
+  })
+
+  it('详情视图左栏返回按钮回到任务列表', async () => {
+    vi.mocked(listPaperEvidenceTasks).mockResolvedValue({ items: [TASK_FIXTURE], total: 1 })
+    vi.mocked(listPaperEvidenceTaskItems).mockResolvedValue({ items: [] })
+    window.location.hash = '#/evidence-center?module=tasks&task_id=ta'
+    render(<EvidenceCenterPage />)
+    await waitFor(() => expect(screen.getByTestId('evidence-task-list-back')).toBeTruthy())
+    fireEvent.click(screen.getByTestId('evidence-task-list-back'))
+    await waitFor(() => expect(window.location.hash).not.toContain('task_id='))
   })
 
   it('StepPills 渲染五步并随 module 高亮当前步', async () => {

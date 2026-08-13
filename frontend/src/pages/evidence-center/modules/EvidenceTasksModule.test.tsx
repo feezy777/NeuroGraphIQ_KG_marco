@@ -106,7 +106,7 @@ describe('EvidenceTasksModule(任务列表视图)', () => {
     await waitFor(() => expect(window.location.hash).toContain('task_id=t1'))
     // module=tasks 是 URL 默认值(buildEvidenceUrl 省略默认 module),以详情视图渲染佐证
     expect(window.location.hash).not.toContain('target_id=')
-    await waitFor(() => expect(screen.getByText('任务详情')).toBeTruthy())
+    await waitFor(() => expect(screen.getByTestId('evidence-task-detail-bar')).toBeTruthy())
   })
 
   it('任务列表加载失败 → 错误 + 重试', async () => {
@@ -115,5 +115,77 @@ describe('EvidenceTasksModule(任务列表视图)', () => {
     await waitFor(() => expect(screen.getByText(/任务列表加载失败/)).toBeTruthy())
     fireEvent.click(screen.getByRole('button', { name: '重试' }))
     await waitFor(() => expect(screen.getByText('暂无佐证任务')).toBeTruthy())
+  })
+})
+
+function makeItem(overrides: Record<string, unknown>) {
+  return {
+    id: 'it', target_type: 'connection', target_id: 'conn', status: 'awaiting_review',
+    pmid: null, title: null, passage: null, direction: null, confidence: null,
+    evidence_id: null, error_message: null, updated_at: '2026-08-10T00:00:00Z',
+    label: 'Conn', current_confidence: 0.5, attempt_count: 0, last_error_code: null,
+    last_error_message: null, preprocess_outcome: null, paper_id: null, model_direction: null,
+    candidate_papers: [], review_draft: null, claim_text_snapshot: null,
+    claim_components_snapshot: null, passages_json: null, last_error: null, retry_count: 0,
+    ...overrides,
+  }
+}
+
+describe('EvidenceTasksModule(任务详情视图)', () => {
+  afterEach(() => { cleanup(); window.location.hash = '' })
+  beforeEach(() => {
+    vi.clearAllMocks()
+    vi.mocked(endpoints.listPaperEvidenceTasks).mockResolvedValue({
+      items: [makeTask({ id: 't1', name: '任务一' })], total: 1,
+    })
+    vi.mocked(endpoints.getEvidenceTarget).mockResolvedValue(null)
+    vi.mocked(endpoints.previewEvidenceBatchScope).mockResolvedValue({ estimated_target_count: 2, over_limit: false, message: null })
+  })
+
+  it('进入详情:拉取 items + 自动选中置信度最低(null 最前)的对象', async () => {
+    vi.mocked(endpoints.listPaperEvidenceTaskItems).mockResolvedValue({
+      items: [
+        makeItem({ id: 'i1', target_id: 'c-high', label: 'High', current_confidence: 0.9 }),
+        makeItem({ id: 'i2', target_id: 'c-low', label: 'Low', current_confidence: 0.2 }),
+        makeItem({ id: 'i3', target_id: 'c-null', label: 'NoConf', current_confidence: null }),
+      ],
+    })
+    window.location.hash = '#/evidence-center?module=tasks&task_id=t1'
+    render(<EvidenceCenterProvider><EvidenceTasksModule /></EvidenceCenterProvider>)
+    await waitFor(() => expect(vi.mocked(endpoints.listPaperEvidenceTaskItems)).toHaveBeenCalledWith('t1', { limit: 200 }))
+    await waitFor(() => expect(window.location.hash).toContain('target_id=c-null'))
+    expect(screen.getByTestId('evidence-task-detail-bar')).toBeTruthy()
+  })
+
+  it('URL 已带本任务未完成 target 时不覆盖', async () => {
+    vi.mocked(endpoints.listPaperEvidenceTaskItems).mockResolvedValue({
+      items: [
+        makeItem({ id: 'i1', target_id: 'c-a', label: 'A', current_confidence: 0.9 }),
+        makeItem({ id: 'i2', target_id: 'c-b', label: 'B', current_confidence: null }),
+      ],
+    })
+    window.location.hash = '#/evidence-center?module=tasks&task_id=t1&target_type=connection&target_id=c-a'
+    render(<EvidenceCenterProvider><EvidenceTasksModule /></EvidenceCenterProvider>)
+    await waitFor(() => expect(vi.mocked(endpoints.listPaperEvidenceTaskItems)).toHaveBeenCalled())
+    await waitFor(() => expect(window.location.hash).toContain('target_id=c-a'))
+    expect(window.location.hash).not.toContain('target_id=c-b')
+  })
+
+  it('全部完成时不嵌入候选组件:主区显示全部处理完成空态,URL 不带 target', async () => {
+    // 全部完成时主区不挂载候选组件(其 URL 同步副作用会切走 module),展示空态;
+    // 回退重审入口在右栏已完成区(Task 5/6 接入)
+    vi.mocked(endpoints.listPaperEvidenceTaskItems).mockResolvedValue({
+      items: [
+        makeItem({ id: 'i1', target_id: 'c-a', status: 'completed', current_confidence: 0.9 }),
+        makeItem({ id: 'i2', target_id: 'c-b', status: 'completed', current_confidence: 0.2 }),
+      ],
+    })
+    window.location.hash = '#/evidence-center?module=tasks&task_id=t1'
+    render(<EvidenceCenterProvider><EvidenceTasksModule /></EvidenceCenterProvider>)
+    await waitFor(() => expect(vi.mocked(endpoints.listPaperEvidenceTaskItems)).toHaveBeenCalled())
+    await waitFor(() => expect(screen.getByTestId('evidence-tasks-all-done')).toBeTruthy())
+    expect(screen.getByText('全部处理完成')).toBeTruthy()
+    await new Promise(r => setTimeout(r, 0))
+    expect(window.location.hash).not.toContain('target_id=')
   })
 })

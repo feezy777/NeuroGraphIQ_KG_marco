@@ -1,11 +1,18 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Inbox } from 'lucide-react'
-import { listPaperEvidenceTasks, type PaperEvidenceTask } from '../../../api/endpoints'
+import {
+  listPaperEvidenceTasks,
+  listPaperEvidenceTaskItems,
+  type PaperEvidenceTask,
+  type PaperEvidenceTaskItem,
+} from '../../../api/endpoints'
 import { useGlobalGranularity } from '../../../hooks/useGlobalGranularity'
 import { useEvidenceCenter } from '../EvidenceCenterContext'
 import { CreateBatchTaskDialog } from '../components/CreateBatchTaskDialog'
 import { EmptyState } from '../components/EmptyState'
 import { TASK_STATUS_LABELS, taskSortRank, taskStatusTone } from '../components/taskStatus'
+import { isUnfinishedItem, sortByConfidenceAsc } from '../components/taskItemQueueUtils'
+import { EvidenceCandidatesModule } from './EvidenceCandidatesModule'
 
 function fmtDate(v: string | null): string {
   if (!v) return ''
@@ -48,12 +55,14 @@ function TaskCard({ task, onOpen }: { task: PaperEvidenceTask; onOpen: () => voi
 }
 
 export function EvidenceTasksModule() {
-  const { state, openTask } = useEvidenceCenter()
+  const { state, openTask, openTarget } = useEvidenceCenter()
   const { granularity } = useGlobalGranularity()
   const [tasks, setTasks] = useState<PaperEvidenceTask[]>([])
   const [tasksLoading, setTasksLoading] = useState(true)
   const [tasksError, setTasksError] = useState<string | null>(null)
   const [createOpen, setCreateOpen] = useState(false)
+  const [items, setItems] = useState<PaperEvidenceTaskItem[]>([])
+  const [itemsLoading, setItemsLoading] = useState(false)
 
   const loadTasks = useCallback(async () => {
     setTasksLoading(true)
@@ -69,6 +78,30 @@ export function EvidenceTasksModule() {
   }, [])
 
   useEffect(() => { void loadTasks() }, [loadTasks])
+
+  const loadItems = useCallback(async () => {
+    if (!state.taskId) { setItems([]); return }
+    setItemsLoading(true)
+    try {
+      const r = await listPaperEvidenceTaskItems(state.taskId, { limit: 200 })
+      setItems(r.items)
+    } catch {
+      setItems([])
+    } finally {
+      setItemsLoading(false)
+    }
+  }, [state.taskId])
+
+  useEffect(() => { void loadItems() }, [loadItems])
+
+  // 进入详情自动选中队列首位(未完成、置信度最低):URL 无 target 或 target 不在本任务未完成集合时纠正
+  useEffect(() => {
+    if (!state.taskId) return
+    const unfinished = sortByConfidenceAsc(items.filter(isUnfinishedItem))
+    if (unfinished.length === 0) return
+    const matched = unfinished.find(it => it.target_type === state.targetType && it.target_id === state.targetId)
+    if (!matched) openTarget(unfinished[0].target_type, unfinished[0].target_id, 'tasks')
+  }, [state.taskId, items, state.targetType, state.targetId, openTarget])
 
   // ── 任务列表视图(无 taskId) ──
   if (!state.taskId) {
@@ -125,15 +158,49 @@ export function EvidenceTasksModule() {
     )
   }
 
-  // ── 任务详情视图(Task 4 接入) ──
+  // ── 任务详情视图 ──
+  const task = tasks.find(t => t.id === state.taskId) ?? null
+  // 候选组件门控:仅当 URL target 已解析为本任务某个 item 时才挂载,
+  // 避免其「target 不符则回写 module=candidates」的同步副作用在自动选中提交前把模块切走
+  const targetResolved = Boolean(
+    state.targetType && state.targetId
+    && items.some(it => it.target_type === state.targetType && it.target_id === state.targetId),
+  )
   return (
     <div className="evidence-task-module">
-      <div className="evidence-task-toolbar">
-        <div className="evidence-task-toolbar-title">
-          <h3>任务详情</h3>
-          <p className="evidence-module-hint">详情视图将在下一任务接入。</p>
-        </div>
+      <div className="evidence-task-detail-bar" data-testid="evidence-task-detail-bar">
+        <h3>{task?.name || task?.target_type || '任务详情'}</h3>
+        {task && (
+          <>
+            <span className={`evidence-task-chip evidence-task-chip-${taskStatusTone(task.status)}`}>
+              {TASK_STATUS_LABELS[task.status] ?? task.status}
+            </span>
+            <span className="ew-meta">
+              已处理 {task.processed_items} / {task.total_items} · 待审核 {task.awaiting_review_items}
+              {task.failed_items > 0 ? ` · 失败 ${task.failed_items}` : ''}
+            </span>
+          </>
+        )}
       </div>
+      {itemsLoading && <div className="evidence-task-loading">加载中…</div>}
+      {!itemsLoading && targetResolved && <EvidenceCandidatesModule />}
+      {!itemsLoading && !targetResolved && items.some(isUnfinishedItem) && (
+        <div className="evidence-task-loading">加载中…</div>
+      )}
+      {!itemsLoading && !targetResolved && !items.some(isUnfinishedItem) && (
+        <EmptyState
+          icon={<Inbox size={24} />}
+          title="全部处理完成"
+          description="该任务没有待处理对象。可在右栏已完成区回退对象重新审查。"
+          testId="evidence-tasks-all-done"
+        />
+      )}
+      <CreateBatchTaskDialog
+        open={createOpen}
+        granularity={granularity}
+        onClose={() => setCreateOpen(false)}
+        onCreated={() => { setCreateOpen(false); void loadItems() }}
+      />
     </div>
   )
 }

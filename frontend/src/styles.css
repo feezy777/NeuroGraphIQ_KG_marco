@@ -12511,3 +12511,11 @@ input[type="range"]::-webkit-slider-thumb {
 .evidence-task-card-awaiting { color: #b7791f; }
 .evidence-task-card-failed { color: var(--danger); }
 .evidence-task-chip-live { border-color: var(--primary); color: var(--primary); }
+
+/* ── 佐证任务详情视图:详情条 ── */
+.evidence-task-detail-bar {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  padding: 10px 14px; margin-bottom: 10px;
+  border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-soft);
+}
+.evidence-task-detail-bar h3 { margin: 0; font-size: 15px; }
