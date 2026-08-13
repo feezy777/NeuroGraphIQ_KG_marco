@@ -153,7 +153,7 @@ describe('EvidenceTasksModule(任务详情视图)', () => {
     })
     window.location.hash = '#/evidence-center?module=tasks&task_id=t1'
     render(<EvidenceCenterProvider><EvidenceTasksModule /></EvidenceCenterProvider>)
-    await waitFor(() => expect(vi.mocked(endpoints.listPaperEvidenceTaskItems)).toHaveBeenCalledWith('t1', { limit: 200 }))
+    await waitFor(() => expect(vi.mocked(endpoints.listPaperEvidenceTaskItems)).toHaveBeenCalledWith('t1', { limit: 100 }))
     await waitFor(() => expect(window.location.hash).toContain('target_id=c-null'))
     expect(screen.getByTestId('evidence-task-detail-bar')).toBeTruthy()
   })

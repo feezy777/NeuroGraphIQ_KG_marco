@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ChevronDown, ChevronRight, Inbox } from 'lucide-react'
 import {
   listPaperEvidenceTaskItems,
@@ -50,18 +50,24 @@ export function TaskItemQueue() {
   const [reopeningId, setReopeningId] = useState<string | null>(null)
   const [confirmId, setConfirmId] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
+  // 最新 taskId 引用:切任务时丢弃乱序返回的陈旧响应
+  const latestTaskIdRef = useRef(taskId)
+  useEffect(() => { latestTaskIdRef.current = taskId }, [taskId])
 
   const loadItems = useCallback(async () => {
     if (!taskId) { setItems([]); return }
+    const requestedTaskId = taskId
     setLoading(true)
     setError(null)
     try {
-      const r = await listPaperEvidenceTaskItems(taskId, { limit: 200 })
+      const r = await listPaperEvidenceTaskItems(requestedTaskId, { limit: 100 })
+      if (latestTaskIdRef.current !== requestedTaskId) return
       setItems(r.items)
     } catch (err) {
+      if (latestTaskIdRef.current !== requestedTaskId) return
       setError(err instanceof Error ? err.message : String(err))
     } finally {
-      setLoading(false)
+      if (latestTaskIdRef.current === requestedTaskId) setLoading(false)
     }
   }, [taskId])
 
@@ -152,7 +158,7 @@ export function TaskItemQueue() {
               onOpen={() => openTarget(item.target_type, item.target_id, 'tasks')}
             />
           ))}
-          {items.length >= 200 && <div className="ew-meta">仅显示前 200 条(按优先级截断)</div>}
+          {items.length >= 100 && <div className="ew-meta">仅显示前 100 条(按优先级截断)</div>}
         </div>
       )}
       <div className="evidence-queue-done" data-testid="evidence-queue-done">

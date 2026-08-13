@@ -90,7 +90,7 @@ export function EvidenceTasksModule() {
     setItemsError(null)
     setItems([])
     try {
-      const r = await listPaperEvidenceTaskItems(requestedTaskId, { limit: 200 })
+      const r = await listPaperEvidenceTaskItems(requestedTaskId, { limit: 100 })
       if (latestTaskIdRef.current !== requestedTaskId) return
       setItems(r.items)
     } catch (err) {
@@ -104,14 +104,17 @@ export function EvidenceTasksModule() {
 
   useEffect(() => { void loadItems() }, [loadItems])
 
-  // 进入详情自动选中队列首位(未完成、置信度最低):URL 无 target 或 target 不在本任务未完成集合时纠正
+  // 进入详情自动选中队列首位(未完成、置信度最低):URL 无 target 或 target 不在本任务未完成集合时纠正。
+  // deps 不含 state.targetType/targetId:用户点击队列项(openTarget)不应重新触发本纠正,
+  // 否则回退重审后点击新回到待处理区的对象会被旧 items 快照纠正回原首位
   useEffect(() => {
     if (!state.taskId) return
     const unfinished = sortByConfidenceAsc(items.filter(isUnfinishedItem))
     if (unfinished.length === 0) return
     const matched = unfinished.find(it => it.target_type === state.targetType && it.target_id === state.targetId)
     if (!matched) openTarget(unfinished[0].target_type, unfinished[0].target_id, 'tasks')
-  }, [state.taskId, items, state.targetType, state.targetId, openTarget])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.taskId, items, openTarget])
 
   // ── 任务列表视图(无 taskId) ──
   if (!state.taskId) {
