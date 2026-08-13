@@ -101,6 +101,10 @@ describe('TaskItemQueue(待处理区)', () => {
 
   it('队列加载失败 → 错误 + 重试', async () => {
     vi.mocked(endpoints.listPaperEvidenceTaskItems).mockRejectedValueOnce(new Error('boom'))
+    // 显式设置重试后的成功响应(不依赖前序测试遗留的 mock 实现)
+    vi.mocked(endpoints.listPaperEvidenceTaskItems).mockResolvedValue({
+      items: [makeItem({ id: 'r', target_id: 'c-done', status: 'completed' })],
+    })
     window.location.hash = '#/evidence-center?module=tasks&task_id=t1'
     render(<EvidenceCenterProvider><TaskItemQueue /></EvidenceCenterProvider>)
     await waitFor(() => expect(screen.getByText(/队列加载失败/)).toBeTruthy())
