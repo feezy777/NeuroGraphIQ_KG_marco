@@ -12519,3 +12519,16 @@ input[type="range"]::-webkit-slider-thumb {
   border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-soft);
 }
 .evidence-task-detail-bar h3 { margin: 0; font-size: 15px; }
+
+/* ── 佐证任务右栏:待处理队列 ── */
+.evidence-task-queue { display: flex; flex-direction: column; gap: 10px; }
+.evidence-task-queue-head { display: flex; align-items: center; justify-content: space-between; }
+.evidence-task-queue-head h4 { margin: 0; font-size: 14px; }
+.evidence-queue-filter { display: flex; flex-wrap: wrap; gap: 6px; }
+.evidence-queue-filter-btn {
+  padding: 3px 10px; border-radius: 999px; border: 1px solid var(--border);
+  background: var(--white); font-size: 12px; color: var(--text-muted); cursor: pointer;
+}
+.evidence-queue-filter-btn-active { border-color: var(--primary); color: var(--primary); background: var(--bg-soft); }
+.evidence-queue-list { display: flex; flex-direction: column; gap: 8px; }
+.evidence-conn-card-selected { border-color: var(--primary); box-shadow: 0 0 0 1px var(--primary) inset; }

@@ -201,16 +201,14 @@ describe('EvidenceCenterPage', () => {
     expect(screen.getByTestId('evidence-task-card-grid')).toBeTruthy()
   })
 
-  it('右栏随 module 切换:占位标题(任务/审核)与队列(candidates)', () => {
-    window.location.hash = '#/evidence-center?module=tasks'
+  it('右栏随 module 切换:tasks 详情渲染待处理队列,candidates 渲染待处理对象队列', () => {
+    // tasks 列表视图全宽无右栏,须带 task_id 进入详情视图才有右栏队列
+    window.location.hash = '#/evidence-center?module=tasks&task_id=ta'
     const { container } = render(<EvidenceCenterPage />)
-    const title = () => container.querySelector('.evidence-right-panel h4')?.textContent ?? ''
-    expect(title()).toContain('任务')
+    expect(screen.getByTestId('evidence-task-queue')).toBeTruthy()
     fireEvent.click(screen.getByText('证据候选'))
-    // 候选模块右栏 = 待处理对象队列
+    const title = () => container.querySelector('.evidence-right-panel h4')?.textContent ?? ''
     expect(title()).toContain('待处理对象')
-    fireEvent.click(screen.getAllByText('人工审核')[0])
-    expect(title()).toContain('审核')
   })
 
   it('candidates 右栏渲染对象队列;中栏统计条 [进入人工审核] 勾选后可用并跳转 review', async () => {

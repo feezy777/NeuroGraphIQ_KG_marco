@@ -4,7 +4,7 @@ import { EvidenceQueuePanel } from './EvidenceQueuePanel'
 import { ObjectQueue } from './ObjectQueue'
 import { PromotionImpact } from './PromotionImpact'
 import { ReviewerDecisionPanel } from './ReviewerDecisionPanel'
-import { TaskSummary } from './TaskSummary'
+import { TaskItemQueue } from './TaskItemQueue'
 
 const RIGHT_TITLES: Record<ModuleKey, string> = {
   tasks: '任务与队列概览',
@@ -19,12 +19,9 @@ export function RightPanel({ module }: { module: ModuleKey }) {
   const {
     state,
     queue,
-    taskSummary,
-    taskSummaryActions,
     reviewDecision,
     promotionImpact,
     openTarget,
-    openTask,
   } = useEvidenceCenter()
 
   // 候选模块右栏队列的当前对象下标(与页面左栏队列同逻辑;仅 candidates 分支使用)
@@ -37,14 +34,7 @@ export function RightPanel({ module }: { module: ModuleKey }) {
   if (module === 'tasks') {
     return (
       <aside className="evidence-right-panel" data-testid="evidence-right-panel">
-        <TaskSummary
-          data={taskSummary}
-          onStartReview={() => {
-            if (taskSummary) openTask(taskSummary.id)
-          }}
-          onCreateBatch={taskSummaryActions.onCreateBatch}
-          onRefresh={taskSummaryActions.onRefresh}
-        />
+        <TaskItemQueue />
       </aside>
     )
   }
