@@ -62,7 +62,8 @@ export function EvidenceTasksModule() {
   const [tasksError, setTasksError] = useState<string | null>(null)
   const [createOpen, setCreateOpen] = useState(false)
   const [items, setItems] = useState<PaperEvidenceTaskItem[]>([])
-  const [itemsLoading, setItemsLoading] = useState(false)
+  const [itemsLoading, setItemsLoading] = useState(true)
+  const [itemsError, setItemsError] = useState<string | null>(null)
 
   const loadTasks = useCallback(async () => {
     setTasksLoading(true)
@@ -82,11 +83,14 @@ export function EvidenceTasksModule() {
   const loadItems = useCallback(async () => {
     if (!state.taskId) { setItems([]); return }
     setItemsLoading(true)
+    setItemsError(null)
+    setItems([])
     try {
       const r = await listPaperEvidenceTaskItems(state.taskId, { limit: 200 })
       setItems(r.items)
-    } catch {
+    } catch (err) {
       setItems([])
+      setItemsError(err instanceof Error ? err.message : String(err))
     } finally {
       setItemsLoading(false)
     }
@@ -183,11 +187,17 @@ export function EvidenceTasksModule() {
         )}
       </div>
       {itemsLoading && <div className="evidence-task-loading">加载中…</div>}
-      {!itemsLoading && targetResolved && <EvidenceCandidatesModule />}
-      {!itemsLoading && !targetResolved && items.some(isUnfinishedItem) && (
+      {!itemsLoading && itemsError && (
+        <div className="evidence-task-error">
+          <p>连接列表加载失败:{itemsError}</p>
+          <button type="button" className="btn btn-sm" onClick={() => void loadItems()}>重试</button>
+        </div>
+      )}
+      {!itemsLoading && !itemsError && targetResolved && <EvidenceCandidatesModule />}
+      {!itemsLoading && !itemsError && !targetResolved && items.some(isUnfinishedItem) && (
         <div className="evidence-task-loading">加载中…</div>
       )}
-      {!itemsLoading && !targetResolved && !items.some(isUnfinishedItem) && (
+      {!itemsLoading && !itemsError && !targetResolved && !items.some(isUnfinishedItem) && (
         <EmptyState
           icon={<Inbox size={24} />}
           title="全部处理完成"

@@ -138,6 +138,7 @@ describe('EvidenceTasksModule(任务详情视图)', () => {
     vi.mocked(endpoints.listPaperEvidenceTasks).mockResolvedValue({
       items: [makeTask({ id: 't1', name: '任务一' })], total: 1,
     })
+    vi.mocked(endpoints.listPaperEvidenceTaskItems).mockResolvedValue({ items: [] })
     vi.mocked(endpoints.getEvidenceTarget).mockResolvedValue(null)
     vi.mocked(endpoints.previewEvidenceBatchScope).mockResolvedValue({ estimated_target_count: 2, over_limit: false, message: null })
   })
@@ -185,7 +186,16 @@ describe('EvidenceTasksModule(任务详情视图)', () => {
     await waitFor(() => expect(vi.mocked(endpoints.listPaperEvidenceTaskItems)).toHaveBeenCalled())
     await waitFor(() => expect(screen.getByTestId('evidence-tasks-all-done')).toBeTruthy())
     expect(screen.getByText('全部处理完成')).toBeTruthy()
-    await new Promise(r => setTimeout(r, 0))
-    expect(window.location.hash).not.toContain('target_id=')
+    await waitFor(() => expect(window.location.hash).not.toContain('target_id='))
+  })
+
+  it('items 加载失败 → 错误 + 重试,不显示全部处理完成', async () => {
+    vi.mocked(endpoints.listPaperEvidenceTaskItems).mockRejectedValueOnce(new Error('boom'))
+    window.location.hash = '#/evidence-center?module=tasks&task_id=t1'
+    render(<EvidenceCenterProvider><EvidenceTasksModule /></EvidenceCenterProvider>)
+    await waitFor(() => expect(screen.getByText(/连接列表加载失败/)).toBeTruthy())
+    expect(screen.queryByTestId('evidence-tasks-all-done')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: '重试' }))
+    await waitFor(() => expect(screen.getByTestId('evidence-tasks-all-done')).toBeTruthy())
   })
 })
