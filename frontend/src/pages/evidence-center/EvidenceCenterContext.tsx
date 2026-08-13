@@ -32,6 +32,7 @@ interface EvidenceCenterContextValue {
   setProgress: (patch: Partial<ObjectProgress>) => void
   gotoModule: (m: ModuleKey) => void
   openTask: (taskId: string) => void
+  closeTask: () => void
   openTarget: (targetType: string, targetId: string, module?: ModuleKey) => void
   selectPaper: (paperId: string | null) => void
   /** 候选模块推送的当前对象验证事实(仅 candidates 模块使用,页面左栏渲染 ClaimSummaryPanel) */
@@ -98,10 +99,18 @@ export function EvidenceCenterProvider({ children }: { children: ReactNode }) {
   const setProgress = useCallback((patch: Partial<ObjectProgress>) => {
     setProgressState(prev => ({ ...prev, ...patch }))
   }, [])
-  // 打开新任务必须清除上一任务的 target(否则 URL 残留陈旧 target,审核/晋升会打开错误对象)
+  // 打开任务 → 进入佐证任务详情视图(保持 tasks 模块;必须清除上一任务的 target,否则详情/审核会打开错误对象)
   const openTask = useCallback(
     (taskId: string) => {
-      apply({ taskId, targetType: null, targetId: null, module: 'candidates' })
+      apply({ taskId, targetType: null, targetId: null, module: 'tasks' })
+      setProgressState(INITIAL_OBJECT_PROGRESS)
+    },
+    [apply],
+  )
+  // 关闭任务 → 回到佐证任务列表视图
+  const closeTask = useCallback(
+    () => {
+      apply({ taskId: null, targetType: null, targetId: null })
       setProgressState(INITIAL_OBJECT_PROGRESS)
     },
     [apply],
@@ -124,6 +133,7 @@ export function EvidenceCenterProvider({ children }: { children: ReactNode }) {
     gotoModule,
     openTask,
     openTarget,
+    closeTask,
     selectPaper,
     candidateClaim,
     setCandidateClaim,
@@ -135,7 +145,7 @@ export function EvidenceCenterProvider({ children }: { children: ReactNode }) {
     setTaskSummary,
     taskSummaryActions,
     setTaskSummaryActions,
-  }), [state, queue, progress, setProgress, gotoModule, openTask, openTarget, selectPaper, candidateClaim, reviewDecision, promotionImpact, taskSummary, taskSummaryActions])
+  }), [state, queue, progress, setProgress, gotoModule, openTask, openTarget, closeTask, selectPaper, candidateClaim, reviewDecision, promotionImpact, taskSummary, taskSummaryActions])
 
   return <EvidenceCenterContext.Provider value={value}>{children}</EvidenceCenterContext.Provider>
 }

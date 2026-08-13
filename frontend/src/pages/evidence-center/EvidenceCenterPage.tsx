@@ -57,6 +57,9 @@ function EvidenceCenterBody() {
 
   const current = currentIndex >= 0 ? queue[currentIndex] : null
   const isPapers = state.module === 'papers'
+  // tasks 列表视图(无 taskId)同论文库一样全宽,隐藏左右栏
+  const isTasksList = state.module === 'tasks' && !state.taskId
+  const isFullWidth = isPapers || isTasksList
 
   // ContextBar 完整事实句:优先候选模块推送的 claim(组件拼装),其余模块回退当前队列对象 label
   const claimSentence = useMemo(
@@ -81,8 +84,8 @@ function EvidenceCenterBody() {
         onRefresh={() => { window.location.reload() }}
       />
       <StepPills module={state.module} progress={progress} />
-      <div className={`evidence-center-layout${isPapers ? ' evidence-center-layout-full' : ''}`} data-testid="evidence-center-layout">
-        {!isPapers && (
+      <div className={`evidence-center-layout${isFullWidth ? ' evidence-center-layout-full' : ''}`} data-testid="evidence-center-layout">
+        {!isFullWidth && (
           <aside className="evidence-left">
             {state.module === 'candidates' ? (
               // 候选模块左栏 = 当前对象验证事实(独立信息块,由 claim_components 动态生成);队列移到右栏
@@ -114,7 +117,7 @@ function EvidenceCenterBody() {
           {state.module === 'review' && <EvidenceReviewModule />}
           {state.module === 'promotion' && <EvidencePromotionModule />}
         </main>
-        {!isPapers && (
+        {!isFullWidth && (
           <aside className="evidence-right">
             <RightPanel module={state.module} />
           </aside>

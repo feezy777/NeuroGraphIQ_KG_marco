@@ -190,6 +190,17 @@ describe('EvidenceCenterPage', () => {
     await waitFor(() => expect(screen.getByText(/暂无论文/)).toBeTruthy())
   })
 
+  it('tasks 列表视图全宽:无左右栏,渲染任务卡片区', async () => {
+    vi.mocked(listPaperEvidenceTasks).mockResolvedValue({ items: [TASK_FIXTURE], total: 1 })
+    window.location.hash = '#/evidence-center?module=tasks'
+    const { container } = render(<EvidenceCenterPage />)
+    await waitFor(() => expect(screen.getByText('任务A')).toBeTruthy())
+    expect(container.querySelector('.evidence-center-layout-full')).toBeTruthy()
+    expect(container.querySelector('.evidence-left')).toBeNull()
+    expect(container.querySelector('.evidence-right')).toBeNull()
+    expect(screen.getByTestId('evidence-task-card-grid')).toBeTruthy()
+  })
+
   it('右栏随 module 切换:占位标题(任务/审核)与队列(candidates)', () => {
     window.location.hash = '#/evidence-center?module=tasks'
     const { container } = render(<EvidenceCenterPage />)
