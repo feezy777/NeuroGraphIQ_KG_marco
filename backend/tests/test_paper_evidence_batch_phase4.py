@@ -447,3 +447,81 @@ def test_failed_item_retry_keeps_attempt_history():
         _run(case())
     finally:
         _run(_cleanup(task_id))
+
+
+def test_reopen_completed_item_returns_to_awaiting_review():
+    ids = [str(uuid.uuid4())]
+    task = _run(_make_task(ids))
+    task_id = task["task_id"]
+    try:
+        _run(_run_task(task_id))
+        async def case():
+            async with AsyncSessionLocal() as s:
+                item_id = (
+                    await s.execute(
+                        text("SELECT id::text FROM paper_evidence_task_items WHERE task_id::text=:tid"),
+                        {"tid": task_id},
+                    )
+                ).scalar_one()
+                await pes.complete_batch_item_reviewed(
+                    s, task_id, item_id, evidence_id=str(uuid.uuid4()), operator_id="reviewer-1"
+                )
+                result = await pes.reopen_batch_item(s, task_id, item_id)
+                assert result["status"] == "awaiting_review"
+                row = (
+                    await s.execute(
+                        text(
+                            "SELECT status, evidence_id IS NULL, reviewed_at IS NULL, reviewed_by IS NULL "
+                            "FROM paper_evidence_task_items WHERE id::text=:iid"
+                        ),
+                        {"iid": item_id},
+                    )
+                ).first()
+                assert row[0] == "awaiting_review"
+                assert row[1] is True
+                assert row[2] is True
+                assert row[3] is True
+                st = (
+                    await s.execute(
+                        text("SELECT review_status FROM paper_evidence_tasks WHERE id::text=:tid"),
+                        {"tid": task_id},
+                    )
+                ).first()
+                assert st[0] == "in_review"
+        _run(case())
+    finally:
+        _run(_cleanup(task_id))
+
+
+def test_reopen_non_completed_item_raises():
+    ids = [str(uuid.uuid4())]
+    task = _run(_make_task(ids))
+    task_id = task["task_id"]
+    try:
+        async def case():
+            async with AsyncSessionLocal() as s:
+                item_id = (
+                    await s.execute(
+                        text("SELECT id::text FROM paper_evidence_task_items WHERE task_id::text=:tid"),
+                        {"tid": task_id},
+                    )
+                ).scalar_one()
+                with pytest.raises(ValueError, match="item is not completed"):
+                    await pes.reopen_batch_item(s, task_id, item_id)
+        _run(case())
+    finally:
+        _run(_cleanup(task_id))
+
+
+def test_reopen_missing_item_raises():
+    ids = [str(uuid.uuid4())]
+    task = _run(_make_task(ids))
+    task_id = task["task_id"]
+    try:
+        async def case():
+            async with AsyncSessionLocal() as s:
+                with pytest.raises(ValueError, match="task item not found"):
+                    await pes.reopen_batch_item(s, task_id, str(uuid.uuid4()))
+        _run(case())
+    finally:
+        _run(_cleanup(task_id))

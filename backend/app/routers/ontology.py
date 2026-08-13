@@ -1071,6 +1071,19 @@ async def paper_evidence_batch_item_reviewed(
         raise HTTPException(status_code=400, detail={"code": "INVALID_REQUEST", "message": str(exc)})
 
 
+@router.post("/evidence/batch/{task_id}/items/{item_id}/reopen")
+async def paper_evidence_batch_item_reopen(
+    task_id: str,
+    item_id: str,
+    session: AsyncSession = Depends(get_db),
+    _auth: str = Depends(require_role("reviewer")),
+):
+    try:
+        return await pes.reopen_batch_item(session, task_id, item_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail={"code": "INVALID_REQUEST", "message": str(exc)})
+
+
 @router.get("/evidence/batch/items/{item_id}/draft")
 async def paper_evidence_batch_item_draft_get(
     item_id: str,

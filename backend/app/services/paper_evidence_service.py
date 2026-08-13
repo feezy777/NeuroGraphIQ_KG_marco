@@ -3303,6 +3303,45 @@ async def complete_batch_item_reviewed(
     return {"task_id": task_id, "item_id": item_id, "status": "completed", "evidence_id": evidence_id}
 
 
+async def reopen_batch_item(
+    session: AsyncSession,
+    task_id: str,
+    item_id: str,
+) -> dict:
+    """将已完成(completed)的任务项回退为待审核(awaiting_review),支持重新审查。
+
+    仅回退 item 状态与已记录的证据关联;已写入 paper_evidence 的记录不撤销(留痕),
+    重新审核晋升时按现有流程产生新记录。
+    """
+    exists = (
+        await session.execute(
+            text(
+                "SELECT 1 FROM paper_evidence_task_items "
+                "WHERE task_id::text=:tid AND id::text=:iid"
+            ),
+            {"tid": task_id, "iid": item_id},
+        )
+    ).first()
+    if exists is None:
+        raise ValueError("task item not found")
+    result = await session.execute(
+        text(
+            "UPDATE paper_evidence_task_items SET status='awaiting_review', reviewed_by=NULL, "
+            "reviewed_at=NULL, evidence_id=NULL, updated_at=now() "
+            "WHERE task_id::text=:tid AND id::text=:iid AND status='completed'"
+        ),
+        {"tid": task_id, "iid": item_id},
+    )
+    await session.commit()
+    if result.rowcount == 0:
+        raise ValueError("item is not completed")
+    await _update_task_totals(session, task_id)
+    await session.commit()
+    await _update_task_review_status(session, task_id)
+    await session.commit()
+    return {"task_id": task_id, "item_id": item_id, "status": "awaiting_review"}
+
+
 async def write_evidence_audit_event(
     session: AsyncSession,
     *,
