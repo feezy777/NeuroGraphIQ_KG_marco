@@ -73,12 +73,14 @@ export function TaskItemQueue() {
       setItems([])
       setTaskNames({})
       try {
-        const r = await listPaperEvidenceTasks()
+        const r = await listPaperEvidenceTasks({ limit: 200 })
         const active = r.items.filter(t => ['pending', 'running', 'paused'].includes(t.status))
         setTaskNames(Object.fromEntries(active.map(t => [t.id, t.name || t.target_type])))
         const settled = await Promise.allSettled(
           active.map(t => listPaperEvidenceTaskItems(t.id, { limit: 100 })),
         )
+        // 陈旧响应守卫:全局拉取期间用户选中了任务,则丢弃本次全局结果
+        if (latestTaskIdRef.current !== null) return
         const merged = settled.flatMap((s, i) =>
           s.status === 'fulfilled'
             ? s.value.items.map(it => ({ ...it, __taskId: active[i].id }))
@@ -86,9 +88,10 @@ export function TaskItemQueue() {
         )
         setItems(merged as PaperEvidenceTaskItem[])
       } catch (err) {
+        if (latestTaskIdRef.current !== null) return
         setError(err instanceof Error ? err.message : String(err))
       } finally {
-        setLoading(false)
+        if (latestTaskIdRef.current === null) setLoading(false)
       }
       return
     }
