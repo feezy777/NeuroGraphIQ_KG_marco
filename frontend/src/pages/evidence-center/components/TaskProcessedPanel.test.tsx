@@ -8,6 +8,7 @@ vi.mock('../../../api/endpoints', () => ({
   listPaperEvidenceTasks: vi.fn(),
   listPaperEvidenceTaskItems: vi.fn(),
   reopenPaperEvidenceTaskItem: vi.fn(),
+  listEvidenceReviews: vi.fn(),
 }))
 
 function makeTask(overrides: Record<string, unknown>) {
@@ -44,6 +45,7 @@ describe('TaskProcessedPanel(右栏已处理)', () => {
     vi.mocked(endpoints.listPaperEvidenceTasks).mockResolvedValue({ items: [], total: 0 })
     vi.mocked(endpoints.listPaperEvidenceTaskItems).mockResolvedValue({ items: [] })
     vi.mocked(endpoints.reopenPaperEvidenceTaskItem).mockResolvedValue({ task_id: 't1', item_id: 'x', status: 'awaiting_review' })
+    vi.mocked(endpoints.listEvidenceReviews).mockResolvedValue({ items: [], total: 0 })
   })
 
   it('展示已完成/失败/跳过对象,按完成时间倒序,待处理不进面板', async () => {
@@ -112,5 +114,33 @@ describe('TaskProcessedPanel(右栏已处理)', () => {
     window.location.hash = '#/evidence-center?module=tasks'
     render(<EvidenceCenterProvider><TaskProcessedPanel /></EvidenceCenterProvider>)
     await waitFor(() => expect(screen.getByTestId('evidence-processed-empty')).toBeTruthy())
+  })
+it('已有审核记录的对象(状态仍 awaiting_review)也进已处理面板,显示真实中文名与审核状态', async () => {
+    vi.mocked(endpoints.listPaperEvidenceTasks).mockResolvedValue({
+      items: [makeTask({ id: 'ta', name: '任务A', status: 'completed' })], total: 1,
+    })
+    vi.mocked(endpoints.listPaperEvidenceTaskItems).mockResolvedValue({
+      items: [makeItem({ id: 'a1', target_id: 'tgt-1', label: null, status: 'awaiting_review', current_confidence: 0.5 })],
+    })
+    vi.mocked(endpoints.listEvidenceReviews).mockResolvedValue({
+      items: [{
+        id: 'r1', target_type: 'connection', target_id: 'tgt-1', paper_id: null,
+        task_id: null, task_item_id: null, reviewer_id: null,
+        review_status: 'approved', promotion_status: 'promoted', claim_version: null,
+        claim_text_snapshot: null,
+        claim_components_snapshot: [
+          { component_type: 'source_region', statement: '', required: true, metadata: { name_cn: '右丘脑本体', name_en: 'right thalamus proper' } },
+          { component_type: 'target_region', statement: '', required: true, metadata: { name_cn: '右壳核', name_en: 'right putamen' } },
+        ],
+        model_direction: null, model_assessment: null, reviewer_direction: null,
+        reviewer_evidence_level: null, reviewer_confidence: null, reviewer_note: null,
+        coverage_summary_snapshot: null, coverage_formula_version: null,
+      }],
+      total: 1,
+    })
+    window.location.hash = '#/evidence-center?module=tasks'
+    render(<EvidenceCenterProvider><TaskProcessedPanel /></EvidenceCenterProvider>)
+    await waitFor(() => expect(screen.getByText('右丘脑本体 → 右壳核')).toBeTruthy())
+    expect(screen.getByText('已晋升')).toBeTruthy()
   })
 })

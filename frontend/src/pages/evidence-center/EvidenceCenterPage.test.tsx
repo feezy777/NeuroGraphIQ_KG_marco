@@ -7,6 +7,7 @@ vi.mock('../../api/endpoints', () => ({
   listPaperEvidenceTasks: vi.fn().mockResolvedValue({ items: [], total: 0 }),
   listEvidencePapers: vi.fn().mockResolvedValue({ items: [], total: 0 }),
   listPaperEvidenceTaskItems: vi.fn().mockResolvedValue({ items: [] }),
+  listEvidenceReviews: vi.fn().mockResolvedValue({ items: [], total: 0 }),
   getEvidenceTarget: vi.fn().mockResolvedValue(null),
   searchPaperEvidence: vi.fn().mockResolvedValue({ target_info: {}, papers: [] }),
   extractSelectedPaperEvidence: vi.fn().mockResolvedValue({ results: [] }),
