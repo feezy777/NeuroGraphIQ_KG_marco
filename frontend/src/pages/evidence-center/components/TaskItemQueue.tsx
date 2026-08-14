@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ChevronDown, ChevronRight, Inbox } from 'lucide-react'
 import {
   listPaperEvidenceTaskItems,
+  listPaperEvidenceTasks,
   reopenPaperEvidenceTaskItem,
   type PaperEvidenceTaskItem,
 } from '../../../api/endpoints'
@@ -11,8 +12,14 @@ import { TASK_STATUS_LABELS, taskStatusTone } from './taskStatus'
 import { TARGET_TYPE_GROUPS, groupOf, isUnfinishedItem, sortByConfidenceAsc } from './taskItemQueueUtils'
 
 /** 队列条目卡片(待处理区):名称/类型/置信度大字/状态/AI 方向;当前对象高亮 */
-function QueueItemCard({ item, selected, onOpen }: { item: PaperEvidenceTaskItem; selected: boolean; onOpen: () => void }) {
+function QueueItemCard({ item, selected, onOpen, taskName }: {
+  item: PaperEvidenceTaskItem
+  selected: boolean
+  onOpen: () => void
+  taskName?: string | null
+}) {
   const conf = item.current_confidence
+  const srcTaskId = (item as unknown as { __taskId?: string }).__taskId
   return (
     <div
       className={`evidence-conn-card${selected ? ' evidence-conn-card-selected' : ''}`}
@@ -31,6 +38,9 @@ function QueueItemCard({ item, selected, onOpen }: { item: PaperEvidenceTaskItem
         <span className={`evidence-task-chip evidence-task-chip-${taskStatusTone(item.status)}`}>
           {TASK_STATUS_LABELS[item.status] ?? item.status}
         </span>
+        {taskName && (
+          <span className="evidence-queue-task-badge" data-testid={`evidence-queue-task-badge-${srcTaskId}`}>{taskName}</span>
+        )}
         {item.preprocess_outcome === 'no_evidence_found' && <span className="ew-meta">未找到有效证据</span>}
         {item.model_direction && <span className="ew-meta">AI:{item.model_direction}</span>}
       </div>
@@ -50,15 +60,44 @@ export function TaskItemQueue() {
   const [reopeningId, setReopeningId] = useState<string | null>(null)
   const [confirmId, setConfirmId] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
+  const [taskNames, setTaskNames] = useState<Record<string, string>>({})
   // 最新 taskId 引用:切任务时丢弃乱序返回的陈旧响应
   const latestTaskIdRef = useRef(taskId)
   useEffect(() => { latestTaskIdRef.current = taskId }, [taskId])
 
   const loadItems = useCallback(async () => {
-    if (!taskId) { setItems([]); return }
+    if (!taskId) {
+      // 全局模式:拉取所有进行中任务 → 并行拉各自 items → 合并(单任务失败静默跳过)
+      setLoading(true)
+      setError(null)
+      setItems([])
+      setTaskNames({})
+      try {
+        const r = await listPaperEvidenceTasks()
+        const active = r.items.filter(t => ['pending', 'running', 'paused'].includes(t.status))
+        setTaskNames(Object.fromEntries(active.map(t => [t.id, t.name || t.target_type])))
+        const settled = await Promise.allSettled(
+          active.map(t => listPaperEvidenceTaskItems(t.id, { limit: 100 })),
+        )
+        const merged = settled.flatMap((s, i) =>
+          s.status === 'fulfilled'
+            ? s.value.items.map(it => ({ ...it, __taskId: active[i].id }))
+            : [],
+        )
+        setItems(merged as PaperEvidenceTaskItem[])
+      } catch (err) {
+        setError(err instanceof Error ? err.message : String(err))
+      } finally {
+        setLoading(false)
+      }
+      return
+    }
+    // 任务模式(原逻辑,保留 latestTaskIdRef 守卫)
     const requestedTaskId = taskId
     setLoading(true)
     setError(null)
+    setItems([])
+    setTaskNames({})
     try {
       const r = await listPaperEvidenceTaskItems(requestedTaskId, { limit: 100 })
       if (latestTaskIdRef.current !== requestedTaskId) return
@@ -96,7 +135,10 @@ export function TaskItemQueue() {
     setReopeningId(item.id)
     setActionError(null)
     try {
-      await reopenPaperEvidenceTaskItem(taskId ?? '', item.id)
+      await reopenPaperEvidenceTaskItem(
+        (item as unknown as { __taskId?: string }).__taskId ?? taskId ?? '',
+        item.id,
+      )
       await loadItems()
     } catch (err) {
       setActionError(err instanceof Error ? err.message : String(err))
@@ -155,6 +197,10 @@ export function TaskItemQueue() {
               key={item.id}
               item={item}
               selected={state.targetType === item.target_type && state.targetId === item.target_id}
+              taskName={(() => {
+                const srcTaskId = (item as unknown as { __taskId?: string }).__taskId
+                return srcTaskId ? (taskNames[srcTaskId] ?? null) : null
+              })()}
               onOpen={() => openTarget(item.target_type, item.target_id, 'tasks')}
             />
           ))}

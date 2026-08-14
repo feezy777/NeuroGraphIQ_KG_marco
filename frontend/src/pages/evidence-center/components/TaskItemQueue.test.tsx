@@ -6,6 +6,7 @@ import { TaskItemQueue } from './TaskItemQueue'
 
 vi.mock('../../../api/endpoints', () => ({
   listPaperEvidenceTaskItems: vi.fn(),
+  listPaperEvidenceTasks: vi.fn(),
   reopenPaperEvidenceTaskItem: vi.fn(),
 }))
 
@@ -170,5 +171,72 @@ describe('TaskItemQueue(待处理区)', () => {
     fireEvent.click(btn())
     await waitFor(() => expect(screen.getByText(/回退失败/)).toBeTruthy())
     expect(screen.getByTestId('evidence-queue-done-item-done-1')).toBeTruthy()
+  })
+
+  function makeTask(overrides: Record<string, unknown>) {
+    return {
+      id: 't1', target_type: 'connection', name: '任务一', status: 'pending',
+      total_items: 10, processed_items: 2, awaiting_review_items: 1, failed_items: 0,
+      review_status: 'in_review', granularity_level: 'macro', estimated_target_count: 10,
+      materialized_target_count: 10, scope: 'filter', mode: 'existence', max_papers_per_object: 3,
+      created_at: '2026-08-10T00:00:00Z', created_by: null, started_at: null, finished_at: null,
+      error_message: null, materialization_status: 'completed', materialization_cursor: null,
+      materialization_error: null, confidence_lt: null, only_oa: false,
+      stop_after_strong_support: false, summary: null, scope_type: 'filter',
+      filter_snapshot: null, versions: null, ...overrides,
+    }
+  }
+
+  it('全局模式:未选任务时并行拉取进行中任务 items,合并置信度升序,条目带任务徽章', async () => {
+    vi.mocked(endpoints.listPaperEvidenceTasks).mockResolvedValue({
+      items: [
+        makeTask({ id: 'ta', name: '任务A', status: 'running' }),
+        makeTask({ id: 'tb', name: '任务B', status: 'paused' }),
+        makeTask({ id: 'tc', name: '任务C', status: 'completed' }), // 非进行中,不拉 items
+      ], total: 3,
+    })
+    vi.mocked(endpoints.listPaperEvidenceTaskItems).mockImplementation(async (taskId: string) => ({
+      items: taskId === 'ta'
+        ? [makeItem({ id: 'a1', target_id: 'a-high', label: 'AHigh', current_confidence: 0.9 })]
+        : [makeItem({ id: 'b1', target_id: 'b-null', label: 'BNull', current_confidence: null })],
+    }))
+    window.location.hash = '#/evidence-center?module=tasks'
+    const { container } = render(<EvidenceCenterProvider><TaskItemQueue /></EvidenceCenterProvider>)
+    await waitFor(() => expect(screen.getByText('BNull')).toBeTruthy())
+    // null 最前:tb 的 BNull 排在 ta 的 AHigh 前
+    expect(queueItemIds(container)).toEqual(['evidence-queue-item-b-null', 'evidence-queue-item-a-high'])
+    // 只拉了进行中任务,未拉 tc
+    expect(vi.mocked(endpoints.listPaperEvidenceTaskItems)).toHaveBeenCalledWith('ta', { limit: 100 })
+    expect(vi.mocked(endpoints.listPaperEvidenceTaskItems)).toHaveBeenCalledWith('tb', { limit: 100 })
+    expect(vi.mocked(endpoints.listPaperEvidenceTaskItems)).not.toHaveBeenCalledWith('tc', { limit: 100 })
+    // 任务名徽章
+    expect(screen.getByText('任务A')).toBeTruthy()
+    expect(screen.getByText('任务B')).toBeTruthy()
+  })
+
+  it('全局模式:单任务 items 失败不影响其他任务', async () => {
+    vi.mocked(endpoints.listPaperEvidenceTasks).mockResolvedValue({
+      items: [makeTask({ id: 'ta', name: '任务A', status: 'running' }), makeTask({ id: 'tb', name: '任务B', status: 'running' })], total: 2,
+    })
+    vi.mocked(endpoints.listPaperEvidenceTaskItems)
+      .mockRejectedValueOnce(new Error('boom'))
+      .mockResolvedValueOnce({ items: [makeItem({ id: 'b1', target_id: 'b-1', label: 'B1', current_confidence: 0.3 })] })
+    window.location.hash = '#/evidence-center?module=tasks'
+    render(<EvidenceCenterProvider><TaskItemQueue /></EvidenceCenterProvider>)
+    await waitFor(() => expect(screen.getByText('B1')).toBeTruthy())
+    expect(screen.queryByText(/队列加载失败/)).toBeNull() // 不阻塞,静默跳过失败任务
+  })
+
+  it('任务模式:选中任务后只拉该任务 items(不显示任务徽章)', async () => {
+    vi.mocked(endpoints.listPaperEvidenceTasks).mockResolvedValue({
+      items: [makeTask({ id: 't1', name: '任务一', status: 'pending' })], total: 1,
+    })
+    vi.mocked(endpoints.listPaperEvidenceTaskItems).mockResolvedValue({
+      items: [makeItem({ id: 'a', target_id: 'c-1', label: 'C1', current_confidence: 0.5 })],
+    })
+    window.location.hash = '#/evidence-center?module=tasks&task_id=t1'
+    render(<EvidenceCenterProvider><TaskItemQueue /></EvidenceCenterProvider>)
+    await waitFor(() => expect(screen.getByText('C1')).toBeTruthy())
+    expect(screen.queryByText('任务一')).toBeNull()
   })
 })
