@@ -239,4 +239,19 @@ describe('TaskItemQueue(待处理区)', () => {
     await waitFor(() => expect(screen.getByText('C1')).toBeTruthy())
     expect(screen.queryByText('任务一')).toBeNull()
   })
+
+  it('全局模式点击队列项 → 选中来源任务并打开对象(URL 带 task_id 与 target)', async () => {
+    vi.mocked(endpoints.listPaperEvidenceTasks).mockResolvedValue({
+      items: [makeTask({ id: 'ta', name: '任务A', status: 'running' })], total: 1,
+    })
+    vi.mocked(endpoints.listPaperEvidenceTaskItems).mockResolvedValue({
+      items: [makeItem({ id: 'a1', target_id: 'a-1', label: 'A1', current_confidence: 0.4 })],
+    })
+    window.location.hash = '#/evidence-center?module=tasks'
+    render(<EvidenceCenterProvider><TaskItemQueue /></EvidenceCenterProvider>)
+    await waitFor(() => expect(screen.getByText('A1')).toBeTruthy())
+    fireEvent.click(screen.getByTestId('evidence-queue-item-a-1'))
+    await waitFor(() => expect(window.location.hash).toContain('task_id=ta'))
+    expect(window.location.hash).toContain('target_id=a-1')
+  })
 })

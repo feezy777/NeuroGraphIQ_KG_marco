@@ -50,7 +50,7 @@ function QueueItemCard({ item, selected, onOpen, taskName }: {
 
 /** 右栏待处理队列:置信度升序 + 回路/连接/功能筛选(已完成折叠区在 Task 6 追加) */
 export function TaskItemQueue() {
-  const { state, openTarget } = useEvidenceCenter()
+  const { state, openTarget, openTask } = useEvidenceCenter()
   const taskId = state.taskId
   const [items, setItems] = useState<PaperEvidenceTaskItem[]>([])
   const [loading, setLoading] = useState(false)
@@ -204,7 +204,12 @@ export function TaskItemQueue() {
                 const srcTaskId = (item as unknown as { __taskId?: string }).__taskId
                 return srcTaskId ? (taskNames[srcTaskId] ?? null) : null
               })()}
-              onOpen={() => openTarget(item.target_type, item.target_id, 'tasks')}
+              onOpen={() => {
+                // 全局模式条目:先选中来源任务,再打开对象(否则 taskId 为空,中栏停在态①)
+                const srcTaskId = (item as unknown as { __taskId?: string }).__taskId
+                if (srcTaskId) openTask(srcTaskId)
+                openTarget(item.target_type, item.target_id, 'tasks')
+              }}
             />
           ))}
           {items.length >= 100 && <div className="ew-meta">仅显示前 100 条(按优先级截断)</div>}

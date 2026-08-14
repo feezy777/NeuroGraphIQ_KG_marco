@@ -133,6 +133,11 @@ describe('EvidenceTasksModule(单页三栏·中栏)', () => {
     await waitFor(() => expect(window.location.hash).not.toContain('target_id='))
     fireEvent.click(screen.getByTestId('evidence-task-object-c-done'))
     await waitFor(() => expect(window.location.hash).toContain('target_id=c-done'))
+    // 刷新 items 后不得把用户从已完成对象工作区拽走
+    fireEvent.click(screen.getByRole('button', { name: '刷新' }))
+    await waitFor(() => expect(vi.mocked(endpoints.listPaperEvidenceTaskItems)).toHaveBeenCalledTimes(3))
+    await new Promise(r => setTimeout(r, 0))
+    expect(window.location.hash).toContain('target_id=c-done')
   })
 
   it('任务无对象 → 中栏空态,无 target', async () => {

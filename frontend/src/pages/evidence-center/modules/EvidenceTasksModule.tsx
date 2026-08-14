@@ -138,13 +138,19 @@ export function EvidenceTasksModule() {
 
   useEffect(() => { void loadItems() }, [loadItems])
 
-  // 选中任务自动选中队列首位(未完成、置信度最低):deps 不含 target(防点击/回退后旧快照抢回)
+  // 选中任务自动选中队列首位(未完成、置信度最低):deps 不含 target(防点击/回退后旧快照抢回)。
+  // 仅当 target 完全不属于本任务 items(无 target 或陈旧 target)时才纠正——
+  // target 命中已完成对象时保留,避免刷新后把用户从已完成对象工作区拽走
   useEffect(() => {
     if (!state.taskId) return
     const unfinished = sortByConfidenceAsc(items.filter(isUnfinishedItem))
     if (unfinished.length === 0) return
-    const matched = unfinished.find(it => it.target_type === state.targetType && it.target_id === state.targetId)
-    if (!matched) openTarget(unfinished[0].target_type, unfinished[0].target_id, 'tasks')
+    const targetInItems = Boolean(
+      state.targetType && state.targetId
+      && items.some(it => it.target_type === state.targetType && it.target_id === state.targetId),
+    )
+    if (targetInItems) return
+    openTarget(unfinished[0].target_type, unfinished[0].target_id, 'tasks')
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.taskId, items, openTarget])
 

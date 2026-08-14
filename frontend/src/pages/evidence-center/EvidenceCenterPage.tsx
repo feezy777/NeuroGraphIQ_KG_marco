@@ -4,6 +4,7 @@ import { EvidenceCenterProvider, useEvidenceCenter, type ModuleKey } from './Evi
 import { EvidenceCenterHeader } from './EvidenceCenterHeader'
 import { ClaimSummaryPanel } from './components/ClaimSummaryPanel'
 import { composeClaimSentence, ContextBar } from './components/ContextBar'
+import { ObjectQueue } from './components/ObjectQueue'
 import { RightPanel } from './components/RightPanel'
 import { StepPills } from './components/StepPills'
 import { QUEUE_STATUS_LABEL } from './components/types'
@@ -28,7 +29,7 @@ const MODULE_HINT: Record<ModuleKey, string> = {
   promotion: '将审核通过的论文证据正式应用到知识图谱。',
 }
 
-function EvidenceCenterBody() {
+function EvidenceCenterBody({ embedded }: { embedded?: boolean }) {
   const { state, queue, openTarget, progress, candidateClaim } = useEvidenceCenter()
   const [taskName, setTaskName] = useState<string | null>(null)
 
@@ -65,30 +66,48 @@ function EvidenceCenterBody() {
 
   return (
     <>
-      <ContextBar
-        targetLabel={current?.label ?? null}
-        targetType={current?.target_type ?? null}
-        granularity={current?.granularity ?? null}
-        confidence={current?.confidence ?? null}
-        evidenceCount={current?.evidenceCount ?? null}
-        taskName={taskName}
-        queueIndex={currentIndex}
-        queueTotal={queue.length}
-        taskStatus={current ? (QUEUE_STATUS_LABEL[current.status] ?? current.status) : null}
-        claimSentence={claimSentence}
-        onBackToDataCenter={() => { window.location.hash = '#/data-center' }}
-        onRefresh={() => { window.location.reload() }}
-      />
-      <StepPills module={state.module} progress={progress} />
+      {/* 嵌入模式下隐藏 ContextBar 和 StepPills,由验证中心 Tab 提供顶层导航 */}
+      {!embedded && (
+        <>
+          <ContextBar
+            targetLabel={current?.label ?? null}
+            targetType={current?.target_type ?? null}
+            granularity={current?.granularity ?? null}
+            confidence={current?.confidence ?? null}
+            evidenceCount={current?.evidenceCount ?? null}
+            taskName={taskName}
+            queueIndex={currentIndex}
+            queueTotal={queue.length}
+            taskStatus={current ? (QUEUE_STATUS_LABEL[current.status] ?? current.status) : null}
+            claimSentence={claimSentence}
+            onBackToDataCenter={() => { window.location.hash = '#/data-center' }}
+            onRefresh={() => { window.location.reload() }}
+          />
+          <StepPills module={state.module} progress={progress} />
+        </>
+      )}
       <div className={`evidence-center-layout${isPapers ? ' evidence-center-layout-full' : ''}`} data-testid="evidence-center-layout">
         {!isPapers && (
           <aside className="evidence-left">
-            <ClaimSummaryPanel
-              claimText={candidateClaim?.claimText ?? ''}
-              components={candidateClaim?.components ?? []}
-              targetType={candidateClaim?.targetType ?? ''}
-              granularity={candidateClaim?.granularity ?? null}
-            />
+            {state.module === 'review' || state.module === 'promotion' ? (
+              <ObjectQueue
+                queue={queue}
+                currentIndex={currentIndex}
+                onSelect={e => openTarget(
+                  e.target_type,
+                  e.target_id,
+                  // 审核/晋升模块内切换队列项时留在当前模块,其余模块统一回候选视图
+                  state.module === 'review' || state.module === 'promotion' ? state.module : 'candidates',
+                )}
+              />
+            ) : (
+              <ClaimSummaryPanel
+                claimText={candidateClaim?.claimText ?? ''}
+                components={candidateClaim?.components ?? []}
+                targetType={candidateClaim?.targetType ?? ''}
+                granularity={candidateClaim?.granularity ?? null}
+              />
+            )}
           </aside>
         )}
         <main className="evidence-main">
@@ -109,14 +128,36 @@ function EvidenceCenterBody() {
   )
 }
 
-export function EvidenceCenterPage() {
+export function EvidenceCenterPage({ embedded }: { embedded?: boolean }) {
   return (
-    <EvidenceCenterProvider>
+    <EvidenceCenterProvider embedded={embedded}>
       <div className="evidence-center" data-testid="evidence-center">
-        <EvidenceCenterHeader moduleTitles={MODULE_TITLE} />
-        <EvidenceCenterBody />
+        {embedded ? (
+          <div className="evidence-module-nav" data-testid="evidence-module-nav" style={{ marginBottom: 12 }}>
+            {(['tasks', 'papers', 'candidates', 'review', 'promotion'] as ModuleKey[]).map(m => (
+              <EvidenceModuleNavButton key={m} moduleKey={m} />
+            ))}
+          </div>
+        ) : (
+          <EvidenceCenterHeader moduleTitles={MODULE_TITLE} />
+        )}
+        <EvidenceCenterBody embedded={embedded} />
       </div>
     </EvidenceCenterProvider>
+  )
+}
+
+function EvidenceModuleNavButton({ moduleKey }: { moduleKey: ModuleKey }) {
+  const { state, gotoModule } = useEvidenceCenter()
+  return (
+    <button
+      type="button"
+      className={`evidence-module-btn${state.module === moduleKey ? ' active' : ''}`}
+      aria-current={state.module === moduleKey ? 'page' : undefined}
+      onClick={() => gotoModule(moduleKey)}
+    >
+      {MODULE_TITLE[moduleKey]}
+    </button>
   )
 }
 
