@@ -20,9 +20,6 @@ export interface EvidenceTaskItemsState {
   reload: () => void
 }
 
-/** 进行中任务状态集合(全局模式取数范围) */
-export const IN_PROGRESS_STATUSES = ['pending', 'running', 'paused']
-
 /**
  * 佐证任务对象取数 hook(中栏与右栏队列共用,避免双份取数与刷新节奏漂移):
  * - 无 taskId = 全局模式:并行拉取所有进行中任务的 items(每任务 limit 100)合并,单任务失败静默跳过;
@@ -47,15 +44,17 @@ export function useEvidenceTaskItems(): EvidenceTaskItemsState {
       setTaskNames({})
       try {
         const r = await listPaperEvidenceTasks({ limit: 200 })
-        const active = r.items.filter(t => IN_PROGRESS_STATUSES.includes(t.status))
-        setTaskNames(Object.fromEntries(active.map(t => [t.id, t.name || t.target_type])))
+        // 取所有非取消且有对象的任务(对象状态由各面板自行过滤;
+        // 部分历史任务的任务级 status 与对象状态不一致,按任务状态过滤会漏数据)
+        const scoped = r.items.filter(t => t.status !== 'cancelled' && t.total_items > 0)
+        setTaskNames(Object.fromEntries(scoped.map(t => [t.id, t.name || t.target_type])))
         const settled = await Promise.allSettled(
-          active.map(t => listPaperEvidenceTaskItems(t.id, { limit: 100 })),
+          scoped.map(t => listPaperEvidenceTaskItems(t.id, { limit: 100 })),
         )
         if (latestTaskIdRef.current !== null) return
         const merged = settled.flatMap((s, i) =>
           s.status === 'fulfilled'
-            ? s.value.items.map(it => ({ ...it, __taskId: active[i].id }))
+            ? s.value.items.map(it => ({ ...it, __taskId: scoped[i].id }))
             : [],
         )
         setItems(merged)

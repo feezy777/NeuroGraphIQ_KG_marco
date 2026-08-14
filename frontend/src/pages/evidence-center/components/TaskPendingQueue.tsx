@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import { Inbox } from 'lucide-react'
 import { useEvidenceCenter } from '../EvidenceCenterContext'
 import { EmptyState } from './EmptyState'
-import { TARGET_TYPE_LABELS, TASK_STATUS_LABELS, taskStatusTone } from './taskStatus'
+import { itemDisplayLabel, TARGET_TYPE_LABELS, TASK_STATUS_LABELS, taskStatusTone } from './taskStatus'
 import { TARGET_TYPE_GROUPS, groupOf, isUnfinishedItem, sortByConfidenceAsc } from './taskItemQueueUtils'
 import { useEvidenceTaskItems, type EvidenceQueueItem } from './useEvidenceTaskItems'
 
@@ -21,7 +21,7 @@ function PendingCard({ item, taskName, selected, onOpen }: {
       onClick={onOpen}
     >
       <div className="evidence-conn-card-main">
-        <span className="evidence-conn-card-label">{item.label || item.target_id}</span>
+        <span className="evidence-conn-card-label">{itemDisplayLabel(item)}</span>
         <span className="evidence-conn-card-type">{TARGET_TYPE_LABELS[item.target_type] ?? item.target_type}</span>
       </div>
       <div className="evidence-conn-card-meta">

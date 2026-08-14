@@ -127,4 +127,41 @@ describe('TaskPendingQueue(左栏待处理)', () => {
     fireEvent.click(screen.getByRole('button', { name: '重试' }))
     await waitFor(() => expect(screen.getByTestId('evidence-queue-empty')).toBeTruthy())
   })
+it('任务级 status 不作为过滤条件:completed 任务的待审对象也进队列', async () => {
+    vi.mocked(endpoints.listPaperEvidenceTasks).mockResolvedValue({
+      items: [
+        makeTask({ id: 'ta', name: '任务A', status: 'completed' }),
+        makeTask({ id: 'tc', name: '任务C', status: 'cancelled', total_items: 5 }),
+        makeTask({ id: 'te', name: '任务E', status: 'pending', total_items: 0 }),
+      ], total: 3,
+    })
+    vi.mocked(endpoints.listPaperEvidenceTaskItems).mockImplementation(async (taskId: string) => ({
+      items: taskId === 'ta'
+        ? [makeItem({ id: 'a1', target_id: 'c-1', label: 'BLA -> IL', current_confidence: 0.4 })]
+        : [],
+    }))
+    window.location.hash = '#/evidence-center?module=tasks'
+    render(<EvidenceCenterProvider><TaskPendingQueue /></EvidenceCenterProvider>)
+    await waitFor(() => expect(screen.getByText('BLA -> IL')).toBeTruthy())
+    expect(vi.mocked(endpoints.listPaperEvidenceTaskItems)).toHaveBeenCalledWith('ta', { limit: 100 })
+    expect(vi.mocked(endpoints.listPaperEvidenceTaskItems)).not.toHaveBeenCalledWith('tc', { limit: 100 })
+    expect(vi.mocked(endpoints.listPaperEvidenceTaskItems)).not.toHaveBeenCalledWith('te', { limit: 100 })
+  })
+
+  it('label 为裸 UUID 时显示「类型中文 #短ID」兜底', async () => {
+    vi.mocked(endpoints.listPaperEvidenceTasks).mockResolvedValue({
+      items: [makeTask({ id: 'ta', name: '任务A', status: 'running' })], total: 1,
+    })
+    vi.mocked(endpoints.listPaperEvidenceTaskItems).mockResolvedValue({
+      items: [
+        makeItem({ id: 'a1', target_id: '4bd7092b-f65b-49c8-81f7-ebf8d896c152', label: '4bd7092b-f65b-49c8-81f7-ebf8d896c152', current_confidence: 0.4 }),
+        makeItem({ id: 'a2', target_id: 'x1', target_type: 'circuit', label: '默认模式网络', current_confidence: 0.3 }),
+      ],
+    })
+    window.location.hash = '#/evidence-center?module=tasks'
+    render(<EvidenceCenterProvider><TaskPendingQueue /></EvidenceCenterProvider>)
+    await waitFor(() => expect(screen.getByText('默认模式网络')).toBeTruthy())
+    expect(screen.getByText('连接 #4bd7092b')).toBeTruthy()
+    expect(screen.queryByText('4bd7092b-f65b-49c8-81f7-ebf8d896c152')).toBeNull()
+  })
 })

@@ -3,7 +3,7 @@ import { Inbox } from 'lucide-react'
 import { reopenPaperEvidenceTaskItem } from '../../../api/endpoints'
 import { useEvidenceCenter } from '../EvidenceCenterContext'
 import { EmptyState } from './EmptyState'
-import { TARGET_TYPE_LABELS, TASK_STATUS_LABELS, taskStatusTone } from './taskStatus'
+import { itemDisplayLabel, TARGET_TYPE_LABELS, TASK_STATUS_LABELS, taskStatusTone } from './taskStatus'
 import { useEvidenceTaskItems, type EvidenceQueueItem } from './useEvidenceTaskItems'
 
 /** 已处理(终态)对象集合:completed/skipped/failed */
@@ -85,7 +85,7 @@ export function TaskProcessedPanel() {
               onClick={() => handleOpen(item)}
             >
               <div className="evidence-queue-done-main">
-                <span className="evidence-conn-card-label">{item.label || item.target_id}</span>
+                <span className="evidence-conn-card-label">{itemDisplayLabel(item)}</span>
                 <span className="evidence-conn-card-type">{TARGET_TYPE_LABELS[item.target_type] ?? item.target_type}</span>
                 <span style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
                   <span className={`evidence-task-chip evidence-task-chip-${taskStatusTone(item.status)}`}>

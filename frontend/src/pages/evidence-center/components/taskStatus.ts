@@ -56,3 +56,11 @@ export const TARGET_TYPE_LABELS: Record<string, string> = {
 export function taskDisplayName(t: { name: string | null; target_type: string; id: string }): string {
   return t.name || `${TARGET_TYPE_LABELS[t.target_type] ?? t.target_type}任务 #${t.id.slice(0, 8)}`
 }
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+/** 对象展示名:label 缺失或为裸 UUID(后端未解析出名称的存量数据)时,用「类型中文 #短ID」兜底 */
+export function itemDisplayLabel(item: { label: string | null; target_id: string; target_type: string }): string {
+  if (item.label && !UUID_RE.test(item.label)) return item.label
+  return `${TARGET_TYPE_LABELS[item.target_type] ?? item.target_type} #${item.target_id.slice(0, 8)}`
+}
