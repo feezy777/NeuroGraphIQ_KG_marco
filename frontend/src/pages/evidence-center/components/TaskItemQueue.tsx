@@ -1,15 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { ChevronDown, ChevronRight, Inbox } from 'lucide-react'
-import {
-  listPaperEvidenceTaskItems,
-  listPaperEvidenceTasks,
-  reopenPaperEvidenceTaskItem,
-  type PaperEvidenceTaskItem,
-} from '../../../api/endpoints'
+import { reopenPaperEvidenceTaskItem, type PaperEvidenceTaskItem } from '../../../api/endpoints'
 import { useEvidenceCenter } from '../EvidenceCenterContext'
 import { EmptyState } from './EmptyState'
-import { TASK_STATUS_LABELS, taskStatusTone } from './taskStatus'
+import { TARGET_TYPE_LABELS, TASK_STATUS_LABELS, taskStatusTone } from './taskStatus'
 import { TARGET_TYPE_GROUPS, groupOf, isUnfinishedItem, sortByConfidenceAsc } from './taskItemQueueUtils'
+import { useEvidenceTaskItems } from './useEvidenceTaskItems'
 
 /** 队列条目卡片(待处理区):名称/类型/置信度大字/状态/AI 方向;当前对象高亮 */
 function QueueItemCard({ item, selected, onOpen, taskName }: {
@@ -28,7 +24,7 @@ function QueueItemCard({ item, selected, onOpen, taskName }: {
     >
       <div className="evidence-conn-card-main">
         <span className="evidence-conn-card-label">{item.label || item.target_id}</span>
-        <span className="evidence-conn-card-type">{item.target_type}</span>
+        <span className="evidence-conn-card-type">{TARGET_TYPE_LABELS[item.target_type] ?? item.target_type}</span>
       </div>
       <div className="evidence-conn-card-meta">
         <div className="evidence-conn-card-conf">
@@ -52,68 +48,12 @@ function QueueItemCard({ item, selected, onOpen, taskName }: {
 export function TaskItemQueue() {
   const { state, openTarget, openTask } = useEvidenceCenter()
   const taskId = state.taskId
-  const [items, setItems] = useState<PaperEvidenceTaskItem[]>([])
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const { items, taskNames, loading, error, reload } = useEvidenceTaskItems()
   const [group, setGroup] = useState<string>('all')
   const [doneOpen, setDoneOpen] = useState(false)
   const [reopeningId, setReopeningId] = useState<string | null>(null)
   const [confirmId, setConfirmId] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
-  const [taskNames, setTaskNames] = useState<Record<string, string>>({})
-  // 最新 taskId 引用:切任务时丢弃乱序返回的陈旧响应
-  const latestTaskIdRef = useRef(taskId)
-  useEffect(() => { latestTaskIdRef.current = taskId }, [taskId])
-
-  const loadItems = useCallback(async () => {
-    if (!taskId) {
-      // 全局模式:拉取所有进行中任务 → 并行拉各自 items → 合并(单任务失败静默跳过)
-      setLoading(true)
-      setError(null)
-      setItems([])
-      setTaskNames({})
-      try {
-        const r = await listPaperEvidenceTasks({ limit: 200 })
-        const active = r.items.filter(t => ['pending', 'running', 'paused'].includes(t.status))
-        setTaskNames(Object.fromEntries(active.map(t => [t.id, t.name || t.target_type])))
-        const settled = await Promise.allSettled(
-          active.map(t => listPaperEvidenceTaskItems(t.id, { limit: 100 })),
-        )
-        // 陈旧响应守卫:全局拉取期间用户选中了任务,则丢弃本次全局结果
-        if (latestTaskIdRef.current !== null) return
-        const merged = settled.flatMap((s, i) =>
-          s.status === 'fulfilled'
-            ? s.value.items.map(it => ({ ...it, __taskId: active[i].id }))
-            : [],
-        )
-        setItems(merged as PaperEvidenceTaskItem[])
-      } catch (err) {
-        if (latestTaskIdRef.current !== null) return
-        setError(err instanceof Error ? err.message : String(err))
-      } finally {
-        if (latestTaskIdRef.current === null) setLoading(false)
-      }
-      return
-    }
-    // 任务模式(原逻辑,保留 latestTaskIdRef 守卫)
-    const requestedTaskId = taskId
-    setLoading(true)
-    setError(null)
-    setItems([])
-    setTaskNames({})
-    try {
-      const r = await listPaperEvidenceTaskItems(requestedTaskId, { limit: 100 })
-      if (latestTaskIdRef.current !== requestedTaskId) return
-      setItems(r.items)
-    } catch (err) {
-      if (latestTaskIdRef.current !== requestedTaskId) return
-      setError(err instanceof Error ? err.message : String(err))
-    } finally {
-      if (latestTaskIdRef.current === requestedTaskId) setLoading(false)
-    }
-  }, [taskId])
-
-  useEffect(() => { void loadItems() }, [loadItems])
 
   const unfinished = useMemo(() => sortByConfidenceAsc(items.filter(isUnfinishedItem)), [items])
   const filtered = useMemo(
@@ -142,19 +82,19 @@ export function TaskItemQueue() {
         (item as unknown as { __taskId?: string }).__taskId ?? taskId ?? '',
         item.id,
       )
-      await loadItems()
+      reload()
     } catch (err) {
       setActionError(err instanceof Error ? err.message : String(err))
     } finally {
       setReopeningId(null)
     }
-  }, [confirmId, taskId, loadItems])
+  }, [confirmId, taskId, reload])
 
   return (
     <div className="evidence-task-queue" data-testid="evidence-task-queue">
       <div className="evidence-task-queue-head">
         <h4>待处理队列</h4>
-        <button type="button" className="btn btn-xs" onClick={() => void loadItems()}>刷新</button>
+        <button type="button" className="btn btn-xs" onClick={reload}>刷新</button>
       </div>
 
       <div className="evidence-queue-filter" data-testid="evidence-queue-filter">
@@ -181,7 +121,7 @@ export function TaskItemQueue() {
       {!loading && error && (
         <div className="evidence-task-error">
           <p>队列加载失败:{error}</p>
-          <button type="button" className="btn btn-sm" onClick={() => void loadItems()}>重试</button>
+          <button type="button" className="btn btn-sm" onClick={reload}>重试</button>
         </div>
       )}
       {!loading && !error && filtered.length === 0 && (
@@ -233,7 +173,7 @@ export function TaskItemQueue() {
               <div key={item.id} className="evidence-queue-done-item" data-testid={`evidence-queue-done-item-${item.target_id}`}>
                 <div className="evidence-queue-done-main">
                   <span className="evidence-conn-card-label">{item.label || item.target_id}</span>
-                  <span className="evidence-conn-card-type">{item.target_type}</span>
+                  <span className="evidence-conn-card-type">{TARGET_TYPE_LABELS[item.target_type] ?? item.target_type}</span>
                   <span className="evidence-task-chip evidence-task-chip-ok">已完成</span>
                 </div>
                 <button

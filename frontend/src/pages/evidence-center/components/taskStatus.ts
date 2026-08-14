@@ -40,3 +40,19 @@ export function taskSortRank(t: { status: string; awaiting_review_items: number 
   if (t.awaiting_review_items > 0) return 1
   return 2
 }
+
+/** 目标类型中文标签(任务/对象展示名兜底,避免直接显示 connection 等原始类型串) */
+export const TARGET_TYPE_LABELS: Record<string, string> = {
+  connection: '连接',
+  projection: '投射',
+  circuit: '回路',
+  circuit_step: '回路步骤',
+  circuit_function: '回路功能',
+  region_function: '脑区功能',
+  projection_function: '投射功能',
+}
+
+/** 任务展示名:优先任务名,缺失时用「类型中文 + 短ID」 */
+export function taskDisplayName(t: { name: string | null; target_type: string; id: string }): string {
+  return t.name || `${TARGET_TYPE_LABELS[t.target_type] ?? t.target_type}任务 #${t.id.slice(0, 8)}`
+}
