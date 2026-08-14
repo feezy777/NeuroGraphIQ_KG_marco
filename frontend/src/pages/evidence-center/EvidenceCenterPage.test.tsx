@@ -190,25 +190,23 @@ describe('EvidenceCenterPage', () => {
     await waitFor(() => expect(screen.getByText(/暂无论文/)).toBeTruthy())
   })
 
-  it('tasks 列表视图全宽:无左右栏,渲染任务卡片区', async () => {
-    vi.mocked(listPaperEvidenceTasks).mockResolvedValue({ items: [TASK_FIXTURE], total: 1 })
+  it('右栏随 module 切换:tasks 渲染待处理队列,candidates 渲染待处理对象队列', () => {
     window.location.hash = '#/evidence-center?module=tasks'
-    const { container } = render(<EvidenceCenterPage />)
-    await waitFor(() => expect(screen.getByText('任务A')).toBeTruthy())
-    expect(container.querySelector('.evidence-center-layout-full')).toBeTruthy()
-    expect(container.querySelector('.evidence-left')).toBeNull()
-    expect(container.querySelector('.evidence-right')).toBeNull()
-    expect(screen.getByTestId('evidence-task-card-grid')).toBeTruthy()
-  })
-
-  it('右栏随 module 切换:tasks 详情渲染待处理队列,candidates 渲染待处理对象队列', () => {
-    // tasks 列表视图全宽无右栏,须带 task_id 进入详情视图才有右栏队列
-    window.location.hash = '#/evidence-center?module=tasks&task_id=ta'
     const { container } = render(<EvidenceCenterPage />)
     expect(screen.getByTestId('evidence-task-queue')).toBeTruthy()
     fireEvent.click(screen.getByText('证据候选'))
     const title = () => container.querySelector('.evidence-right-panel h4')?.textContent ?? ''
     expect(title()).toContain('待处理对象')
+  })
+
+  it('tasks 三栏常显:左栏 Claim 面板,中栏任务区,右栏队列', async () => {
+    vi.mocked(listPaperEvidenceTasks).mockResolvedValue({ items: [TASK_FIXTURE], total: 1 })
+    window.location.hash = '#/evidence-center?module=tasks'
+    const { container } = render(<EvidenceCenterPage />)
+    await waitFor(() => expect(screen.getByText('任务A')).toBeTruthy())
+    expect(container.querySelector('.evidence-left')).toBeTruthy()
+    expect(container.querySelector('.evidence-right')).toBeTruthy()
+    expect(container.querySelector('.evidence-center-layout-full')).toBeNull()
   })
 
   it('candidates 右栏渲染对象队列;中栏统计条 [进入人工审核] 勾选后可用并跳转 review', async () => {
@@ -432,16 +430,6 @@ describe('EvidenceCenterPage', () => {
     await waitFor(() => expect(window.location.hash).toContain('target_id=rB'))
     expect(window.location.hash).not.toContain('stale-target')
     expect(window.location.hash).not.toContain('rA')
-  })
-
-  it('详情视图左栏返回按钮回到任务列表', async () => {
-    vi.mocked(listPaperEvidenceTasks).mockResolvedValue({ items: [TASK_FIXTURE], total: 1 })
-    vi.mocked(listPaperEvidenceTaskItems).mockResolvedValue({ items: [] })
-    window.location.hash = '#/evidence-center?module=tasks&task_id=ta'
-    render(<EvidenceCenterPage />)
-    await waitFor(() => expect(screen.getByTestId('evidence-task-list-back')).toBeTruthy())
-    fireEvent.click(screen.getByTestId('evidence-task-list-back'))
-    await waitFor(() => expect(window.location.hash).not.toContain('task_id='))
   })
 
   it('StepPills 渲染五步并随 module 高亮当前步', async () => {
