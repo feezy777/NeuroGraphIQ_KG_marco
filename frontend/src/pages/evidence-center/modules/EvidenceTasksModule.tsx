@@ -23,13 +23,13 @@ function fmtDate(v: string | null): string {
   }
 }
 
-/** 任务卡片:基本信息 + 点击进入任务详情 */
-function TaskCard({ task, onOpen }: { task: PaperEvidenceTask; onOpen: () => void }) {
+/** 任务卡片:基本信息 + 点击进入任务(态①) */
+function TaskCard({ task, selected, onOpen }: { task: PaperEvidenceTask; selected: boolean; onOpen: () => void }) {
   const inProgress = ['pending', 'running', 'paused'].includes(task.status)
   return (
     <button
       type="button"
-      className="evidence-task-card"
+      className={`evidence-task-card${selected ? ' evidence-task-card-selected' : ''}`}
       data-testid={`evidence-task-card-${task.id}`}
       onClick={onOpen}
     >
@@ -54,8 +54,43 @@ function TaskCard({ task, onOpen }: { task: PaperEvidenceTask; onOpen: () => voi
   )
 }
 
+/** 任务对象卡片(态②):未完成优先 + 置信度升序 */
+function ObjectCard({ item, selected, onOpen }: { item: PaperEvidenceTaskItem; selected: boolean; onOpen: () => void }) {
+  const conf = item.current_confidence
+  return (
+    <div
+      className={`evidence-conn-card${selected ? ' evidence-conn-card-selected' : ''}`}
+      data-testid={`evidence-task-object-${item.target_id}`}
+      onClick={onOpen}
+    >
+      <div className="evidence-conn-card-main">
+        <span className="evidence-conn-card-label">{item.label || item.target_id}</span>
+        <span className="evidence-conn-card-type">{item.target_type}</span>
+      </div>
+      <div className="evidence-conn-card-meta">
+        <div className="evidence-conn-card-conf">
+          <span className="evidence-conn-card-conf-label">置信度</span>
+          <b className="evidence-conn-card-conf-value">{conf != null ? conf.toFixed(2) : '—'}</b>
+        </div>
+        <span className={`evidence-task-chip evidence-task-chip-${taskStatusTone(item.status)}`}>
+          {TASK_STATUS_LABELS[item.status] ?? item.status}
+        </span>
+        {item.preprocess_outcome === 'no_evidence_found' && <span className="ew-meta">未找到有效证据</span>}
+        {item.model_direction && <span className="ew-meta">AI:{item.model_direction}</span>}
+      </div>
+    </div>
+  )
+}
+
+/** 中栏对象排序:未完成优先(置信度升序),已完成/其他按状态排后 */
+function sortObjects(items: PaperEvidenceTaskItem[]): PaperEvidenceTaskItem[] {
+  const unfinished = sortByConfidenceAsc(items.filter(isUnfinishedItem))
+  const rest = items.filter(it => !isUnfinishedItem(it))
+  return [...unfinished, ...rest]
+}
+
 export function EvidenceTasksModule() {
-  const { state, openTask, openTarget } = useEvidenceCenter()
+  const { state, openTask, closeTask, openTarget } = useEvidenceCenter()
   const { granularity } = useGlobalGranularity()
   const [tasks, setTasks] = useState<PaperEvidenceTask[]>([])
   const [tasksLoading, setTasksLoading] = useState(true)
@@ -64,7 +99,6 @@ export function EvidenceTasksModule() {
   const [items, setItems] = useState<PaperEvidenceTaskItem[]>([])
   const [itemsLoading, setItemsLoading] = useState(true)
   const [itemsError, setItemsError] = useState<string | null>(null)
-  // 最新 taskId 引用:items 响应乱序返回时丢弃陈旧响应(防陈旧 items 写入 URL 引发竞态)
   const latestTaskIdRef = useRef(state.taskId)
   useEffect(() => { latestTaskIdRef.current = state.taskId }, [state.taskId])
 
@@ -104,9 +138,7 @@ export function EvidenceTasksModule() {
 
   useEffect(() => { void loadItems() }, [loadItems])
 
-  // 进入详情自动选中队列首位(未完成、置信度最低):URL 无 target 或 target 不在本任务未完成集合时纠正。
-  // deps 不含 state.targetType/targetId:用户点击队列项(openTarget)不应重新触发本纠正,
-  // 否则回退重审后点击新回到待处理区的对象会被旧 items 快照纠正回原首位
+  // 选中任务自动选中队列首位(未完成、置信度最低):deps 不含 target(防点击/回退后旧快照抢回)
   useEffect(() => {
     if (!state.taskId) return
     const unfinished = sortByConfidenceAsc(items.filter(isUnfinishedItem))
@@ -116,7 +148,13 @@ export function EvidenceTasksModule() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.taskId, items, openTarget])
 
-  // ── 任务列表视图(无 taskId) ──
+  const task = tasks.find(t => t.id === state.taskId) ?? null
+  const targetResolved = Boolean(
+    state.targetType && state.targetId
+    && items.some(it => it.target_type === state.targetType && it.target_id === state.targetId),
+  )
+
+  // ── 态①:任务卡片网格 ──
   if (!state.taskId) {
     const sorted = [...tasks].sort((a, b) => {
       const ra = taskSortRank(a)
@@ -129,7 +167,7 @@ export function EvidenceTasksModule() {
         <div className="evidence-task-toolbar">
           <div className="evidence-task-toolbar-title">
             <h3>佐证任务</h3>
-            <p className="evidence-module-hint">当前正在处理的证据佐证任务,点击任务卡片进入处理工作台。</p>
+            <p className="evidence-module-hint">当前正在处理的证据佐证任务;右栏为全局置信度优先级队列。</p>
           </div>
           <div className="evidence-task-toolbar-actions">
             <button type="button" className="btn btn-sm" onClick={() => void loadTasks()}>刷新</button>
@@ -155,8 +193,8 @@ export function EvidenceTasksModule() {
         )}
         {!tasksLoading && !tasksError && sorted.length > 0 && (
           <div className="evidence-task-card-grid" data-testid="evidence-task-card-grid">
-            {sorted.map(task => (
-              <TaskCard key={task.id} task={task} onOpen={() => openTask(task.id)} />
+            {sorted.map(t => (
+              <TaskCard key={t.id} task={t} selected={false} onOpen={() => openTask(t.id)} />
             ))}
           </div>
         )}
@@ -171,42 +209,45 @@ export function EvidenceTasksModule() {
     )
   }
 
-  // ── 任务详情视图 ──
-  const task = tasks.find(t => t.id === state.taskId) ?? null
-  // 候选组件门控:仅当 URL target 已解析为本任务某个 item 时才挂载,
-  // 避免其「target 不符则回写 module=candidates」的同步副作用在自动选中提交前把模块切走
-  const targetResolved = Boolean(
-    state.targetType && state.targetId
-    && items.some(it => it.target_type === state.targetType && it.target_id === state.targetId),
-  )
+  // ── 态②/③:任务对象卡片 ⇄ 就地证据工作区 ──
+  const sortedObjects = sortObjects(items)
   return (
     <div className="evidence-task-module">
-      <div className="evidence-task-detail-bar" data-testid="evidence-task-detail-bar">
+      <div className="evidence-task-middle-bar">
+        <button type="button" className="btn btn-xs" data-testid="evidence-task-middle-back" onClick={closeTask}>← 任务列表</button>
         <h3>{task?.name || task?.target_type || '任务详情'}</h3>
         {task && (
-          <>
-            <span className={`evidence-task-chip evidence-task-chip-${taskStatusTone(task.status)}`}>
-              {TASK_STATUS_LABELS[task.status] ?? task.status}
-            </span>
-            <span className="ew-meta">
-              已处理 {task.processed_items} / {task.total_items} · 待审核 {task.awaiting_review_items}
-              {task.failed_items > 0 ? ` · 失败 ${task.failed_items}` : ''}
-            </span>
-          </>
+          <span className="ew-meta">
+            已处理 {task.processed_items} / {task.total_items} · 待审核 {task.awaiting_review_items}
+            {task.failed_items > 0 ? ` · 失败 ${task.failed_items}` : ''}
+          </span>
         )}
+        <span style={{ marginLeft: 'auto' }}>
+          <button type="button" className="btn btn-xs" onClick={() => void loadItems()}>刷新</button>
+        </span>
       </div>
+
       {itemsLoading && <div className="evidence-task-loading">加载中…</div>}
       {!itemsLoading && itemsError && (
         <div className="evidence-task-error">
-          <p>连接列表加载失败:{itemsError}</p>
+          <p>对象列表加载失败:{itemsError}</p>
           <button type="button" className="btn btn-sm" onClick={() => void loadItems()}>重试</button>
         </div>
       )}
       {!itemsLoading && !itemsError && targetResolved && <EvidenceCandidatesModule />}
-      {!itemsLoading && !itemsError && !targetResolved && items.some(isUnfinishedItem) && (
-        <div className="evidence-task-loading">加载中…</div>
+      {!itemsLoading && !itemsError && !targetResolved && sortedObjects.length > 0 && (
+        <div className="evidence-conn-list" data-testid="evidence-task-object-list">
+          {sortedObjects.map(item => (
+            <ObjectCard
+              key={item.id}
+              item={item}
+              selected={state.targetType === item.target_type && state.targetId === item.target_id}
+              onOpen={() => openTarget(item.target_type, item.target_id, 'tasks')}
+            />
+          ))}
+        </div>
       )}
-      {!itemsLoading && !itemsError && !targetResolved && !items.some(isUnfinishedItem) && (
+      {!itemsLoading && !itemsError && !targetResolved && sortedObjects.length === 0 && (
         <EmptyState
           icon={<Inbox size={24} />}
           title={items.length > 0 && (task?.failed_items ?? 0) > 0 ? '无待处理对象' : '全部处理完成'}
@@ -216,6 +257,7 @@ export function EvidenceTasksModule() {
           testId="evidence-tasks-all-done"
         />
       )}
+
       <CreateBatchTaskDialog
         open={createOpen}
         granularity={granularity}

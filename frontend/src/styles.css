@@ -12544,3 +12544,12 @@ input[type="range"]::-webkit-slider-thumb {
   padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--white);
 }
 .evidence-queue-done-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+
+/* ── 佐证任务中栏:返回条/对象卡片选中态 ── */
+.evidence-task-middle-bar {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  padding: 10px 14px; margin-bottom: 10px;
+  border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-soft);
+}
+.evidence-task-middle-bar h3 { margin: 0; font-size: 15px; }
+.evidence-task-card-selected { border-color: var(--primary); box-shadow: 0 0 0 1px var(--primary) inset; }
