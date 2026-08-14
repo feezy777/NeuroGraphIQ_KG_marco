@@ -190,16 +190,18 @@ describe('EvidenceCenterPage', () => {
     await waitFor(() => expect(screen.getByText(/暂无论文/)).toBeTruthy())
   })
 
-  it('右栏随 module 切换:tasks 渲染待处理队列,candidates 渲染待处理对象队列', () => {
+  it('tasks 布局:左栏待处理队列,右栏已处理面板,candidates 右栏待处理对象队列', async () => {
     window.location.hash = '#/evidence-center?module=tasks'
     const { container } = render(<EvidenceCenterPage />)
-    expect(screen.getByTestId('evidence-task-queue')).toBeTruthy()
+    await waitFor(() => expect(screen.getByTestId('evidence-task-queue')).toBeTruthy())
+    expect(screen.getByTestId('evidence-processed-panel')).toBeTruthy()
     fireEvent.click(screen.getByText('证据候选'))
+    await waitFor(() => expect(screen.getByTestId('evidence-queue-panel')).toBeTruthy())
     const title = () => container.querySelector('.evidence-right-panel h4')?.textContent ?? ''
     expect(title()).toContain('待处理对象')
   })
 
-  it('tasks 三栏常显:左栏 Claim 面板,中栏对象列表,右栏队列', async () => {
+  it('tasks 三栏常显:左栏待处理队列,中栏工作区提示,右栏已处理面板', async () => {
     vi.mocked(listPaperEvidenceTasks).mockResolvedValue({ items: [TASK_FIXTURE], total: 1 })
     vi.mocked(listPaperEvidenceTaskItems).mockResolvedValue({ items: [makeItem({ id: 'it-x', target_id: 'r1-r2', label: 'R1→R2', status: 'awaiting_review', current_confidence: 0.4 })] })
     window.location.hash = '#/evidence-center?module=tasks'
@@ -208,6 +210,7 @@ describe('EvidenceCenterPage', () => {
     expect(container.querySelector('.evidence-left')).toBeTruthy()
     expect(container.querySelector('.evidence-right')).toBeTruthy()
     expect(container.querySelector('.evidence-center-layout-full')).toBeNull()
+    expect(screen.getByTestId('evidence-tasks-no-target')).toBeTruthy()
   })
 
   it('candidates 右栏渲染对象队列;中栏统计条 [进入人工审核] 勾选后可用并跳转 review', async () => {
@@ -426,7 +429,7 @@ describe('EvidenceCenterPage', () => {
     window.location.hash = '#/evidence-center?module=tasks'
     render(<EvidenceCenterPage />)
     await waitFor(() => expect(screen.getAllByText('RB').length).toBeGreaterThan(0))
-    fireEvent.click(screen.getByTestId('evidence-task-object-rB'))
+    fireEvent.click(screen.getByTestId('evidence-queue-item-rB'))
     await waitFor(() => expect(window.location.hash).toContain('task_id=tb'))
     await waitFor(() => expect(window.location.hash).toContain('target_id=rB'))
   })

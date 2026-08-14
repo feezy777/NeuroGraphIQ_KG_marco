@@ -5,6 +5,7 @@ import { EvidenceCenterHeader } from './EvidenceCenterHeader'
 import { ClaimSummaryPanel } from './components/ClaimSummaryPanel'
 import { composeClaimSentence, ContextBar } from './components/ContextBar'
 import { ObjectQueue } from './components/ObjectQueue'
+import { TaskPendingQueue } from './components/TaskPendingQueue'
 import { RightPanel } from './components/RightPanel'
 import { StepPills } from './components/StepPills'
 import { QUEUE_STATUS_LABEL } from './components/types'
@@ -89,7 +90,9 @@ function EvidenceCenterBody({ embedded }: { embedded?: boolean }) {
       <div className={`evidence-center-layout${isPapers ? ' evidence-center-layout-full' : ''}`} data-testid="evidence-center-layout">
         {!isPapers && (
           <aside className="evidence-left">
-            {state.module === 'review' || state.module === 'promotion' ? (
+            {state.module === 'tasks' ? (
+              <TaskPendingQueue />
+            ) : state.module === 'review' || state.module === 'promotion' ? (
               <ObjectQueue
                 queue={queue}
                 currentIndex={currentIndex}

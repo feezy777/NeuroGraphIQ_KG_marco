@@ -2,9 +2,10 @@ import { useMemo } from 'react'
 import { useEvidenceCenter, type ModuleKey } from '../EvidenceCenterContext'
 import { EvidenceQueuePanel } from './EvidenceQueuePanel'
 import { ObjectQueue } from './ObjectQueue'
+import { PassageSummary } from './PassageSummary'
 import { PromotionImpact } from './PromotionImpact'
 import { ReviewerDecisionPanel } from './ReviewerDecisionPanel'
-import { TaskItemQueue } from './TaskItemQueue'
+import { TaskProcessedPanel } from './TaskProcessedPanel'
 
 const RIGHT_TITLES: Record<ModuleKey, string> = {
   tasks: '任务与队列概览',
@@ -21,6 +22,12 @@ export function RightPanel({ module }: { module: ModuleKey }) {
     queue,
     reviewDecision,
     promotionImpact,
+    candidatePassages,
+    viewCandidatePaper,
+    candidateSelectedHashes,
+    toggleCandidatePassage,
+    selectAllCandidatePassages,
+    enterReviewFromPassages,
     openTarget,
   } = useEvidenceCenter()
 
@@ -34,19 +41,27 @@ export function RightPanel({ module }: { module: ModuleKey }) {
   if (module === 'tasks') {
     return (
       <aside className="evidence-right-panel" data-testid="evidence-right-panel">
-        <TaskItemQueue />
+        <TaskProcessedPanel />
       </aside>
     )
   }
 
   if (module === 'candidates') {
-    // 候选模块右栏 = 待处理对象队列(视觉稿版:状态 Tabs + 数量徽标 + 空态;队列已从页面左栏移到右栏,左栏改渲染 ClaimSummaryPanel)
+    // 候选模块右栏 = 待处理对象队列(Top) + 候选佐证原文片段聚合(Bottom)
     return (
       <aside className="evidence-right-panel" data-testid="evidence-right-panel">
         <EvidenceQueuePanel
           queue={queue}
           currentIndex={candidateQueueIndex}
           onSelect={e => openTarget(e.target_type, e.target_id, 'candidates')}
+        />
+        <PassageSummary
+          passages={candidatePassages}
+          onViewPaper={viewCandidatePaper}
+          selectedHashes={candidateSelectedHashes}
+          onToggleSelect={toggleCandidatePassage}
+          onSelectAll={selectAllCandidatePassages}
+          onEnterReview={enterReviewFromPassages}
         />
       </aside>
     )
