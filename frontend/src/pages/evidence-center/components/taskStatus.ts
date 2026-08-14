@@ -64,3 +64,30 @@ export function itemDisplayLabel(item: { label: string | null; target_id: string
   if (item.label && !UUID_RE.test(item.label)) return item.label
   return `${TARGET_TYPE_LABELS[item.target_type] ?? item.target_type} #${item.target_id.slice(0, 8)}`
 }
+
+/** 任务工作状态(统一状态体系:由该任务对象状态推导,不信任任务级 status) */
+export interface TaskWorkStatus {
+  key: 'running' | 'awaiting' | 'failed' | 'done' | 'empty'
+  label: string
+  tone: string
+  /** 列表排序秩:进行中 < 待审核 < 部分失败 < 已完成 < 空 */
+  rank: number
+}
+
+const ACTIVE_ITEM_STATUSES = ['pending', 'searching', 'fetching', 'retrieving', 'extracting', 'verifying']
+
+export function deriveTaskWorkStatus(items: { status: string }[]): TaskWorkStatus {
+  if (items.some(it => ACTIVE_ITEM_STATUSES.includes(it.status))) {
+    return { key: 'running', label: '进行中', tone: 'info', rank: 0 }
+  }
+  if (items.some(it => it.status === 'awaiting_review')) {
+    return { key: 'awaiting', label: '待审核', tone: 'warn', rank: 1 }
+  }
+  if (items.some(it => it.status === 'failed')) {
+    return { key: 'failed', label: '部分失败', tone: 'bad', rank: 2 }
+  }
+  if (items.length > 0) {
+    return { key: 'done', label: '已完成', tone: 'ok', rank: 3 }
+  }
+  return { key: 'empty', label: '空任务', tone: 'muted', rank: 4 }
+}

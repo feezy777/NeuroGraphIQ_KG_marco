@@ -211,7 +211,7 @@ describe('EvidenceCenterPage', () => {
     expect(container.querySelector('.evidence-left')).toBeTruthy()
     expect(container.querySelector('.evidence-right')).toBeTruthy()
     expect(container.querySelector('.evidence-center-layout-full')).toBeNull()
-    expect(screen.getByTestId('evidence-tasks-no-target')).toBeTruthy()
+    expect(screen.getByTestId('evidence-task-card-grid')).toBeTruthy()
   })
 
   it('candidates 右栏渲染对象队列;中栏统计条 [进入人工审核] 勾选后可用并跳转 review', async () => {
