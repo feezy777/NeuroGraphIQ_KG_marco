@@ -3819,6 +3819,104 @@ def _build_capabilities(raw_status: str, counts: dict[str, int]) -> dict:
     }
 
 
+async def _enrich_task_display(session: AsyncSession, tasks: list[dict]) -> list[dict]:
+    """为任务字典补充 display_name_cn/display_name_en/display_confidence 与来源标记(批量,无 N+1)。
+
+    - 按 target_type 分组批量 JOIN 镜像表取实时中英名与置信度;
+    - 镜像行缺失时,从任务 items 取唯一对象的快照 label/current_confidence 兜底;
+    - 再兜底:非 UUID 快照 label → 「类型中文 #短ID」;置信度实时 → 快照 → None。
+    """
+    if not tasks:
+        return tasks
+    by_type: dict[str, list[str]] = {}
+    for t in tasks:
+        oid = t.get("target_id")
+        if oid and t["target_type"] in TARGET_MODELS:
+            by_type.setdefault(t["target_type"], []).append(oid)
+    live: dict[tuple[str, str], dict] = {}
+    for tt, oids in by_type.items():
+        table = TARGET_MODELS[tt]
+        name_cols = _LIVE_NAME_COLUMNS.get(tt, "")
+        sel = ", ".join(f"m.{c}" for c in name_cols.split(", ")) if name_cols else ""
+        sel = (sel + ", " if sel else "") + "m.confidence AS live_confidence"
+        if tt == "circuit_function":
+            sel += ", m.confidence_score"
+        rows = (
+            await session.execute(
+                text(
+                    f"SELECT m.id, {sel} FROM {table.__tablename__} m WHERE m.id = ANY(:ids)"
+                ),
+                {"ids": [uuid.UUID(o) for o in oids]},
+            )
+        ).all()
+        for r in rows:
+            live[(tt, str(r._mapping["id"]))] = r._mapping
+    # 仅对镜像行缺失的任务取 items 快照(有实时行的任务不再多一次查询;target_id 为空的旧任务不查)
+    snap: dict[str, dict] = {}
+    need_item = [
+        t["id"]
+        for t in tasks
+        if t.get("target_id")
+        and (t["target_type"], str(t.get("target_id"))) not in live
+    ]
+    if need_item:
+        rows = (
+            await session.execute(
+                text(
+                    "SELECT DISTINCT ON (task_id) task_id::text, target_id::text, label, current_confidence "
+                    "FROM paper_evidence_task_items WHERE task_id::text = ANY(:ids) "
+                    "ORDER BY task_id, updated_at DESC"
+                ),
+                {"ids": need_item},
+            )
+        ).all()
+        for r in rows:
+            snap[r[0]] = {
+                "target_id": r[1],
+                "label": r[2],
+                "confidence": float(r[3]) if r[3] is not None else None,
+            }
+    out: list[dict] = []
+    for t in tasks:
+        tt = t["target_type"]
+        oid = t.get("target_id") or snap.get(t["id"], {}).get("target_id")
+        m = live.get((tt, oid)) if oid else None
+        cn = en = None
+        conf = None
+        name_src = "missing"
+        if m is not None:
+            cn, en = mirror_live_display_name_parts(tt, m.get)
+            conf = mirror_live_confidence(tt, m.get)
+            if cn is not None or en is not None:
+                name_src = "mirror_live"
+        if cn is None and en is None:
+            lbl = snap.get(t["id"], {}).get("label")
+            if lbl and not _UUID_RE.fullmatch(str(lbl)):
+                cn, name_src = str(lbl), "task_snapshot"
+            elif oid:
+                cn = f"{TARGET_TYPE_LABELS_CN.get(tt, tt)} #{oid[:8]}"
+                name_src = "fallback"
+        if conf is None:
+            sn = snap.get(t["id"], {}).get("confidence")
+            if sn is not None:
+                conf, conf_src = sn, "task_snapshot"
+            else:
+                conf_src = "mirror_live" if m is not None else "missing"
+        else:
+            conf_src = "mirror_live"
+        out.append(
+            {
+                **t,
+                "display_name_cn": cn,
+                "display_name_en": en,
+                "display_confidence": conf,
+                "display_name_source": name_src,
+                "display_confidence_source": conf_src,
+            }
+        )
+    return out
+
+
 async def list_paper_evidence_tasks(
     session: AsyncSession, limit: int = 50, offset: int = 0, status: str | None = None
 ) -> dict:
@@ -3834,7 +3932,7 @@ async def list_paper_evidence_tasks(
                 f"total_items, processed_items, awaiting_review_items, failed_items, summary, "
                 f"created_by, created_at, started_at, finished_at, error_message, "
                 f"review_status, name, granularity_level, materialization_status, "
-                f"estimated_target_count, materialized_target_count, confidence_lt "
+                f"estimated_target_count, materialized_target_count, confidence_lt, target_id::text "
                 f"FROM paper_evidence_tasks {where} ORDER BY created_at DESC LIMIT :lim OFFSET :off"
             ),
             params,
@@ -3874,6 +3972,7 @@ async def list_paper_evidence_tasks(
             {
                 "id": r[0],
                 "target_type": r[1],
+                "target_id": r[23],
                 "scope": r[2],
                 "mode": r[3],
                 "max_papers_per_object": r[4],
@@ -3900,7 +3999,7 @@ async def list_paper_evidence_tasks(
                 "capabilities": _build_capabilities(raw_status, counts),
             }
         )
-    return {"items": items, "total": total}
+    return {"items": await _enrich_task_display(session, items), "total": total}
 
 
 async def get_batch_task(session: AsyncSession, task_id: str) -> dict:
@@ -3912,7 +4011,7 @@ async def get_batch_task(session: AsyncSession, task_id: str) -> dict:
                 "created_at, started_at, finished_at, error_message, review_status, name, "
                 "granularity_level, only_oa, confidence_lt, stop_after_strong_support, "
                 "scope_type, filter_snapshot, estimated_target_count, materialized_target_count, "
-                "materialization_status, materialization_cursor, materialization_error "
+                "materialization_status, materialization_cursor, materialization_error, target_id::text "
                 "FROM paper_evidence_tasks WHERE id::text = :tid"
             ),
             {"tid": task_id},
@@ -3945,44 +4044,47 @@ async def get_batch_task(session: AsyncSession, task_id: str) -> dict:
             {"tid": task_id},
         )
     ).first()
-    return {
-        "task": {
-            "id": task[0],
-            "target_type": task[1],
-            "scope": task[2],
-            "mode": task[3],
-            "max_papers_per_object": task[4],
-            "status": task[5],
-            "summary": task[6],
-            "total_items": task[7],
-            "processed_items": task[8],
-            "awaiting_review_items": task[9],
-            "failed_items": task[10],
-            "created_by": task[11],
-            "created_at": task[12].isoformat() if task[12] else None,
-            "started_at": task[13].isoformat() if task[13] else None,
-            "finished_at": task[14].isoformat() if task[14] else None,
-            "error_message": task[15],
-            "review_status": task[16],
-            "name": task[17],
-            "granularity_level": task[18],
-            "only_oa": task[19],
-            "confidence_lt": float(task[20]) if task[20] is not None else None,
-            "stop_after_strong_support": task[21],
-            "scope_type": task[22],
-            "filter_snapshot": task[23],
-            "estimated_target_count": task[24],
-            "materialized_target_count": task[25],
-            "materialization_status": task[26],
-            "materialization_cursor": str(task[27]) if task[27] else None,
-            "materialization_error": task[28],
-            "versions": {
-                "preprocessing_version": versions[0] if versions else None,
-                "retrieval_version": versions[1] if versions else None,
-                "prompt_version": versions[2] if versions else None,
-                "llm_model": versions[3] if versions else None,
-            },
+    task_dict = {
+        "id": task[0],
+        "target_type": task[1],
+        "target_id": task[29],
+        "scope": task[2],
+        "mode": task[3],
+        "max_papers_per_object": task[4],
+        "status": task[5],
+        "summary": task[6],
+        "total_items": task[7],
+        "processed_items": task[8],
+        "awaiting_review_items": task[9],
+        "failed_items": task[10],
+        "created_by": task[11],
+        "created_at": task[12].isoformat() if task[12] else None,
+        "started_at": task[13].isoformat() if task[13] else None,
+        "finished_at": task[14].isoformat() if task[14] else None,
+        "error_message": task[15],
+        "review_status": task[16],
+        "name": task[17],
+        "granularity_level": task[18],
+        "only_oa": task[19],
+        "confidence_lt": float(task[20]) if task[20] is not None else None,
+        "stop_after_strong_support": task[21],
+        "scope_type": task[22],
+        "filter_snapshot": task[23],
+        "estimated_target_count": task[24],
+        "materialized_target_count": task[25],
+        "materialization_status": task[26],
+        "materialization_cursor": str(task[27]) if task[27] else None,
+        "materialization_error": task[28],
+        "versions": {
+            "preprocessing_version": versions[0] if versions else None,
+            "retrieval_version": versions[1] if versions else None,
+            "prompt_version": versions[2] if versions else None,
+            "llm_model": versions[3] if versions else None,
         },
+    }
+    task_dict = (await _enrich_task_display(session, [task_dict]))[0]
+    return {
+        "task": task_dict,
         "counts": status_map,
         "processed": processed,
     }
