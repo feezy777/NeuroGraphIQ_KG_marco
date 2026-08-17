@@ -3983,19 +3983,14 @@ async def _enrich_task_display(session: AsyncSession, tasks: list[dict]) -> list
         ).all()
         for r in rows:
             live[(tt, str(r._mapping["id"]))] = r._mapping
-    # 仅对镜像行缺失的任务取 items 快照(有实时行的任务不再多一次查询;target_id 为空的旧任务不查)
+    # 始终批量取唯一 item 的 id 与快照(一对一:任务 = 对象;item_id 供前端回退/review 关联,快照兜底名称)
     snap: dict[str, dict] = {}
-    need_item = [
-        t["id"]
-        for t in tasks
-        if t.get("target_id")
-        and (t["target_type"], str(t.get("target_id"))) not in live
-    ]
+    need_item = [t["id"] for t in tasks]
     if need_item:
         rows = (
             await session.execute(
                 text(
-                    "SELECT DISTINCT ON (task_id) task_id::text, target_id::text, label, current_confidence "
+                    "SELECT DISTINCT ON (task_id) task_id::text, id::text, target_id::text, label, current_confidence "
                     "FROM paper_evidence_task_items WHERE task_id::text = ANY(:ids) "
                     "ORDER BY task_id, updated_at DESC"
                 ),
@@ -4004,9 +3999,10 @@ async def _enrich_task_display(session: AsyncSession, tasks: list[dict]) -> list
         ).all()
         for r in rows:
             snap[r[0]] = {
-                "target_id": r[1],
-                "label": r[2],
-                "confidence": float(r[3]) if r[3] is not None else None,
+                "item_id": r[1],
+                "target_id": r[2],
+                "label": r[3],
+                "confidence": float(r[4]) if r[4] is not None else None,
             }
     out: list[dict] = []
     for t in tasks:
@@ -4039,6 +4035,7 @@ async def _enrich_task_display(session: AsyncSession, tasks: list[dict]) -> list
         out.append(
             {
                 **t,
+                "item_id": snap.get(t["id"], {}).get("item_id"),
                 "display_name_cn": cn,
                 "display_name_en": en,
                 "display_confidence": conf,

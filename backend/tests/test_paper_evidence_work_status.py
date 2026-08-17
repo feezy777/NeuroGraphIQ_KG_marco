@@ -228,8 +228,8 @@ def test_task_list_no_n1_for_missing_summary():
                 proxy = CountingSession(s)
                 resp = await pes.list_paper_evidence_tasks(proxy, limit=100)
                 assert len(resp["items"]) >= 100
-                # 1 列表 SELECT + 1 COUNT + 1 批量聚合 = 3
-                assert proxy.selects == 3, f"expected 3 SELECT, got {proxy.selects}"
+                # 1 列表 SELECT + 1 COUNT + 1 批量聚合 + 1 唯一 item 查询 = 4
+                assert proxy.selects == 4, f"expected 4 SELECT, got {proxy.selects}"
         _run(case())
     finally:
         for tid in task_ids:

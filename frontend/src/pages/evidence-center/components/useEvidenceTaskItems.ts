@@ -6,6 +6,7 @@ import {
   type PaperEvidenceTaskItem,
 } from '../../../api/endpoints'
 import { useEvidenceCenter } from '../EvidenceCenterContext'
+import { useTaskItemsRefresh } from './taskItemsRefreshContext'
 
 /** 队列/中栏共用的任务对象条目(全局模式带来源任务 id) */
 export interface EvidenceQueueItem extends PaperEvidenceTaskItem {
@@ -18,6 +19,8 @@ export interface EvidenceTaskItemsState {
   tasks: PaperEvidenceTask[]
   /** 全局模式下任务 id → 展示名 */
   taskNames: Record<string, string>
+  /** 后端真实总数(任务模式=该任务;全局模式=各任务 total 之和) */
+  totalItems: number
   loading: boolean
   error: string | null
   reload: () => void
@@ -31,9 +34,11 @@ export interface EvidenceTaskItemsState {
  */
 export function useEvidenceTaskItems(): EvidenceTaskItemsState {
   const { state } = useEvidenceCenter()
+  const { version } = useTaskItemsRefresh()
   const taskId = state.taskId
   const [items, setItems] = useState<EvidenceQueueItem[]>([])
   const [tasks, setTasks] = useState<PaperEvidenceTask[]>([])
+  const [totalItems, setTotalItems] = useState(0)
   const [taskNames, setTaskNames] = useState<Record<string, string>>({})
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -48,29 +53,15 @@ export function useEvidenceTaskItems(): EvidenceTaskItemsState {
       return
     }
     const scoped = r.items.filter(t => t.status !== 'cancelled' && t.total_items > 0)
-    setTasks(scoped)
+    // 展示列表包含空任务与已取消任务(卡片需展示对应状态);仅取数范围用 scoped
+    setTasks(r.items)
     setTaskNames(Object.fromEntries(scoped.map(t => [t.id, t.name || t.target_type])))
     if (!taskId) {
-      setLoading(true)
-      setError(null)
+      // 全局模式不再逐任务拉 items(一对一后任务数=对象数,并行请求会打爆后端);
+      // 右栏已处理面板/中栏卡片均直接用任务列表的 display/item_id 字段。
       setItems([])
-      try {
-        const settled = await Promise.allSettled(
-          scoped.map(t => listPaperEvidenceTaskItems(t.id, { limit: 100 })),
-        )
-        if (latestTaskIdRef.current !== null) return
-        const merged = settled.flatMap((s, i) =>
-          s.status === 'fulfilled'
-            ? s.value.items.map(it => ({ ...it, __taskId: scoped[i].id }))
-            : [],
-        )
-        setItems(merged)
-      } catch (err) {
-        if (latestTaskIdRef.current !== null) return
-        setError(err instanceof Error ? err.message : String(err))
-      } finally {
-        if (latestTaskIdRef.current === null) setLoading(false)
-      }
+      setTotalItems(0)
+      setLoading(false)
       return
     }
     const requestedTaskId = taskId
@@ -78,18 +69,19 @@ export function useEvidenceTaskItems(): EvidenceTaskItemsState {
     setError(null)
     setItems([])
     try {
-      const itemsResp = await listPaperEvidenceTaskItems(requestedTaskId, { limit: 100 })
+      const itemsResp = await listPaperEvidenceTaskItems(requestedTaskId, { limit: 100, sort: 'confidence' })
       if (latestTaskIdRef.current !== requestedTaskId) return
       setItems(itemsResp.items)
+      setTotalItems(itemsResp.total ?? 0)
     } catch (err) {
       if (latestTaskIdRef.current !== requestedTaskId) return
       setError(err instanceof Error ? err.message : String(err))
     } finally {
       if (latestTaskIdRef.current === requestedTaskId) setLoading(false)
     }
-  }, [taskId])
+  }, [taskId, version])
 
   useEffect(() => { void load() }, [load])
 
-  return { items, tasks, taskNames, loading, error, reload: load }
+  return { items, tasks, taskNames, totalItems, loading, error, reload: load }
 }

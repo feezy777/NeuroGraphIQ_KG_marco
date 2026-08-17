@@ -5696,6 +5696,8 @@ export interface PaperEvidenceTask {
   confidence_lt: number | null
   /** 对象身份(一对一任务);旧任务迁移前为 null */
   target_id: string | null
+  /** 唯一任务项的 id(一对一:任务=对象;回退/review 关联用) */
+  item_id: string | null
   /** 任务级对象展示名(中文;镜像行实时,缺失回退快照/兜底) */
   display_name_cn: string | null
   /** 任务级对象展示名(英文;仅镜像行实时) */

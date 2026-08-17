@@ -85,6 +85,7 @@ def test_list_tasks_returns_cn_en_and_confidence():
                 resp = await pes.list_paper_evidence_tasks(s, limit=10)
                 task = next(t for t in resp["items"] if t["id"] == task_ids[0])
                 assert task["target_id"] == oid
+                assert task["item_id"] is not None and len(task["item_id"]) == 36  # 唯一 item 的 uuid
                 assert task["display_name_cn"] == "杏仁核 → 海马"
                 assert task["display_name_en"] == "Amygdala → Hippocampus"
                 assert task["display_confidence"] == 0.35
@@ -199,8 +200,8 @@ def test_list_tasks_no_n1():
             async with AsyncSessionLocal() as s:
                 proxy = CountingSession(s)
                 await pes.list_paper_evidence_tasks(proxy, limit=10)
-                # 任务列表 + COUNT + 镜像表批量 JOIN(仅 1 种 target_type)= 3 次 SELECT
-                assert proxy.selects == 3, f"expected 3 SELECT, got {proxy.selects}"
+                # 任务列表 + COUNT + 镜像表批量 JOIN(仅 1 种 target_type)+ 唯一 item 查询 = 4 次 SELECT
+                assert proxy.selects == 4, f"expected 4 SELECT, got {proxy.selects}"
         _run(case())
     finally:
         _run(_cleanup(task_ids, conn_ids))
