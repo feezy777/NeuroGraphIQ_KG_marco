@@ -11,6 +11,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
 from app.database import get_db
+from app.schemas.paper_evidence_extraction import PaperEvidenceExtractionRunRequest
+from app.services import paper_evidence_extraction_run_service as extraction_run_svc
 from app.schemas.ontology import (
     AlignmentReviewRequest,
     BatchActivateRequest,
@@ -28,6 +30,7 @@ from app.schemas.ontology import (
     ExtractSelectedRequest,
     PassageSelectionRequest,
     TaskItemDraftRequest,
+    TranslateBatchRequest,
     TranslateRequest,
     ReviewResolveRequest,
     GroundingListResponse,
@@ -51,10 +54,15 @@ from app.schemas.ontology import (
     EvidenceReviewOut,
     EvidenceReviewResponse,
     EvidenceReviewReturnRequest,
+    ReviewHistoryResponse,
+    RollbackRescoreRequest,
+    RollbackRescoreResponse,
 )
 from app.services import ontology_service as svc
 from app.services import ontology_governance_service as gov
 from app.services import paper_evidence_service as pes
+from app.services.paper_evidence_service import EvidenceReviewError
+from app.services.paper_search_multi import multi_search
 from app.services import paper_fetch_service as pfs
 from app.services import oa_xml_parser
 from app.services.paragraph_retrieval import build_windows, score_paragraphs
@@ -639,17 +647,16 @@ async def paper_evidence_search(
         context = await pes.build_retrieval_context(
             session, body.target_type, body.target_id, mode=body.mode
         )
-        query = (body.query_override or "").strip() or pes._build_epmc_query(context) or info["query"]
-        papers = await pes.search_papers(query, limit=body.limit)
-        # ABSTRACT-only can miss papers that only mention the terms in the body:
-        # fall back to the BODY-inclusive query when nothing matched.
-        if not papers and not (body.query_override or "").strip():
-            fallback = pes._build_epmc_query(context, abstract_only=False) or ""
-            if fallback and fallback != query:
-                papers = await pes.search_papers(fallback, limit=body.limit)
-                if papers:
-                    query = fallback
-        ranked = pes._rank_papers(papers, context)
+        limit = max(body.limit, 20)
+        query = (body.query_override or "").strip() or info["query"]
+        if (body.query_override or "").strip():
+            # Custom query: single-source Europe PMC only
+            papers = await pes.search_papers(body.query_override.strip(), limit=limit)
+            ranked = pes._rank_papers(papers, context)
+        else:
+            # Multi-source search: PubMed + OpenAlex + Europe PMC
+            ranked = await multi_search(context, limit=limit)
+
         for p in ranked:
             text_blob = f"{p.get('title') or ''} {p.get('abstract') or ''} {p.get('journal') or ''}".lower()
             reasons = []
@@ -693,6 +700,10 @@ async def paper_evidence_extract_selected(
             only_oa=body.only_oa,
             stop_after_strong_support=body.stop_after_strong_support,
             mode=body.mode,
+            # A reviewer explicitly selected these papers. Do not silently
+            # suppress one before extraction because a lightweight relevance
+            # pass omitted or under-scored it.
+            apply_semantic_filter=False,
             sem_fetch=sem_fetch,
             sem_deepseek=sem_deepseek,
         )
@@ -703,6 +714,60 @@ async def paper_evidence_extract_selected(
             "results": results,
             "llm_model": llm_model,
         }
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail={"code": "INVALID_REQUEST", "message": str(exc)})
+
+
+@router.post("/evidence/extraction-runs", status_code=202)
+async def paper_evidence_extraction_run_create(
+    body: PaperEvidenceExtractionRunRequest,
+    background_tasks: BackgroundTasks,
+    session: AsyncSession = Depends(get_db),
+    _auth: str = Depends(require_role("reviewer")),
+):
+    try:
+        result = await extraction_run_svc.create_run(session, body)
+        background_tasks.add_task(extraction_run_svc.execute_run_background, result.run_id)
+        return result
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail={"code": "INVALID_REQUEST", "message": str(exc)})
+
+
+@router.get("/evidence/extraction-runs/{run_id}")
+async def paper_evidence_extraction_run_get(
+    run_id: uuid.UUID,
+    session: AsyncSession = Depends(get_db),
+):
+    try:
+        return await extraction_run_svc.get_run_detail(session, run_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": str(exc)})
+
+
+@router.post("/evidence/extraction-runs/{run_id}/cancel")
+async def paper_evidence_extraction_run_cancel(
+    run_id: uuid.UUID,
+    session: AsyncSession = Depends(get_db),
+    _auth: str = Depends(require_role("reviewer")),
+):
+    try:
+        return await extraction_run_svc.cancel_run(session, run_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": str(exc)})
+
+
+@router.post("/evidence/extraction-runs/{run_id}/retry-failed")
+async def paper_evidence_extraction_run_retry_failed(
+    run_id: uuid.UUID,
+    background_tasks: BackgroundTasks,
+    session: AsyncSession = Depends(get_db),
+    _auth: str = Depends(require_role("reviewer")),
+):
+    try:
+        result = await extraction_run_svc.retry_failed_items(session, run_id)
+        if result.get("retried", 0) > 0:
+            background_tasks.add_task(extraction_run_svc.execute_run_background, run_id)
+        return result
     except ValueError as exc:
         raise HTTPException(status_code=400, detail={"code": "INVALID_REQUEST", "message": str(exc)})
 
@@ -936,9 +1001,8 @@ async def paper_evidence_batch_create(
             target_ids=body.target_ids,
             filter_snapshot=body.filter_snapshot,
         )
-        background_tasks.add_task(pes.materialize_task_items_background, result["task_id"])
-        if not body.start_paused:
-            background_tasks.add_task(pes.execute_paper_evidence_batch_background, result["task_id"])
+        if result["task_ids"] and not body.start_paused:
+            background_tasks.add_task(pes.execute_paper_evidence_batch_background_many, result["task_ids"])
         return {**result, "auto_started": not body.start_paused}
     except ValueError as exc:
         raise HTTPException(status_code=400, detail={"code": "INVALID_REQUEST", "message": str(exc)})
@@ -1050,9 +1114,47 @@ async def paper_evidence_batch_items(
     task_id: str,
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
+    sort: str = Query(default="created_at", pattern="^(created_at|confidence)$"),
+    status: str | None = Query(
+        default=None,
+        pattern="^(pending|searching|fetching|retrieving|extracting|verifying|awaiting_review|completed|skipped|failed|cancelled)$",
+    ),
     session: AsyncSession = Depends(get_db),
 ):
-    return await pes.list_batch_items(session, task_id, limit=limit, offset=offset)
+    return await pes.list_batch_items(session, task_id, limit=limit, offset=offset, sort=sort, status=status)
+
+
+# S6:review 域错误 → 结构化 HTTP 状态/机器码
+def _review_http_error(exc: EvidenceReviewError) -> HTTPException:
+    return HTTPException(
+        status_code=exc.http_status,
+        detail={"code": exc.code, "message": str(exc)},
+    )
+
+
+@router.get("/evidence/batch/{task_id}/items/resolve")
+async def paper_evidence_task_item_resolve(
+    task_id: uuid.UUID,
+    target_type: str = Query(...),
+    target_id: uuid.UUID = Query(...),
+    task_item_id: uuid.UUID | None = Query(default=None),
+    session: AsyncSession = Depends(get_db),
+):
+    """S6:只读解析任务项(前端 URL 补齐 + 审核前置校验)。
+
+    - 提供 task_item_id:校验其存在、属于 task、target 一致。
+    - 未提供:按 task+target 查找;0 个 → 404;多个 → 409。
+    """
+    try:
+        return await pes.resolve_task_item_for_target(
+            session,
+            task_id=task_id,
+            target_type=target_type,
+            target_id=target_id,
+            task_item_id=task_item_id,
+        )
+    except EvidenceReviewError as exc:
+        raise _review_http_error(exc)
 
 
 @router.post("/evidence/batch/{task_id}/items/{item_id}/reviewed")
@@ -1225,6 +1327,14 @@ async def paper_evidence_translate(
     return await pes.translate_text(body.text)
 
 
+@router.post("/evidence/translate-batch")
+async def paper_evidence_translate_batch(
+    body: TranslateBatchRequest,
+    _auth: str = Depends(require_role("reviewer")),
+):
+    return await pes.translate_texts(body.texts)
+
+
 @router.get("/evidence/queue")
 async def paper_evidence_queue(
     target_type: str = Query(...),
@@ -1271,10 +1381,22 @@ async def paper_evidence_review_build(
             passages=body.passages,
         )
         return result
+    except EvidenceReviewError as exc:
+        raise _review_http_error(exc)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail={"code": "INVALID_REQUEST", "message": str(exc)})
     except httpx.HTTPError as exc:
         raise HTTPException(status_code=502, detail={"code": "PAPER_API_ERROR", "message": str(exc)})
+
+
+def _apply_role_capability(items: list[dict], role: str) -> list[dict]:
+    """S8:capability 权限边界——低于 reviewer 的角色一律 can_rollback_rescore=false + FORBIDDEN(项目统一权限码)。"""
+    if _ROLE_LEVELS.get(role, -1) >= _ROLE_LEVELS.get("reviewer", 99):
+        return items
+    for item in items:
+        item["can_rollback_rescore"] = False
+        item["rollback_block_reason"] = "FORBIDDEN"
+    return items
 
 
 @router.get("/evidence/reviews", response_model=EvidenceReviewListResponse)
@@ -1285,8 +1407,9 @@ async def paper_evidence_review_list(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=200),
     session: AsyncSession = Depends(get_db),
+    role: str = Depends(_current_role),
 ):
-    return await pes.list_reviews(
+    result = await pes.list_reviews(
         session,
         review_status=review_status,
         promotion_status=promotion_status,
@@ -1294,15 +1417,20 @@ async def paper_evidence_review_list(
         page=page,
         page_size=page_size,
     )
+    result["items"] = _apply_role_capability(result["items"], role)
+    return result
 
 
 @router.get("/evidence/reviews/{review_id}", response_model=EvidenceReviewOut)
 async def paper_evidence_review_get(
     review_id: uuid.UUID,
     session: AsyncSession = Depends(get_db),
+    role: str = Depends(_current_role),
 ):
     try:
-        return await pes.get_review(session, review_id)
+        result = await pes.get_review(session, review_id)
+        result = _apply_role_capability([result], role)[0]
+        return result
     except ValueError as exc:
         raise HTTPException(status_code=400, detail={"code": "INVALID_REQUEST", "message": str(exc)})
 
@@ -1315,6 +1443,8 @@ async def paper_evidence_review_approve(
 ):
     try:
         return await pes.approve_review(session, review_id)
+    except EvidenceReviewError as exc:
+        raise _review_http_error(exc)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail={"code": "INVALID_REQUEST", "message": str(exc)})
 
@@ -1327,6 +1457,44 @@ async def paper_evidence_review_reject(
 ):
     try:
         return await pes.reject_review(session, review_id)
+    except EvidenceReviewError as exc:
+        raise _review_http_error(exc)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail={"code": "INVALID_REQUEST", "message": str(exc)})
+
+
+@router.post("/evidence/reviews/{review_id}/rollback-for-rescore", response_model=RollbackRescoreResponse)
+async def paper_evidence_review_rollback_for_rescore(
+    review_id: uuid.UUID,
+    body: RollbackRescoreRequest,
+    session: AsyncSession = Depends(get_db),
+    auth_role: str = Depends(require_role("reviewer")),
+):
+    """S7B:回退并重新评分。review 行锁串行化;证据撤销+supersede+item 重开同一事务。"""
+    try:
+        return await pes.rollback_review_for_rescore(
+            session,
+            review_id,
+            reason=body.reason,
+            actor=auth_role,
+            idempotency_key=body.idempotency_key,
+        )
+    except EvidenceReviewError as exc:
+        raise _review_http_error(exc)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail={"code": "INVALID_REQUEST", "message": str(exc)})
+
+
+@router.get("/evidence/reviews/{review_id}/history", response_model=ReviewHistoryResponse)
+async def paper_evidence_review_history(
+    review_id: uuid.UUID,
+    session: AsyncSession = Depends(get_db),
+):
+    """S7B:版本链历史(只读;仅按 supersedes 链,不按 target 混入其他任务)。"""
+    try:
+        return await pes.get_review_history(session, review_id)
+    except EvidenceReviewError as exc:
+        raise _review_http_error(exc)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail={"code": "INVALID_REQUEST", "message": str(exc)})
 

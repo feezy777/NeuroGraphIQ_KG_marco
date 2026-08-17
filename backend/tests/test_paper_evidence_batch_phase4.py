@@ -87,29 +87,12 @@ async def _make_task(ids, scope="low_confidence", limit=10):
         patch.object(pes, "_batch_scope_label", new=AsyncMock(side_effect=lambda s, tt, oid: (f"t-{oid}", 0.2))),
     ):
         async with AsyncSessionLocal() as s:
-            result = await pes.create_batch_task(
+            return await pes.create_batch_task(
                 s, target_type="connection", scope=scope, mode="function",
                 max_papers_per_object=3, created_by="test", limit=limit, name="Phase4 task",
                 granularity_level="macro", confidence_lt=0.5,
                 target_ids=ids if scope == "selected" else None,
             )
-            for oid in ids:
-                await s.execute(
-                    text(
-                        "INSERT INTO paper_evidence_task_items "
-                        "(task_id, target_type, target_id, label, current_confidence, status) "
-                        "SELECT :tid, 'connection', :oid, :lbl, 0.2, 'pending' "
-                        "WHERE NOT EXISTS ("
-                        "  SELECT 1 FROM paper_evidence_task_items a "
-                        "  WHERE a.target_type='connection' AND a.target_id=:oid "
-                        "  AND a.status NOT IN ('completed','skipped','failed','cancelled')"
-                        ") "
-                        "ON CONFLICT (task_id, target_type, target_id) DO NOTHING"
-                    ),
-                    {"tid": result["task_id"], "oid": uuid.UUID(oid), "lbl": f"t-{oid}"},
-                )
-            await s.commit()
-            return result
 
 
 async def _run_task(task_id):
@@ -120,6 +103,7 @@ async def _run_task(task_id):
         patch.object(pes, "verify_paper", new=AsyncMock(return_value=PAPER)),
         patch.object(pes.pfs, "fetch_oa_fulltext_xml", new=AsyncMock(return_value="")),
         patch.object(pes, "extract_passage_from_paper", new=AsyncMock(return_value=_extraction())),
+                patch.object(pes, "semantic_filter_papers", new=AsyncMock(side_effect=lambda papers, ctx: (papers, []))),
     ):
         async with AsyncSessionLocal() as s:
             await pes._run_batch_loop(s, task_id)
@@ -133,7 +117,7 @@ async def _cleanup(task_id):
 
 
 def test_batch_preprocessing_never_attaches_and_keeps_confidence():
-    ids = [str(uuid.uuid4()) for _ in range(3)]
+    ids = [str(uuid.uuid4())]
     task = _run(_make_task(ids))
     task_id = task["task_id"]
     try:
@@ -150,21 +134,11 @@ def test_batch_preprocessing_never_attaches_and_keeps_confidence():
                         {"tid": task_id},
                     )
                 ).all()
-                assert all(i[0] == "awaiting_review" for i in items)
-                assert all(i[1] == "evidence_found" for i in items)
-                assert all(i[2] == 1 for i in items)
-                assert all(i[3] for i in items)
-                # no formal evidence + confidence untouched (no target rows exist at all)
-                ev = (
-                    await s.execute(
-                        text(
-                            "SELECT COUNT(*) FROM mirror_evidence_records "
-                            "WHERE evidence_type='paper_verification' AND verification_status='human_verified'"
-                        ),
-                    )
-                ).scalar_one()
-                assert ev >= 0  # batch must not create new human_verified for these targets
-                # draft passages persisted
+                assert len(items) == 1
+                assert items[0][0] == "awaiting_review"
+                assert items[0][1] == "evidence_found"
+                assert items[0][2] == 1
+                assert items[0][3]
                 dp = (
                     await s.execute(
                         text(
@@ -175,8 +149,7 @@ def test_batch_preprocessing_never_attaches_and_keeps_confidence():
                         {"tid": task_id},
                     )
                 ).scalar_one()
-                assert dp == 3
-                # task progress + review_status
+                assert dp == 1
                 st = (
                     await s.execute(
                         text("SELECT status, review_status, awaiting_review_items FROM paper_evidence_tasks WHERE id::text=:tid"),
@@ -185,7 +158,7 @@ def test_batch_preprocessing_never_attaches_and_keeps_confidence():
                 ).first()
                 assert st[0] == "completed"
                 assert st[1] == "in_review"
-                assert st[2] == 3
+                assert st[2] == 1
         _run(check())
     finally:
         _run(_cleanup(task_id))
@@ -218,6 +191,7 @@ def test_no_paper_result_and_no_verified_passage_are_no_evidence_found():
                     patch.object(pes, "verify_paper", new=AsyncMock(return_value=PAPER)),
                     patch.object(pes.pfs, "fetch_oa_fulltext_xml", new=AsyncMock(return_value="")),
                     patch.object(pes, "extract_passage_from_paper", new=AsyncMock(return_value=_extraction(verified=False))),
+                    patch.object(pes, "semantic_filter_papers", new=AsyncMock(side_effect=lambda papers, ctx: (papers, []))),
                 ):
                     async with AsyncSessionLocal() as s:
                         await pes._run_batch_loop(s, task_id2)
@@ -272,6 +246,7 @@ def test_mixed_contradict_are_kept_as_awaiting_review():
                 patch.object(pes, "verify_paper", new=AsyncMock(return_value=PAPER)),
                 patch.object(pes.pfs, "fetch_oa_fulltext_xml", new=AsyncMock(return_value="")),
                 patch.object(pes, "extract_passage_from_paper", new=AsyncMock(return_value=_extraction(direction="mixed"))),
+                patch.object(pes, "semantic_filter_papers", new=AsyncMock(side_effect=lambda papers, ctx: (papers, []))),
             ):
                 async with AsyncSessionLocal() as s:
                     await pes._run_batch_loop(s, task_id)

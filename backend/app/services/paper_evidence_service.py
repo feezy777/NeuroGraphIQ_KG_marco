@@ -3605,6 +3605,12 @@ async def execute_paper_evidence_batch_background(task_id: str) -> None:
         logging.getLogger(__name__).exception("[paper-evidence-batch] background failure task_id=%s", task_id)
 
 
+async def execute_paper_evidence_batch_background_many(task_ids: list[str]) -> None:
+    """逐个执行对象任务(单任务内部已有异常兜底,循环保证一个失败不阻断其余)。"""
+    for tid in task_ids:
+        await execute_paper_evidence_batch_background(tid)
+
+
 async def recover_interrupted_batch_tasks(session: AsyncSession) -> int:
     """On startup: reset running tasks to pending so they can be resumed."""
     result = await session.execute(

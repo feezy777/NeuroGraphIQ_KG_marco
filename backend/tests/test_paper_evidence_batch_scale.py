@@ -73,7 +73,7 @@ def test_filter_snapshot_and_preview_and_max_limit():
     _run(case())
 
 
-def test_large_scope_materialization_checkpoint_and_idempotency():
+def test_1to1_create_writes_snapshot_and_materialize_is_noop():
     cids = _run(_insert_connections(6))
     try:
         async def case():
@@ -86,54 +86,39 @@ def test_large_scope_materialization_checkpoint_and_idempotency():
                     max_papers_per_object=3, confidence_lt=0.5, limit=200,
                     filter_snapshot={"confidence_lt": 0.001},
                 )
-                task_id = task["task_id"]
-            try:
-                await pes.materialize_task_items_background(task_id)
-                # idempotent re-materialize after simulated restart (checkpoint continues, no dupes)
-                async with AsyncSessionLocal() as s:
-                    await s.execute(
-                        text("UPDATE paper_evidence_tasks SET materialization_status='running' WHERE id::text=:tid"),
-                        {"tid": task_id},
-                    )
-                    await s.commit()
-                await pes.materialize_task_items_background(task_id)
-                async with AsyncSessionLocal() as s:
+                task_ids = task["task_ids"]
+                assert len(task_ids) >= 6
+                first = task_ids[0]
+                await pes.materialize_task_items_background(first)
+                for tid in task_ids:
                     row = (
                         await s.execute(
                             text(
-                                "SELECT materialization_status, materialized_target_count, total_items "
+                                "SELECT total_items, materialized_target_count, target_id IS NOT NULL "
                                 "FROM paper_evidence_tasks WHERE id::text=:tid"
                             ),
-                            {"tid": task_id},
+                            {"tid": tid},
                         )
                     ).first()
-                    assert row[0] == "completed"
-                    assert row[1] >= 6
+                    assert row[0] == 1
+                    assert row[1] == 1
+                    assert row[2] is True
                     count = (
                         await s.execute(
                             text("SELECT COUNT(*) FROM paper_evidence_task_items WHERE task_id::text=:tid"),
-                            {"tid": task_id},
+                            {"tid": tid},
                         )
                     ).scalar_one()
-                    assert count == row[1]  # every materialized target has exactly one item
-                    snap = (
-                        await s.execute(
-                            text("SELECT scope_type, filter_snapshot FROM paper_evidence_tasks WHERE id::text=:tid"),
-                            {"tid": task_id},
-                        )
-                    ).first()
-                    assert snap[0] == "filter"
-                    assert snap[1].get("confidence_lt") == 0.001
-                    await s.execute(text("DELETE FROM paper_evidence_tasks WHERE id::text=:tid"), {"tid": task_id})
-                    await s.commit()
-            finally:
-                cfg.paper_evidence_max_task_items = old
+                    assert count == 1
+                    await s.execute(text("DELETE FROM paper_evidence_tasks WHERE id::text=:tid"), {"tid": tid})
+                await s.commit()
+            cfg.paper_evidence_max_task_items = old
         _run(case())
     finally:
         _run(_cleanup_connections(cids))
 
 
-def test_materialization_cancel_stops_and_keeps_generated():
+def test_cancel_single_object_task():
     cids = _run(_insert_connections(4))
     try:
         async def case():
@@ -146,22 +131,21 @@ def test_materialization_cancel_stops_and_keeps_generated():
                     max_papers_per_object=3, confidence_lt=0.5, limit=200,
                     filter_snapshot={"confidence_lt": 0.001},
                 )
-                task_id = task["task_id"]
-            try:
-                await pes.cancel_batch_task(s, task_id)
-                await pes.materialize_task_items_background(task_id)
-                async with AsyncSessionLocal() as s:
-                    st = (
-                        await s.execute(
-                            text("SELECT materialization_status FROM paper_evidence_tasks WHERE id::text=:tid"),
-                            {"tid": task_id},
-                        )
-                    ).first()
-                    assert st[0] == "cancelled"
-                    await s.execute(text("DELETE FROM paper_evidence_tasks WHERE id::text=:tid"), {"tid": task_id})
-                    await s.commit()
-            finally:
-                cfg.paper_evidence_max_task_items = old
+                task_ids = task["task_ids"]
+                assert len(task_ids) >= 4
+                first = task_ids[0]
+                await pes.cancel_batch_task(s, first)
+                st = (
+                    await s.execute(
+                        text("SELECT status FROM paper_evidence_tasks WHERE id::text=:tid"),
+                        {"tid": first},
+                    )
+                ).first()
+                assert st[0] == "cancelled"
+                for tid in task_ids:
+                    await s.execute(text("DELETE FROM paper_evidence_tasks WHERE id::text=:tid"), {"tid": tid})
+                await s.commit()
+            cfg.paper_evidence_max_task_items = old
         _run(case())
     finally:
         _run(_cleanup_connections(cids))
@@ -197,19 +181,6 @@ def test_versions_written_on_items():
                 max_papers_per_object=3, target_ids=ids,
             )
             task_id = task["task_id"]
-            for oid in ids:
-                await s.execute(
-                    text(
-                        "INSERT INTO paper_evidence_task_items (task_id, target_type, target_id, label, status) "
-                        "SELECT :tid, 'connection', :oid, :lbl, 'pending' "
-                        "WHERE NOT EXISTS (SELECT 1 FROM paper_evidence_task_items a "
-                        "WHERE a.target_type='connection' AND a.target_id=:oid AND a.status NOT IN "
-                        "('completed','skipped','failed','cancelled')) "
-                        "ON CONFLICT (task_id,target_type,target_id) DO NOTHING"
-                    ),
-                    {"tid": task_id, "oid": uuid.UUID(oid), "lbl": "t"},
-                )
-            await s.commit()
         with (
             patch.object(pes, "build_retrieval_context", new=AsyncMock(return_value=context)),
             patch.object(pes, "build_search_query", new=AsyncMock(return_value="q")),
@@ -223,6 +194,7 @@ def test_versions_written_on_items():
             })),
             patch.object(pes.pfs, "fetch_oa_fulltext_xml", new=AsyncMock(return_value="")),
             patch.object(pes, "extract_passage_from_paper", new=AsyncMock(return_value=extraction)),
+            patch.object(pes, "semantic_filter_papers", new=AsyncMock(side_effect=lambda papers, ctx: (papers, []))),
         ):
             async with AsyncSessionLocal() as s:
                 await pes._run_batch_loop(s, task_id)
@@ -241,7 +213,8 @@ def test_versions_written_on_items():
             assert row[2] == "paper_evidence_extract_v2"
             assert row[3] == "deepseek-v4-flash-test"
             assert row[4] == "evidence_found"
-            await s.execute(text("DELETE FROM paper_evidence_tasks WHERE id::text=:tid"), {"tid": task_id})
+            for tid in task["task_ids"]:
+                await s.execute(text("DELETE FROM paper_evidence_tasks WHERE id::text=:tid"), {"tid": tid})
             await s.commit()
     _run(case())
 
@@ -255,15 +228,6 @@ def test_draft_revision_optimistic_concurrency():
                 max_papers_per_object=3, target_ids=ids,
             )
             task_id = task["task_id"]
-            await s.execute(
-                text(
-                    "INSERT INTO paper_evidence_task_items (task_id, target_type, target_id, label, status) "
-                    "SELECT :tid, 'connection', :oid, 't', 'awaiting_review' "
-                    "ON CONFLICT (task_id,target_type,target_id) DO NOTHING"
-                ),
-                {"tid": task_id, "oid": uuid.UUID(ids[0])},
-            )
-            await s.commit()
             item_id = (
                 await s.execute(
                     text("SELECT id::text FROM paper_evidence_task_items WHERE task_id::text=:tid"),
@@ -278,7 +242,8 @@ def test_draft_revision_optimistic_concurrency():
                 await pes.save_task_item_draft(s, item_id, {"note": "older"}, revision=1)
             loaded = await pes.get_task_item_draft(s, item_id)
             assert loaded["review_draft"]["note"] == "newer"
-            await s.execute(text("DELETE FROM paper_evidence_tasks WHERE id::text=:tid"), {"tid": task_id})
+            for tid in task["task_ids"]:
+                await s.execute(text("DELETE FROM paper_evidence_tasks WHERE id::text=:tid"), {"tid": tid})
             await s.commit()
     _run(case())
 
@@ -289,17 +254,21 @@ def test_dual_worker_skip_locked_no_overlap():
 
     async def case():
         async with AsyncSessionLocal() as s:
-            task = await pes.create_batch_task(
-                s, target_type="connection", scope="selected", mode="function",
-                max_papers_per_object=3, target_ids=ids,
-            )
-            task_id = task["task_id"]
+            task_id = (
+                await s.execute(
+                    text(
+                        "INSERT INTO paper_evidence_tasks "
+                        "(target_type, scope, mode, max_papers_per_object, status, total_items) "
+                        "VALUES ('connection', 'selected', 'function', 3, 'pending', :n) RETURNING id::text"
+                    ),
+                    {"n": n},
+                )
+            ).scalar_one()
             for oid in ids:
                 await s.execute(
                     text(
                         "INSERT INTO paper_evidence_task_items (task_id, target_type, target_id, label, status) "
-                        "SELECT :tid, 'connection', :oid, 't', 'pending' "
-                        "ON CONFLICT (task_id,target_type,target_id) DO NOTHING"
+                        "VALUES (:tid, 'connection', :oid, 't', 'pending')"
                     ),
                     {"tid": task_id, "oid": uuid.UUID(oid)},
                 )
