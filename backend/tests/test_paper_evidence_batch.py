@@ -91,34 +91,31 @@ class TestBatchStateMachine:
                 new=AsyncMock(side_effect=lambda s, tt, oid: (f"target-{oid}", 0.4)),
             ),
         ):
-            result = _run(
-                _make_task_inner(
-                    target_ids=target_ids,
-                    start_paused=start_paused,
-                )
-            )
-            _run(_seed_items(result["task_id"], target_ids))
-            return result
+            return _run(_make_task_inner(target_ids=target_ids, start_paused=start_paused))
 
-    def test_create_task_creates_items_with_labels(self):
+    def test_create_task_creates_one_task_per_object_with_labels(self):
         ids = _ids(2)
         result = self._make_task(ids)
-        task_id = result["task_id"]
+        task_ids = result["task_ids"]
         try:
-            row = _run(_read_task_row(task_id))
-            assert row[0] == "pending"
-            assert row[1] == 2
-            items = _run(_read_task_items(task_id))
-            assert len(items) == 2
-            assert all(i[1] == "pending" for i in items)
-            assert any(i[0].startswith("target-") for i in items)
+            assert len(task_ids) == 2
+            assert result["target_count"] == 2
+            assert result["task_id"] == task_ids[0]
+            for tid in task_ids:
+                row = _run(_read_task_row(tid))
+                assert row[0] == "pending"
+                assert row[1] == 1  # total_items = 1
+                items = _run(_read_task_items(tid))
+                assert len(items) == 1
+                assert items[0][1] == "pending"
+                assert items[0][0].startswith("target-")
         finally:
-            _run(_cleanup([task_id]))
+            _run(_cleanup(task_ids))
 
     def test_batch_loop_preprocesses_to_awaiting_review_without_formal_attach(self):
         ids = _ids(2)
         result = self._make_task(ids)
-        task_id = result["task_id"]
+        task_ids = result["task_ids"]
         try:
             with (
                 patch.object(pes, "pack_target_info", new=AsyncMock(return_value={
@@ -145,23 +142,26 @@ class TestBatchStateMachine:
                 patch.object(pes.pfs, "fetch_oa_fulltext_xml", new=AsyncMock(return_value="")),
                 patch.object(pes, "build_search_query", new=AsyncMock(return_value='"memory consolidation"')),
                 patch.object(pes, "extract_passage_from_paper", new=AsyncMock(return_value=_extraction())),
+                patch.object(pes, "semantic_filter_papers", new=AsyncMock(side_effect=lambda papers, ctx: (papers, []))),
             ):
-                _run(_run_loop(task_id))
-            task = _run(_read_task_row(task_id))
-            assert task[0] == "completed"
-            assert task[1] == 2
-            assert task[2] == 2
-            items = _run(_read_task_items(task_id))
-            assert all(i[1] == "awaiting_review" for i in items)
-            assert all(i[2] and i[3] and i[4] for i in items)
+                for tid in task_ids:
+                    _run(_run_loop(tid))
+            for tid in task_ids:
+                task = _run(_read_task_row(tid))
+                assert task[0] == "completed"
+                assert task[1] == 1
+                assert task[2] == 1
+                items = _run(_read_task_items(tid))
+                assert all(i[1] == "awaiting_review" for i in items)
+                assert all(i[2] and i[3] and i[4] for i in items)
             ev_count = _run(_count_evidence(ids))
             assert ev_count == 0
         finally:
-            _run(_cleanup([task_id]))
+            _run(_cleanup(task_ids))
             _run(_cleanup_batch_paper())
 
     def test_pause_resume_cancel(self):
-        result = self._make_task()
+        result = self._make_task(_ids(1))
         task_id = result["task_id"]
         try:
             _run(_pause(task_id))
@@ -170,7 +170,7 @@ class TestBatchStateMachine:
             assert _run(_read_status(task_id)) == "pending"
             _run(_cancel(task_id))
             assert _run(_read_status(task_id)) == "cancelled"
-            assert _run(_count_skipped(task_id)) == 3
+            assert _run(_count_skipped(task_id)) == 1
         finally:
             _run(_cleanup([task_id]))
 
@@ -233,26 +233,6 @@ async def _make_task_inner(*, target_ids, start_paused):
             target_ids=target_ids,
             scope="selected",
         )
-
-
-async def _seed_items(task_id, ids):
-    async with AsyncSessionLocal() as s:
-        for oid in ids:
-            await s.execute(
-                text(
-                    "INSERT INTO paper_evidence_task_items "
-                    "(task_id, target_type, target_id, label, current_confidence, status) "
-                    "SELECT :tid, 'connection', :oid, :lbl, 0.4, 'pending' "
-                    "WHERE NOT EXISTS ("
-                    "  SELECT 1 FROM paper_evidence_task_items a "
-                    "  WHERE a.target_type='connection' AND a.target_id=:oid "
-                    "  AND a.status NOT IN ('completed','skipped','failed','cancelled')"
-                    ") "
-                    "ON CONFLICT (task_id, target_type, target_id) DO NOTHING"
-                ),
-                {"tid": task_id, "oid": uuid.UUID(oid), "lbl": f"target-{oid}"},
-            )
-        await s.commit()
 
 
 async def _read_task_row(task_id):

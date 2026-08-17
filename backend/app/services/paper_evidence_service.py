@@ -2541,39 +2541,6 @@ async def _resolve_scope_ids(
     return [str(r[0]) for r in rows]
 
 
-async def create_batch_task(
-    session: AsyncSession,
-    *,
-    target_type: str,
-    scope: str,
-    mode: str,
-    max_papers_per_object: int,
-    created_by: str | None = None,
-    limit: int = 500,
-) -> dict:
-    ids = await _resolve_scope_ids(session, target_type, scope, limit)
-    task_id = (
-        await session.execute(
-            text(
-                "INSERT INTO paper_evidence_tasks "
-                "(target_type, scope, mode, max_papers_per_object, status, created_by) "
-                "VALUES (:tt, :scope, :mode, :maxp, 'pending', :cb) RETURNING id::text"
-            ),
-            {"tt": target_type, "scope": scope, "mode": mode, "maxp": max_papers_per_object, "cb": created_by},
-        )
-    ).scalar_one()
-    for target_id in ids:
-        await session.execute(
-            text(
-                "INSERT INTO paper_evidence_task_items (task_id, target_type, target_id) "
-                "VALUES (:tid, :tt, :oid)"
-            ),
-            {"tid": task_id, "tt": target_type, "oid": target_id},
-        )
-    await session.commit()
-    return {"task_id": task_id, "target_count": len(ids)}
-
-
 async def run_batch_step(
     session: AsyncSession, task_id: str, limit: int = 20
 ) -> dict:
@@ -2790,113 +2757,6 @@ async def _batch_scope_label(session: AsyncSession, target_type: str, target_id:
     label = mirror_live_display_name(target_type, get) or target_id
     conf = mirror_live_confidence(target_type, get)
     return label, conf
-
-
-async def create_batch_task(
-    session: AsyncSession,
-    *,
-    target_type: str,
-    scope: str,
-    mode: str,
-    max_papers_per_object: int,
-    created_by: str | None = None,
-    limit: int = 200,
-    start_paused: bool = False,
-    name: str | None = None,
-    granularity_level: str | None = None,
-    only_oa: bool = False,
-    confidence_lt: float | None = None,
-    stop_after_strong_support: bool = False,
-    target_ids: list[str] | None = None,
-) -> dict:
-    """Create a pre-processing task. Never writes formal evidence."""
-    if target_type not in TARGET_MODELS:
-        raise ValueError(f"unsupported target_type: {target_type}")
-    if target_ids:
-        ids = target_ids
-    elif scope == "low_confidence":
-        ids = await _resolve_scope_ids_low_confidence(session, target_type, confidence_lt, limit)
-    else:
-        ids = await _resolve_scope_ids(session, target_type, scope, limit)
-    if not ids:
-        raise ValueError("no targets matched scope")
-    # skip targets already covered by an active task item
-    busy = set(
-        (
-            await session.execute(
-                text(
-                    "SELECT target_id::text FROM paper_evidence_task_items "
-                    "WHERE target_type = :tt AND target_id::text = ANY(:ids) "
-                    "AND status IN ('pending','searching','paper_found','extracting','awaiting_review')"
-                ),
-                {"tt": target_type, "ids": ids},
-            )
-        ).scalars().all()
-    )
-    fresh_ids = [oid for oid in ids if oid not in busy]
-    if not fresh_ids:
-        raise ValueError("all matched targets already have an active evidence task")
-    labels: list[tuple[str, float | None]] = []
-    for oid in fresh_ids:
-        labels.append(await _batch_scope_label(session, target_type, uuid.UUID(oid)))
-    task_id = (
-        await session.execute(
-            text(
-                "INSERT INTO paper_evidence_tasks "
-                "(target_type, scope, mode, max_papers_per_object, status, created_by, total_items, config, "
-                "name, granularity_level, only_oa, confidence_lt, stop_after_strong_support, review_status) "
-                "VALUES (:tt, :scope, :mode, :maxp, :status, :cb, :total, CAST(:cfg AS jsonb), "
-                ":name, :gl, :only_oa, :clt, :stop, 'not_started') RETURNING id::text"
-            ),
-            {
-                "tt": target_type,
-                "scope": scope,
-                "mode": mode,
-                "maxp": max_papers_per_object,
-                "status": "paused" if start_paused else "pending",
-                "cb": created_by,
-                "total": len(fresh_ids),
-                "cfg": json.dumps(
-                    {"deepseek_concurrency": DEEPSEEK_CONCURRENCY, "europepmc_concurrency": EUROPE_PMC_CONCURRENCY},
-                    ensure_ascii=False,
-                ),
-                "name": name,
-                "gl": granularity_level,
-                "only_oa": only_oa,
-                "clt": confidence_lt,
-                "stop": stop_after_strong_support,
-            },
-        )
-    ).scalar_one()
-    await session.execute(
-        text(
-            "INSERT INTO paper_evidence_task_items "
-            "(task_id, target_type, target_id, label, current_confidence, status) "
-            "VALUES (:tid, :tt, :oid, :label, :conf, 'pending')"
-        ),
-        [
-            {
-                "tid": task_id,
-                "tt": target_type,
-                "oid": uuid.UUID(oid),
-                "label": label,
-                "conf": conf,
-            }
-            for oid, (label, conf) in zip(fresh_ids, labels)
-        ],
-    )
-    await session.commit()
-    await _write_audit(
-        session,
-        action_type="EVIDENCE_TASK_CREATE",
-        entity_type="evidence_task",
-        entity_id=uuid.UUID(task_id),
-        after_data={"target_type": target_type, "scope": scope, "mode": mode, "target_count": len(fresh_ids), "skipped_active": len(busy)},
-        operator_id=created_by,
-        reason="batch evidence pre-processing task created",
-    )
-    await session.commit()
-    return {"task_id": task_id, "target_count": len(fresh_ids), "skipped_active_targets": len(busy)}
 
 
 async def _update_task_totals(session: AsyncSession, task_id: str) -> None:
@@ -5653,101 +5513,131 @@ async def create_batch_task(
     target_ids: list[str] | None = None,
     filter_snapshot: dict | None = None,
 ) -> dict:
-    """Create task + structured scope snapshot. Items materialized async (small sync)."""
+    """一对一佐证任务创建:每个对象生成一个独立任务(1 任务 = 1 item)。
+
+    - 圈选(selected / low_confidence / filter)与单任务最大守卫语义不变;
+    - busy 去重统一在创建时完成:跳过已有活动任务的对象并计数返回;
+    - item 创建时直接写入实时 label/current_confidence 快照,不依赖物化流程。
+    """
     if target_type not in TARGET_MODELS:
         raise ValueError(f"unsupported target_type: {target_type}")
     cfg = get_settings()
     scope_type = "selected" if scope == "selected" else "filter"
-    if scope == "selected":
-        snapshot = {
+    snapshot = (
+        {
             "target_type": target_type,
             "granularity_level": granularity_level,
             "target_ids": target_ids or [],
         }
-        estimate = len(target_ids or [])
-        if target_ids:
-            active = set(
-                (
-                    await session.execute(
-                        text(
-                            "SELECT target_id::text FROM paper_evidence_task_items "
-                            "WHERE target_type=:tt AND target_id::text = ANY(:ids) "
-                            "AND status IN ('pending','searching','fetching','retrieving','extracting','verifying','awaiting_review')"
-                        ),
-                        {"tt": target_type, "ids": target_ids},
-                    )
-                ).scalars().all()
-            )
-            if active and active == set(target_ids):
-                raise ValueError("all matched targets already have an active evidence task")
-    else:
-        snapshot = filter_snapshot or {
+        if scope == "selected"
+        else filter_snapshot
+        or {
             "target_type": target_type,
             "granularity_level": granularity_level,
             "confidence_lt": confidence_lt if scope == "low_confidence" else None,
         }
-        estimate = await count_scope_targets(session, target_type, snapshot)
-    if estimate > cfg.paper_evidence_max_task_items:
+    )
+    if target_ids:
+        ids = target_ids
+    elif scope == "low_confidence":
+        ids = await _resolve_scope_ids_low_confidence(session, target_type, confidence_lt, limit)
+    else:
+        where, params = _build_filter_clause(target_type, snapshot)
+        rows = (
+            await session.execute(
+                text(
+                    f"SELECT id::text FROM {TARGET_MODELS[target_type].__tablename__} "
+                    f"WHERE {where} ORDER BY created_at DESC LIMIT :lim"
+                ),
+                {**params, "lim": limit},
+            )
+        ).all()
+        ids = [str(r[0]) for r in rows]
+    if not ids:
+        raise ValueError("no targets matched scope")
+    if len(ids) > cfg.paper_evidence_max_task_items:
         raise ValueError(
-            f"当前筛选结果共 {estimate} 条，单任务最大 {cfg.paper_evidence_max_task_items} 条，"
+            f"当前筛选结果共 {len(ids)} 条，单任务最大 {cfg.paper_evidence_max_task_items} 条，"
             "请进一步筛选或拆分任务。"
         )
-    task_id = (
+    busy = set(
+        (
+            await session.execute(
+                text(
+                    "SELECT target_id::text FROM paper_evidence_task_items "
+                    "WHERE target_type = :tt AND target_id::text = ANY(:ids) "
+                    "AND status IN ('pending','searching','paper_found','extracting','awaiting_review')"
+                ),
+                {"tt": target_type, "ids": ids},
+            )
+        ).scalars().all()
+    )
+    fresh_ids = [oid for oid in ids if oid not in busy]
+    if not fresh_ids:
+        raise ValueError("all matched targets already have an active evidence task")
+    cfg_json = json.dumps(
+        {"deepseek_concurrency": DEEPSEEK_CONCURRENCY, "europepmc_concurrency": EUROPE_PMC_CONCURRENCY},
+        ensure_ascii=False,
+    )
+    status = "paused" if start_paused else "pending"
+    task_ids: list[str] = []
+    for oid in fresh_ids:
+        label, conf = await _batch_scope_label(session, target_type, uuid.UUID(oid))
+        task_id = (
+            await session.execute(
+                text(
+                    "INSERT INTO paper_evidence_tasks "
+                    "(target_type, target_id, scope, scope_type, mode, max_papers_per_object, status, created_by, "
+                    "total_items, config, name, granularity_level, only_oa, confidence_lt, "
+                    "stop_after_strong_support, review_status, filter_snapshot, estimated_target_count, "
+                    "materialization_status, materialized_target_count) "
+                    "VALUES (:tt, :oid, :scope, :scope_type, :mode, :maxp, :status, :cb, 1, CAST(:cfg AS jsonb), "
+                    ":name, :gl, :only_oa, :clt, :stop, 'not_started', CAST(:fs AS jsonb), 1, 'completed', 1) "
+                    "RETURNING id::text"
+                ),
+                {
+                    "tt": target_type,
+                    "oid": uuid.UUID(oid),
+                    "scope": scope,
+                    "scope_type": scope_type,
+                    "mode": mode,
+                    "maxp": max_papers_per_object,
+                    "status": status,
+                    "cb": created_by,
+                    "cfg": cfg_json,
+                    "name": name,
+                    "gl": granularity_level,
+                    "only_oa": only_oa,
+                    "clt": confidence_lt,
+                    "stop": stop_after_strong_support,
+                    "fs": json.dumps(snapshot, ensure_ascii=False),
+                },
+            )
+        ).scalar_one()
         await session.execute(
             text(
-                "INSERT INTO paper_evidence_tasks "
-                "(target_type, scope, scope_type, mode, max_papers_per_object, status, created_by, "
-                "total_items, config, name, granularity_level, only_oa, confidence_lt, "
-                "stop_after_strong_support, review_status, filter_snapshot, estimated_target_count, "
-                "materialization_status) "
-                "VALUES (:tt, :scope, :scope_type, :mode, :maxp, :status, :cb, :total, CAST(:cfg AS jsonb), "
-                ":name, :gl, :only_oa, :clt, :stop, 'not_started', CAST(:fs AS jsonb), :est, 'pending') "
-                "RETURNING id::text"
+                "INSERT INTO paper_evidence_task_items "
+                "(task_id, target_type, target_id, label, current_confidence, status) "
+                "VALUES (:tid, :tt, :oid, :label, :conf, 'pending')"
             ),
-            {
-                "tt": target_type,
-                "scope": scope,
-                "scope_type": scope_type,
-                "mode": mode,
-                "maxp": max_papers_per_object,
-                "status": "paused" if start_paused else "pending",
-                "cb": created_by,
-                "total": estimate,
-                "cfg": json.dumps(
-                    {"deepseek_concurrency": DEEPSEEK_CONCURRENCY, "europepmc_concurrency": EUROPE_PMC_CONCURRENCY},
-                    ensure_ascii=False,
-                ),
-                "name": name,
-                "gl": granularity_level,
-                "only_oa": only_oa,
-                "clt": confidence_lt,
-                "stop": stop_after_strong_support,
-                "fs": json.dumps(snapshot, ensure_ascii=False),
-                "est": estimate,
-            },
+            {"tid": task_id, "tt": target_type, "oid": uuid.UUID(oid), "label": label, "conf": conf},
         )
-    ).scalar_one()
-    await session.commit()
-    await _write_audit(
-        session,
-        action_type="EVIDENCE_TASK_CREATE",
-        entity_type="evidence_task",
-        entity_id=uuid.UUID(task_id),
-        after_data={
-            "target_type": target_type,
-            "scope_type": scope_type,
-            "estimated_target_count": estimate,
-            "filter_snapshot": snapshot,
-        },
-        operator_id=created_by,
-        reason="batch evidence task created",
-    )
+        await _write_audit(
+            session,
+            action_type="EVIDENCE_TASK_CREATE",
+            entity_type="evidence_task",
+            entity_id=uuid.UUID(task_id),
+            after_data={"target_type": target_type, "target_id": oid, "scope": scope, "mode": mode},
+            operator_id=created_by,
+            reason="single-object evidence task created",
+        )
+        task_ids.append(task_id)
     await session.commit()
     return {
-        "task_id": task_id,
-        "target_count": estimate,
-        "skipped_active_targets": 0,
-        "auto_started": not start_paused,
+        "task_id": task_ids[0],
+        "task_ids": task_ids,
+        "target_count": len(task_ids),
+        "skipped_active_targets": len(busy),
     }
 
 
