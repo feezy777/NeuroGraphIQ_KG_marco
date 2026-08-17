@@ -757,11 +757,73 @@ def test_cancel_single_object_task():
         _run(_cleanup_connections(cids))
 ```
 
-`test_versions_written_on_items`、`test_draft_revision_optimistic_concurrency`、`test_dual_worker_skip_locked_no_overlap` 的 create 后补插 item 循环已被创建路径取代,删除其 INSERT 循环即可;三者的清理段改为删除全部 task_ids:
+`test_versions_written_on_items`、`test_draft_revision_optimistic_concurrency` 保持 create 路径(单对象,item 由创建路径自动写入),删除其 create 后的补插 INSERT 循环;两者的清理段改为删除全部 task_ids:
 
 ```python
                 for tid in task["task_ids"]:
                     await s.execute(text("DELETE FROM paper_evidence_tasks WHERE id::text=:tid"), {"tid": tid})
+```
+
+`test_dual_worker_skip_locked_no_overlap` 不再依赖 create(一对一后单任务只有 1 个 item,无法测 skip-locked),整体替换为直接 SQL 建一个含 20 items 的任务:
+
+```python
+def test_dual_worker_skip_locked_no_overlap():
+    n = 20
+    ids = [str(uuid.uuid4()) for _ in range(n)]
+
+    async def case():
+        async with AsyncSessionLocal() as s:
+            task_id = (
+                await s.execute(
+                    text(
+                        "INSERT INTO paper_evidence_tasks "
+                        "(target_type, scope, mode, max_papers_per_object, status, total_items) "
+                        "VALUES ('connection', 'selected', 'function', 3, 'pending', :n) RETURNING id::text"
+                    ),
+                    {"n": n},
+                )
+            ).scalar_one()
+            for oid in ids:
+                await s.execute(
+                    text(
+                        "INSERT INTO paper_evidence_task_items (task_id, target_type, target_id, label, status) "
+                        "VALUES (:tid, 'connection', :oid, 't', 'pending')"
+                    ),
+                    {"tid": task_id, "oid": uuid.UUID(oid)},
+                )
+            await s.commit()
+
+        async def worker_claim(limit=10):
+            claimed: list[str] = []
+            for _ in range(limit):
+                async with AsyncSessionLocal() as ws:
+                    rows = (
+                        await ws.execute(
+                            text(
+                                "SELECT id::text FROM paper_evidence_task_items "
+                                "WHERE task_id::text=:tid AND status='pending' "
+                                "ORDER BY created_at LIMIT 1 FOR UPDATE SKIP LOCKED"
+                            ),
+                            {"tid": task_id},
+                        )
+                    ).all()
+                    if not rows:
+                        break
+                    await ws.execute(
+                        text("UPDATE paper_evidence_task_items SET status='searching' WHERE id::text=:iid"),
+                        {"iid": rows[0][0]},
+                    )
+                    await ws.commit()
+                    claimed.append(rows[0][0])
+            return claimed
+
+        w1, w2 = await asyncio.gather(worker_claim(10), worker_claim(10))
+        assert set(w1).isdisjoint(set(w2))
+        assert len(set(w1 + w2)) == n
+        async with AsyncSessionLocal() as s:
+            await s.execute(text("DELETE FROM paper_evidence_tasks WHERE id::text=:tid"), {"tid": task_id})
+            await s.commit()
+    _run(case())
 ```
 
 - [ ] **Step 5: 更新 live_fields 测试取数解耦**
