@@ -3630,6 +3630,138 @@ async def recover_interrupted_batch_tasks(session: AsyncSession) -> int:
     return result.rowcount or 0
 
 
+async def migrate_tasks_to_1to1(session: AsyncSession) -> dict:
+    """存量拆分迁移(幂等):多对象任务按对象拆成一对一任务;旧任务标记 cancelled + migrated_to。
+
+    - 单对象任务:回填任务 target_id 与 item 快照(label 为 UUID/空、置信度 NULL 时实时取);
+    - 多对象任务:每 item 生成一个新任务(复制配置与状态),item 挂接过去,旧任务 cancelled;
+    - 仅扫描 status <> 'cancelled' 的任务,已拆任务自然跳过(幂等)。
+    """
+    rows = (
+        await session.execute(
+            text(
+                "SELECT id::text, target_type, scope, mode, max_papers_per_object, status, name, "
+                "granularity_level, only_oa, confidence_lt, stop_after_strong_support, config, created_by "
+                "FROM paper_evidence_tasks WHERE status <> 'cancelled' ORDER BY created_at"
+            )
+        )
+    ).all()
+    stats = {
+        "tasks_scanned": len(rows),
+        "tasks_split": 0,
+        "objects_migrated": 0,
+        "labels_backfilled": 0,
+        "target_ids_backfilled": 0,
+    }
+    for r in rows:
+        tid, tt, scope, mode, maxp, status, name, gl, only_oa, clt, stop, config, created_by = r
+        items = (
+            await session.execute(
+                text(
+                    "SELECT id::text, target_id::text, label, current_confidence FROM paper_evidence_task_items "
+                    "WHERE task_id::text = :tid ORDER BY updated_at"
+                ),
+                {"tid": tid},
+            )
+        ).all()
+        if not items:
+            continue
+        if len(items) == 1:
+            oid = uuid.UUID(items[0][1])
+            label, conf = await _batch_scope_label(session, tt, oid)
+            if str(label) == str(oid):
+                label = None
+            lbl_bad = not items[0][2] or _UUID_RE.fullmatch(str(items[0][2]))
+            conf_null = items[0][3] is None
+            if lbl_bad or conf_null:
+                # 标签仅在快照本身是坏标签时才写(live 缺失 → 清空 NULL;live 有值 → 覆盖)
+                set_label = label if lbl_bad else items[0][2]
+                res = await session.execute(
+                    text(
+                        "UPDATE paper_evidence_task_items SET label=:lbl, current_confidence=:conf "
+                        "WHERE id::text=:iid AND (label IS NULL OR label = '' OR label ~* :uuid_re "
+                        "OR current_confidence IS NULL) AND (label IS DISTINCT FROM :lbl "
+                        "OR current_confidence IS DISTINCT FROM :conf)"
+                    ),
+                    {"lbl": set_label, "conf": conf, "iid": items[0][0], "uuid_re": _UUID_RE.pattern},
+                )
+                stats["labels_backfilled"] += res.rowcount or 0
+            res2 = await session.execute(
+                text(
+                    "UPDATE paper_evidence_tasks SET target_id=:oid, total_items=1 "
+                    "WHERE id::text=:tid AND (target_id IS NULL OR target_id <> :oid OR total_items IS DISTINCT FROM 1)"
+                ),
+                {"oid": oid, "tid": tid},
+            )
+            stats["target_ids_backfilled"] += res2.rowcount or 0
+            continue
+        new_ids: list[str] = []
+        for iid, oid_s, lbl, conf in items:
+            oid = uuid.UUID(oid_s)
+            label, live_conf = await _batch_scope_label(session, tt, oid)
+            if str(label) == str(oid):
+                label = None
+            new_id = (
+                await session.execute(
+                    text(
+                        "INSERT INTO paper_evidence_tasks "
+                        "(target_type, target_id, scope, mode, max_papers_per_object, status, name, "
+                        "granularity_level, only_oa, confidence_lt, stop_after_strong_support, config, "
+                        "created_by, total_items, review_status, materialization_status, materialized_target_count) "
+                        "VALUES (:tt, :oid, :scope, :mode, :maxp, :status, :name, :gl, :only_oa, :clt, :stop, "
+                        "COALESCE(CAST(:config AS jsonb), '{}'::jsonb), :cb, 1, 'not_started', 'completed', 1) RETURNING id::text"
+                    ),
+                    {
+                        "tt": tt,
+                        "oid": oid,
+                        "scope": scope,
+                        "mode": mode,
+                        "maxp": maxp,
+                        "status": status,
+                        "name": name,
+                        "gl": gl,
+                        "only_oa": only_oa,
+                        "clt": clt,
+                        "stop": stop,
+                        "config": json.dumps(config) if isinstance(config, dict) else config,
+                        "cb": created_by,
+                    },
+                )
+            ).scalar_one()
+            lbl_bad = not lbl or _UUID_RE.fullmatch(str(lbl))
+            conf_null = conf is None
+            # 重挂接无条件执行(与回填解耦,变更守卫为假也不影响 item 归属)
+            await session.execute(
+                text("UPDATE paper_evidence_task_items SET task_id=:new WHERE id::text=:iid"),
+                {"new": uuid.UUID(new_id), "iid": iid},
+            )
+            if lbl_bad or conf_null:
+                set_label = label if lbl_bad else lbl
+                res = await session.execute(
+                    text(
+                        "UPDATE paper_evidence_task_items SET label=:lbl, current_confidence=:conf "
+                        "WHERE id::text=:iid AND (label IS NULL OR label = '' OR label ~* :uuid_re "
+                        "OR current_confidence IS NULL) AND (label IS DISTINCT FROM :lbl "
+                        "OR current_confidence IS DISTINCT FROM :conf)"
+                    ),
+                    {"lbl": set_label, "conf": live_conf, "iid": iid, "uuid_re": _UUID_RE.pattern},
+                )
+                stats["labels_backfilled"] += res.rowcount or 0
+            new_ids.append(new_id)
+        await session.execute(
+            text(
+                "UPDATE paper_evidence_tasks SET status='cancelled', "
+                "summary=jsonb_set(COALESCE(summary, '{}'::jsonb), '{migrated_to}', CAST(:ids AS jsonb)) "
+                "WHERE id::text=:tid"
+            ),
+            {"ids": json.dumps(new_ids), "tid": tid},
+        )
+        stats["tasks_split"] += 1
+        stats["objects_migrated"] += len(new_ids)
+    await session.commit()
+    return stats
+
+
 async def pause_batch_task(session: AsyncSession, task_id: str, operator_id: str | None = None) -> dict:
     result = await session.execute(
         text(
