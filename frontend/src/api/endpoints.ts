@@ -1989,6 +1989,9 @@ export const listMirrorConnections = (p?: {
   llm_run_id?: string
   llm_item_id?: string
   candidate_id?: string
+  confidence_min?: number
+  confidence_max?: number
+  confidence_include_null?: boolean
   limit?: number
   offset?: number
 }) => getJson<Paginated<MirrorRegionConnection>>('/api/mirror-kg/connections', p)
@@ -2026,6 +2029,9 @@ export const listMirrorFunctions = (p?: {
   review_status?: string
   llm_run_id?: string
   candidate_id?: string
+  confidence_min?: number
+  confidence_max?: number
+  confidence_include_null?: boolean
   limit?: number
   offset?: number
 }) => getJson<Paginated<MirrorRegionFunction>>('/api/mirror-kg/functions', p)
@@ -2050,6 +2056,9 @@ export const listMirrorCircuits = (p?: {
   mirror_status?: string
   review_status?: string
   llm_run_id?: string
+  confidence_min?: number
+  confidence_max?: number
+  confidence_include_null?: boolean
   limit?: number
   offset?: number
 }) => getJson<Paginated<MirrorRegionCircuit>>('/api/mirror-kg/circuits', p)
@@ -2075,6 +2084,9 @@ export const listMirrorTriples = (p?: {
   review_status?: string
   predicate?: string
   llm_run_id?: string
+  confidence_min?: number
+  confidence_max?: number
+  confidence_include_null?: boolean
   limit?: number
   offset?: number
 }) => getJson<Paginated<MirrorKgTriple>>('/api/mirror-kg/triples', p)
@@ -5429,7 +5441,13 @@ export interface ExtractedPaperCandidate {
 export const extractSelectedPaperEvidence = (body: {
   target_type: string
   target_id: string
-  papers: Array<{ pmid: string; doi?: string | null; pmcid?: string | null; title?: string | null }>
+  papers: Array<{
+    pmid: string
+    doi?: string | null
+    pmcid?: string | null
+    title?: string | null
+    abstract?: string | null
+  }>
   only_oa?: boolean
   stop_after_strong_support?: boolean
   mode?: 'function' | 'existence'
@@ -5440,6 +5458,84 @@ export const extractSelectedPaperEvidence = (body: {
   llm_model: string | null
 }>('/api/ontology/evidence/extract-selected', body)
 
+export interface PaperEvidenceExtractionItem {
+  id: string
+  run_id: string
+  item_index: number
+  pmid?: string | null
+  pmcid?: string | null
+  doi?: string | null
+  title?: string | null
+  paper_json: Record<string, unknown>
+  status: string
+  progress_percent: number
+  attempt_count: number
+  result_json?: Record<string, unknown> | null
+  error_code?: string | null
+  error_message?: string | null
+  stage_timings_json: Record<string, unknown>
+  started_at?: string | null
+  finished_at?: string | null
+  updated_at: string
+}
+
+export interface PaperEvidenceExtractionRun {
+  id: string
+  target_type: string
+  target_id: string
+  mode: 'function' | 'existence'
+  status: string
+  total_items: number
+  completed_items: number
+  evidence_hit_items: number
+  no_evidence_items: number
+  failed_items: number
+  requested_concurrency: number
+  active_concurrency: number
+  cancel_requested: boolean
+  created_at: string
+  updated_at: string
+  started_at?: string | null
+  finished_at?: string | null
+  items: PaperEvidenceExtractionItem[]
+  progress_percent: number
+}
+
+export interface PaperEvidenceExtractionStartResponse {
+  run_id: string
+  status: string
+  total_items: number
+  requested_concurrency: number
+  created_at: string
+}
+
+export const createPaperEvidenceExtractionRun = (body: {
+  target_type: string
+  target_id: string
+  papers: Array<{
+    pmid: string
+    doi?: string | null
+    pmcid?: string | null
+    title?: string | null
+    abstract?: string | null
+  }>
+  only_oa?: boolean
+  stop_after_strong_support?: boolean
+  mode?: 'function' | 'existence'
+  concurrency?: number
+}) => postJson<PaperEvidenceExtractionStartResponse>('/api/ontology/evidence/extraction-runs', body)
+
+export const getPaperEvidenceExtractionRun = (runId: string, signal?: AbortSignal) =>
+  getJson<PaperEvidenceExtractionRun>(`/api/ontology/evidence/extraction-runs/${runId}`, undefined, signal)
+
+export const cancelPaperEvidenceExtractionRun = (runId: string) =>
+  postJson<PaperEvidenceExtractionRun>(`/api/ontology/evidence/extraction-runs/${runId}/cancel`)
+
+export const retryFailedPaperEvidenceExtractionRun = (runId: string) =>
+  postJson<{ run_id: string; retried: number; status: string }>(
+    `/api/ontology/evidence/extraction-runs/${runId}/retry-failed`,
+  )
+
 export const getEvidenceQueue = (p: { target_type: string; scope?: string; limit?: number }) =>
   getJson<{ items: Array<{ target_type: string; target_id: string; label: string; confidence: number | null }> }>(
     '/api/ontology/evidence/queue',
@@ -5448,6 +5544,9 @@ export const getEvidenceQueue = (p: { target_type: string; scope?: string; limit
 
 export const translateEvidenceText = (body: { text: string }, signal?: AbortSignal) =>
   postJson<{ translated: string }>('/api/ontology/evidence/translate', body, undefined, signal)
+
+export const translateEvidenceTexts = (body: { texts: string[] }, signal?: AbortSignal) =>
+  postJson<{ translations: string[] }>('/api/ontology/evidence/translate-batch', body, undefined, signal)
 
 export interface EvidencePassageInput {
   source_scope: 'abstract' | 'fulltext'
@@ -5508,6 +5607,16 @@ export interface PaperEvidenceTaskItem {
   updated_at: string | null
   label: string | null
   current_confidence: number | null
+  /** 镜像行实时展示名(null = 镜像行缺失) */
+  live_display_name: string | null
+  /** 镜像行实时置信度(0.0 原样;null = 未评分) */
+  live_confidence: number | null
+  /** 展示名合成:实时 → 非 UUID 快照 → 「类型中文 #短ID」 */
+  display_name: string
+  /** 展示置信度合成:实时 → 快照 → null */
+  display_confidence: number | null
+  display_name_source: 'mirror_live' | 'task_snapshot' | 'fallback'
+  display_confidence_source: 'mirror_live' | 'task_snapshot' | 'missing'
   attempt_count: number
   last_error_code: string | null
   last_error_message: string | null
@@ -5542,6 +5651,29 @@ export interface PaperEvidenceTaskItem {
   retry_count: number
 }
 
+export type TaskWorkStatus =
+  | 'empty' | 'processing' | 'paused' | 'awaiting_review'
+  | 'partially_failed' | 'failed' | 'completed' | 'cancelled'
+
+export interface TaskItemCounts {
+  total: number
+  processing: number
+  pending: number
+  awaiting_review: number
+  completed: number
+  skipped: number
+  failed: number
+  cancelled: number
+}
+
+export interface TaskCapabilities {
+  can_continue_review: boolean
+  can_pause: boolean
+  can_resume: boolean
+  can_retry_failed: boolean
+  can_view_results: boolean
+}
+
 export interface PaperEvidenceTask {
   id: string
   target_type: string
@@ -5561,6 +5693,23 @@ export interface PaperEvidenceTask {
   estimated_target_count: number | null
   materialized_target_count: number | null
   materialization_status: string | null
+  confidence_lt: number | null
+  /** 对象身份(一对一任务);旧任务迁移前为 null */
+  target_id: string | null
+  /** 任务级对象展示名(中文;镜像行实时,缺失回退快照/兜底) */
+  display_name_cn: string | null
+  /** 任务级对象展示名(英文;仅镜像行实时) */
+  display_name_en: string | null
+  /** 任务级展示置信度(实时 → 快照 → null=未评分) */
+  display_confidence: number | null
+  display_name_source: 'mirror_live' | 'task_snapshot' | 'fallback' | 'missing'
+  display_confidence_source: 'mirror_live' | 'task_snapshot' | 'missing'
+  /** 统一任务工作状态(权威口径,后端由全量对象计数推导) */
+  work_status: TaskWorkStatus | string
+  /** 全量对象计数(非前端已加载子集) */
+  item_counts: TaskItemCounts
+  /** 后端真实守卫推导的操作能力 */
+  capabilities: TaskCapabilities
   materialization_error: string | null
   versions: Record<string, string | null> | null
   summary: Record<string, unknown> | null
@@ -5585,7 +5734,7 @@ export const createPaperEvidenceBatch = (body: {
   stop_after_strong_support?: boolean
   target_ids?: string[] | null
   filter_snapshot?: Record<string, unknown> | null
-}) => postJson<{ task_id: string; target_count: number; skipped_active_targets: number; auto_started: boolean }>(
+}) => postJson<{ task_id: string; task_ids: string[]; target_count: number; skipped_active_targets: number; auto_started: boolean }>(
   '/api/ontology/evidence/batch',
   body,
 )
@@ -5596,8 +5745,28 @@ export const listPaperEvidenceTasks = (p?: { limit?: number; offset?: number; st
 export const getPaperEvidenceTask = (taskId: string) =>
   getJson<{ task: PaperEvidenceTask; counts: Record<string, number> }>(`/api/ontology/evidence/batch/${taskId}`)
 
-export const listPaperEvidenceTaskItems = (taskId: string, p?: { limit?: number; offset?: number }) =>
-  getJson<{ items: PaperEvidenceTaskItem[] }>(`/api/ontology/evidence/batch/${taskId}/items`, p)
+export const listPaperEvidenceTaskItems = (taskId: string, p?: { limit?: number; offset?: number; sort?: 'created_at' | 'confidence'; status?: string }) =>
+  getJson<{ items: PaperEvidenceTaskItem[]; total: number }>(`/api/ontology/evidence/batch/${taskId}/items`, p)
+
+/** S6:任务内对象 → 任务项只读解析(URL 补齐 + 审核前置校验;0 个 → 404,多个 → 409) */
+export interface ResolvedTaskItem {
+  task_id: string
+  task_item_id: string
+  target_type: string
+  target_id: string
+  status: string
+  matched: 'task_item_id' | 'task_target'
+  /** S7B:重评上下文(工作区显示「正在进行第 N 次评分」) */
+  rescore_source_review_id: string | null
+  rescore_revision_no: number | null
+}
+
+export const resolvePaperEvidenceTaskItem = (taskId: string, targetType: string, targetId: string, taskItemId?: string | null) =>
+  getJson<ResolvedTaskItem>(`/api/ontology/evidence/batch/${taskId}/items/resolve`, {
+    target_type: targetType,
+    target_id: targetId,
+    ...(taskItemId ? { task_item_id: taskItemId } : {}),
+  })
 
 export const pausePaperEvidenceTask = (taskId: string) =>
   postJson<{ task_id: string; status: string }>(`/api/ontology/evidence/batch/${taskId}/pause`)
@@ -5769,7 +5938,53 @@ export interface EvidenceReviewItem {
   evidence_id: string | null
   created_at: string | null
   updated_at: string | null
+  /** S7B 版本链与派生字段 */
+  revision_no: number
+  supersedes_review_id: string | null
+  superseded_at: string | null
+  superseded_by: string | null
+  rollback_reason: string | null
+  is_current: boolean
+  effective_promotion_status: 'active' | 'rolled_back' | 'not_promoted'
+  can_rollback_rescore: boolean
+  rollback_block_reason: string | null
   passages?: EvidenceReviewPassage[]
+}
+
+/** S7B:回退并重新评分响应 */
+export interface RollbackRescoreResponse {
+  source_review_id: string
+  new_review_id: string | null
+  task_id: string | null
+  task_item_id: string | null
+  target_type: string
+  target_id: string
+  revision_no: number
+  promotion_rollback: 'not_needed' | 'completed'
+  navigation: {
+    module: string
+    task_id: string
+    task_item_id: string
+    target_type: string
+    target_id: string
+  }
+}
+
+export interface ReviewHistoryItem {
+  review_id: string
+  revision_no: number
+  review_status: string
+  promotion_status: string
+  effective_promotion_status: 'active' | 'rolled_back' | 'not_promoted'
+  reviewer_direction: string | null
+  reviewer_confidence: number | null
+  reviewed_at: string | null
+  approved_at: string | null
+  rejected_at: string | null
+  is_current: boolean
+  superseded_at: string | null
+  superseded_by: string | null
+  rollback_reason: string | null
 }
 
 interface EvidenceReviewBuildBody {
@@ -5813,6 +6028,14 @@ export const approveReview = (id: string) =>
 
 export const rejectReview = (id: string) =>
   postJson<{ review_id: string; status: string }>(`/api/ontology/evidence/reviews/${id}/reject`)
+
+export const rollbackReviewForRescore = (id: string, body: { reason: string; idempotency_key?: string }) =>
+  postJson<RollbackRescoreResponse>(`/api/ontology/evidence/reviews/${id}/rollback-for-rescore`, body)
+
+export const getReviewHistory = (id: string) =>
+  getJson<{ source_review_id: string; items: ReviewHistoryItem[] }>(
+    `/api/ontology/evidence/reviews/${id}/history`,
+  )
 
 export const promoteReview = (id: string) =>
   postJson<EvidenceReviewItem>(`/api/ontology/evidence/reviews/${id}/promote`)
