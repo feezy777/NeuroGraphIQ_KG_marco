@@ -233,7 +233,11 @@ async def list_unified_tasks(
                     id=item["id"],
                     type="paper_evidence",
                     status=item["status"],
-                    label=f"论文佐证 · {item['target_type']}",
+                    label=(
+                        item.get("display_name_cn")
+                        or item.get("display_name_en")
+                        or f"论文佐证 · {item['target_type']}"
+                    ),
                     target_type=item["target_type"],
                     target_count=item["total_items"],
                     provider="deepseek+europepmc",
