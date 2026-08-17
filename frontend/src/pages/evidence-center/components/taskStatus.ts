@@ -31,16 +31,6 @@ export function taskReviewTone(reviewStatus: string | null): string {
   return 'muted'
 }
 
-/** 进行中任务状态(任务列表置顶排序第一组) */
-export const IN_PROGRESS_TASK_STATUSES = ['pending', 'running', 'paused']
-
-/** 任务列表排序秩:0=进行中,1=有等待审核,2=其他;同组内按创建时间倒序 */
-export function taskSortRank(t: { status: string; awaiting_review_items: number }): number {
-  if (IN_PROGRESS_TASK_STATUSES.includes(t.status)) return 0
-  if (t.awaiting_review_items > 0) return 1
-  return 2
-}
-
 /** 目标类型中文标签(任务/对象展示名兜底,避免直接显示 connection 等原始类型串) */
 export const TARGET_TYPE_LABELS: Record<string, string> = {
   connection: '连接',
@@ -52,42 +42,110 @@ export const TARGET_TYPE_LABELS: Record<string, string> = {
   projection_function: '投射功能',
 }
 
-/** 任务展示名:优先任务名,缺失时用「类型中文 + 短ID」 */
+/** 任务展示名:优先用户自定义名,缺失时用「类型中文 + 短ID」(短ID 仅作辅助) */
 export function taskDisplayName(t: { name: string | null; target_type: string; id: string }): string {
   return t.name || `${TARGET_TYPE_LABELS[t.target_type] ?? t.target_type}任务 #${t.id.slice(0, 8)}`
 }
 
+/** 任务业务标题(§8):自定义名 → 单对象「类型验证 · 对象名」 → 多对象「类型验证任务 · N 个对象」 */
+export function taskTitle(
+  t: { name: string | null; target_type: string; total_items: number },
+  singleObjectName: string | null,
+): string {
+  if (t.name) return t.name
+  const typeLabel = TARGET_TYPE_LABELS[t.target_type] ?? t.target_type
+  if (t.total_items === 1 && singleObjectName) {
+    return `${typeLabel}验证 · ${singleObjectName}`
+  }
+  return `${typeLabel}验证任务 · ${t.total_items} 个对象`
+}
+
+/** 对象卡片标题:中文 (英文);中文缺失只用英文;中英相同不重复;皆空回退兜底名 */
+export function objectCardTitle(
+  cn: string | null | undefined,
+  en: string | null | undefined,
+  fallback: string,
+): string {
+  const c = cn?.trim() || ''
+  const e = en?.trim() || ''
+  if (!c && !e) return fallback
+  if (!c) return e
+  if (!e || e === c) return c
+  return `${c} (${e})`
+}
+
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
-/** 对象展示名:label 缺失或为裸 UUID(后端未解析出名称的存量数据)时,用「类型中文 #短ID」兜底 */
-export function itemDisplayLabel(item: { label: string | null; target_id: string; target_type: string }): string {
-  if (item.label && !UUID_RE.test(item.label)) return item.label
+/** 对象展示名(display 优先级):display_name ?? live_display_name ?? 非 UUID 快照 ?? 「类型中文 #短ID」。
+ *  全程 nullish 判断(0/空串不参与名称逻辑)。 */
+export function displayNameOf(item: {
+  display_name?: string | null
+  live_display_name?: string | null
+  label?: string | null
+  target_id: string
+  target_type: string
+}): string {
+  if (item.display_name != null && item.display_name !== '') return item.display_name
+  if (item.live_display_name != null && item.live_display_name !== '') return item.live_display_name
+  if (item.label != null && item.label !== '' && !UUID_RE.test(item.label)) return item.label
   return `${TARGET_TYPE_LABELS[item.target_type] ?? item.target_type} #${item.target_id.slice(0, 8)}`
 }
 
-/** 任务工作状态(统一状态体系:由该任务对象状态推导,不信任任务级 status) */
-export interface TaskWorkStatus {
-  key: 'running' | 'awaiting' | 'failed' | 'done' | 'empty'
-  label: string
-  tone: string
-  /** 列表排序秩:进行中 < 待审核 < 部分失败 < 已完成 < 空 */
-  rank: number
+/** 对象展示置信度(display 优先级):display_confidence ?? live_confidence ?? current_confidence ?? null。
+ *  0.0 是合法值,必须用 nullish 判断保留。 */
+export function displayConfidenceOf(item: {
+  display_confidence?: number | null
+  live_confidence?: number | null
+  current_confidence?: number | null
+}): number | null {
+  if (item.display_confidence !== null && item.display_confidence !== undefined) return item.display_confidence
+  if (item.live_confidence !== null && item.live_confidence !== undefined) return item.live_confidence
+  if (item.current_confidence !== null && item.current_confidence !== undefined) return item.current_confidence
+  return null
 }
 
-const ACTIVE_ITEM_STATUSES = ['pending', 'searching', 'fetching', 'retrieving', 'extracting', 'verifying']
+/** 置信度百分比统一格式:0 →「置信度 0%」;0.356 →「置信度 35.6%」;null →「未评分」。不重复乘 100。 */
+export function formatConfidencePercent(v: number | null | undefined): string {
+  if (v === null || v === undefined) return '未评分'
+  const pct = Math.round(v * 1000) / 10
+  return `置信度 ${pct}%`
+}
 
-export function deriveTaskWorkStatus(items: { status: string }[]): TaskWorkStatus {
-  if (items.some(it => ACTIVE_ITEM_STATUSES.includes(it.status))) {
-    return { key: 'running', label: '进行中', tone: 'info', rank: 0 }
+/** 低置信度默认阈值:与后端 _resolve_scope_ids_low_confidence 缺省一致(任务未保存 confidence_lt 时复用) */
+export const LOW_CONFIDENCE_DEFAULT_THRESHOLD = 0.5
+
+/** 低置信度判定:未评分(null)不算低置信度;0.0 是低置信度 */
+export function isLowConfidence(confidence: number | null | undefined, threshold: number): boolean {
+  if (confidence === null || confidence === undefined) return false
+  return confidence < threshold
+}
+
+// ── 任务统一工作状态(权威口径来自后端 work_status,不做前端推导) ──
+
+export const WORK_STATUS_LABELS: Record<string, string> = {
+  empty: '空任务',
+  processing: '进行中',
+  paused: '已暂停',
+  awaiting_review: '待验证',
+  partially_failed: '部分失败',
+  failed: '失败',
+  completed: '已完成',
+  cancelled: '已取消',
+}
+
+export function workStatusTone(ws: string): string {
+  switch (ws) {
+    case 'processing': return 'info'
+    case 'paused': case 'awaiting_review': return 'warn'
+    case 'partially_failed': case 'failed': return 'bad'
+    case 'completed': return 'ok'
+    case 'cancelled': case 'empty': default: return 'muted'
   }
-  if (items.some(it => it.status === 'awaiting_review')) {
-    return { key: 'awaiting', label: '待审核', tone: 'warn', rank: 1 }
-  }
-  if (items.some(it => it.status === 'failed')) {
-    return { key: 'failed', label: '部分失败', tone: 'bad', rank: 2 }
-  }
-  if (items.length > 0) {
-    return { key: 'done', label: '已完成', tone: 'ok', rank: 3 }
-  }
-  return { key: 'empty', label: '空任务', tone: 'muted', rank: 4 }
+}
+
+/** 任务卡排序:处理中 → 待验证 → 已暂停 → 部分失败 → 失败 → 已完成 → 空 → 已取消 */
+export function workStatusRank(ws: string): number {
+  const order = ['processing', 'awaiting_review', 'paused', 'partially_failed', 'failed', 'completed', 'empty', 'cancelled']
+  const i = order.indexOf(ws)
+  return i === -1 ? 9 : i
 }
