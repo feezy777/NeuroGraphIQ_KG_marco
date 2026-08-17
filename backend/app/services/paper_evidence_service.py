@@ -5806,7 +5806,7 @@ async def create_batch_task(
                 text(
                     "SELECT target_id::text FROM paper_evidence_task_items "
                     "WHERE target_type = :tt AND target_id::text = ANY(:ids) "
-                    "AND status IN ('pending','searching','paper_found','extracting','awaiting_review')"
+                    "AND status IN ('pending','searching','fetching','retrieving','paper_found','verifying','extracting','awaiting_review')"
                 ),
                 {"tt": target_type, "ids": ids},
             )

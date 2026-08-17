@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Inbox } from 'lucide-react'
 import {
   listPaperEvidenceTaskItems,
@@ -9,6 +9,7 @@ import {
 } from '../../../api/endpoints'
 import { ApiError } from '../../../api/client'
 import { useGlobalGranularity } from '../../../hooks/useGlobalGranularity'
+import { useEvidenceCenter } from '../EvidenceCenterContext'
 import { navigateToEvidenceCandidates } from '../evidenceCenterUrl'
 import { CreateBatchTaskDialog } from '../components/CreateBatchTaskDialog'
 import { EmptyState } from '../components/EmptyState'
@@ -133,6 +134,7 @@ function TaskCard({ task, busy, onJump, onResume, onPause, onRetry }: {
 /** 佐证任务中栏:对象级任务卡列表(整卡跳转证据佐证页) */
 export function EvidenceTasksModule() {
   const { granularity } = useGlobalGranularity()
+  const { state } = useEvidenceCenter()
   const { tasks, loading, error, reload } = useEvidenceTaskItems()
   const { refresh } = useTaskItemsRefresh()
   const [createOpen, setCreateOpen] = useState(false)
@@ -140,6 +142,21 @@ export function EvidenceTasksModule() {
   const [message, setMessage] = useState<string | null>(null)
   const [retryTarget, setRetryTarget] = useState<PaperEvidenceTask | null>(null)
   const [group, setGroup] = useState('all')
+
+  // 深链/右栏点击兼容:module=tasks 携带 target 参数时直接跳转佐证页(与卡片点击一致)
+  useEffect(() => {
+    if (state.module !== 'tasks' || !state.targetType || !state.targetId) return
+    const t = tasks.find(x => x.id === state.taskId)
+    navigateToEvidenceCandidates({
+      items: [{
+        target_type: state.targetType,
+        target_id: state.targetId,
+        label: t?.display_name_cn ?? t?.display_name_en ?? '',
+        confidence: t?.display_confidence ?? null,
+      }],
+      taskId: state.taskId,
+    })
+  }, [state.module, state.targetType, state.targetId, state.taskId, tasks])
 
   const sortedTasks = useMemo(() => {
     const groupTypes = GROUP_FILTERS.find(g => g.key === group)?.types ?? null

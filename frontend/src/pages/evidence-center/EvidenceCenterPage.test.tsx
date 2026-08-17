@@ -493,4 +493,29 @@ describe('EvidenceCenterPage', () => {
     expect(screen.getByTestId('evidence-step-pills').querySelector('.evidence-step-pill.active')?.textContent)
       .toContain('人工审核')
   })
+
+  it('tasks 深链带 target 参数 → 自动跳转 candidates(右栏点击兼容)', async () => {
+    const taskA = { ...TASK_FIXTURE, id: 'ta' }
+    vi.mocked(listPaperEvidenceTasks).mockResolvedValue({ items: [taskA], total: 1 })
+    vi.mocked(listPaperEvidenceTaskItems).mockResolvedValue({ items: [] })
+    window.location.hash = '#/evidence-center?module=tasks&task_id=ta&target_type=connection&target_id=r1-r2'
+    render(<EvidenceCenterPage />)
+    await waitFor(() => expect(window.location.hash).toContain('module=candidates'))
+    expect(window.location.hash).toContain('task_id=ta')
+    expect(window.location.hash).toContain('target_id=r1-r2')
+  })
+
+  it('佐证页选中对象后点「佐证任务」导航可回到列表(不回弹)', async () => {
+    vi.mocked(listPaperEvidenceTasks).mockResolvedValue({ items: [TASK_FIXTURE], total: 1 })
+    vi.mocked(listPaperEvidenceTaskItems).mockResolvedValue({ items: [] })
+    window.location.hash = '#/evidence-center?module=candidates&task_id=ta&target_type=connection&target_id=r1-r2'
+    render(<EvidenceCenterPage />)
+    await waitFor(() => expect(screen.getByTestId('evidence-module-nav')).toBeTruthy())
+    fireEvent.click(screen.getByRole('button', { name: '佐证任务' }))
+    // 回到任务列表:URL 清空 target/模块参数(buildEvidenceUrl 省略默认 module=tasks,解析时回落 tasks)
+    await screen.findByTestId('evidence-task-card-grid')
+    expect(window.location.hash).not.toContain('target_id=')
+    expect(window.location.hash).not.toContain('target_type=')
+    expect(window.location.hash).not.toContain('module=candidates')
+  })
 })
