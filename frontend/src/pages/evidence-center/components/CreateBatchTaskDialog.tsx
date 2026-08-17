@@ -68,7 +68,7 @@ export function CreateBatchTaskDialog({ open, granularity, onClose, onCreated, s
           confidence_lt: scope === 'low_confidence' ? parseFloat(confidenceLt) || undefined : undefined,
         } : undefined,
       })
-      setMessage(`任务已创建（${r.target_count} 个对象）`)
+      setMessage(`任务已创建（${r.task_ids?.length ?? r.target_count} 个对象任务）`)
       onCreated(r.task_id)
     } catch (err) {
       setMessage(`创建失败：${err instanceof Error ? err.message : String(err)}`)

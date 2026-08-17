@@ -5,8 +5,8 @@ import { EvidenceCenterHeader } from './EvidenceCenterHeader'
 import { ClaimSummaryPanel } from './components/ClaimSummaryPanel'
 import { composeClaimSentence, ContextBar } from './components/ContextBar'
 import { ObjectQueue } from './components/ObjectQueue'
-import { TaskPendingQueue } from './components/TaskPendingQueue'
 import { RightPanel } from './components/RightPanel'
+import { TaskItemsRefreshProvider } from './components/taskItemsRefreshContext'
 import { StepPills } from './components/StepPills'
 import { QUEUE_STATUS_LABEL } from './components/types'
 import { EvidenceCandidatesModule } from './modules/EvidenceCandidatesModule'
@@ -91,7 +91,19 @@ function EvidenceCenterBody({ embedded }: { embedded?: boolean }) {
         {!isPapers && (
           <aside className="evidence-left">
             {state.module === 'tasks' ? (
-              <TaskPendingQueue />
+              <>
+                {!candidateClaim && (
+                  <div className="evidence-left-hint" data-testid="evidence-left-hint">
+                    点击任务卡片查看验证事实
+                  </div>
+                )}
+                <ClaimSummaryPanel
+                  claimText={candidateClaim?.claimText ?? ''}
+                  components={candidateClaim?.components ?? []}
+                  targetType={candidateClaim?.targetType ?? ''}
+                  granularity={candidateClaim?.granularity ?? null}
+                />
+              </>
             ) : state.module === 'review' || state.module === 'promotion' ? (
               <ObjectQueue
                 queue={queue}
@@ -134,6 +146,7 @@ function EvidenceCenterBody({ embedded }: { embedded?: boolean }) {
 export function EvidenceCenterPage({ embedded }: { embedded?: boolean }) {
   return (
     <EvidenceCenterProvider embedded={embedded}>
+      <TaskItemsRefreshProvider>
       <div className="evidence-center" data-testid="evidence-center">
         {embedded ? (
           <div className="evidence-module-nav" data-testid="evidence-module-nav" style={{ marginBottom: 12 }}>
@@ -146,6 +159,7 @@ export function EvidenceCenterPage({ embedded }: { embedded?: boolean }) {
         )}
         <EvidenceCenterBody embedded={embedded} />
       </div>
+      </TaskItemsRefreshProvider>
     </EvidenceCenterProvider>
   )
 }

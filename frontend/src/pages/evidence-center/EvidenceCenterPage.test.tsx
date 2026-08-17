@@ -1,24 +1,64 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { EvidenceCenterPage } from './EvidenceCenterPage'
-import { listPaperEvidenceTaskItems, listPaperEvidenceTasks } from '../../api/endpoints'
+import {
+  attachPaperEvidence,
+  attachPaperEvidencePreview,
+  extractSelectedPaperEvidence,
+  getEvidenceTarget,
+  listEvidencePapers,
+  listEvidenceReviews,
+  listPaperEvidence,
+  listPaperEvidenceTaskItems,
+  listPaperEvidenceTasks,
+  resolvePaperEvidenceTaskItem,
+  rollbackPaperEvidence,
+  saveTaskItemDraft,
+  searchPaperEvidence,
+  translateEvidenceText,
+  validatePassageSelection,
+} from '../../api/endpoints'
 
 vi.mock('../../api/endpoints', () => ({
-  listPaperEvidenceTasks: vi.fn().mockResolvedValue({ items: [], total: 0 }),
-  listEvidencePapers: vi.fn().mockResolvedValue({ items: [], total: 0 }),
-  listPaperEvidenceTaskItems: vi.fn().mockResolvedValue({ items: [] }),
-  listEvidenceReviews: vi.fn().mockResolvedValue({ items: [], total: 0 }),
-  getEvidenceTarget: vi.fn().mockResolvedValue(null),
-  searchPaperEvidence: vi.fn().mockResolvedValue({ target_info: {}, papers: [] }),
-  extractSelectedPaperEvidence: vi.fn().mockResolvedValue({ results: [] }),
-  listPaperEvidence: vi.fn().mockResolvedValue({ items: [] }),
-  attachPaperEvidencePreview: vi.fn().mockResolvedValue({}),
-  attachPaperEvidence: vi.fn().mockResolvedValue({}),
-  rollbackPaperEvidence: vi.fn().mockResolvedValue({}),
-  translateEvidenceText: vi.fn().mockResolvedValue({ translated: '' }),
-  saveTaskItemDraft: vi.fn().mockResolvedValue({ server_revision: 0 }),
-  validatePassageSelection: vi.fn().mockResolvedValue({ source_verified: true }),
+  listPaperEvidenceTasks: vi.fn(),
+  listEvidencePapers: vi.fn(),
+  listPaperEvidenceTaskItems: vi.fn(),
+  listEvidenceReviews: vi.fn(),
+  getEvidenceTarget: vi.fn(),
+  searchPaperEvidence: vi.fn(),
+  extractSelectedPaperEvidence: vi.fn(),
+  listPaperEvidence: vi.fn(),
+  attachPaperEvidencePreview: vi.fn(),
+  attachPaperEvidence: vi.fn(),
+  rollbackPaperEvidence: vi.fn(),
+  translateEvidenceText: vi.fn(),
+  saveTaskItemDraft: vi.fn(),
+  validatePassageSelection: vi.fn(),
+  resolvePaperEvidenceTaskItem: vi.fn(),
 }))
+
+/** 默认 mock 实现(与 beforeEach 重置一致;避免测试间 mock 实现污染造成顺序依赖) */
+function setupDefaultMocks() {
+  vi.mocked(listPaperEvidenceTasks).mockResolvedValue({ items: [], total: 0 })
+  vi.mocked(listEvidencePapers).mockResolvedValue({ items: [], total: 0 })
+  vi.mocked(listPaperEvidenceTaskItems).mockResolvedValue({ items: [] })
+  vi.mocked(listEvidenceReviews).mockResolvedValue({ items: [], total: 0 })
+  vi.mocked(getEvidenceTarget).mockResolvedValue(null)
+  vi.mocked(searchPaperEvidence).mockResolvedValue({ target_info: {}, papers: [] })
+  vi.mocked(extractSelectedPaperEvidence).mockResolvedValue({ results: [] })
+  vi.mocked(listPaperEvidence).mockResolvedValue({ items: [] })
+  vi.mocked(attachPaperEvidencePreview).mockResolvedValue({})
+  vi.mocked(attachPaperEvidence).mockResolvedValue({})
+  vi.mocked(rollbackPaperEvidence).mockResolvedValue({})
+  vi.mocked(translateEvidenceText).mockResolvedValue({ translated: '' })
+  vi.mocked(saveTaskItemDraft).mockResolvedValue({ server_revision: 0 })
+  vi.mocked(validatePassageSelection).mockResolvedValue({ source_verified: true })
+  vi.mocked(resolvePaperEvidenceTaskItem).mockResolvedValue({
+    task_id: 't1', task_item_id: 'it', target_type: 'connection',
+    target_id: 'r1-r2', status: 'awaiting_review', matched: 'task_target',
+    rescore_source_review_id: null, rescore_revision_no: null,
+  })
+}
 
 function makeItem(overrides: Record<string, unknown>) {
   return {
@@ -92,6 +132,11 @@ const TASK_ITEMS = [
 
 const TASK_FIXTURE = {
   id: 'ta', target_type: 'connection', name: '任务A', status: 'pending',
+  target_id: 'r1-r2', display_name_cn: 'R1→R2', display_name_en: 'R1→R2',
+  display_confidence: 0.2, display_name_source: 'mirror_live', display_confidence_source: 'mirror_live',
+  work_status: 'awaiting_review',
+  item_counts: { total: 1, processing: 0, pending: 0, awaiting_review: 1, completed: 0, skipped: 0, failed: 0, cancelled: 0 },
+  capabilities: { can_continue_review: true, can_pause: false, can_resume: false, can_retry_failed: false, can_view_results: false },
   total_items: 2, processed_items: 0, awaiting_review_items: 2, failed_items: 0,
   review_status: 'not_started', granularity_level: 'macro',
   estimated_target_count: 2, materialized_target_count: 2,
@@ -106,6 +151,8 @@ const TASK_FIXTURE = {
 describe('EvidenceCenterPage', () => {
   beforeEach(() => {
     sessionStorage.clear()
+    vi.resetAllMocks()
+    setupDefaultMocks()
   })
 
   afterEach(() => {
@@ -144,7 +191,7 @@ describe('EvidenceCenterPage', () => {
     { module: 'papers', selector: '.paper-module', text: /暂无论文/ },
     { module: 'candidates', selector: '.evidence-candidates', text: /请先在「佐证任务」中打开一个任务/ },
     { module: 'review', selector: '.evidence-review', text: /请先从「佐证任务」或「证据候选」进入一个目标对象/ },
-    { module: 'promotion', selector: '.evidence-promotion', text: /请先从「佐证任务」或「证据候选」进入一个目标对象/ },
+    { module: 'promotion', selector: '.evidence-review', text: /请先从「佐证任务」进入一个目标对象/ },
   ])('五模块接线:module=$module 渲染对应模块', async ({ module, selector, text }) => {
     window.location.hash = `#/evidence-center?module=${module}`
     const { container } = render(<EvidenceCenterPage />)
@@ -191,11 +238,12 @@ describe('EvidenceCenterPage', () => {
     await waitFor(() => expect(screen.getByText(/暂无论文/)).toBeTruthy())
   })
 
-  it('tasks 布局:左栏待处理队列,右栏已处理面板,candidates 右栏待处理对象队列', async () => {
+  it('tasks 布局:左栏 Claim 面板(空态提示),右栏已处理面板', async () => {
     window.location.hash = '#/evidence-center?module=tasks'
     const { container } = render(<EvidenceCenterPage />)
-    await waitFor(() => expect(screen.getByTestId('evidence-task-queue')).toBeTruthy())
-    expect(screen.getByTestId('evidence-processed-panel')).toBeTruthy()
+    await waitFor(() => expect(screen.getByTestId('evidence-processed-panel')).toBeTruthy())
+    expect(screen.getByTestId('evidence-left-hint')).toBeTruthy()
+    expect(screen.getByText('点击任务卡片查看验证事实')).toBeTruthy()
     fireEvent.click(screen.getByText('证据候选'))
     await waitFor(() => expect(screen.getByTestId('evidence-queue-panel')).toBeTruthy())
     const title = () => container.querySelector('.evidence-right-panel h4')?.textContent ?? ''
@@ -204,7 +252,7 @@ describe('EvidenceCenterPage', () => {
 
   it('tasks 三栏常显:左栏待处理队列,中栏工作区提示,右栏已处理面板', async () => {
     vi.mocked(listPaperEvidenceTasks).mockResolvedValue({ items: [TASK_FIXTURE], total: 1 })
-    vi.mocked(listPaperEvidenceTaskItems).mockResolvedValue({ items: [makeItem({ id: 'it-x', target_id: 'r1-r2', label: 'R1→R2', status: 'awaiting_review', current_confidence: 0.4 })] })
+    vi.mocked(listPaperEvidenceTaskItems).mockResolvedValue({ items: [makeItem({ id: 'it-x', target_id: 'r1-r2', label: 'R1→R2', status: 'awaiting_review', current_confidence: 0.2 })] })
     window.location.hash = '#/evidence-center?module=tasks'
     const { container } = render(<EvidenceCenterPage />)
     await waitFor(() => expect(screen.getAllByText('R1→R2').length).toBeGreaterThan(0))
@@ -419,20 +467,17 @@ describe('EvidenceCenterPage', () => {
     expect(doneItems[0].className).not.toContain('evidence-queue-item-active')
   })
 
-  it('中栏对象点击 → 选中来源任务并打开工作区(URL 带 task_id 与 target)', async () => {
-    const taskB = { ...TASK_FIXTURE, id: 'tb', name: '任务B' }
-    vi.mocked(listPaperEvidenceTasks).mockResolvedValue({ items: [TASK_FIXTURE, taskB], total: 2 })
-    vi.mocked(listPaperEvidenceTaskItems).mockImplementation(async (taskId: string) => ({
-      items: taskId === 'tb'
-        ? [makeItem({ id: 'it-b', target_type: 'region', target_id: 'rB', label: 'RB', status: 'awaiting_review', current_confidence: 0.5 })]
-        : [makeItem({ id: 'it-a', target_type: 'connection', target_id: 'rA', label: 'RA', status: 'awaiting_review' })],
-    }))
+  it('任务卡点击 → 页面切换到 candidates 模块并带 task/target 参数', async () => {
+    const taskA = { ...TASK_FIXTURE, id: 'ta' }
+    vi.mocked(listPaperEvidenceTasks).mockResolvedValue({ items: [taskA], total: 1 })
+    vi.mocked(listPaperEvidenceTaskItems).mockResolvedValue({ items: [] })
     window.location.hash = '#/evidence-center?module=tasks'
     render(<EvidenceCenterPage />)
-    await waitFor(() => expect(screen.getAllByText('RB').length).toBeGreaterThan(0))
-    fireEvent.click(screen.getByTestId('evidence-queue-item-rB'))
-    await waitFor(() => expect(window.location.hash).toContain('task_id=tb'))
-    await waitFor(() => expect(window.location.hash).toContain('target_id=rB'))
+    await waitFor(() => expect(screen.getByTestId('evidence-task-card-ta')).toBeTruthy())
+    fireEvent.click(screen.getByTestId('evidence-task-card-ta'))
+    await waitFor(() => expect(window.location.hash).toContain('module=candidates'))
+    expect(window.location.hash).toContain('task_id=ta')
+    expect(window.location.hash).toContain('target_id=r1-r2')
   })
 
   it('StepPills 渲染五步并随 module 高亮当前步', async () => {
