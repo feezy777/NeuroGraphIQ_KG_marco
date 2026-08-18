@@ -15,7 +15,9 @@ import {
   type EvidenceTargetDto,
 } from '../../../api/endpoints'
 import { ApiError } from '../../../api/client'
+import type { PaperEvidenceTask } from '../../../api/endpoints'
 import { useEvidenceCenter } from '../EvidenceCenterContext'
+import type { QueueEntry } from '../components/types'
 import { EmptyState } from '../components/EmptyState'
 import { CoveragePanel } from '../components/CoveragePanel'
 import { PassageEvidenceCard } from '../components/PassageEvidenceCard'
