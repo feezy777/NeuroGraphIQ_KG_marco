@@ -12951,3 +12951,12 @@ a.paper-card-title[href]:hover { color: var(--primary, #1a73e8); text-decoration
   background: var(--primary, #1a73e8);
   color: #fff;
 }
+
+/* ── 验证中心:左上顶格返回箭头(绝对定位,抵消 .main 顶部 22px padding) ── */
+.validation-center-page { position: relative; }
+.vc-top-back {
+  position: absolute;
+  top: -20px;
+  left: 2px;
+  z-index: 5;
+}
