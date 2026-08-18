@@ -196,11 +196,11 @@ export function ReviewerDecisionPanel({
           type="button"
           className="btn btn-sm btn-primary"
           disabled={reviewBusy || selectedCount === 0 || !taskLinkReady}
-          title={!taskLinkReady ? '任务项关联未解析完成，无法创建审核' : selectedCount === 0 ? '请先勾选已核验的候选片段' : reviewBusy ? '审核中…' : reviewStatus ? '重新审核(覆盖上次结论)' : '审核通过'}
+          title={!taskLinkReady ? '任务项关联未解析完成，无法创建审核' : selectedCount === 0 ? '请先勾选已核验的候选片段' : reviewBusy ? '审核中…' : '审核通过'}
           onClick={onApprove}
           data-testid="ew-approve-btn"
         >
-          {reviewBusy ? '审核中…' : reviewStatus ? '重新审核' : '审核通过'}
+          {reviewBusy ? '审核中…' : '审核通过'}
         </button>
       </div>
     </div>
