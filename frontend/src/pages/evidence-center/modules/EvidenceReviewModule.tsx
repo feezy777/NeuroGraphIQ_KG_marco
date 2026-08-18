@@ -15,45 +15,16 @@ import {
   type EvidenceTargetDto,
 } from '../../../api/endpoints'
 import { ApiError } from '../../../api/client'
-import type { PaperEvidenceTask } from '../../../api/endpoints'
 import { useEvidenceCenter } from '../EvidenceCenterContext'
-import type { QueueEntry } from '../components/types'
 import { EmptyState } from '../components/EmptyState'
 import { CoveragePanel } from '../components/CoveragePanel'
 import { PassageEvidenceCard } from '../components/PassageEvidenceCard'
 import { loadReviewStatus, saveReviewStatus, type ReviewStatusMeta, type ReviewStatusRecord } from '../components/ReviewStatusStore'
 import type { ReviewDecisionState } from '../components/ReviewerDecisionPanel'
 import { aggregateTmpDirection, computeTmpCoverage } from '../components/claimCoverage'
-import { useEvidenceTaskItems } from '../components/useEvidenceTaskItems'
 
 /** 队列中已完成/终态的对象(审核通过/驳回/跳过/失败后不再作为下一条跳转目标) */
 const REVIEWED_STATUSES = new Set(['completed', 'skipped', 'failed', 'cancelled'])
-
-/** 下一条可审核对象:先同任务队列(候选页批量场景),再无 → 跨任务(任务列表里下一个待验证任务) */
-function findNextReviewable(
-  queue: QueueEntry[],
-  tasks: PaperEvidenceTask[],
-  currentTargetId: string | null,
-): { kind: 'queue'; target_type: string; target_id: string } | { kind: 'task'; taskId: string; target_type: string; target_id: string; itemId: string } | null {
-  const inQueue = queue.find(e => e.target_id !== currentTargetId && !REVIEWED_STATUSES.has(e.status))
-  if (inQueue) {
-    return { kind: 'queue', target_type: inQueue.target_type, target_id: inQueue.target_id }
-  }
-  // 一对一:任务即对象 → 从任务列表找下一个待验证对象(跨任务继续审核)
-  const nextTask = tasks.find(t =>
-    t.work_status === 'awaiting_review' && t.target_id && t.target_id !== currentTargetId,
-  )
-  if (nextTask) {
-    return {
-      kind: 'task',
-      taskId: nextTask.id,
-      target_type: nextTask.target_type,
-      target_id: nextTask.target_id as string,
-      itemId: nextTask.item_id as string,
-    }
-  }
-  return null
-}
 
 /** REVIEW_LINK_INVALID:服务端权威 item 状态不允许审核(已 completed)→ 视为已完成,提示并刷新 */
 function isReviewLinkInvalid(err: unknown): boolean {
@@ -89,10 +60,8 @@ interface ReviewDraft {
 }
 
 export function EvidenceReviewModule() {
-  const { state, queue, openTarget, openTaskTarget, gotoModule, setReviewDecision, setProgress, setCandidateClaim } = useEvidenceCenter()
+  const { state, queue, openTarget, gotoModule, setReviewDecision, setProgress, setCandidateClaim } = useEvidenceCenter()
   const { refresh } = useTaskItemsRefresh()
-  // 跨任务下一条:任务列表(一对一:任务即对象)
-  const { tasks } = useEvidenceTaskItems()
   // S6:任务模式下审核前必须解析出真实 task item(standalone 放行,解析失败禁止创建 review)
   const taskLink = useTaskItemResolution()
   const [dto, setDto] = useState<EvidenceTargetDto | null>(null)
@@ -494,16 +463,12 @@ export function EvidenceReviewModule() {
         refresh()
       }
       setProgress({ reviewed: true, promoted: false })
-      // 自动跳转下一条未完成对象;跳转前记录当前对象供「返回上一条」
+      // 自动切换到证据列表(队列)的下一条未完成对象;跳转前记录当前对象供「返回上一条」
       if (targetType && targetId) setPrevTarget({ target_type: targetType, target_id: targetId })
-      const next = findNextReviewable(queue, tasks, targetId)
-      if (next) {
+      const nextPending = queue.find(e => e.target_id !== targetId && !REVIEWED_STATUSES.has(e.status))
+      if (nextPending) {
         setMessage('已审核通过;继续处理下一个对象,全部处理完后可在「证据晋升」中查看')
-        if (next.kind === 'queue') {
-          openTarget(next.target_type, next.target_id, 'review')
-        } else {
-          openTaskTarget(next.taskId, next.target_type, next.target_id, next.itemId, 'review')
-        }
+        openTarget(nextPending.target_type, nextPending.target_id, 'review')
       } else {
         setMessage('已审核通过;当前对象已全部处理,可前往「证据晋升」查看并晋升')
       }
@@ -518,7 +483,7 @@ export function EvidenceReviewModule() {
     } finally {
       setReviewBusy(false)
     }
-  }, [commitReviewStatus, ensureReopenable, setProgress, note, direction, tmpDirection, tmpCoverage, queue, tasks, targetId, openTarget, openTaskTarget, refresh])
+  }, [commitReviewStatus, ensureReopenable, setProgress, note, direction, tmpDirection, tmpCoverage, queue, targetId, openTarget, refresh])
 
   const handleReject = useCallback(async () => {
     setReviewBusy(true)
@@ -532,16 +497,12 @@ export function EvidenceReviewModule() {
       await commitReviewStatus('rejected', new Date().toISOString(), 'not_found')
       // S6 共享刷新(八)
       refresh()
-      // 驳回后留在审核页,自动推进到下一个待处理对象;跳转前记录当前对象供「返回上一条」
+      // 驳回后留在审核页,自动推进到证据列表(队列)的下一个待处理对象;跳转前记录当前对象供「返回上一条」
       if (targetType && targetId) setPrevTarget({ target_type: targetType, target_id: targetId })
-      const next = findNextReviewable(queue, tasks, targetId)
-      if (next) {
+      const nextPending = queue.find(e => e.target_id !== targetId && !REVIEWED_STATUSES.has(e.status))
+      if (nextPending) {
         setMessage('已驳回;继续处理下一个对象')
-        if (next.kind === 'queue') {
-          openTarget(next.target_type, next.target_id, 'review')
-        } else {
-          openTaskTarget(next.taskId, next.target_type, next.target_id, next.itemId, 'review')
-        }
+        openTarget(nextPending.target_type, nextPending.target_id, 'review')
       } else {
         setMessage('已驳回;当前对象已全部处理')
       }
@@ -556,7 +517,7 @@ export function EvidenceReviewModule() {
     } finally {
       setReviewBusy(false)
     }
-  }, [commitReviewStatus, ensureReopenable, queue, tasks, targetId, openTarget, openTaskTarget, refresh])
+  }, [commitReviewStatus, ensureReopenable, queue, targetId, openTarget, refresh])
 
   // ─── 右栏接入:把人工审核决策状态推送给 Context,RightPanel 渲染 ReviewerDecisionPanel ───
   // S6:任务关联解析状态随决策面板下发,未解析完成/失败时禁用审核按钮
