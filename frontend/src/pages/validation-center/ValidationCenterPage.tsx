@@ -9,7 +9,12 @@ export function ValidationCenterPage() {
   return (
     <div className="data-center-page">
       <div className="data-center-header-static">
-        <PageHeader title={t('validationCenter.title')} description={t('validationCenter.subtitle')} readonly />
+        <PageHeader
+          title={t('validationCenter.title')}
+          description={t('validationCenter.subtitle')}
+          readonly
+          onBack={() => window.history.back()}
+        />
       </div>
       <div className="data-center-workspace">
         <ValidationWorkbench granularityLevel={granularity} />

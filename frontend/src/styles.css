@@ -12931,3 +12931,23 @@ a.paper-card-title[href]:hover { color: var(--primary, #1a73e8); text-decoration
   color: var(--text-muted, #8a94a6);
   font-size: 0.85rem;
 }
+
+/* ── 页面标题返回箭头(验证中心等) ── */
+.page-header-back {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border-radius: 8px;
+  border: 1px solid var(--border, #dde3ec);
+  background: var(--bg-soft, #f3f6fa);
+  color: var(--text-muted, #5f6b7d);
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.page-header-back:hover {
+  background: var(--primary, #1a73e8);
+  color: #fff;
+}
