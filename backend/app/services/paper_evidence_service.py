@@ -2355,7 +2355,7 @@ async def judge_candidates(
     components = [c.get("component_type", "") for c in (claim.get("claim_components") or [])]
 
     candidate_lines = []
-    for c in candidates[:6]:  # Top 6 candidates(缩量:大 prompt 拖慢 judge,6 段足够判定)
+    for c in candidates[:4]:  # Top 4 candidates(缩量:大 prompt 拖慢 judge,4 段足够判定)
         text = (c.get("passage_text") or "")[:600]
         candidate_lines.append(
             f"<id={c['paragraph_id']}> [{c.get('relation_cue','?')}] "
@@ -2377,9 +2377,9 @@ async def judge_candidates(
                 system_prompt=_JUDGE_SYSTEM,
                 user_prompt=user,
                 temperature=0.1,
-                max_tokens=cfg.ontology_residual_max_tokens,
-                # judge prompt 巨大(多候选段落+长JSON输出),默认60s超时会杀掉大请求
-                # → 反复重试导致单篇 10 分钟且失败;放宽到 240s
+                # judge 输出限长:5000 tokens 生成需数分钟,4 段判定 2000 tokens 足够 → 提速
+                max_tokens=2000,
+                # judge prompt 大,默认60s超时会杀掉大请求 → 反复重试 10 分钟且失败;放宽
                 timeout_seconds=240,
             )
             if not getattr(resp, "transport_ok", True):
