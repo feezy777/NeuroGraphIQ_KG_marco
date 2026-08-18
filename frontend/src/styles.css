@@ -12943,7 +12943,7 @@ a.paper-card-title[href]:hover { color: var(--primary, #1a73e8); text-decoration
   border-radius: 8px;
   border: 1px solid var(--border, #dde3ec);
   background: var(--bg-soft, #f3f6fa);
-  color: var(--text-muted, #5f6b7d);
+  color: var(--text, #1f2937);
   cursor: pointer;
   transition: background 0.15s ease, color 0.15s ease;
 }
@@ -12961,7 +12961,7 @@ a.paper-card-title[href]:hover { color: var(--primary, #1a73e8); text-decoration
 }
 .vc-top-back {
   position: absolute;
-  top: -4px;
+  top: -2px;
   left: 2px;
   z-index: 5;
 }
