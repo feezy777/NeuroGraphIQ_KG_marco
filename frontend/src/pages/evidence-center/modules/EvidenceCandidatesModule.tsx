@@ -456,12 +456,12 @@ export function EvidenceCandidatesModule() {
   // useMemo:保证引用稳定(否则作为 summary 计算依赖会触发无限重渲染循环)
   const claimComponents = useMemo(() => dto?.claim_components ?? [], [dto])
 
-  // ─── 搜索区(当前对象尚无候选论文时的手动兜底入口;任务模式无候选同样进入,有预处理候选则直接展示) ───
+  // ─── 搜索区(当前对象存在即可手动重新搜索;有候选论文时默认折叠为一条,可展开重新搜索) ───
   const manualTarget = useMemo(() =>
-    current && (current.candidate_papers ?? []).length === 0
+    current
       ? { target_type: current.target_type, target_id: current.target_id }
       : null,
-  [current?.target_type, current?.target_id, current?.candidate_papers])
+  [current?.target_type, current?.target_id])
 
   const queryTerms = useMemo(() => {
     if (!dto) return []
@@ -499,8 +499,8 @@ export function EvidenceCandidatesModule() {
   )
   const selectedPaperCount = selectedSearchPapers.length
 
-  /** 是否有检索结果:有结果 → 检索区默认折叠为一条;无结果 → 展开完整检索区 */
-  const hasSearchResults = (manualResult?.papers.length ?? 0) > 0
+  /** 是否有检索结果:有结果或已有候选论文 → 检索区默认折叠为一条(可展开重新搜索);否则展开完整检索区 */
+  const hasSearchResults = (manualResult?.papers.length ?? 0) > 0 || candidates.length > 0
 
   /** 折叠条 Query 摘要(截断显示):手动检索式 → 推荐词 → 占位 */
   const querySummary = manualQuery.trim() || visibleQueryTerms.join(' · ') || '系统推荐检索式'
@@ -533,14 +533,15 @@ export function EvidenceCandidatesModule() {
     }
   }, [manualTarget, effectiveMode, setProgress])
 
-  // 进入候选页自动检索:DTO 加载后当前对象无候选论文时,用系统推荐词触发一次 search
-  // (数据中心入口 / 任务卡进入 / 回退重评进入统一行为:先开始查找论文)
+  // 进入候选页自动检索:DTO 加载后当前对象尚无候选论文时,用系统推荐词触发一次 search
+  // (数据中心入口 / 任务卡进入 / 回退重评进入统一行为:先开始查找论文;已有候选则不重复自动搜,可手动重新搜索)
   const [autoSearchDone, setAutoSearchDone] = useState(false)
   useEffect(() => {
-    if (!dto || !manualTarget || autoSearchDone) return
+    if (!dto || !current || autoSearchDone) return
+    if ((current.candidate_papers ?? []).length > 0) return
     setAutoSearchDone(true)
     void runSearch('')
-  }, [dto, manualTarget, autoSearchDone, runSearch])
+  }, [dto, current, autoSearchDone, runSearch])
   // 切对象时重置 auto-search 标记,下一对象重新触发
   useEffect(() => { setAutoSearchDone(false) }, [current?.target_id])
   // auto-search 触发后推进进度到 "查找论文"

@@ -413,7 +413,8 @@ describe('EvidenceCandidatesModule', () => {
     await waitFor(() => expect(screen.getByText('A Study of R1 to R2 Projection')).toBeTruthy())
     fireEvent.click(screen.getByRole('button', { name: /排除此候选/ }))
     expect(screen.queryByText('A Study of R1 to R2 Projection')).toBeNull()
-    expect(screen.getByText(/当前对象暂无候选证据/)).toBeTruthy()
+    // 搜索入口恒可用(可重新搜索)→ 空态文案为「暂无候选论文」
+    expect(screen.getByText(/暂无候选论文/)).toBeTruthy()
     // 空态提示不再提及「恢复排除」,改为「已隐藏」
     expect(screen.getByTestId('evidence-candidates-hint').textContent).toContain('已隐藏')
   })
