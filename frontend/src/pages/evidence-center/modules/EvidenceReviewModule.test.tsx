@@ -625,4 +625,24 @@ describe('EvidenceReviewModule', () => {
     await waitFor(() => expect(endpoints.buildReview).toHaveBeenCalled())
     await waitFor(() => expect(endpoints.rejectReview).toHaveBeenCalledWith('rev-1'))
   })
+
+  it('已驳回对象(awaiting_review)重新审核:reopen 报 "item is not completed" → 放行直接提交', async () => {
+    sessionStorage.setItem(REVIEW_STATUS_KEY, JSON.stringify({
+      status: 'rejected',
+      targetId: 'r1-r2',
+      meta: { direction: 'supports', evidenceLevel: 'indirect', confidence: '0.8', at: '2026-08-18T00:00:00Z' },
+    }))
+    // 驳回后 item 保持 awaiting_review → reopen 400 → 应放行继续审核
+    vi.mocked(endpoints.reopenPaperEvidenceTaskItem).mockRejectedValueOnce(
+      new ApiError(400, 'HTTP 400: {"code":"INVALID_REQUEST","message":"item is not completed"}'),
+    )
+    renderModule()
+    await waitFor(() => expect(screen.getByText('We observed that R1 projects to R2 in the macaque.')).toBeTruthy())
+    await waitFor(() => expect((screen.getByRole('button', { name: '驳回证据' }) as HTMLButtonElement).disabled).toBe(false))
+    fireEvent.click(screen.getByRole('button', { name: '驳回证据' }))
+    // reopen 失败被容错 → 正常走 buildReview + rejectReview
+    await waitFor(() => expect(endpoints.buildReview).toHaveBeenCalled())
+    await waitFor(() => expect(endpoints.rejectReview).toHaveBeenCalledWith('rev-1'))
+    expect(screen.queryByText(/重新打开任务项失败/)).toBeNull()
+  })
 })

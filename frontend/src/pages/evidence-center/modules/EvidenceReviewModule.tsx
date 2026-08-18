@@ -431,6 +431,10 @@ export function EvidenceReviewModule() {
       await reopenPaperEvidenceTaskItem(taskId, taskLink.taskItemId)
       return true
     } catch (err) {
+      // item 已是可审核状态(驳回后保持 awaiting_review,或已完成审核待重审)→ 无需 reopen,直接放行
+      if (err instanceof ApiError && err.status === 400 && /item is not completed/.test(err.message)) {
+        return true
+      }
       setMessage(`重新打开任务项失败：${err instanceof Error ? err.message : String(err)}`)
       return false
     }
