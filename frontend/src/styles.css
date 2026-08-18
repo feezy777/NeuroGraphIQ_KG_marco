@@ -12957,11 +12957,11 @@ a.paper-card-title[href]:hover { color: var(--primary, #1a73e8); text-decoration
 .validation-center-page .data-center-header-static {
   /* 标题让位:右移避开按钮宽度,下移避免与悬浮按钮重叠 */
   padding-left: 44px;
-  padding-top: 14px;
+  padding-top: 26px;
 }
 .vc-top-back {
   position: absolute;
-  top: -20px;
+  top: -4px;
   left: 2px;
   z-index: 5;
 }
