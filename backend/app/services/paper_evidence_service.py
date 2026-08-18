@@ -4046,14 +4046,34 @@ async def _enrich_task_display(session: AsyncSession, tasks: list[dict]) -> list
     return out
 
 
+# workbench 颗粒度级别 → 镜像 family 值(任务表两种值并存:旧数据存级别,新数据/镜像行存 family)
+_GRANULARITY_FAMILY: dict[str, str] = {
+    "macro": "macro_clinical",
+    "meso": "meso_anatomical",
+    "sub_connectivity": "sub_connectivity",
+    "fine_cyto": "fine_cyto",
+    "molecular_attr": "molecular_attr",
+}
+
+
 async def list_paper_evidence_tasks(
-    session: AsyncSession, limit: int = 50, offset: int = 0, status: str | None = None
+    session: AsyncSession, limit: int = 50, offset: int = 0, status: str | None = None,
+    granularity_level: str | None = None,
 ) -> dict:
     where = ""
     params: dict = {"lim": limit, "off": offset}
     if status:
         where = "WHERE status = :st"
         params["st"] = status
+    if granularity_level:
+        # 跟随系统颗粒度:匹配 workbench 级别或其 family(任务表旧数据存级别、新数据存 family)
+        family = _GRANULARITY_FAMILY.get(granularity_level, granularity_level)
+        cond = "granularity_level = :gl"
+        params["gl"] = granularity_level
+        if family != granularity_level:
+            cond += " OR granularity_level = :fam"
+            params["fam"] = family
+        where = f"{where} AND ({cond})" if where else f"WHERE ({cond})"
     rows = (
         await session.execute(
             text(

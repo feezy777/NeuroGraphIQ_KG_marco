@@ -5741,7 +5741,7 @@ export const createPaperEvidenceBatch = (body: {
   body,
 )
 
-export const listPaperEvidenceTasks = (p?: { limit?: number; offset?: number; status?: string }) =>
+export const listPaperEvidenceTasks = (p?: { limit?: number; offset?: number; status?: string; granularity_level?: string }) =>
   getJson<{ items: PaperEvidenceTask[]; total: number }>('/api/ontology/evidence/batch', p)
 
 export const getPaperEvidenceTask = (taskId: string) =>

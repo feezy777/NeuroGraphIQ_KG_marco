@@ -1013,9 +1013,10 @@ async def paper_evidence_batch_list(
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
     status: str | None = Query(default=None),
+    granularity_level: str | None = Query(default=None, description="workbench 颗粒度级别(macro/meso/sub_connectivity/fine_cyto/molecular_attr)"),
     session: AsyncSession = Depends(get_db),
 ):
-    return await pes.list_paper_evidence_tasks(session, limit=limit, offset=offset, status=status)
+    return await pes.list_paper_evidence_tasks(session, limit=limit, offset=offset, status=status, granularity_level=granularity_level)
 
 
 @router.get("/evidence/batch/preview")

@@ -5,6 +5,7 @@ import {
   type PaperEvidenceTask,
   type PaperEvidenceTaskItem,
 } from '../../../api/endpoints'
+import { useGlobalGranularity } from '../../../hooks/useGlobalGranularity'
 import { useEvidenceCenter } from '../EvidenceCenterContext'
 import { useTaskItemsRefresh } from './taskItemsRefreshContext'
 
@@ -35,6 +36,7 @@ export interface EvidenceTaskItemsState {
 export function useEvidenceTaskItems(): EvidenceTaskItemsState {
   const { state } = useEvidenceCenter()
   const { version } = useTaskItemsRefresh()
+  const { granularity } = useGlobalGranularity()
   const taskId = state.taskId
   const [items, setItems] = useState<EvidenceQueueItem[]>([])
   const [tasks, setTasks] = useState<PaperEvidenceTask[]>([])
@@ -46,7 +48,8 @@ export function useEvidenceTaskItems(): EvidenceTaskItemsState {
   useEffect(() => { latestTaskIdRef.current = taskId }, [taskId])
 
   const load = useCallback(async () => {
-    const r = await listPaperEvidenceTasks({ limit: 200 }).catch(() => null)
+    // 跟随系统颗粒度:只显示当前颗粒度的佐证任务(切换颗粒度自动刷新)
+    const r = await listPaperEvidenceTasks({ limit: 200, granularity_level: granularity }).catch(() => null)
     if (!r) {
       setError('任务列表加载失败')
       setLoading(false)
@@ -79,7 +82,7 @@ export function useEvidenceTaskItems(): EvidenceTaskItemsState {
     } finally {
       if (latestTaskIdRef.current === requestedTaskId) setLoading(false)
     }
-  }, [taskId, version])
+  }, [taskId, version, granularity])
 
   useEffect(() => { void load() }, [load])
 
