@@ -1122,7 +1122,11 @@ async def paper_evidence_batch_items(
     ),
     session: AsyncSession = Depends(get_db),
 ):
-    return await pes.list_batch_items(session, task_id, limit=limit, offset=offset, sort=sort, status=status)
+    try:
+        return await pes.list_batch_items(session, task_id, limit=limit, offset=offset, sort=sort, status=status)
+    except ValueError as exc:
+        # 任务不存在/已删除 → 404(而非 500)
+        raise HTTPException(status_code=404, detail={"code": "TASK_NOT_FOUND", "message": str(exc)})
 
 
 # S6:review 域错误 → 结构化 HTTP 状态/机器码
