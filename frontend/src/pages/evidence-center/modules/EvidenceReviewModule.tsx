@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { MousePointerClick } from 'lucide-react'
 import {
   approveReview,
+  reopenPaperEvidenceTaskItem,
   attachPaperEvidencePreview,
   buildReview,
   getEvidenceTarget,
@@ -418,9 +419,30 @@ export function EvidenceReviewModule() {
     return result.review_id
   }, [targetId, targetType, persistDraft, direction, evidenceLevel, confidence, note, state.targetType, state.taskId, taskLink, passages, modelDirection, modelAssessment, dto, tmpCoverage, selectedPassages, setProgress])
 
+  /** 已审核/已驳回对象重新审核:先 reopen 任务项(completed → awaiting_review),再走正常提交 */
+  const ensureReopenable = useCallback(async (): Promise<boolean> => {
+    if (!reviewStatus) return true
+    const taskId = state.taskId
+    if (taskLink.kind !== 'resolved' || !taskId || !taskLink.taskItemId) {
+      setMessage('该对象已审核,无法重新审核(任务关联缺失)')
+      return false
+    }
+    try {
+      await reopenPaperEvidenceTaskItem(taskId, taskLink.taskItemId)
+      return true
+    } catch (err) {
+      setMessage(`重新打开任务项失败：${err instanceof Error ? err.message : String(err)}`)
+      return false
+    }
+  }, [reviewStatus, taskLink, state.taskId])
+
   const handleApprove = useCallback(async () => {
     setReviewBusy(true)
     setMessage(null)
+    if (!(await ensureReopenable())) {
+      setReviewBusy(false)
+      return
+    }
     // 方向与覆盖不一致时自动补备注（直接传参，不依赖异步 state）
     let effectiveNote = note
     if (!effectiveNote.trim() && tmpCoverage && direction !== tmpDirection) {
@@ -454,11 +476,15 @@ export function EvidenceReviewModule() {
     } finally {
       setReviewBusy(false)
     }
-  }, [commitReviewStatus, setProgress, note, direction, tmpDirection, tmpCoverage, queue, targetId, openTarget, refresh])
+  }, [commitReviewStatus, ensureReopenable, setProgress, note, direction, tmpDirection, tmpCoverage, queue, targetId, openTarget, refresh])
 
   const handleReject = useCallback(async () => {
     setReviewBusy(true)
     setMessage(null)
+    if (!(await ensureReopenable())) {
+      setReviewBusy(false)
+      return
+    }
     try {
       const reviewId = await commitReviewStatus('rejected', new Date().toISOString(), 'not_found')
       if (reviewId) {
@@ -486,7 +512,7 @@ export function EvidenceReviewModule() {
     } finally {
       setReviewBusy(false)
     }
-  }, [commitReviewStatus, queue, targetId, openTarget, refresh])
+  }, [commitReviewStatus, ensureReopenable, queue, targetId, openTarget, refresh])
 
   // ─── 右栏接入:把人工审核决策状态推送给 Context,RightPanel 渲染 ReviewerDecisionPanel ───
   // S6:任务关联解析状态随决策面板下发,未解析完成/失败时禁用审核按钮

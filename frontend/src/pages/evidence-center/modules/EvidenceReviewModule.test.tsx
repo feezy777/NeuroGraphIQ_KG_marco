@@ -16,6 +16,7 @@ vi.mock('../../../api/endpoints', () => ({
   attachPaperEvidence: vi.fn(),
   buildReview: vi.fn(),
   rejectReview: vi.fn(),
+  reopenPaperEvidenceTaskItem: vi.fn(),
   translateEvidenceText: vi.fn(),
   validatePassageSelection: vi.fn(),
   saveTaskItemDraft: vi.fn(),
@@ -154,6 +155,7 @@ describe('EvidenceReviewModule', () => {
     vi.mocked(endpoints.saveTaskItemDraft).mockResolvedValue({ item_id: 'item-1', saved: true, server_revision: 1 })
     vi.mocked(endpoints.buildReview).mockResolvedValue({ review_id: 'rev-1', status: 'approved' })
     vi.mocked(endpoints.rejectReview).mockResolvedValue({ review_id: 'rev-1', status: 'rejected' })
+    vi.mocked(endpoints.reopenPaperEvidenceTaskItem).mockResolvedValue({ task_id: 't1', item_id: 'item-1', status: 'awaiting_review' })
     // S6:任务模式默认唯一匹配解析到 item-1
     vi.mocked(endpoints.resolvePaperEvidenceTaskItem).mockResolvedValue({
       task_id: 't1',
@@ -605,5 +607,22 @@ describe('EvidenceReviewModule', () => {
     await waitFor(() => expect((screen.getByRole('button', { name: '驳回证据' }) as HTMLButtonElement).disabled).toBe(false))
     fireEvent.click(screen.getByRole('button', { name: '驳回证据' }))
     await waitFor(() => expect(screen.getByText('该对象已完成审核,不能重复审核')).toBeTruthy())
+  })
+
+  it('已驳回对象重新审核:先 reopen 任务项复位,再正常提交(改判支持)', async () => {
+    // 模拟已驳回的本地审核记录(「← 返回上一条」场景)
+    sessionStorage.setItem(REVIEW_STATUS_KEY, JSON.stringify({
+      status: 'rejected',
+      targetId: 'r1-r2',
+      meta: { direction: 'supports', evidenceLevel: 'indirect', confidence: '0.8', at: '2026-08-18T00:00:00Z' },
+    }))
+    renderModule()
+    await waitFor(() => expect(screen.getByText('We observed that R1 projects to R2 in the macaque.')).toBeTruthy())
+    await waitFor(() => expect((screen.getByRole('button', { name: '驳回证据' }) as HTMLButtonElement).disabled).toBe(false))
+    fireEvent.click(screen.getByRole('button', { name: '驳回证据' }))
+    // 已审核 → 先 reopen 复位 item,再走正常 buildReview + rejectReview
+    await waitFor(() => expect(endpoints.reopenPaperEvidenceTaskItem).toHaveBeenCalledWith('t1', 'item-1'))
+    await waitFor(() => expect(endpoints.buildReview).toHaveBeenCalled())
+    await waitFor(() => expect(endpoints.rejectReview).toHaveBeenCalledWith('rev-1'))
   })
 })

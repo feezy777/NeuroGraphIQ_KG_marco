@@ -190,17 +190,17 @@ export function ReviewerDecisionPanel({
       )}
 
       <div className="ew-sticky-actions">
-        {/* 已审核/已驳回的对象禁止重复审核(后端 item completed 也会拒绝) */}
-        <button type="button" className="btn btn-sm" onClick={onReject} disabled={reviewBusy || !taskLinkReady || Boolean(reviewStatus)} title={reviewStatus ? '该对象已完成审核' : undefined} data-testid="ew-reject-btn">驳回证据</button>
+        {/* 已审核/已驳回的对象可重新审核(模块先 reopen 复位任务项再提交,改判支持) */}
+        <button type="button" className="btn btn-sm" onClick={onReject} disabled={reviewBusy || !taskLinkReady} data-testid="ew-reject-btn">驳回证据</button>
         <button
           type="button"
           className="btn btn-sm btn-primary"
-          disabled={reviewBusy || selectedCount === 0 || !taskLinkReady || Boolean(reviewStatus)}
-          title={reviewStatus ? '该对象已完成审核' : !taskLinkReady ? '任务项关联未解析完成，无法创建审核' : selectedCount === 0 ? '请先勾选已核验的候选片段' : reviewBusy ? '审核中…' : '审核通过'}
+          disabled={reviewBusy || selectedCount === 0 || !taskLinkReady}
+          title={!taskLinkReady ? '任务项关联未解析完成，无法创建审核' : selectedCount === 0 ? '请先勾选已核验的候选片段' : reviewBusy ? '审核中…' : reviewStatus ? '重新审核(覆盖上次结论)' : '审核通过'}
           onClick={onApprove}
           data-testid="ew-approve-btn"
         >
-          {reviewBusy ? '审核中…' : '审核通过'}
+          {reviewBusy ? '审核中…' : reviewStatus ? '重新审核' : '审核通过'}
         </button>
       </div>
     </div>
