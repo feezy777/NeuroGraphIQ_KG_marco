@@ -1,14 +1,20 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { MousePointerClick } from 'lucide-react'
 import {
+  cancelPaperEvidenceExtractionRun,
+  createPaperEvidenceExtractionRun,
   extractSelectedPaperEvidence,
   getEvidenceTarget,
+  getPaperEvidenceExtractionRun,
   listPaperEvidenceTaskItems,
+  retryFailedPaperEvidenceExtractionRun,
   searchPaperEvidence,
   type EvidenceTargetDto,
+  type PaperEvidenceExtractionRun,
   type PaperEvidenceTaskItem,
   type PaperSearchResponse,
 } from '../../../api/endpoints'
+import { ApiError } from '../../../api/client'
 import { useEvidenceCenter } from '../EvidenceCenterContext'
 import { INITIAL_QUEUE_KEY } from '../evidenceCenterUrl'
 import { candidatePassagesToWorkbench } from '../components/candidatePassages'
@@ -17,15 +23,19 @@ import { EmptyState } from '../components/EmptyState'
 import { PaperBatchActions } from '../components/PaperBatchActions'
 import { PaperCandidateCard, type CandidatePaperData } from '../components/PaperCandidateCard'
 import { PaperCandidateList } from '../components/PaperCandidateList'
+import { PaperExtractionProgress } from '../components/PaperExtractionProgress'
 import { PaperSearchFilters, type EvidenceMode } from '../components/PaperSearchFilters'
 import { PaperSearchPanel } from '../components/PaperSearchPanel'
 import { PaperStatusSummary, type CandidateStats } from '../components/PaperStatusSummary'
 import { PaperDetailDrawer } from '../components/PaperDetailDrawer'
 import { PaperEvidenceView } from '../components/PaperEvidenceView'
 import { loadReviewStatus } from '../components/ReviewStatusStore'
+import type { CandidatePassageItem } from '../components/PassageSummary'
 import type { QueueEntry, QueueStatus, WorkbenchPassage } from '../components/types'
 
 const DRAFT_PREFIX = 'evidence-center.review-draft.'
+const EXTRACTION_RUN_KEY_PREFIX = 'evidence-center.extraction-run.'
+const EXTRACTION_TERMINAL = new Set(['completed', 'partially_failed', 'failed', 'cancelled'])
 
 /** 候选论文(任务 item 的 candidate_papers 与手动提取的 ExtractedPaperCandidate 的公共子集) */
 interface CandidatePaper {
@@ -44,6 +54,8 @@ interface CandidatePaper {
   model_assessment: string | null
   coverage_summary: Record<string, unknown> | null
   passages: Array<Record<string, unknown>>
+  error_code?: string | null
+  error_message?: string | null
 }
 
 interface ReviewDraft {
@@ -52,6 +64,71 @@ interface ReviewDraft {
   modelAssessment: string | null
   paperTitle: string
   pmid: string
+}
+
+type PaperIdentity = {
+  paper_id?: string | null
+  pmid?: string | null
+  pmcid?: string | null
+  doi?: string | null
+  title?: string | null
+}
+
+/** 跨 PubMed / PMC / DOI 生成稳定键，避免 DOI-only 论文共用空 PMID。 */
+function paperIdentityKey(paper: PaperIdentity): string {
+  const pmid = paper.pmid?.trim()
+  if (pmid) return `pmid:${pmid}`
+  const pmcid = paper.pmcid?.trim().toLowerCase()
+  if (pmcid) return `pmcid:${pmcid}`
+  const doi = paper.doi?.trim().toLowerCase()
+  if (doi) return `doi:${doi}`
+  const paperId = paper.paper_id?.trim()
+  if (paperId) return `paper:${paperId}`
+  return `title:${paper.title?.trim().toLowerCase() ?? ''}`
+}
+
+function hasPaperIdentifier(paper: PaperIdentity): boolean {
+  return Boolean(paper.pmid?.trim() || paper.pmcid?.trim() || paper.doi?.trim())
+}
+
+function resultJsonToCandidate(result: Record<string, unknown>): CandidatePaper {
+  return {
+    paper_id: String(result.paper_id ?? ''),
+    pmid: String(result.pmid ?? ''),
+    doi: (result.doi as string | null | undefined) ?? null,
+    pmcid: (result.pmcid as string | null | undefined) ?? null,
+    title: String(result.title ?? ''),
+    journal: String(result.journal ?? ''),
+    year: String(result.year ?? ''),
+    is_oa: Boolean(result.is_oa),
+    fulltext_fetched: result.fulltext_fetched as boolean | null | undefined,
+    paper_match_score: result.paper_match_score as number | null | undefined,
+    match_reason: result.match_reason as string | null | undefined,
+    model_direction: (result.model_direction as string | null | undefined) ?? null,
+    model_assessment: (result.model_assessment as string | null | undefined) ?? null,
+    coverage_summary: (result.coverage_summary as Record<string, unknown> | null | undefined) ?? null,
+    passages: Array.isArray(result.passages) ? (result.passages as Array<Record<string, unknown>>) : [],
+    error_code: (result.error_code as string | null | undefined) ?? null,
+    error_message: (result.error_message as string | null | undefined) ?? null,
+  }
+}
+
+function mergeExtractionResults(
+  prev: CandidatePaper[],
+  run: PaperEvidenceExtractionRun,
+): CandidatePaper[] {
+  const merged = new Map(prev.map(p => [paperIdentityKey(p), p]))
+  for (const item of run.items) {
+    if (!item.result_json) continue
+    if (item.status !== 'completed' && item.status !== 'no_evidence' && item.status !== 'failed') continue
+    const cand = resultJsonToCandidate(item.result_json)
+    if (item.status === 'failed' && !cand.error_code) {
+      cand.error_code = item.error_code ?? 'EXTRACTION_FAILED'
+      cand.error_message = item.error_message ?? cand.error_message
+    }
+    merged.set(paperIdentityKey(cand), cand)
+  }
+  return [...merged.values()]
 }
 
 function itemToQueueEntry(it: PaperEvidenceTaskItem): QueueEntry {
@@ -79,6 +156,8 @@ function extractedToCardData(cand: CandidatePaper): CandidatePaperData {
     journal: cand.journal,
     year: cand.year,
     authors: null,
+    source: (cand as any).source ?? null,
+    abstract: (cand as any).abstract ?? null,
     isOa: cand.is_oa,
     abstractAvailable: true,
     fulltextAvailable: cand.is_oa && cand.fulltext_fetched !== false,
@@ -104,6 +183,8 @@ function searchToCardData(p: PaperSearchResponse['papers'][number]): CandidatePa
     journal: p.journal,
     year: p.year,
     authors: p.authors || null,
+    source: (p as any).source ?? null,
+    abstract: (p as any).abstract ?? null,
     isOa: Boolean(p.is_open_access),
     abstractAvailable: Boolean(p.abstract),
     fulltextAvailable: Boolean(p.fulltext_available),
@@ -118,13 +199,54 @@ function searchToCardData(p: PaperSearchResponse['papers'][number]): CandidatePa
   }
 }
 
+/** 后端 getEvidenceTarget 的「target not found」精确识别(400 + 结构化 detail.message);其余错误一律按通用失败处理 */
+function isTargetNotFoundError(err: unknown): boolean {
+  if (!(err instanceof ApiError)) return false
+  if (err.status !== 400) return false
+  const body = err.meta?.responseBody as { detail?: { message?: string } } | undefined
+  if (body?.detail?.message === 'target not found') return true
+  return /target not found/.test(err.message)
+}
+
+/** 目标数据不存在专用错误面板(不展示内部异常细节) */
+function TargetNotFoundPanel({ targetType, name, shortId, hasTask, onBack, onRetry }: {
+  targetType: string
+  name: string | null
+  shortId: string
+  hasTask: boolean
+  onBack: () => void
+  onRetry: () => void
+}) {
+  return (
+    <div className="evidence-target-not-found" data-testid="evidence-target-not-found">
+      <h4>目标数据不存在或尚未同步</h4>
+      <p className="evidence-module-hint">
+        该任务引用的对象已不存在,或尚未同步到当前镜像数据,因此暂时无法打开证据佐证工作区。
+      </p>
+      <p className="ew-meta">对象类型:{targetType}</p>
+      {name && <p className="ew-meta">对象名称:{name}</p>}
+      <p className="ew-meta">对象 ID:{shortId}</p>
+      <div style={{ display: 'flex', gap: 8 }}>
+        <button type="button" className="btn btn-sm" data-testid="evidence-target-not-found-back" onClick={onBack}>
+          {hasTask ? '返回任务' : '返回任务列表'}
+        </button>
+        <button type="button" className="btn btn-sm" data-testid="evidence-target-not-found-retry" onClick={onRetry}>
+          重新加载
+        </button>
+      </div>
+    </div>
+  )
+}
+
 export function EvidenceCandidatesModule() {
-  const { state, queue, setQueue, openTarget, setCandidateClaim, setProgress } = useEvidenceCenter()
+  const { state, queue, setQueue, openTarget, closeTarget, closeTask, setCandidateClaim, setProgress, setCandidatePassages, setViewCandidatePaper, setSelectAllCandidatePassages, setEnterReviewFromPassages, setCandidateSelectedHashes } = useEvidenceCenter()
   const [items, setItems] = useState<PaperEvidenceTaskItem[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [message, setMessage] = useState<string | null>(null)
   const [dto, setDto] = useState<EvidenceTargetDto | null>(null)
+  const [dtoStatus, setDtoStatus] = useState<'idle' | 'loading' | 'success' | 'not_found' | 'error'>('idle')
+  const [dtoReload, setDtoReload] = useState(0)
   const [excludedPaperIds, setExcludedPaperIds] = useState<Set<string>>(new Set())
   const [selectedHashes, setSelectedHashes] = useState<Set<string>>(new Set())
   const [reExtractBusy, setReExtractBusy] = useState<string | null>(null)
@@ -133,6 +255,8 @@ export function EvidenceCandidatesModule() {
   const [manualBusy, setManualBusy] = useState(false)
   const [manualSelected, setManualSelected] = useState<Set<string>>(new Set())
   const [manualResults, setManualResults] = useState<CandidatePaper[]>([])
+  const [extractionRun, setExtractionRun] = useState<PaperEvidenceExtractionRun | null>(null)
+  const [pollEpoch, setPollEpoch] = useState(0)
   const [evidenceViewPaperId, setEvidenceViewPaperId] = useState<string | null>(null)
   const [detailPaperId, setDetailPaperId] = useState<string | null>(null)
   // 检索区展开态:有检索结果时默认折叠为一条(Query 摘要 + 重新搜索 + 展开)
@@ -167,6 +291,12 @@ export function EvidenceCandidatesModule() {
   }, [state.taskId, setQueue])
 
   useEffect(() => { void loadItems() }, [loadItems])
+
+  // 注册右栏 PassageSummary "查看详情" 回调 → 打开中间区域论文证据视图
+  useEffect(() => {
+    setViewCandidatePaper(() => (paperId: string) => { setEvidenceViewPaperId(paperId) })
+    return () => { setViewCandidatePaper(() => () => {}) }
+  }, [setViewCandidatePaper])
 
   const current = useMemo(() => {
     if (items.length > 0) {
@@ -219,15 +349,25 @@ export function EvidenceCandidatesModule() {
     const id = current?.target_id
     if (!t || !id) {
       setDto(null)
+      setDtoStatus('idle')
       return
     }
     let cancelled = false
     setDto(null)
+    setDtoStatus('loading')
     getEvidenceTarget(t, id)
-      .then(d => { if (!cancelled) setDto(d) })
-      .catch(() => { if (!cancelled) setDto(null) })
+      .then(d => {
+        if (cancelled) return
+        setDto(d)
+        setDtoStatus('success')
+      })
+      .catch((err: unknown) => {
+        if (cancelled) return
+        setDto(null)
+        setDtoStatus(isTargetNotFoundError(err) ? 'not_found' : 'error')
+      })
     return () => { cancelled = true }
-  }, [current?.target_type, current?.target_id])
+  }, [current?.target_type, current?.target_id, dtoReload])
 
   // 左栏 ClaimSummaryPanel 数据源:DTO 加载后推送当前对象验证事实到 Context(页面左栏渲染);卸载/切对象清空
   useEffect(() => {
@@ -269,6 +409,7 @@ export function EvidenceCandidatesModule() {
     setSearchExpanded(false)
     setClearedTerms(new Set())
     setMessage(null)
+    setCandidatePassages([])
   }, [current?.target_id])
 
   // 数据中心跳转兼容:无任务时从 sessionStorage initial-queue 一次性恢复队列
@@ -315,10 +456,12 @@ export function EvidenceCandidatesModule() {
   // useMemo:保证引用稳定(否则作为 summary 计算依赖会触发无限重渲染循环)
   const claimComponents = useMemo(() => dto?.claim_components ?? [], [dto])
 
-  // ─── 搜索区(仅任务为空时的手动兜底入口;三层:查找论文/过滤/批量) ───
-  const manualTarget = current && items.length === 0
-    ? { target_type: current.target_type, target_id: current.target_id }
-    : null
+  // ─── 搜索区(当前对象尚无候选论文时的手动兜底入口;任务模式无候选同样进入,有预处理候选则直接展示) ───
+  const manualTarget = useMemo(() =>
+    current && (current.candidate_papers ?? []).length === 0
+      ? { target_type: current.target_type, target_id: current.target_id }
+      : null,
+  [current?.target_type, current?.target_id, current?.candidate_papers])
 
   const queryTerms = useMemo(() => {
     if (!dto) return []
@@ -335,12 +478,26 @@ export function EvidenceCandidatesModule() {
 
   const visibleSearchPapers = useMemo(() => {
     const papers = manualResult?.papers ?? []
+    const extractedKeys = new Set(
+      [...candidates, ...manualResults]
+        .filter(p => !p.error_code)
+        .map(paperIdentityKey),
+    )
     return papers.filter(p =>
-      !excludedPaperIds.has(p.pmid)
+      !excludedPaperIds.has(paperIdentityKey(p))
+      && !extractedKeys.has(paperIdentityKey(p))
       && (!oaOnly || p.is_open_access)
       && (!yearFilter || Number(p.year) >= Number(yearFilter)),
     )
-  }, [manualResult, oaOnly, yearFilter, excludedPaperIds])
+  }, [manualResult, candidates, manualResults, oaOnly, yearFilter, excludedPaperIds])
+
+  const selectedSearchPapers = useMemo(
+    () => visibleSearchPapers.filter(p =>
+      hasPaperIdentifier(p) && manualSelected.has(paperIdentityKey(p)),
+    ),
+    [visibleSearchPapers, manualSelected],
+  )
+  const selectedPaperCount = selectedSearchPapers.length
 
   /** 是否有检索结果:有结果 → 检索区默认折叠为一条;无结果 → 展开完整检索区 */
   const hasSearchResults = (manualResult?.papers.length ?? 0) > 0
@@ -360,7 +517,7 @@ export function EvidenceCandidatesModule() {
       const resp = await searchPaperEvidence({
         target_type: manualTarget.target_type,
         target_id: manualTarget.target_id,
-        limit: 10,
+        limit: 20,
         mode: effectiveMode,
         query_override: query.trim() || undefined,
       })
@@ -375,6 +532,21 @@ export function EvidenceCandidatesModule() {
       setManualBusy(false)
     }
   }, [manualTarget, effectiveMode, setProgress])
+
+  // 进入候选页自动检索:DTO 加载后当前对象无候选论文时,用系统推荐词触发一次 search
+  // (数据中心入口 / 任务卡进入 / 回退重评进入统一行为:先开始查找论文)
+  const [autoSearchDone, setAutoSearchDone] = useState(false)
+  useEffect(() => {
+    if (!dto || !manualTarget || autoSearchDone) return
+    setAutoSearchDone(true)
+    void runSearch('')
+  }, [dto, manualTarget, autoSearchDone, runSearch])
+  // 切对象时重置 auto-search 标记,下一对象重新触发
+  useEffect(() => { setAutoSearchDone(false) }, [current?.target_id])
+  // auto-search 触发后推进进度到 "查找论文"
+  useEffect(() => {
+    if (manualResult || manualBusy) setProgress({ searched: true })
+  }, [manualResult, manualBusy, setProgress])
 
   const handleManualSearch = useCallback(() => { void runSearch(manualQuery) }, [runSearch, manualQuery])
 
@@ -391,35 +563,150 @@ export function EvidenceCandidatesModule() {
 
   const handleManualExtract = useCallback(async () => {
     if (!manualTarget) return
-    const papers = visibleSearchPapers.filter(p => manualSelected.has(p.pmid) && Boolean(p.pmid || p.doi))
+    const papers = selectedSearchPapers
     if (papers.length === 0) return
     setManualBusy(true)
     setMessage(null)
     try {
-      const resp = await extractSelectedPaperEvidence({
+      const started = await createPaperEvidenceExtractionRun({
         target_type: manualTarget.target_type,
         target_id: manualTarget.target_id,
-        papers: papers.map(p => ({ pmid: p.pmid, doi: p.doi, title: p.title })),
+        papers: papers.map(p => ({
+          pmid: p.pmid,
+          pmcid: p.pmcid,
+          doi: p.doi,
+          title: p.title,
+          abstract: p.abstract,
+        })),
         mode: effectiveMode,
+        concurrency: 4,
       })
-      setManualResults(resp.results)
-      // 已有提取片段 → 推进 StepPills → 找到原文
-      setProgress({ extracted: true })
-      setMessage(`已提取 ${resp.results.length} 篇论文，请勾选片段后加入人工审核`)
+      const runKey = `${EXTRACTION_RUN_KEY_PREFIX}${manualTarget.target_id}`
+      sessionStorage.setItem(runKey, started.run_id)
+      const submittedKeys = new Set(papers.map(paperIdentityKey))
+      setManualSelected(prev => {
+        const next = new Set(prev)
+        for (const key of submittedKeys) next.delete(key)
+        return next
+      })
+      const detail = await getPaperEvidenceExtractionRun(started.run_id)
+      setExtractionRun(detail)
+      setManualResults(prev => mergeExtractionResults(prev, detail))
+      if (EXTRACTION_TERMINAL.has(detail.status)) {
+        setManualBusy(false)
+        const hits = detail.items.filter(i => i.status === 'completed' && i.result_json).length
+        if (hits > 0) setProgress({ extracted: true })
+        setMessage(
+          `提取完成：命中 ${detail.evidence_hit_items} · 无证据 ${detail.no_evidence_items}`
+          + `${detail.failed_items > 0 ? ` · 失败 ${detail.failed_items}` : ''}`
+          + '。请勾选片段后加入人工审核',
+        )
+      } else {
+        setMessage(`已启动并行提取 ${started.total_items} 篇（并发 ${started.requested_concurrency}）`)
+        // Force poll effect to pick up the newly stored run id.
+        setPollEpoch(n => n + 1)
+      }
     } catch (err) {
       setMessage(`批量提取失败：${err instanceof Error ? err.message : String(err)}`)
-    } finally {
       setManualBusy(false)
     }
-  }, [manualTarget, manualSelected, visibleSearchPapers, effectiveMode, setProgress])
+  }, [manualTarget, selectedSearchPapers, effectiveMode, setProgress])
+
+  // Poll active extraction run; restore from sessionStorage on target change.
+  useEffect(() => {
+    const targetId = manualTarget?.target_id ?? current?.target_id
+    if (!targetId) {
+      setExtractionRun(null)
+      return
+    }
+    const stored = sessionStorage.getItem(`${EXTRACTION_RUN_KEY_PREFIX}${targetId}`)
+    if (!stored) return
+
+    let cancelled = false
+    const controller = new AbortController()
+
+    async function poll(runId: string) {
+      try {
+        const detail = await getPaperEvidenceExtractionRun(runId, controller.signal)
+        if (cancelled) return
+        setExtractionRun(detail)
+        setManualResults(prev => mergeExtractionResults(prev, detail))
+        const hits = detail.items.filter(i => i.status === 'completed' && i.result_json).length
+        if (hits > 0) setProgress({ extracted: true })
+        if (EXTRACTION_TERMINAL.has(detail.status)) {
+          setManualBusy(false)
+          setMessage(
+            `提取完成：命中 ${detail.evidence_hit_items} · 无证据 ${detail.no_evidence_items}`
+            + `${detail.failed_items > 0 ? ` · 失败 ${detail.failed_items}` : ''}`
+            + '。请勾选片段后加入人工审核',
+          )
+          return
+        }
+        setManualBusy(true)
+        window.setTimeout(() => {
+          if (!cancelled) void poll(runId)
+        }, 1000)
+      } catch (err) {
+        if (cancelled || controller.signal.aborted) return
+        setManualBusy(false)
+        setMessage(`提取进度同步失败：${err instanceof Error ? err.message : String(err)}`)
+      }
+    }
+
+    void poll(stored)
+    return () => {
+      cancelled = true
+      controller.abort()
+    }
+  }, [manualTarget?.target_id, current?.target_id, pollEpoch, setProgress])
+
+  const handleCancelExtraction = useCallback(async () => {
+    if (!extractionRun) return
+    try {
+      const detail = await cancelPaperEvidenceExtractionRun(extractionRun.id)
+      setExtractionRun(detail)
+      setManualResults(prev => mergeExtractionResults(prev, detail))
+      setManualBusy(false)
+      setMessage('已请求取消：未开始的论文已停止，已完成结果保留')
+    } catch (err) {
+      setMessage(`取消失败：${err instanceof Error ? err.message : String(err)}`)
+    }
+  }, [extractionRun])
+
+  const handleRetryFailedExtraction = useCallback(async () => {
+    if (!extractionRun) return
+    setManualBusy(true)
+    setMessage(null)
+    try {
+      const result = await retryFailedPaperEvidenceExtractionRun(extractionRun.id)
+      if (result.retried <= 0) {
+        setManualBusy(false)
+        setMessage('没有可重试的失败论文')
+        return
+      }
+      sessionStorage.setItem(
+        `${EXTRACTION_RUN_KEY_PREFIX}${extractionRun.target_id}`,
+        extractionRun.id,
+      )
+      setPollEpoch(n => n + 1)
+      const detail = await getPaperEvidenceExtractionRun(extractionRun.id)
+      setExtractionRun(detail)
+      setMessage(`已重新排队失败论文 ${result.retried} 篇`)
+    } catch (err) {
+      setManualBusy(false)
+      setMessage(`重试失败：${err instanceof Error ? err.message : String(err)}`)
+    }
+  }, [extractionRun])
 
   /** ☐全选:勾选全部可见搜索结果 / 取消清空其勾选 */
   const handleToggleAll = useCallback((checked: boolean) => {
     setManualSelected(prev => {
       const next = new Set(prev)
       for (const p of visibleSearchPapers) {
-        if (checked) next.add(p.pmid)
-        else next.delete(p.pmid)
+        if (!hasPaperIdentifier(p)) continue
+        const key = paperIdentityKey(p)
+        if (checked) next.add(key)
+        else next.delete(key)
       }
       return next
     })
@@ -530,15 +817,50 @@ export function EvidenceCandidatesModule() {
     draftWrittenRef.current = { key }
   }, [current, candidates, manualResults, selectedHashes])
 
+  // ─── 聚合已提取论文的全部已核验片段推送至右栏 PassageSummary ───
+  useEffect(() => {
+    if (!current) {
+      setCandidatePassages([])
+      return
+    }
+    const allPapers = [...candidates, ...manualResults]
+    const items: CandidatePassageItem[] = []
+    const seen = new Set<string>()
+    for (const paper of allPapers) {
+      for (const p of paper.passages ?? []) {
+        const hash = typeof p.passage_hash === 'string' ? p.passage_hash : JSON.stringify(p.passage ?? '').slice(0, 32)
+        if (!hash || seen.has(hash)) continue
+        seen.add(hash)
+        items.push({
+          hash,
+          passage: typeof p.passage === 'string' ? p.passage : (typeof p.passage_text === 'string' ? p.passage_text : ''),
+          direction: typeof p.direction === 'string' ? p.direction : 'not_found',
+          evidenceLevel: typeof p.evidence_level === 'string' ? p.evidence_level : 'indirect',
+          paperTitle: paper.title,
+          pmid: paper.pmid,
+          paperId: paper.paper_id ?? null,
+          confidence: typeof p.confidence === 'number' ? p.confidence : null,
+          sourceVerified: Boolean(p.source_verified),
+        })
+      }
+    }
+    setCandidatePassages(items)
+  }, [current, candidates, manualResults, setCandidatePassages])
+
   // ─── 中栏状态条数据(候选/已提取/已核验/覆盖/模型判断) ───
   const stats = useMemo<CandidateStats | null>(() => {
     if (!current) return null
-    const all = [...candidates, ...manualResults]
+    const all = [...candidates, ...manualResults.filter(p => !p.error_code)]
     const passages = all.flatMap(c => candidatePassagesToWorkbench(c.passages ?? [], c.paper_id))
     const verified = passages.filter(p => p.source_verified)
     const coverage = computeTmpCoverage(claimComponents, verified)
+    const foundKeys = new Set([
+      ...candidates.map(paperIdentityKey),
+      ...manualResults.map(paperIdentityKey),
+      ...(manualResult?.papers ?? []).map(paperIdentityKey),
+    ])
     return {
-      foundPapers: all.length + (manualResult?.papers.length ?? 0),
+      foundPapers: foundKeys.size,
       extractedPapers: all.length,
       verifiedPassages: verified.length,
       selectedPassages: selectedHashes.size,
@@ -550,11 +872,55 @@ export function EvidenceCandidatesModule() {
     }
   }, [current, candidates, manualResults, manualResult, claimComponents, selectedHashes])
 
-  const totalPapers = candidates.length + manualResults.length + visibleSearchPapers.length
+  const successfulManualResults = manualResults.filter(p => !p.error_code)
+  const totalPapers = new Set([
+    ...candidates.map(paperIdentityKey),
+    ...successfulManualResults.map(paperIdentityKey),
+    ...visibleSearchPapers.map(paperIdentityKey),
+  ]).size
 
   const handleEnterReview = useCallback(() => {
-    if (state.targetType && state.targetId) openTarget(state.targetType, state.targetId, 'review')
-  }, [state.targetType, state.targetId, openTarget])
+    if (!state.targetType || !state.targetId) return
+    // 进入审核前仅写入用户已勾选的已核验片段，再导航到 review 模块。
+    const allPapers = [...candidates, ...manualResults]
+    const selected = allPapers
+      .flatMap(c => candidatePassagesToWorkbench(c.passages ?? [], c.paper_id))
+      .filter(p => p.source_verified && selectedHashes.has(p.hash))
+    if (selected.length > 0) {
+      const draft: ReviewDraft = {
+        passages: selected,
+        modelDirection: allPapers[0]?.model_direction ?? null,
+        modelAssessment: allPapers[0]?.model_assessment ?? null,
+        paperTitle: allPapers[0]?.title ?? '',
+        pmid: allPapers[0]?.pmid ?? '',
+      }
+      sessionStorage.setItem(`${DRAFT_PREFIX}${state.targetId}`, JSON.stringify(draft))
+    }
+    openTarget(state.targetType, state.targetId, 'review')
+  }, [state.targetType, state.targetId, openTarget, candidates, manualResults, selectedHashes])
+
+  // 向右栏 PassageSummary 注册多选回调
+  useEffect(() => {
+    setSelectAllCandidatePassages(() => (checked: boolean) => {
+      const allPapers = [...candidates, ...manualResults]
+      const allPassages = allPapers.flatMap(c => candidatePassagesToWorkbench(c.passages ?? [], c.paper_id))
+      const verifiedHashes = allPassages.filter(p => p.source_verified).map(p => p.hash)
+      if (checked) {
+        setSelectedHashes(prev => { const n = new Set(prev); verifiedHashes.forEach(h => n.add(h)); return n })
+        setCandidateSelectedHashes(new Set(verifiedHashes))
+      } else {
+        setSelectedHashes(prev => { const n = new Set(prev); verifiedHashes.forEach(h => n.delete(h)); return n })
+        setCandidateSelectedHashes(new Set())
+      }
+    })
+    setEnterReviewFromPassages(() => () => handleEnterReview())
+    return () => { setSelectAllCandidatePassages(() => () => {}); setEnterReviewFromPassages(() => () => {}) }
+  }, [setSelectAllCandidatePassages, setEnterReviewFromPassages, candidates, manualResults, handleEnterReview, setSelectedHashes])
+
+  // 同步 selectedHashes → 右栏 candidateSelectedHashes
+  useEffect(() => {
+    setCandidateSelectedHashes(new Set(selectedHashes))
+  }, [selectedHashes, setCandidateSelectedHashes])
 
   return (
     <div className="evidence-candidates">
@@ -575,6 +941,28 @@ export function EvidenceCandidatesModule() {
         )}
         {!loading && !error && current && (
           <>
+            {dtoStatus === 'loading' && <div className="evidence-task-loading">对象数据加载中…</div>}
+            {dtoStatus === 'not_found' && (
+              <TargetNotFoundPanel
+                targetType={current.target_type}
+                name={current.display_name ?? current.label ?? null}
+                shortId={current.target_id.slice(0, 8)}
+                hasTask={Boolean(state.taskId)}
+                onBack={() => {
+                  if (state.taskId) closeTarget()
+                  else closeTask()
+                }}
+                onRetry={() => setDtoReload(c => c + 1)}
+              />
+            )}
+            {dtoStatus === 'error' && (
+              <div className="evidence-task-error" data-testid="evidence-target-error">
+                <p>对象数据加载失败,请重试。</p>
+                <button type="button" className="btn btn-sm" onClick={() => setDtoReload(c => c + 1)}>重新加载</button>
+              </div>
+            )}
+            {dtoStatus === 'success' && (
+            <>
             {message && <div className="ontology-page-message">{message}</div>}
 
             {evidencePaper ? (
@@ -612,8 +1000,10 @@ export function EvidenceCandidatesModule() {
                     querySummary={querySummary}
                     queryMode={queryMode}
                     onExpand={() => setSearchExpanded(true)}
-                    selectedCount={manualSelected.size}
+                    selectedCount={selectedPaperCount}
                     onExtractSelected={() => void handleManualExtract()}
+                    onSelectAll={handleToggleAll}
+                    totalResults={visibleSearchPapers.length}
                     filters={
                       <PaperSearchFilters
                         oaOnly={oaOnly}
@@ -633,9 +1023,9 @@ export function EvidenceCandidatesModule() {
                     }
                     batchActions={
                       <PaperBatchActions
-                        allSelected={visibleSearchPapers.length > 0 && visibleSearchPapers.every(p => manualSelected.has(p.pmid))}
+                        allSelected={selectedPaperCount > 0 && selectedPaperCount === visibleSearchPapers.filter(hasPaperIdentifier).length}
                         onToggleAll={handleToggleAll}
-                        selectedCount={manualSelected.size}
+                        selectedCount={selectedPaperCount}
                         busy={manualBusy}
                         onExtractSelected={() => void handleManualExtract()}
                         canSelect={visibleSearchPapers.length > 0}
@@ -649,6 +1039,15 @@ export function EvidenceCandidatesModule() {
                 {/* 中栏状态条:检索区下方、候选论文列表上方;Claim 事实在页面左栏 */}
                 <PaperStatusSummary stats={stats} onEnterReview={handleEnterReview} />
 
+                {extractionRun && (
+                  <PaperExtractionProgress
+                    run={extractionRun}
+                    busy={manualBusy}
+                    onCancel={() => void handleCancelExtraction()}
+                    onRetryFailed={() => void handleRetryFailedExtraction()}
+                  />
+                )}
+
                 <PaperCandidateList
                   total={totalPapers}
                   searchable={Boolean(manualTarget)}
@@ -656,20 +1055,21 @@ export function EvidenceCandidatesModule() {
                 >
                   {visibleSearchPapers.map(p => (
                     <PaperCandidateCard
-                      key={`s-${p.pmid}`}
+                      key={`s-${paperIdentityKey(p)}`}
                       paper={searchToCardData(p)}
-                      selected={manualSelected.has(p.pmid)}
+                      selected={manualSelected.has(paperIdentityKey(p))}
                       reExtracting={false}
                       onToggleSelected={checked => {
                         setManualSelected(prev => {
                           const next = new Set(prev)
-                          if (checked) next.add(p.pmid)
-                          else next.delete(p.pmid)
+                          const key = paperIdentityKey(p)
+                          if (checked && hasPaperIdentifier(p)) next.add(key)
+                          else next.delete(key)
                           return next
                         })
                       }}
                       onOpenDetail={() => undefined}
-                      onExclude={() => setExcludedPaperIds(prev => new Set(prev).add(p.pmid))}
+                      onExclude={() => setExcludedPaperIds(prev => new Set(prev).add(paperIdentityKey(p)))}
                       onReExtract={() => undefined}
                       onViewEvidence={() => undefined}
                     />
@@ -687,7 +1087,7 @@ export function EvidenceCandidatesModule() {
                       onViewEvidence={() => setEvidenceViewPaperId(cand.paper_id || cand.pmid)}
                     />
                   ))}
-                  {manualResults
+                  {successfulManualResults
                     .filter(c => !excludedPaperIds.has(c.paper_id || c.pmid))
                     .map(cand => (
                       <PaperCandidateCard
@@ -707,6 +1107,8 @@ export function EvidenceCandidatesModule() {
             )}
 
             {detailPaperId && <PaperDetailDrawer paperId={detailPaperId} onClose={() => setDetailPaperId(null)} />}
+            </>
+            )}
           </>
         )}
       </div>
