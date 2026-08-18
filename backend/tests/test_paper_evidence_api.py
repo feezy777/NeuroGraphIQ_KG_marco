@@ -168,6 +168,27 @@ def test_attach_rejects_duplicate_passage():
             )
 
 
+def test_attach_requires_note_for_similarity_passages():
+    session = FakeSession(get_map={(pes.TARGET_MODELS["connection"], uuid.UUID(int=1)): _Row(confidence=0.4)})
+    source = "The hippocampus is critical for memory consolidation."
+    with patch.object(pes, "verify_paper", new=AsyncMock(return_value=_paper())), \
+         patch.object(pes, "_load_source", new=AsyncMock(return_value=(source, "abstract"))), \
+         patch.object(pes, "_count_duplicate_hashes", new=AsyncMock(return_value=0)):
+        import asyncio
+        with pytest.raises(ValueError, match="reviewer note"):
+            asyncio.run(
+                pes.attach_evidence(
+                    session,
+                    target_type="connection",
+                    target_id=uuid.UUID(int=1),
+                    pmid="12345678",
+                    direction="supports",
+                    reviewer_confidence=0.8,
+                    passages=[{"source_scope": "abstract", "passage": "The hippocampus is critical for memory consilidation.", "direction": "supports", "reason": "r", "confidence": 0.9}],
+                )
+            )
+
+
 def test_attach_rejects_not_found_direction():
     session = FakeSession(get_map={(pes.TARGET_MODELS["connection"], uuid.UUID(int=1)): _Row(confidence=0.4)})
     with patch.object(pes, "verify_paper", new=AsyncMock(return_value=_paper())), \
@@ -260,21 +281,22 @@ def test_extract_selected_multi_paper(monkeypatch, client):
         "app.routers.ontology.pes.build_retrieval_context",
         AsyncMock(return_value={"claim_text": "c", "claim_components": [], "function_term": "f"}),
     )
+    extract_candidates = AsyncMock(return_value=(
+        [
+            {"paper_id": "p1", "title": "A", "model_direction": "supports", "passages": []},
+            {"paper_id": "p2", "title": "B", "error_code": "PAPER_FETCH_FAILED", "passages": []},
+        ],
+        "deepseek-v4-flash-test",
+    ))
     monkeypatch.setattr(
         "app.routers.ontology.pes.extract_candidates_for_target",
-        AsyncMock(return_value=(
-            [
-                {"paper_id": "p1", "title": "A", "model_direction": "supports", "passages": []},
-                {"paper_id": "p2", "title": "B", "error_code": "PAPER_FETCH_FAILED", "passages": []},
-            ],
-            "deepseek-v4-flash-test",
-        )),
+        extract_candidates,
     )
     resp = client.post("/api/ontology/evidence/extract-selected", json={
         "target_type": "connection",
         "target_id": str(uuid.uuid4()),
         "papers": [
-            {"pmid": "11111", "title": "A"},
+            {"pmid": "11111", "title": "A", "abstract": "A directly studies the selected connection."},
             {"pmid": "22222", "title": "B"},
         ],
     })
@@ -283,3 +305,89 @@ def test_extract_selected_multi_paper(monkeypatch, client):
     assert len(body["results"]) == 2
     assert body["results"][1]["error_code"] == "PAPER_FETCH_FAILED"
     assert body["llm_model"] == "deepseek-v4-flash-test"
+    assert extract_candidates.await_args.kwargs["papers"][0]["abstract"] == (
+        "A directly studies the selected connection."
+    )
+
+
+def test_weak_evidence_status_fits_column():
+    """Regression: 'no_change_weak_evidence' (23 chars) must fit confidence_adjustment_status."""
+    from app.services.confidence_rules import compute_adjustment
+
+    r = compute_adjustment(direction="supports", current_confidence=0.9, reviewer_confidence=0.4)
+    assert r.adjustment_status == "no_change_weak_evidence"
+    assert len(r.adjustment_status) <= 32
+
+
+def test_merge_manual_candidates_persists_to_active_item():
+    """手动提取结果合并写回活跃 item:现有候选保留,手动按 paper_id 覆盖/追加。"""
+    import json
+    import uuid as _uuid
+
+    from sqlalchemy import text as _text
+
+    from app.database import AsyncSessionLocal
+    from app.services import paper_evidence_service as _pes
+
+    async def case():
+        oid = _uuid.uuid4()
+        async with AsyncSessionLocal() as s:
+            tid = (
+                await s.execute(
+                    _text(
+                        "INSERT INTO paper_evidence_tasks "
+                        "(target_type, target_id, scope, mode, max_papers_per_object, status, total_items) "
+                        "VALUES ('connection', :oid, 'selected', 'function', 3, 'pending', 1) RETURNING id::text"
+                    ),
+                    {"oid": oid},
+                )
+            ).scalar_one()
+            iid = (
+                await s.execute(
+                    _text(
+                        "INSERT INTO paper_evidence_task_items (task_id, target_type, target_id, label, status, candidate_papers) "
+                        "VALUES (:tid, 'connection', :oid, 'x', 'awaiting_review', CAST(:cp AS jsonb)) RETURNING id::text"
+                    ),
+                    {"tid": tid, "oid": oid, "cp": json.dumps([
+                        {"paper_id": "p-pre", "pmid": "1", "title": "Pre", "passages": []},
+                    ])},
+                )
+            ).scalar_one()
+            await s.commit()
+            try:
+                await _pes.merge_manual_candidates(
+                    s,
+                    target_type="connection",
+                    target_id=oid,
+                    manual_candidates=[
+                        {"paper_id": "p-pre", "pmid": "1", "title": "Pre-Updated", "passages": [{"passage": "new"}]},
+                        {"paper_id": "p-man", "pmid": "2", "title": "Manual", "passages": [{"passage": "m"}]},
+                    ],
+                )
+                await s.commit()
+                row = (
+                    await s.execute(
+                        _text("SELECT candidate_papers FROM paper_evidence_task_items WHERE id::text=:iid"),
+                        {"iid": iid},
+                    )
+                ).first()
+                papers = {c["paper_id"]: c for c in row[0]}
+                # 手动覆盖预处理同名论文 + 追加新论文
+                assert papers["p-pre"]["title"] == "Pre-Updated"
+                assert len(papers["p-pre"]["passages"]) == 1
+                assert papers["p-man"]["title"] == "Manual"
+            finally:
+                await s.execute(_text("DELETE FROM paper_evidence_tasks WHERE id::text=:tid"), {"tid": tid})
+                await s.commit()
+
+    _run_case(case())
+
+
+def _run_case(coro):
+    import asyncio as _asyncio
+    _asyncio.set_event_loop_policy(_asyncio.WindowsSelectorEventLoopPolicy())
+    loop = _asyncio.new_event_loop()
+    try:
+        return loop.run_until_complete(coro)
+    finally:
+        loop.close()

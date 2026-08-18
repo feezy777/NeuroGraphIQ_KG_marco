@@ -5010,6 +5010,54 @@ async def _set_item_stage(session: AsyncSession, item_id: str, status: str, **ex
     await session.commit()
 
 
+async def merge_manual_candidates(
+    session: AsyncSession,
+    *,
+    target_type: str,
+    target_id: uuid.UUID,
+    manual_candidates: list[dict],
+) -> None:
+    """手动提取结果持久化:合并写回该对象活跃 item 的 candidate_papers(重新进入任务后候选佐证原文仍可见)。
+
+    - 定位活跃 item(非终态,一对一后每对象至多一个);
+    - 现有预处理候选保留,手动结果按 paper_id 去重覆盖/追加(手动最新优先);
+    - 无活跃 item(standalone 数据中心场景)则跳过,不报错。
+    """
+    if not manual_candidates:
+        return
+    item_row = (
+        await session.execute(
+            text(
+                "SELECT id::text FROM paper_evidence_task_items "
+                "WHERE target_type = :tt AND target_id = :tid "
+                "AND status IN ('pending','searching','fetching','retrieving','extracting','verifying','awaiting_review') "
+                "ORDER BY updated_at DESC LIMIT 1"
+            ),
+            {"tt": target_type, "tid": target_id},
+        )
+    ).first()
+    if item_row is None:
+        return
+    item_id = item_row[0]
+    existing_row = (
+        await session.execute(
+            text("SELECT candidate_papers FROM paper_evidence_task_items WHERE id::text = :iid"),
+            {"iid": item_id},
+        )
+    ).first()
+    existing = existing_row[0] if existing_row and existing_row[0] else []
+    by_paper: dict[str, dict] = {}
+    for c in existing:
+        key = str(c.get("paper_id") or c.get("pmid") or "")
+        by_paper[key] = c
+    for c in manual_candidates:
+        key = str(c.get("paper_id") or c.get("pmid") or "")
+        if key:
+            by_paper[key] = c
+    merged = list(by_paper.values())
+    await _save_item_candidates(session, item_id, merged)
+
+
 async def _save_item_candidates(
     session: AsyncSession,
     item_id: str,

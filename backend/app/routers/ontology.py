@@ -707,6 +707,13 @@ async def paper_evidence_extract_selected(
             sem_fetch=sem_fetch,
             sem_deepseek=sem_deepseek,
         )
+        # 持久化:手动提取结果合并写回任务的 item.candidate_papers(重新进入任务后候选佐证原文仍可见)
+        await pes.merge_manual_candidates(
+            session,
+            target_type=body.target_type,
+            target_id=body.target_id,
+            manual_candidates=results,
+        )
         await session.commit()
         return {
             "claim": context.get("claim_text") or "",
