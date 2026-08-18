@@ -595,4 +595,15 @@ describe('EvidenceReviewModule', () => {
     fireEvent.click(backBtn)
     await waitFor(() => expect(window.location.hash).toContain('target_id=r1-r2'))
   })
+
+  it('已审核对象重复驳回:REVIEW_LINK_INVALID 400 → 提示已完成审核并刷新', async () => {
+    vi.mocked(endpoints.buildReview).mockRejectedValueOnce(
+      new ApiError(400, 'HTTP 400: {"code":"REVIEW_LINK_INVALID","message":"task item status \'completed\' does not allow review"}'),
+    )
+    renderModule()
+    await waitFor(() => expect(screen.getByText('We observed that R1 projects to R2 in the macaque.')).toBeTruthy())
+    await waitFor(() => expect((screen.getByRole('button', { name: '驳回证据' }) as HTMLButtonElement).disabled).toBe(false))
+    fireEvent.click(screen.getByRole('button', { name: '驳回证据' }))
+    await waitFor(() => expect(screen.getByText('该对象已完成审核,不能重复审核')).toBeTruthy())
+  })
 })

@@ -13,6 +13,7 @@ import {
   type AttachPreviewResponse,
   type EvidenceTargetDto,
 } from '../../../api/endpoints'
+import { ApiError } from '../../../api/client'
 import { useEvidenceCenter } from '../EvidenceCenterContext'
 import { EmptyState } from '../components/EmptyState'
 import { CoveragePanel } from '../components/CoveragePanel'
@@ -20,6 +21,19 @@ import { PassageEvidenceCard } from '../components/PassageEvidenceCard'
 import { loadReviewStatus, saveReviewStatus, type ReviewStatusMeta, type ReviewStatusRecord } from '../components/ReviewStatusStore'
 import type { ReviewDecisionState } from '../components/ReviewerDecisionPanel'
 import { aggregateTmpDirection, computeTmpCoverage } from '../components/claimCoverage'
+
+/** REVIEW_LINK_INVALID:服务端权威 item 状态不允许审核(已 completed)→ 视为已完成,提示并刷新 */
+function isReviewLinkInvalid(err: unknown): boolean {
+  if (err instanceof ApiError && err.status === 400) {
+    try {
+      const detail = JSON.parse(err.message.replace(/^HTTP 400: /, '')) as { code?: string }
+      return detail?.code === 'REVIEW_LINK_INVALID'
+    } catch {
+      return false
+    }
+  }
+  return false
+}
 import type { Direction, EvidenceLevel, WorkbenchPassage } from '../components/types'
 import { useTaskItemsRefresh } from '../components/taskItemsRefreshContext'
 import { useTaskItemResolution } from '../components/useTaskItemResolution'
@@ -430,7 +444,13 @@ export function EvidenceReviewModule() {
         setMessage('已审核通过;当前对象已全部处理,可前往「证据晋升」查看并晋升')
       }
     } catch (err) {
-      setMessage(`审核失败：${err instanceof Error ? err.message : String(err)}`)
+      if (isReviewLinkInvalid(err)) {
+        // 服务端权威状态已 completed(如返回上一条重复审核)→ 提示并刷新
+        setMessage('该对象已完成审核,不能重复审核')
+        refresh()
+      } else {
+        setMessage(`审核失败：${err instanceof Error ? err.message : String(err)}`)
+      }
     } finally {
       setReviewBusy(false)
     }
@@ -456,7 +476,13 @@ export function EvidenceReviewModule() {
         setMessage('已驳回;当前对象已全部处理')
       }
     } catch (err) {
-      setMessage(`驳回失败：${err instanceof Error ? err.message : String(err)}`)
+      if (isReviewLinkInvalid(err)) {
+        // 服务端权威状态已 completed(如返回上一条重复审核)→ 提示并刷新
+        setMessage('该对象已完成审核,不能重复审核')
+        refresh()
+      } else {
+        setMessage(`驳回失败：${err instanceof Error ? err.message : String(err)}`)
+      }
     } finally {
       setReviewBusy(false)
     }

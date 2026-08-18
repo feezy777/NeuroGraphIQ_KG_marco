@@ -25,6 +25,10 @@ export interface ReviewerDecisionPanelProps {
   currentConfidence?: number | null
   /** 当前审核状态(已审核通过/已驳回,面板反馈) */
   reviewStatus?: ReviewStatusRecord | null
+  /** S6:任务关联解析是否就绪(未解析完成/解析失败时禁用审核按钮,四.3/4) */
+  taskLinkReady?: boolean
+  /** S6:任务关联解析失败原因(展示明确错误,禁止降级为独立审核) */
+  taskLinkError?: string | null
   onApprove?: () => void
   onReject?: () => void
 }
@@ -56,6 +60,8 @@ export function ReviewerDecisionPanel({
   coverage = null,
   currentConfidence = null,
   reviewStatus = null,
+  taskLinkReady = true,
+  taskLinkError = null,
   onApprove,
   onReject,
 }: ReviewerDecisionPanelProps) {
@@ -176,13 +182,21 @@ export function ReviewerDecisionPanel({
         </div>
       )}
 
+      {taskLinkError && (
+        <div className="ew-bad" data-testid="ew-task-link-error">{taskLinkError}</div>
+      )}
+      {!taskLinkReady && !taskLinkError && (
+        <div className="ew-meta" data-testid="ew-task-link-resolving">正在解析任务项关联…</div>
+      )}
+
       <div className="ew-sticky-actions">
-        <button type="button" className="btn btn-sm" onClick={onReject} disabled={reviewBusy} data-testid="ew-reject-btn">驳回证据</button>
+        {/* 已审核/已驳回的对象禁止重复审核(后端 item completed 也会拒绝) */}
+        <button type="button" className="btn btn-sm" onClick={onReject} disabled={reviewBusy || !taskLinkReady || Boolean(reviewStatus)} title={reviewStatus ? '该对象已完成审核' : undefined} data-testid="ew-reject-btn">驳回证据</button>
         <button
           type="button"
           className="btn btn-sm btn-primary"
-          disabled={reviewBusy || selectedCount === 0}
-          title={selectedCount === 0 ? '请先勾选已核验的候选片段' : reviewBusy ? '审核中…' : '审核通过'}
+          disabled={reviewBusy || selectedCount === 0 || !taskLinkReady || Boolean(reviewStatus)}
+          title={reviewStatus ? '该对象已完成审核' : !taskLinkReady ? '任务项关联未解析完成，无法创建审核' : selectedCount === 0 ? '请先勾选已核验的候选片段' : reviewBusy ? '审核中…' : '审核通过'}
           onClick={onApprove}
           data-testid="ew-approve-btn"
         >
