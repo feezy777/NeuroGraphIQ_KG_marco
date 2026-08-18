@@ -12954,6 +12954,11 @@ a.paper-card-title[href]:hover { color: var(--primary, #1a73e8); text-decoration
 
 /* ── 验证中心:左上顶格返回箭头(绝对定位,抵消 .main 顶部 22px padding) ── */
 .validation-center-page { position: relative; }
+.validation-center-page .data-center-header-static {
+  /* 标题让位:右移避开按钮宽度,下移避免与悬浮按钮重叠 */
+  padding-left: 44px;
+  padding-top: 14px;
+}
 .vc-top-back {
   position: absolute;
   top: -20px;
