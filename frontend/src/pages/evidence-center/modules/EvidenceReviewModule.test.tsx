@@ -355,14 +355,14 @@ describe('EvidenceReviewModule', () => {
     }))
   })
 
-  it('驳回证据:写 rejected + 调 buildReview + rejectReview + 提示 + 不调 attach', async () => {
+  it('驳回证据:写 rejected + 调 buildReview(直接建 rejected 终态,不再调 rejectReview)+ 提示 + 不调 attach', async () => {
     renderModule()
     await waitFor(() => expect(screen.getByText('We observed that R1 projects to R2 in the macaque.')).toBeTruthy())
     await waitFor(() => expect((screen.getByRole('button', { name: '驳回证据' }) as HTMLButtonElement).disabled).toBe(false))
     fireEvent.click(screen.getByRole('button', { name: '驳回证据' }))
     await waitFor(() => expect(sessionStorage.getItem(REVIEW_STATUS_KEY)).toBeTruthy())
     await waitFor(() => expect(endpoints.buildReview).toHaveBeenCalled())
-    await waitFor(() => expect(endpoints.rejectReview).toHaveBeenCalledWith('rev-1'))
+    expect(endpoints.rejectReview).not.toHaveBeenCalled()
     const record = JSON.parse(sessionStorage.getItem(REVIEW_STATUS_KEY)!)
     expect(record.status).toBe('rejected')
     expect(record.meta.direction).toBe('supports')
@@ -571,8 +571,8 @@ describe('EvidenceReviewModule', () => {
       const { setQueue } = useEvidenceCenter()
       useEffect(() => {
         setQueue([
-          { target_type: 'connection', target_id: 'r1-r2', label: 'R1 → R2', confidence: 0.7, status: 'pending' as QueueStatus, evidenceCount: 1, taskItemId: 'item-1' },
-          { target_type: 'connection', target_id: 'r3-r4', label: 'R3 → R4', confidence: 0.6, status: 'pending' as QueueStatus, evidenceCount: 1, taskItemId: 'item-2' },
+          { target_type: 'connection', target_id: 'r1-r2', label: 'R1 → R2', confidence: 0.7, status: 'awaiting_review' as QueueStatus, evidenceCount: 1, taskItemId: 'item-1' },
+          { target_type: 'connection', target_id: 'r3-r4', label: 'R3 → R4', confidence: 0.6, status: 'awaiting_review' as QueueStatus, evidenceCount: 1, taskItemId: 'item-2' },
         ])
       }, [setQueue])
       return null
@@ -620,10 +620,10 @@ describe('EvidenceReviewModule', () => {
     await waitFor(() => expect(screen.getByText('We observed that R1 projects to R2 in the macaque.')).toBeTruthy())
     await waitFor(() => expect((screen.getByRole('button', { name: '驳回证据' }) as HTMLButtonElement).disabled).toBe(false))
     fireEvent.click(screen.getByRole('button', { name: '驳回证据' }))
-    // 已审核 → 先 reopen 复位 item,再走正常 buildReview + rejectReview
+    // 已审核 → 先 reopen 复位 item,再走正常 buildReview(驳回直接建 rejected 终态,不调 rejectReview)
     await waitFor(() => expect(endpoints.reopenPaperEvidenceTaskItem).toHaveBeenCalledWith('t1', 'item-1'))
     await waitFor(() => expect(endpoints.buildReview).toHaveBeenCalled())
-    await waitFor(() => expect(endpoints.rejectReview).toHaveBeenCalledWith('rev-1'))
+    expect(endpoints.rejectReview).not.toHaveBeenCalled()
   })
 
   it('已驳回对象(awaiting_review)重新审核:reopen 报 "item is not completed" → 放行直接提交', async () => {
@@ -640,9 +640,9 @@ describe('EvidenceReviewModule', () => {
     await waitFor(() => expect(screen.getByText('We observed that R1 projects to R2 in the macaque.')).toBeTruthy())
     await waitFor(() => expect((screen.getByRole('button', { name: '驳回证据' }) as HTMLButtonElement).disabled).toBe(false))
     fireEvent.click(screen.getByRole('button', { name: '驳回证据' }))
-    // reopen 失败被容错 → 正常走 buildReview + rejectReview
+    // reopen 失败被容错 → 正常走 buildReview(驳回直接建 rejected 终态,不调 rejectReview)
     await waitFor(() => expect(endpoints.buildReview).toHaveBeenCalled())
-    await waitFor(() => expect(endpoints.rejectReview).toHaveBeenCalledWith('rev-1'))
+    expect(endpoints.rejectReview).not.toHaveBeenCalled()
     expect(screen.queryByText(/重新打开任务项失败/)).toBeNull()
   })
 })

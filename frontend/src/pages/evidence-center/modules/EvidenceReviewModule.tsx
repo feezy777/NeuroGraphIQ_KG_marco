@@ -23,6 +23,9 @@ import { loadReviewStatus, saveReviewStatus, type ReviewStatusMeta, type ReviewS
 import type { ReviewDecisionState } from '../components/ReviewerDecisionPanel'
 import { aggregateTmpDirection, computeTmpCoverage } from '../components/claimCoverage'
 
+/** 队列中已完成/终态的对象(审核通过/驳回/跳过/失败后不再作为下一条跳转目标) */
+const REVIEWED_STATUSES = new Set(['completed', 'skipped', 'failed', 'cancelled'])
+
 /** REVIEW_LINK_INVALID:服务端权威 item 状态不允许审核(已 completed)→ 视为已完成,提示并刷新 */
 function isReviewLinkInvalid(err: unknown): boolean {
   if (err instanceof ApiError && err.status === 400) {
@@ -460,9 +463,9 @@ export function EvidenceReviewModule() {
         refresh()
       }
       setProgress({ reviewed: true, promoted: false })
-      // 自动跳转下一条待处理对象;跳转前记录当前对象供「返回上一条」
+      // 自动跳转下一条未完成对象;跳转前记录当前对象供「返回上一条」
       if (targetType && targetId) setPrevTarget({ target_type: targetType, target_id: targetId })
-      const nextPending = queue.find(e => e.target_id !== targetId && e.status === 'pending')
+      const nextPending = queue.find(e => e.target_id !== targetId && !REVIEWED_STATUSES.has(e.status))
       if (nextPending) {
         setMessage('已审核通过;继续处理下一个对象,全部处理完后可在「证据晋升」中查看')
         openTarget(nextPending.target_type, nextPending.target_id, 'review')
@@ -490,15 +493,13 @@ export function EvidenceReviewModule() {
       return
     }
     try {
-      const reviewId = await commitReviewStatus('rejected', new Date().toISOString(), 'not_found')
-      if (reviewId) {
-        await rejectReview(reviewId)
-        // S6 共享刷新(八)
-        refresh()
-      }
+      // buildReview 对 not_found 方向直接创建 rejected 终态 review,无需再调 rejectReview(否则 409)
+      await commitReviewStatus('rejected', new Date().toISOString(), 'not_found')
+      // S6 共享刷新(八)
+      refresh()
       // 驳回后留在审核页,自动推进到下一个待处理对象;跳转前记录当前对象供「返回上一条」
       if (targetType && targetId) setPrevTarget({ target_type: targetType, target_id: targetId })
-      const nextPending = queue.find(e => e.target_id !== targetId && e.status === 'pending')
+      const nextPending = queue.find(e => e.target_id !== targetId && !REVIEWED_STATUSES.has(e.status))
       if (nextPending) {
         setMessage('已驳回;继续处理下一个对象')
         openTarget(nextPending.target_type, nextPending.target_id, 'review')
