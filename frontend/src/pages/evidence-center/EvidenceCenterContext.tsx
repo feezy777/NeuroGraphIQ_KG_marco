@@ -35,7 +35,7 @@ interface EvidenceCenterContextValue {
   openTask: (taskId: string) => void
   closeTask: () => void
   /** 原子导航:一次设置 taskId+taskItemId+target(+module),一次写 URL(无任务时进入 candidates 工作区) */
-  openTaskTarget: (taskId: string | null, targetType: string, targetId: string, taskItemId?: string | null) => void
+  openTaskTarget: (taskId: string | null, targetType: string, targetId: string, taskItemId?: string | null, module?: ModuleKey) => void
   /** 关闭对象:清 task_item_id+target,保留当前 task */
   closeTarget: () => void
   /** S6:旧 deep link 唯一匹配后以 replace 语义补齐 task_item_id(不产生浏览器历史,三.8/9) */
@@ -188,13 +188,13 @@ export function EvidenceCenterProvider({ children, embedded }: { children: React
   )
   // 原子导航:任务+任务项+对象一次设置、一次 URL 写入;无任务时进入 candidates 工作区(standalone 不写 task_item_id)
   const openTaskTarget = useCallback(
-    (taskId: string | null, targetType: string, targetId: string, taskItemId: string | null = null) => {
+    (taskId: string | null, targetType: string, targetId: string, taskItemId: string | null = null, module: ModuleKey | undefined = undefined) => {
       apply({
         taskId,
         taskItemId: taskId ? taskItemId : null,
         targetType,
         targetId,
-        module: taskId ? 'tasks' : 'candidates',
+        module: module ?? (taskId ? 'tasks' : 'candidates'),
       })
       setProgressState(INITIAL_OBJECT_PROGRESS)
     },

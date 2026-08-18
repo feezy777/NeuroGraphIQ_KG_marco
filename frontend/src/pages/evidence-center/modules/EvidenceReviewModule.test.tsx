@@ -21,6 +21,8 @@ vi.mock('../../../api/endpoints', () => ({
   validatePassageSelection: vi.fn(),
   saveTaskItemDraft: vi.fn(),
   resolvePaperEvidenceTaskItem: vi.fn(),
+  listPaperEvidenceTasks: vi.fn(),
+  listPaperEvidenceTaskItems: vi.fn(),
 }))
 
 const DRAFT_KEY = 'evidence-center.review-draft.r1-r2'
@@ -153,6 +155,8 @@ describe('EvidenceReviewModule', () => {
       char_end: 20,
     })
     vi.mocked(endpoints.saveTaskItemDraft).mockResolvedValue({ item_id: 'item-1', saved: true, server_revision: 1 })
+    vi.mocked(endpoints.listPaperEvidenceTasks).mockResolvedValue({ items: [], total: 0 })
+    vi.mocked(endpoints.listPaperEvidenceTaskItems).mockResolvedValue({ items: [] })
     vi.mocked(endpoints.buildReview).mockResolvedValue({ review_id: 'rev-1', status: 'approved' })
     vi.mocked(endpoints.rejectReview).mockResolvedValue({ review_id: 'rev-1', status: 'rejected' })
     vi.mocked(endpoints.reopenPaperEvidenceTaskItem).mockResolvedValue({ task_id: 't1', item_id: 'item-1', status: 'awaiting_review' })
@@ -644,5 +648,34 @@ describe('EvidenceReviewModule', () => {
     await waitFor(() => expect(endpoints.buildReview).toHaveBeenCalled())
     expect(endpoints.rejectReview).not.toHaveBeenCalled()
     expect(screen.queryByText(/重新打开任务项失败/)).toBeNull()
+  })
+
+  it('审核通过后跨任务切换下一条(一对一:queue 仅当前对象,从任务列表找下一个待验证任务)', async () => {
+    // 任务列表:当前任务 + 下一个待验证任务
+    const nextTask = {
+      id: 't2', target_type: 'connection', target_id: 'r3-r4', item_id: 'item-2', name: null, status: 'pending',
+      total_items: 1, processed_items: 0, awaiting_review_items: 1, failed_items: 0,
+      review_status: 'not_started', granularity_level: 'macro', estimated_target_count: 1,
+      materialized_target_count: 1, scope: 'low_confidence', mode: 'function', max_papers_per_object: 3,
+      created_at: '2026-08-18T00:00:00Z', created_by: null, started_at: null, finished_at: null,
+      error_message: null, materialization_status: 'completed', materialization_cursor: null,
+      materialization_error: null, confidence_lt: null, only_oa: false,
+      stop_after_strong_support: false, summary: null, scope_type: 'filter',
+      filter_snapshot: null, versions: null,
+      display_name_cn: 'R3 → R4', display_name_en: null, display_confidence: 0.6,
+      display_name_source: 'mirror_live', display_confidence_source: 'mirror_live',
+      work_status: 'awaiting_review',
+      item_counts: { total: 1, processing: 0, pending: 0, awaiting_review: 1, completed: 0, skipped: 0, failed: 0, cancelled: 0 },
+      capabilities: { can_continue_review: true, can_pause: false, can_resume: false, can_retry_failed: false, can_view_results: false },
+    }
+    vi.mocked(endpoints.listPaperEvidenceTasks).mockResolvedValue({ items: [nextTask], total: 1 })
+    renderModule() // 默认 QueueSeeder:queue 仅当前对象 r1-r2
+    await waitFor(() => expect(screen.getByText('We observed that R1 projects to R2 in the macaque.')).toBeTruthy())
+    await waitFor(() => expect((screen.getByRole('button', { name: '审核通过' }) as HTMLButtonElement).disabled).toBe(false))
+    fireEvent.click(screen.getByRole('button', { name: '审核通过' }))
+    // 跨任务跳转:URL 带新任务 t2 + 新对象 r3-r4,且模块为 review(直接继续审核)
+    await waitFor(() => expect(window.location.hash).toContain('task_id=t2'))
+    expect(window.location.hash).toContain('target_id=r3-r4')
+    expect(window.location.hash).toContain('module=review')
   })
 })
