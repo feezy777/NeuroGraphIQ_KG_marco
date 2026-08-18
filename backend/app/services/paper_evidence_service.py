@@ -2092,6 +2092,8 @@ async def extract_passage_from_paper(
                     user_prompt=user,
                     temperature=0.1,
                     max_tokens=cfg.ontology_residual_max_tokens,
+                    # 多段落提取 prompt 大:默认 60s 超时会杀掉长请求 → 放宽
+                    timeout_seconds=240,
                 )
                 raw_response = resp.raw_text or ""
                 if not getattr(resp, "transport_ok", True):
@@ -2258,6 +2260,8 @@ async def locate_candidates(claim: dict, windows: list[dict], title: str = "") -
                 user_prompt=user,
                 temperature=0.1,
                 max_tokens=2000,
+                # 大窗口候选定位:默认 60s 超时会杀掉长 prompt 请求 → 放宽
+                timeout_seconds=120,
             )
             raw_response = resp.raw_text or ""
             data = resp.parsed_json if resp.parsed_json is not None else _parse_relevance_batch(raw_response)
@@ -2351,8 +2355,8 @@ async def judge_candidates(
     components = [c.get("component_type", "") for c in (claim.get("claim_components") or [])]
 
     candidate_lines = []
-    for c in candidates[:10]:  # Top 10 candidates
-        text = (c.get("passage_text") or "")[:800]
+    for c in candidates[:6]:  # Top 6 candidates(缩量:大 prompt 拖慢 judge,6 段足够判定)
+        text = (c.get("passage_text") or "")[:600]
         candidate_lines.append(
             f"<id={c['paragraph_id']}> [{c.get('relation_cue','?')}] "
             f"relevance={c['relevance']:.2f} | {text}"
@@ -2374,6 +2378,9 @@ async def judge_candidates(
                 user_prompt=user,
                 temperature=0.1,
                 max_tokens=cfg.ontology_residual_max_tokens,
+                # judge prompt 巨大(多候选段落+长JSON输出),默认60s超时会杀掉大请求
+                # → 反复重试导致单篇 10 分钟且失败;放宽到 240s
+                timeout_seconds=240,
             )
             if not getattr(resp, "transport_ok", True):
                 raise httpx.TransportError(
