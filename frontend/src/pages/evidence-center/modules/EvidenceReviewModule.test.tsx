@@ -2,8 +2,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { useEffect } from 'react'
 import * as endpoints from '../../../api/endpoints'
+import { ApiError } from '../../../api/client'
 import { EvidenceCenterProvider, useEvidenceCenter } from '../EvidenceCenterContext'
 import { RightPanel } from '../components/RightPanel'
+import { TaskItemsRefreshProvider, useTaskItemsRefresh } from '../components/taskItemsRefreshContext'
 import type { EvidenceLevel, QueueStatus, WorkbenchPassage } from '../components/types'
 import { EvidenceReviewModule } from './EvidenceReviewModule'
 
@@ -17,6 +19,7 @@ vi.mock('../../../api/endpoints', () => ({
   translateEvidenceText: vi.fn(),
   validatePassageSelection: vi.fn(),
   saveTaskItemDraft: vi.fn(),
+  resolvePaperEvidenceTaskItem: vi.fn(),
 }))
 
 const DRAFT_KEY = 'evidence-center.review-draft.r1-r2'
@@ -151,19 +154,36 @@ describe('EvidenceReviewModule', () => {
     vi.mocked(endpoints.saveTaskItemDraft).mockResolvedValue({ item_id: 'item-1', saved: true, server_revision: 1 })
     vi.mocked(endpoints.buildReview).mockResolvedValue({ review_id: 'rev-1', status: 'approved' })
     vi.mocked(endpoints.rejectReview).mockResolvedValue({ review_id: 'rev-1', status: 'rejected' })
+    // S6:任务模式默认唯一匹配解析到 item-1
+    vi.mocked(endpoints.resolvePaperEvidenceTaskItem).mockResolvedValue({
+      task_id: 't1',
+      task_item_id: 'item-1',
+      target_type: 'connection',
+      target_id: 'r1-r2',
+      status: 'awaiting_review',
+      matched: 'task_target',
+      rescore_source_review_id: null,
+      rescore_revision_no: null,
+    })
   })
 
   it('从 sessionStorage draft 恢复 passages 并渲染 PassageEvidenceCard + AI 初判', async () => {
     renderModule()
     await waitFor(() => expect(screen.getByText('We observed that R1 projects to R2 in the macaque.')).toBeTruthy())
-    expect(screen.getByText('A secondary passage without verification.')).toBeTruthy()
-    expect(screen.getByText('未通过原文校验，请人工核对或重新截取')).toBeTruthy()
+    // 片段导航:默认展示第一条,第二条通过「下一个」切换
+    expect(screen.queryByText('A secondary passage without verification.')).toBeNull()
+    expect(screen.getByTestId('evidence-review-passage-nav-idx').textContent).toContain('1 / 2')
     await waitFor(() => expect(screen.getByTestId('ew-ai-direction').textContent).toBe('支持'))
-    // 未核验片段不可勾选
-    const cards = screen.getAllByTestId('ew-passage')
-    const checkboxes = cards.map(c => c.querySelector('input[type="checkbox"]')) as HTMLInputElement[]
-    expect(checkboxes[0].disabled).toBe(false)
-    expect(checkboxes[1].disabled).toBe(true)
+    // 第一条(已核验)可勾选
+    const card = screen.getAllByTestId('ew-passage')[0]
+    const checkbox = card.querySelector('input[type="checkbox"]') as HTMLInputElement
+    expect(checkbox.disabled).toBe(false)
+    // 切到第二条(未核验)不可勾选
+    fireEvent.click(screen.getByText('下一个 →'))
+    const card2 = screen.getAllByTestId('ew-passage')[0]
+    const checkbox2 = card2.querySelector('input[type="checkbox"]') as HTMLInputElement
+    expect(checkbox2.disabled).toBe(true)
+    expect(screen.getByText('未通过原文校验，请人工核对或重新截取')).toBeTruthy()
   })
 
   it('方向修改触发 attach-preview(debounce 350ms)', async () => {
@@ -305,6 +325,8 @@ describe('EvidenceReviewModule', () => {
   it('审核通过:写 sessionStorage + 调 buildReview(后端) + 提示进入晋升 + 不调 attach', async () => {
     renderModule()
     await waitFor(() => expect(screen.getByText('We observed that R1 projects to R2 in the macaque.')).toBeTruthy())
+    // S6:任务项解析完成后按钮才可用
+    await waitFor(() => expect((screen.getByRole('button', { name: '审核通过' }) as HTMLButtonElement).disabled).toBe(false))
     fireEvent.click(screen.getByRole('button', { name: '审核通过' }))
     // sessionStorage 兼容写入 + 后端 buildReview 调用
     await waitFor(() => expect(sessionStorage.getItem(REVIEW_STATUS_KEY)).toBeTruthy())
@@ -316,13 +338,15 @@ describe('EvidenceReviewModule', () => {
     expect(record.meta.evidenceLevel).toBe('indirect')
     expect(record.meta.confidence).toBe('0.8')
     expect(typeof record.meta.at).toBe('string')
-    expect(screen.getByText('已审核通过，进入「证据晋升」模块待晋升')).toBeTruthy()
+    expect(screen.getAllByText(/已审核通过/).length).toBeGreaterThan(0)
     // 审核不调旧 attach
     expect(endpoints.attachPaperEvidence).not.toHaveBeenCalled()
-    // buildReview body 断言
+    // buildReview body 断言(S6:任务模式 payload 必须携带权威 task_id + task_item_id)
     expect(endpoints.buildReview).toHaveBeenCalledWith(expect.objectContaining({
       target_type: 'connection',
       target_id: 'r1-r2',
+      task_id: 't1',
+      task_item_id: 'item-1',
       reviewer_direction: 'supports',
       reviewer_evidence_level: 'indirect',
       reviewer_confidence: 0.8,
@@ -332,6 +356,7 @@ describe('EvidenceReviewModule', () => {
   it('驳回证据:写 rejected + 调 buildReview + rejectReview + 提示 + 不调 attach', async () => {
     renderModule()
     await waitFor(() => expect(screen.getByText('We observed that R1 projects to R2 in the macaque.')).toBeTruthy())
+    await waitFor(() => expect((screen.getByRole('button', { name: '驳回证据' }) as HTMLButtonElement).disabled).toBe(false))
     fireEvent.click(screen.getByRole('button', { name: '驳回证据' }))
     await waitFor(() => expect(sessionStorage.getItem(REVIEW_STATUS_KEY)).toBeTruthy())
     await waitFor(() => expect(endpoints.buildReview).toHaveBeenCalled())
@@ -339,7 +364,7 @@ describe('EvidenceReviewModule', () => {
     const record = JSON.parse(sessionStorage.getItem(REVIEW_STATUS_KEY)!)
     expect(record.status).toBe('rejected')
     expect(record.meta.direction).toBe('supports')
-    expect(screen.getByText(/不会进入晋升/)).toBeTruthy()
+    expect(screen.getAllByText(/已驳回/).length).toBeGreaterThan(0)
     expect(endpoints.attachPaperEvidence).not.toHaveBeenCalled()
   })
 
@@ -347,6 +372,7 @@ describe('EvidenceReviewModule', () => {
     vi.mocked(endpoints.buildReview).mockRejectedValueOnce(new Error('后端不可用'))
     renderModule()
     await waitFor(() => expect(screen.getByText('We observed that R1 projects to R2 in the macaque.')).toBeTruthy())
+    await waitFor(() => expect((screen.getByRole('button', { name: '审核通过' }) as HTMLButtonElement).disabled).toBe(false))
     fireEvent.click(screen.getByRole('button', { name: '审核通过' }))
     await waitFor(() => expect(screen.getByText(/审核失败/)).toBeTruthy())
     // sessionStorage 仍已写入（先写 sessionStorage 再调后端）
@@ -401,14 +427,14 @@ describe('EvidenceReviewModule', () => {
     await waitFor(() => expect(screen.getByText('We observed that R1 projects to R2 in the macaque.')).toBeTruthy())
     // 模块标题(与佐证任务「任务列表」同语言;右栏面板标题同名,取中栏 h3)
     expect(screen.getAllByText('人工审核').length).toBeGreaterThan(0)
-    // 分区一:Claim(ClaimPanel)
-    expect(screen.getByText('当前需要验证的事实')).toBeTruthy()
-    // 分区二:Paper
+    // 中栏不再渲染 ClaimPanel(Claim 在左栏 ClaimSummaryPanel 展示)
+    expect(screen.queryByText('当前需要验证的事实')).toBeNull()
+    // 分区一:Paper
     expect(screen.getByText('当前论文')).toBeTruthy()
-    // 分区三:PassageEvidenceCard(已选佐证原文 + 数量徽标)
+    // 分区二:PassageEvidenceCard(已选佐证原文 + 数量徽标)
     expect(screen.getByText('已选佐证原文')).toBeTruthy()
     expect(screen.getByTestId('evidence-review-passages-count').textContent).toBe('2')
-    // 分区四:CoveragePanel
+    // 分区三:CoveragePanel
     expect(screen.getByText('Claim 覆盖情况')).toBeTruthy()
   })
 
@@ -428,5 +454,145 @@ describe('EvidenceReviewModule', () => {
     renderModule()
     await waitFor(() => expect(screen.getByText('人工最终判断')).toBeTruthy())
     expect(screen.getByTestId('ew-impact-maximum').textContent).toContain('0.80')
+  })
+
+  // ─── S6:任务关联禁止静默丢失 ───
+
+  it('任务模式:多匹配(409)→ 显示「无法唯一确定任务项」并禁用审核按钮,不提交 review', async () => {
+    vi.mocked(endpoints.resolvePaperEvidenceTaskItem).mockRejectedValueOnce(
+      new ApiError(409, 'HTTP 409: {"code":"REVIEW_CONFLICT","message":"ambiguous task item"}'),
+    )
+    renderModule()
+    await waitFor(() => expect(screen.getByTestId('ew-task-link-error').textContent).toContain('无法唯一确定任务项'))
+    const approve = screen.getByRole('button', { name: '审核通过' }) as HTMLButtonElement
+    const reject = screen.getByRole('button', { name: '驳回证据' }) as HTMLButtonElement
+    expect(approve.disabled).toBe(true)
+    expect(reject.disabled).toBe(true)
+    expect(endpoints.buildReview).not.toHaveBeenCalled()
+    expect(endpoints.rejectReview).not.toHaveBeenCalled()
+  })
+
+  it('任务模式:0 匹配(404)→ 显示明确错误并禁用审核按钮', async () => {
+    vi.mocked(endpoints.resolvePaperEvidenceTaskItem).mockRejectedValueOnce(
+      new ApiError(404, 'HTTP 404: {"code":"REVIEW_NOT_FOUND","message":"no matching task item"}'),
+    )
+    renderModule()
+    await waitFor(() => expect(screen.getByTestId('ew-task-link-error').textContent).toContain('当前任务中没有匹配该对象的任务项'))
+    expect((screen.getByRole('button', { name: '审核通过' }) as HTMLButtonElement).disabled).toBe(true)
+  })
+
+  it('任务模式:解析未完成时按钮禁用,完成后可用(不降级为 standalone)', async () => {
+    let resolveFn: (v: unknown) => void = () => {}
+    vi.mocked(endpoints.resolvePaperEvidenceTaskItem).mockImplementation(
+      () => new Promise(resolve => { resolveFn = resolve }),
+    )
+    renderModule()
+    await waitFor(() => expect(screen.getByTestId('ew-task-link-resolving')).toBeTruthy())
+    expect((screen.getByRole('button', { name: '审核通过' }) as HTMLButtonElement).disabled).toBe(true)
+    resolveFn({
+      task_id: 't1', task_item_id: 'item-1', target_type: 'connection',
+      target_id: 'r1-r2', status: 'awaiting_review', matched: 'task_target',
+      rescore_source_review_id: null, rescore_revision_no: null,
+    })
+    await waitFor(() => expect((screen.getByRole('button', { name: '审核通过' }) as HTMLButtonElement).disabled).toBe(false))
+  })
+
+  it('standalone:无 task_id → payload 两个 ID 均为 null,可正常创建审核(独立审核)', async () => {
+    window.location.hash = '#/evidence-center?module=review&target_type=connection&target_id=r1-r2'
+    render(
+      <EvidenceCenterProvider>
+        <EvidenceReviewModule />
+        <RightPanel module="review" />
+      </EvidenceCenterProvider>,
+    )
+    await waitFor(() => expect(screen.getByText('We observed that R1 projects to R2 in the macaque.')).toBeTruthy())
+    await waitFor(() => expect((screen.getByRole('button', { name: '审核通过' }) as HTMLButtonElement).disabled).toBe(false))
+    expect(endpoints.resolvePaperEvidenceTaskItem).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: '审核通过' }))
+    await waitFor(() => expect(endpoints.buildReview).toHaveBeenCalled())
+    expect(endpoints.buildReview).toHaveBeenCalledWith(expect.objectContaining({
+      task_id: null,
+      task_item_id: null,
+      target_id: 'r1-r2',
+    }))
+  })
+
+  it('旧 deep link 唯一匹配后以 replace 语义补齐 task_item_id(不产生新历史)', async () => {
+    window.location.hash = '#/evidence-center?module=review&task_id=t1&target_type=connection&target_id=r1-r2'
+    render(
+      <EvidenceCenterProvider>
+        <EvidenceReviewModule />
+      </EvidenceCenterProvider>,
+    )
+    await waitFor(() => expect(window.location.hash).toContain('task_item_id=item-1'))
+    expect(window.location.hash).toContain('task_id=t1')
+    expect(window.location.hash).toContain('target_id=r1-r2')
+  })
+
+  it('S7B:重评上下文 → 工作区显示「正在进行第 N 次评分 · 由第 N-1 次审核回退」', async () => {
+    vi.mocked(endpoints.resolvePaperEvidenceTaskItem).mockResolvedValue({
+      task_id: 't1', task_item_id: 'item-1', target_type: 'connection',
+      target_id: 'r1-r2', status: 'awaiting_review', matched: 'task_target',
+      rescore_source_review_id: 'old-rev', rescore_revision_no: 2,
+    })
+    renderModule()
+    await waitFor(() =>
+      expect(screen.getByTestId('evidence-rescore-banner').textContent).toContain('正在进行第 2 次评分'),
+    )
+    expect(screen.getByTestId('evidence-rescore-banner').textContent).toContain('由第 1 次审核回退')
+  })
+
+  it('approve/reject 成功后触发第五步共享刷新', async () => {
+    function RefreshProbe() {
+      const { version } = useTaskItemsRefresh()
+      return <span data-testid="refresh-version">{version}</span>
+    }
+    window.location.hash = '#/evidence-center?module=review&task_id=t1&target_type=connection&target_id=r1-r2'
+    render(
+      <TaskItemsRefreshProvider>
+        <EvidenceCenterProvider>
+          <EvidenceReviewModule />
+          <RightPanel module="review" />
+          <RefreshProbe />
+        </EvidenceCenterProvider>
+      </TaskItemsRefreshProvider>,
+    )
+    await waitFor(() => expect(screen.getByText('We observed that R1 projects to R2 in the macaque.')).toBeTruthy())
+    await waitFor(() => expect((screen.getByRole('button', { name: '审核通过' }) as HTMLButtonElement).disabled).toBe(false))
+    expect(screen.getByTestId('refresh-version').textContent).toBe('0')
+    fireEvent.click(screen.getByRole('button', { name: '审核通过' }))
+    await waitFor(() => expect(screen.getByTestId('refresh-version').textContent).toBe('1'))
+  })
+
+  it('审核通过自动跳转下一条待处理对象;「← 返回上一条」回到上一条', async () => {
+    function TwoQueueSeeder() {
+      const { setQueue } = useEvidenceCenter()
+      useEffect(() => {
+        setQueue([
+          { target_type: 'connection', target_id: 'r1-r2', label: 'R1 → R2', confidence: 0.7, status: 'pending' as QueueStatus, evidenceCount: 1, taskItemId: 'item-1' },
+          { target_type: 'connection', target_id: 'r3-r4', label: 'R3 → R4', confidence: 0.6, status: 'pending' as QueueStatus, evidenceCount: 1, taskItemId: 'item-2' },
+        ])
+      }, [setQueue])
+      return null
+    }
+    window.location.hash = REVIEW_HASH
+    render(
+      <EvidenceCenterProvider>
+        <TwoQueueSeeder />
+        <EvidenceReviewModule />
+        <RightPanel module="review" />
+      </EvidenceCenterProvider>,
+    )
+    await waitFor(() => expect(screen.getByText('We observed that R1 projects to R2 in the macaque.')).toBeTruthy())
+    await waitFor(() => expect((screen.getByRole('button', { name: '审核通过' }) as HTMLButtonElement).disabled).toBe(false))
+    // 初始无返回上一条按钮
+    expect(screen.queryByTestId('review-prev-target')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: '审核通过' }))
+    // 自动跳转下一条 r3-r4
+    await waitFor(() => expect(window.location.hash).toContain('target_id=r3-r4'))
+    // 返回上一条按钮出现,点击回到 r1-r2
+    const backBtn = screen.getByTestId('review-prev-target')
+    fireEvent.click(backBtn)
+    await waitFor(() => expect(window.location.hash).toContain('target_id=r1-r2'))
   })
 })

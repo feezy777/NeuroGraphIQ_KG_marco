@@ -8,12 +8,12 @@ import {
   rejectReview,
   saveTaskItemDraft,
   translateEvidenceText,
+  translateEvidenceTexts,
   validatePassageSelection,
   type AttachPreviewResponse,
   type EvidenceTargetDto,
 } from '../../../api/endpoints'
 import { useEvidenceCenter } from '../EvidenceCenterContext'
-import { ClaimPanel } from '../components/ClaimPanel'
 import { EmptyState } from '../components/EmptyState'
 import { CoveragePanel } from '../components/CoveragePanel'
 import { PassageEvidenceCard } from '../components/PassageEvidenceCard'
@@ -21,6 +21,8 @@ import { loadReviewStatus, saveReviewStatus, type ReviewStatusMeta, type ReviewS
 import type { ReviewDecisionState } from '../components/ReviewerDecisionPanel'
 import { aggregateTmpDirection, computeTmpCoverage } from '../components/claimCoverage'
 import type { Direction, EvidenceLevel, WorkbenchPassage } from '../components/types'
+import { useTaskItemsRefresh } from '../components/taskItemsRefreshContext'
+import { useTaskItemResolution } from '../components/useTaskItemResolution'
 
 const DRAFT_PREFIX = 'evidence-center.review-draft.'
 
@@ -40,7 +42,10 @@ interface ReviewDraft {
 }
 
 export function EvidenceReviewModule() {
-  const { state, queue, openTarget, setReviewDecision, setProgress } = useEvidenceCenter()
+  const { state, queue, openTarget, gotoModule, setReviewDecision, setProgress, setCandidateClaim } = useEvidenceCenter()
+  const { refresh } = useTaskItemsRefresh()
+  // S6:任务模式下审核前必须解析出真实 task item(standalone 放行,解析失败禁止创建 review)
+  const taskLink = useTaskItemResolution()
   const [dto, setDto] = useState<EvidenceTargetDto | null>(null)
   const [passages, setPassages] = useState<WorkbenchPassage[]>([])
   const [selectedHashes, setSelectedHashes] = useState<Set<string>>(new Set())
@@ -58,9 +63,12 @@ export function EvidenceReviewModule() {
   const [previewBusy, setPreviewBusy] = useState(false)
   const [showContextHash, setShowContextHash] = useState<string | null>(null)
   const [message, setMessage] = useState<string | null>(null)
+  // 审核跳转前记录上一对象(「返回上一条」导航;审核通过/驳回自动跳下一条时更新)
+  const [prevTarget, setPrevTarget] = useState<{ target_type: string; target_id: string } | null>(null)
   const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
   const [reviewStatus, setReviewStatus] = useState<ReviewStatusRecord | null>(null)
   const [reviewBusy, setReviewBusy] = useState(false)
+  const [currentPassageIdx, setCurrentPassageIdx] = useState(0)
   const abortRef = useRef<AbortController | null>(null)
 
   const targetType = state.targetType
@@ -87,6 +95,7 @@ export function EvidenceReviewModule() {
     setMessage(null)
     setSaveState('idle')
     setReviewStatus(null)
+    setCurrentPassageIdx(0)
     if (!targetId) return
     setReviewStatus(loadReviewStatus(targetId))
     const raw = sessionStorage.getItem(`${DRAFT_PREFIX}${targetId}`)
@@ -112,7 +121,7 @@ export function EvidenceReviewModule() {
     }
   }, [targetId])
 
-  // Claim DTO(ClaimPanel 数据源)
+  // Claim DTO(左栏 ClaimSummaryPanel 数据源)
   useEffect(() => {
     if (!targetType || !targetId) return
     let cancelled = false
@@ -121,6 +130,18 @@ export function EvidenceReviewModule() {
       .catch(() => { if (!cancelled) setDto(null) })
     return () => { cancelled = true }
   }, [targetType, targetId])
+
+  // 左栏 ClaimSummaryPanel 数据源(审核模块也推送,与候选模块共用)
+  useEffect(() => {
+    if (!dto) { setCandidateClaim(null); return }
+    setCandidateClaim({
+      claimText: dto.claim_text ?? '',
+      components: dto.claim_components ?? [],
+      granularity: dto.granularity ?? null,
+      targetType: dto.target_type,
+    })
+  }, [dto, setCandidateClaim])
+  useEffect(() => () => { setCandidateClaim(null) }, [setCandidateClaim])
 
   const updatePassage = useCallback((hash: string, patch: Partial<WorkbenchPassage>) => {
     setPassages(ps => ps.map(p => (p.hash === hash ? { ...p, ...patch } : p)))
@@ -228,6 +249,28 @@ export function EvidenceReviewModule() {
     }
   }, [])
 
+  // 批量翻译:一次 DeepSeek 调用翻译全部片段(N 倍加速)
+  const [translatingAll, setTranslatingAll] = useState(false)
+  const translateAllPassages = useCallback(async () => {
+    const untranslated = passages.filter(p => !(translations[p.hash] ?? '').trim())
+    if (untranslated.length === 0) return
+    setTranslatingAll(true)
+    try {
+      const r = await translateEvidenceTexts({ texts: untranslated.map(p => p.passage) })
+      const updates: Record<string, string> = {}
+      untranslated.forEach((p, i) => {
+        const t = (r.translations[i] ?? '').trim()
+        if (t) updates[p.hash] = t
+      })
+      setTranslations(prev => ({ ...prev, ...updates }))
+      setMessage(`已批量翻译 ${Object.keys(updates).length} 个片段`)
+    } catch (err) {
+      setMessage(`批量翻译失败：${err instanceof Error ? err.message : String(err)}`)
+    } finally {
+      setTranslatingAll(false)
+    }
+  }, [passages, translations])
+
   const copyPassage = useCallback((text: string) => {
     void navigator.clipboard?.writeText(text).catch(() => undefined)
   }, [])
@@ -261,16 +304,19 @@ export function EvidenceReviewModule() {
     if (targetType && targetId) openTarget(targetType, targetId, 'candidates')
   }, [targetType, targetId, openTarget, persistDraft])
 
-  const taskItem = queue.find(q => q.target_type === targetType && q.target_id === targetId)
+  // S6:草稿落服务端使用权威解析出的 task item id(不再依赖队列快照)
+  const resolvedItemId = taskLink.kind === 'resolved' ? taskLink.taskItemId : null
+  // S7B:回退重评上下文(「正在进行第 N 次评分 · 由第 N-1 次审核回退」)
+  const rescoreRevisionNo = taskLink.kind === 'resolved' ? taskLink.rescoreRevisionNo : null
 
   const handleSaveDraft = useCallback(async () => {
     if (!targetId) return
     const draft = buildDraft()
     sessionStorage.setItem(`${DRAFT_PREFIX}${targetId}`, JSON.stringify(draft))
-    if (taskItem?.taskItemId) {
+    if (resolvedItemId) {
       setSaveState('saving')
       try {
-        await saveTaskItemDraft(taskItem.taskItemId, draft as unknown as Record<string, unknown>, 0)
+        await saveTaskItemDraft(resolvedItemId, draft as unknown as Record<string, unknown>, 0)
         setSaveState('saved')
       } catch (err) {
         setSaveState('error')
@@ -279,17 +325,32 @@ export function EvidenceReviewModule() {
     } else {
       setMessage('草稿已保存在本地（未关联任务项）')
     }
-  }, [targetId, buildDraft, taskItem?.taskItemId])
+  }, [targetId, buildDraft, resolvedItemId])
 
   // ─── 审核:sessionStorage(兼容) + 后端 Review(权威) ───
+  // S6 关联规则(四):任务模式必须携带权威 task_id+task_item_id;standalone 两者均为 null;
+  // 未解析完成/解析失败时禁止提交,绝不降级成 standalone review。
   const commitReviewStatus = useCallback(async (
     status: 'review_approved' | 'rejected',
     at: string,
     overrideDirection?: Direction,
+    noteOverride?: string,
   ): Promise<string | undefined> => {
     if (!targetId || !targetType) return
+    if (taskLink.kind === 'resolving') {
+      setMessage('正在解析任务项关联，请稍候…')
+      return
+    }
+    if (taskLink.kind === 'error') {
+      setMessage(`无法创建审核：${taskLink.message}`)
+      return
+    }
+    // standalone:无任务上下文,两个 ID 均为 null(数据中心直接审核,四)
+    const taskId: string | null = taskLink.kind === 'resolved' ? state.taskId : null
+    const taskItemId: string | null = taskLink.kind === 'resolved' ? taskLink.taskItemId : null
     persistDraft()
-    const meta: ReviewStatusMeta = { direction, evidenceLevel, confidence, note, at }
+    const effectiveNote = noteOverride ?? note
+    const meta: ReviewStatusMeta = { direction, evidenceLevel, confidence, note: effectiveNote, at }
     // 保留 sessionStorage 兼容写入(现有晋升模块兼容读取 + 跨标签瞬时提示)
     saveReviewStatus(targetId, status, meta, state.targetType ?? undefined)
     setReviewStatus({ targetId, status, meta })
@@ -297,9 +358,6 @@ export function EvidenceReviewModule() {
     const paperId: string | null = passages[0]?.paper_id ?? null
     const claimVersion: string = dto?.claim_version ?? 'v1'
     const claimText: string = dto?.claim_text ?? ''
-    const taskItem = queue.find(q => q.target_type === targetType && q.target_id === targetId)
-    const taskId: string | null = state.taskId ?? null
-    const taskItemId: string | null = taskItem?.taskItemId ?? null
     const result = await buildReview({
       target_type: targetType!,
       target_id: targetId!,
@@ -315,7 +373,7 @@ export function EvidenceReviewModule() {
       reviewer_direction: overrideDirection ?? direction,
       reviewer_evidence_level: evidenceLevel,
       reviewer_confidence: parseFloat(confidence) || 0,
-      reviewer_note: (note || null) as string | null,
+      reviewer_note: (effectiveNote || null) as string | null,
       coverage_summary_snapshot: tmpCoverage as unknown as Record<string, unknown>,
       coverage_formula_version: 'v2',
       draft_revision: 0,
@@ -336,7 +394,7 @@ export function EvidenceReviewModule() {
         source_verified: p.source_verified,
         source_verification_method: p.source_verification_method,
         supported_components: p.supported_components,
-        passage_hash: p.hash,
+        passage_hash: String(p.hash || '').slice(0, 64),
         rank: 0,
         is_selected: true,
       })),
@@ -344,23 +402,39 @@ export function EvidenceReviewModule() {
     // 审核通过/驳回 → 推进 StepPills → 人工审核
     setProgress({ reviewed: true })
     return result.review_id
-  }, [targetId, targetType, persistDraft, direction, evidenceLevel, confidence, note, state.targetType, state.taskId, passages, modelDirection, modelAssessment, dto, tmpCoverage, selectedPassages, queue, setProgress])
+  }, [targetId, targetType, persistDraft, direction, evidenceLevel, confidence, note, state.targetType, state.taskId, taskLink, passages, modelDirection, modelAssessment, dto, tmpCoverage, selectedPassages, setProgress])
 
   const handleApprove = useCallback(async () => {
     setReviewBusy(true)
     setMessage(null)
+    // 方向与覆盖不一致时自动补备注（直接传参，不依赖异步 state）
+    let effectiveNote = note
+    if (!effectiveNote.trim() && tmpCoverage && direction !== tmpDirection) {
+      effectiveNote = `人工判定为 ${direction}（覆盖分析显示 ${tmpDirection}），未覆盖要素：${(tmpCoverage.uncovered_components || []).join('、') || '无'}`
+    }
     try {
-      const reviewId = await commitReviewStatus('review_approved', new Date().toISOString())
+      const reviewId = await commitReviewStatus('review_approved', new Date().toISOString(), undefined, effectiveNote)
       if (reviewId) {
         await approveReview(reviewId)
+        // S6 共享刷新(八):任务列表/items/左右栏/审核列表统一重取
+        refresh()
       }
-      setMessage('已审核通过，进入「证据晋升」模块待晋升')
+      setProgress({ reviewed: true, promoted: false })
+      // 自动跳转下一条待处理对象;跳转前记录当前对象供「返回上一条」
+      if (targetType && targetId) setPrevTarget({ target_type: targetType, target_id: targetId })
+      const nextPending = queue.find(e => e.target_id !== targetId && e.status === 'pending')
+      if (nextPending) {
+        setMessage('已审核通过;继续处理下一个对象,全部处理完后可在「证据晋升」中查看')
+        openTarget(nextPending.target_type, nextPending.target_id, 'review')
+      } else {
+        setMessage('已审核通过;当前对象已全部处理,可前往「证据晋升」查看并晋升')
+      }
     } catch (err) {
       setMessage(`审核失败：${err instanceof Error ? err.message : String(err)}`)
     } finally {
       setReviewBusy(false)
     }
-  }, [commitReviewStatus])
+  }, [commitReviewStatus, setProgress, note, direction, tmpDirection, tmpCoverage, queue, targetId, openTarget, refresh])
 
   const handleReject = useCallback(async () => {
     setReviewBusy(true)
@@ -369,16 +443,27 @@ export function EvidenceReviewModule() {
       const reviewId = await commitReviewStatus('rejected', new Date().toISOString(), 'not_found')
       if (reviewId) {
         await rejectReview(reviewId)
+        // S6 共享刷新(八)
+        refresh()
       }
-      setMessage('已驳回该证据，不会进入晋升')
+      // 驳回后留在审核页,自动推进到下一个待处理对象;跳转前记录当前对象供「返回上一条」
+      if (targetType && targetId) setPrevTarget({ target_type: targetType, target_id: targetId })
+      const nextPending = queue.find(e => e.target_id !== targetId && e.status === 'pending')
+      if (nextPending) {
+        setMessage('已驳回;继续处理下一个对象')
+        openTarget(nextPending.target_type, nextPending.target_id, 'review')
+      } else {
+        setMessage('已驳回;当前对象已全部处理')
+      }
     } catch (err) {
       setMessage(`驳回失败：${err instanceof Error ? err.message : String(err)}`)
     } finally {
       setReviewBusy(false)
     }
-  }, [commitReviewStatus])
+  }, [commitReviewStatus, queue, targetId, openTarget, refresh])
 
   // ─── 右栏接入:把人工审核决策状态推送给 Context,RightPanel 渲染 ReviewerDecisionPanel ───
+  // S6:任务关联解析状态随决策面板下发,未解析完成/失败时禁用审核按钮
   const reviewDecision = useMemo<ReviewDecisionState>(() => ({
     direction,
     modelDirection,
@@ -392,6 +477,8 @@ export function EvidenceReviewModule() {
     currentConfidence: dto?.current_confidence ?? null,
     reviewStatus,
     reviewBusy,
+    taskLinkReady: taskLink.kind !== 'resolving' && taskLink.kind !== 'error',
+    taskLinkError: taskLink.kind === 'error' ? taskLink.message : null,
     onDirectionChange: setDirection,
     onEvidenceLevelChange: setEvidenceLevel,
     onConfidenceChange: setConfidence,
@@ -399,7 +486,7 @@ export function EvidenceReviewModule() {
     onApprove: handleApprove,
     onReject: handleReject,
   }), [direction, modelDirection, evidenceLevel, confidence, note, selectedHashes, preview, previewBusy,
-    selectedPassages, tmpCoverage, dto, reviewStatus, reviewBusy, handleApprove, handleReject])
+    selectedPassages, tmpCoverage, dto, reviewStatus, reviewBusy, taskLink, handleApprove, handleReject])
 
   useEffect(() => {
     if (!targetType || !targetId) {
@@ -441,6 +528,19 @@ export function EvidenceReviewModule() {
         <div className="evidence-review-toolbar">
           {reviewToolbarTitle}
           <div className="evidence-review-toolbar-actions">
+            {prevTarget && (
+              <button
+                type="button"
+                className="btn btn-sm"
+                data-testid="review-prev-target"
+                onClick={() => {
+                  persistDraft()
+                  openTarget(prevTarget.target_type, prevTarget.target_id, 'review')
+                }}
+              >
+                ← 返回上一条
+              </button>
+            )}
             <button type="button" className="btn btn-sm" onClick={handleBack}>返回证据候选</button>
             <button type="button" className="btn btn-sm" onClick={() => void handleSaveDraft()}>保存草稿</button>
             {saveState === 'saving' && <span className="ew-meta">保存中…</span>}
@@ -449,62 +549,86 @@ export function EvidenceReviewModule() {
           </div>
         </div>
 
-        <ClaimPanel
-          claimText={dto?.claim_text ?? ''}
-          components={claimComponents}
-          confidence={dto?.current_confidence ?? null}
-          evidenceCount={dto?.existing_evidence ?? 0}
-          targetType={targetType}
-          granularity={dto?.granularity ?? ''}
-        />
-
         <div className="evidence-review-paper" data-testid="evidence-review-paper">
           <h4>当前论文</h4>
-          <strong>{paperTitle || '—'}</strong>
-          <span className="ew-meta">PMID {pmid || '—'} · DOI {doi || '—'}</span>
-          {modelAssessment && <p className="ew-meta">模型评估：{modelAssessment}</p>}
+          <span className="ew-meta">{paperTitle || '—'} · PMID {pmid || '—'}{doi ? ` · DOI ${doi}` : ''}</span>
         </div>
 
+        {rescoreRevisionNo !== null && (
+          <div className="ontology-page-message" data-testid="evidence-rescore-banner">
+            正在进行第 {rescoreRevisionNo} 次评分 · 由第 {(rescoreRevisionNo ?? 2) - 1} 次审核回退
+          </div>
+        )}
         {message && <div className="ontology-page-message">{message}</div>}
 
         <div className="evidence-review-passages">
           <div className="evidence-review-passages-head" data-testid="evidence-review-passages-head">
             <h4>已选佐证原文</h4>
             <span className="evidence-review-passages-count" data-testid="evidence-review-passages-count">{passages.length}</span>
+            {passages.length > 0 && (
+              <button
+                type="button"
+                className="btn btn-sm"
+                disabled={translatingAll || passages.every(p => (translations[p.hash] ?? '').trim())}
+                onClick={() => void translateAllPassages()}
+              >
+                {translatingAll ? '翻译中…' : '翻译全部'}
+              </button>
+            )}
           </div>
           {passages.length === 0 && (
-            <EmptyState compact title="暂无审核草稿" description="请先在「证据候选」中勾选片段并「加入人工审核」。" />
+            <EmptyState compact title="暂无证据片段" description="请先在「证据候选」中勾选片段并进入审核。" />
           )}
-          {passages.map(p => (
-            <PassageEvidenceCard
-              key={p.hash}
-              passage={p}
-              components={claimComponents}
-              selected={selectedHashes.has(p.hash)}
-              translation={translations[p.hash] ?? ''}
-              onToggleSelect={checked => {
-                setSelectedHashes(prev => {
-                  const n = new Set(prev)
-                  if (checked) n.add(p.hash)
-                  else n.delete(p.hash)
-                  return n
-                })
-              }}
-              onLevelChange={level => updatePassage(p.hash, { evidence_level: level })}
-              onComponentToggle={(comp, checked) => {
-                const next = checked
-                  ? [...new Set([...(p.supported_components || []), comp])]
-                  : (p.supported_components || []).filter(c => c !== comp)
-                updatePassage(p.hash, { supported_components: next })
-              }}
-              onTranslationChange={value => setTranslations(t => ({ ...t, [p.hash]: value }))}
-              onTranslate={() => void translatePassage(p.hash, p.passage)}
-              onCopy={() => copyPassage(p.passage)}
-              onShowContext={() => setShowContextHash(prev => (prev === p.hash ? null : p.hash))}
-              showContext={showContextHash === p.hash}
-              onReselect={handleReselect}
-            />
-          ))}
+          {passages.length > 0 && (() => {
+            const p = passages[Math.min(currentPassageIdx, passages.length - 1)]
+            return (
+              <>
+                <PassageEvidenceCard
+                  key={p.hash}
+                  passage={p}
+                  components={claimComponents}
+                  selected={selectedHashes.has(p.hash)}
+                  translation={translations[p.hash] ?? ''}
+                  onToggleSelect={checked => {
+                    setSelectedHashes(prev => {
+                      const n = new Set(prev)
+                      if (checked) n.add(p.hash)
+                      else n.delete(p.hash)
+                      return n
+                    })
+                  }}
+                  onLevelChange={level => updatePassage(p.hash, { evidence_level: level })}
+                  onComponentToggle={(comp, checked) => {
+                    const next = checked
+                      ? [...new Set([...(p.supported_components || []), comp])]
+                      : (p.supported_components || []).filter(c => c !== comp)
+                    updatePassage(p.hash, { supported_components: next })
+                  }}
+                  onTranslationChange={value => setTranslations(t => ({ ...t, [p.hash]: value }))}
+                  onTranslate={() => void translatePassage(p.hash, p.passage)}
+                  onCopy={() => copyPassage(p.passage)}
+                  onShowContext={() => setShowContextHash(prev => (prev === p.hash ? null : p.hash))}
+                  showContext={showContextHash === p.hash}
+                  onReselect={handleReselect}
+                />
+                <div className="evidence-review-passage-nav">
+                  <button type="button" className="btn btn-sm"
+                    disabled={currentPassageIdx === 0}
+                    onClick={() => setCurrentPassageIdx(i => Math.max(0, i - 1))}>
+                    ← 上一个
+                  </button>
+                  <span className="ew-meta" data-testid="evidence-review-passage-nav-idx">
+                    片段 {currentPassageIdx + 1} / {passages.length}
+                  </span>
+                  <button type="button" className="btn btn-sm"
+                    disabled={currentPassageIdx >= passages.length - 1}
+                    onClick={() => setCurrentPassageIdx(i => Math.min(passages.length - 1, i + 1))}>
+                    下一个 →
+                  </button>
+                </div>
+              </>
+            )
+          })()}
         </div>
 
         {selectedPassages.length > 0 && (
