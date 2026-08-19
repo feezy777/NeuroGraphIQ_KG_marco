@@ -5146,6 +5146,22 @@ async def _process_batch_item_v2(
     async with AsyncSessionLocal() as session:
         stage = "search"
         try:
+            # 非神经靶标:已标记结构性不存在,直接完成(不检索、不调 LLM)
+            marked_row = (
+                await session.execute(
+                    text(
+                        "SELECT preprocess_outcome FROM paper_evidence_task_items WHERE id::text = :iid"
+                    ),
+                    {"iid": item_id},
+                )
+            ).first()
+            if marked_row is not None and marked_row[0] == "non_neural_target":
+                await _set_item_stage(
+                    session, item_id, "awaiting_review",
+                    preprocess_outcome="non_neural_target",
+                    finished_preprocessing_at="SQL:now()",
+                )
+                return
             context = await build_retrieval_context(
                 session, target_type, uuid.UUID(target_id), mode=mode
             )

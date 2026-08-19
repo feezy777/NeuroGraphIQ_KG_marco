@@ -214,6 +214,30 @@ class TestBatchStateMachine:
         finally:
             _run(_cleanup([task_id]))
 
+    def test_non_neural_item_skips_search(self):
+        oid = str(uuid.uuid4())
+        with (
+            patch.object(pes, "_resolve_scope_ids", new=AsyncMock(return_value=[oid])),
+            patch.object(pes, "_resolve_scope_ids_low_confidence", new=AsyncMock(return_value=[oid])),
+            patch.object(pes, "_batch_scope_label", new=AsyncMock(side_effect=lambda s, tt, o: (f"X → 侧脑室", 0.1))),
+            patch.object(pes, "_classify_item_target", new=AsyncMock(return_value="non_neural")),
+        ):
+            result = _run(_make_task_inner(target_ids=[oid], start_paused=False))
+        task_id = result["task_id"]
+        try:
+            with (
+                patch.object(pes, "build_retrieval_context", new=AsyncMock(return_value={})),
+                patch.object(pes, "search_papers", new=AsyncMock(return_value=[])),
+                patch.object(pes, "pack_target_info", new=AsyncMock(return_value={})),
+            ):
+                _run(_run_loop(task_id))
+                # 已标记 item:不触发检索,直接 awaiting_review
+                items = _run(_read_task_items(task_id))
+                assert items[0][1] == "awaiting_review"
+                assert pes.search_papers.await_count == 0  # type: ignore[attr-defined]
+        finally:
+            _run(_cleanup([task_id]))
+
 
 class TestReviewQueueStatsAudit:
     def test_review_queue_resolve_and_stats_shape(self):
