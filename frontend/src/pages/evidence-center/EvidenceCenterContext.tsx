@@ -23,10 +23,18 @@ export const INITIAL_OBJECT_PROGRESS: ObjectProgress = {
   promoted: false,
 }
 
+export type TaskFilterGroup = 'all' | 'connection' | 'circuit' | 'function'
+
 interface EvidenceCenterContextValue {
   state: EvidenceCenterState
   queue: QueueEntry[]
   setQueue: (q: QueueEntry[]) => void
+  /** 佐证任务页:当前选中的任务卡(仅内存联动,不写 URL;点「继续验证」才跳转) */
+  selectedTaskId: string | null
+  setSelectedTaskId: (id: string | null) => void
+  /** 佐证任务页:类型筛选组(左栏与中栏共用) */
+  taskFilterGroup: TaskFilterGroup
+  setTaskFilterGroup: (g: TaskFilterGroup) => void
   /** 当前对象的处理进度(StepPills 由 module + progress 推导) */
   progress: ObjectProgress
   /** 推进当前对象进度(仅置位,永不回退;切换对象时由 openTask/openTarget 重置) */
@@ -91,6 +99,8 @@ export function EvidenceCenterProvider({ children, embedded }: { children: React
       : parseEvidenceUrl(window.location.hash),
   )
   const [queue, setQueue] = useState<QueueEntry[]>([])
+  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null)
+  const [taskFilterGroup, setTaskFilterGroup] = useState<TaskFilterGroup>('all')
   const [progress, setProgressState] = useState<ObjectProgress>(INITIAL_OBJECT_PROGRESS)
   const [candidateClaim, setCandidateClaim] = useState<{
     claimText: string
@@ -225,6 +235,10 @@ export function EvidenceCenterProvider({ children, embedded }: { children: React
     state,
     queue,
     setQueue,
+    selectedTaskId,
+    setSelectedTaskId,
+    taskFilterGroup,
+    setTaskFilterGroup,
     progress,
     setProgress,
     gotoModule,
@@ -256,7 +270,7 @@ export function EvidenceCenterProvider({ children, embedded }: { children: React
     setEnterReviewFromPassages,
     taskSummaryActions,
     setTaskSummaryActions,
-  }), [state, queue, progress, setProgress, gotoModule, openTask, openTarget, closeTask, openTaskTarget, closeTarget, backfillTaskItem, selectPaper, candidateClaim, reviewDecision, promotionImpact, taskSummary, candidatePassages, viewCandidatePaper, candidateSelectedHashes, taskSummaryActions])
+  }), [state, queue, selectedTaskId, setSelectedTaskId, taskFilterGroup, setTaskFilterGroup, progress, setProgress, gotoModule, openTask, openTarget, closeTask, openTaskTarget, closeTarget, backfillTaskItem, selectPaper, candidateClaim, reviewDecision, promotionImpact, taskSummary, candidatePassages, viewCandidatePaper, candidateSelectedHashes, taskSummaryActions])
 
   return <EvidenceCenterContext.Provider value={value}>{children}</EvidenceCenterContext.Provider>
 }

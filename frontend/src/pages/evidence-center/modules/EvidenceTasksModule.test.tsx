@@ -72,7 +72,7 @@ describe('EvidenceTasksModule(对象级任务卡:命名/跳转/排序/筛选)', 
     expect(within(card).getByText(/结构性不存在/)).toBeTruthy()
   })
 
-  it('中文缺失仅英文;name 备注作第三行不替换标题', async () => {
+  it('中文缺失仅英文;卡片标题不被内部名抢占', async () => {
     vi.mocked(endpoints.listPaperEvidenceTasks).mockResolvedValue({
       items: [makeTask({ display_name_cn: null, display_name_en: 'Amygdala → Hippocampus', name: '重新评分 · x · projection' })],
       total: 1,
@@ -80,8 +80,8 @@ describe('EvidenceTasksModule(对象级任务卡:命名/跳转/排序/筛选)', 
     renderModule()
     const card = await screen.findByTestId('evidence-task-card-t1')
     expect(within(card).getByText('Amygdala → Hippocampus')).toBeTruthy()
-    expect(within(card).getByText('重新评分 · x · projection')).toBeTruthy()
-    expect(screen.queryByText('重新评分 · x · projection (Amygdala → Hippocampus)')).toBeNull()
+    // 内部名不再作为标题或备注行出现
+    expect(screen.queryByText('重新评分 · x · projection')).toBeNull()
   })
 
   it('镜像缺失兜底「类型中文 #短ID」', async () => {
@@ -95,10 +95,15 @@ describe('EvidenceTasksModule(对象级任务卡:命名/跳转/排序/筛选)', 
     expect(within(card).getByText('未评分')).toBeTruthy()
   })
 
-  it('整卡点击 → 跳转 candidates(与数据中心一致)+ initial-queue 快照', async () => {
+  it('点击卡片 = 选中预览(不跳转);「继续验证」按钮才跳转 candidates + initial-queue 快照', async () => {
     vi.mocked(endpoints.listPaperEvidenceTasks).mockResolvedValue({ items: [makeTask({})], total: 1 })
     renderModule()
     fireEvent.click(await screen.findByTestId('evidence-task-card-t1'))
+    // 点击仅选中:URL 不变,卡片高亮
+    expect(window.location.hash).not.toContain('module=candidates')
+    expect(screen.getByTestId('evidence-task-card-t1').className).toContain('evidence-task-card-selected')
+    // 点击「继续验证」才跳转
+    fireEvent.click(screen.getByTestId('evidence-task-action-continue-t1'))
     await waitFor(() => expect(window.location.hash).toContain('module=candidates'))
     expect(window.location.hash).toContain('task_id=t1')
     expect(window.location.hash).toContain('target_type=connection')
@@ -119,7 +124,7 @@ describe('EvidenceTasksModule(对象级任务卡:命名/跳转/排序/筛选)', 
     expect(window.location.hash).not.toContain('module=candidates')
   })
 
-  it('键盘 Enter 触发在按钮上时不冒泡触发整卡跳转', async () => {
+  it('键盘 Enter:按钮上不冒泡选中;卡片自身 Enter 选中', async () => {
     vi.mocked(endpoints.listPaperEvidenceTasks).mockResolvedValue({
       items: [makeTask({ work_status: 'processing', status: 'running', capabilities: { can_continue_review: false, can_pause: true, can_resume: false, can_retry_failed: false, can_view_results: false } })],
       total: 1,
@@ -127,11 +132,13 @@ describe('EvidenceTasksModule(对象级任务卡:命名/跳转/排序/筛选)', 
     renderModule()
     const pauseBtn = await screen.findByTestId('evidence-task-action-pause-t1')
     fireEvent.keyDown(pauseBtn, { key: 'Enter' })
+    // 按钮 Enter:触发暂停,不选中卡片
+    expect(screen.getByTestId('evidence-task-card-t1').className).not.toContain('evidence-task-card-selected')
     expect(window.location.hash).not.toContain('module=candidates')
-    // 整卡自身 Enter 仍触发跳转
+    // 卡片自身 Enter:选中
     const card = screen.getByTestId('evidence-task-card-t1')
     fireEvent.keyDown(card, { key: 'Enter' })
-    await waitFor(() => expect(window.location.hash).toContain('module=candidates'))
+    expect(screen.getByTestId('evidence-task-card-t1').className).toContain('evidence-task-card-selected')
   })
 
   it('排序:处理中→待验证→已完成→失败;组内置信度升序 null 最前', async () => {

@@ -13096,3 +13096,255 @@ a.paper-card-title[href]:hover { color: var(--primary, #1a73e8); text-decoration
   background: #fdf4f5;
   color: #b03a2e;
 }
+
+/* ═══════════════════════════════════════════════════════════════
+   佐证任务页三栏重构(2026-08-19)
+   ═══════════════════════════════════════════════════════════════ */
+
+/* 三栏:左 250 / 中自适应 / 右 320;各自独立滚动 */
+.evidence-center-layout {
+  display: grid;
+  grid-template-columns: 250px minmax(0, 1fr) 320px;
+  gap: 14px;
+  align-items: start;
+}
+.evidence-left, .evidence-main, .evidence-right {
+  max-height: calc(100vh - 200px);
+  overflow-y: auto;
+}
+.evidence-left {
+  padding-right: 2px;
+}
+.evidence-main {
+  padding: 0 2px;
+}
+.evidence-right {
+  padding-left: 2px;
+}
+
+/* ── 左栏:任务筛选 + 任务预览 ── */
+.task-filter-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.task-filter-section-title {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #5f6b7d;
+  margin-bottom: 8px;
+  letter-spacing: 0.02em;
+}
+.task-filter-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.task-filter-pill {
+  padding: 4px 14px;
+  border-radius: 999px;
+  border: 1px solid #e3e9f2;
+  background: #fff;
+  font-size: 12.5px;
+  color: #5f6b7d;
+  cursor: pointer;
+  transition: all .15s ease;
+}
+.task-filter-pill:hover { border-color: var(--primary); color: var(--primary); }
+.task-filter-pill-active {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: #fff;
+  font-weight: 550;
+}
+.task-preview-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.task-preview-hint {
+  padding: 18px 14px;
+  border: 1px dashed #dde3ec;
+  border-radius: 10px;
+  background: #f8fafc;
+  color: #8a94a6;
+  font-size: 13px;
+  text-align: center;
+}
+.task-preview-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px;
+  border: 1px solid #e3e9f2;
+  border-radius: 10px;
+  background: #fff;
+}
+.task-preview-title {
+  font-size: 14.5px;
+  font-weight: 650;
+  color: #1b2a3f;
+  line-height: 1.35;
+}
+.task-preview-detail {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 12.5px;
+  color: #8a94a6;
+  border-bottom: 1px dashed #eef2f7;
+  padding-bottom: 6px;
+}
+.task-preview-detail b {
+  font-weight: 550;
+  color: #37465c;
+  text-align: right;
+}
+.task-preview-id {
+  font-family: ui-monospace, monospace;
+  font-size: 11.5px;
+}
+.task-preview-outcome { color: #b03a2e !important; }
+.task-preview-actions {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  margin-top: 6px;
+}
+.task-preview-primary { flex: 1; }
+.task-preview-foot {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11.5px;
+  color: #a2adbd;
+}
+
+/* ── 中栏:顶部一行(搜索/筛选/刷新)+ 轻量摘要 ── */
+.evidence-task-toolbar { display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px; }
+.evidence-task-toolbar-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.evidence-task-search {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+.evidence-task-search-icon {
+  position: absolute;
+  left: 9px;
+  color: #a2adbd;
+  pointer-events: none;
+}
+.evidence-task-search-input {
+  width: 180px;
+  padding-left: 28px !important;
+  border-radius: 8px;
+}
+.evidence-task-summary {
+  font-size: 12px;
+  color: #8a94a6;
+  background: #f6f8fb;
+  border-radius: 8px;
+  padding: 5px 12px;
+  display: inline-block;
+  width: fit-content;
+}
+
+/* ── 中栏:对象卡信息层级 ── */
+.evidence-task-card-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+.evidence-task-card {
+  gap: 6px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  min-height: 132px;
+  justify-content: space-between;
+}
+.evidence-task-card-title {
+  font-size: 14px;
+  line-height: 1.35;
+  flex: 1;
+  min-width: 0;
+}
+.evidence-task-card-head {
+  align-items: flex-start;
+}
+.evidence-task-card-meta { margin-top: 0; }
+.evidence-task-card-type {
+  font-size: 11px;
+  padding: 1px 8px;
+}
+.evidence-task-card-confidence {
+  font-size: 1.05rem;
+  font-weight: 700;
+  margin-top: 2px;
+}
+.evidence-task-card-evidence {
+  font-size: 12px;
+  color: #6b7889;
+}
+.evidence-task-card-progress {
+  height: 4px;
+  border-radius: 999px;
+  background: #eef2f7;
+  overflow: hidden;
+}
+.evidence-task-card-progress-bar {
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--primary), #5aa7ef);
+  transition: width .3s ease;
+}
+.evidence-task-card-actions {
+  margin-top: 4px;
+  padding-top: 6px;
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.evidence-task-card-actions .btn-primary { box-shadow: none; }
+
+/* 窄窗口:每行 2 张 */
+@media (max-width: 1280px) {
+  .evidence-task-card-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+/* ── 右栏:已处理数据(分隔线列表,非厚卡) ── */
+.evidence-queue-done {
+  border-top: none;
+  padding-top: 0;
+  gap: 0;
+}
+.evidence-queue-done-item {
+  border: none;
+  border-radius: 0;
+  border-bottom: 1px solid #eef2f7;
+  padding: 10px 4px;
+  background: transparent;
+}
+.evidence-queue-done-item:last-child { border-bottom: none; }
+.evidence-processed-view-all {
+  margin-top: 8px;
+  border: none;
+  background: none;
+  color: var(--primary);
+  font-size: 12.5px;
+  cursor: pointer;
+  padding: 4px 0;
+  text-align: left;
+}
+.evidence-processed-view-all:hover { text-decoration: underline; }
+
+/* 三栏窄屏降级:左/右栏收起为可滚动列 */
+@media (max-width: 1080px) {
+  .evidence-center-layout {
+    grid-template-columns: 210px minmax(0, 1fr) 280px;
+  }
+}

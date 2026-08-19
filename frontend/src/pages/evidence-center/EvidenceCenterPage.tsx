@@ -9,6 +9,7 @@ import { RightPanel } from './components/RightPanel'
 import { TaskItemsRefreshProvider } from './components/taskItemsRefreshContext'
 import { StepPills } from './components/StepPills'
 import { QUEUE_STATUS_LABEL } from './components/types'
+import { TaskFilterPreviewPanel } from './components/TaskFilterPreviewPanel'
 import { EvidenceCandidatesModule } from './modules/EvidenceCandidatesModule'
 import { EvidencePromotionModule } from './modules/EvidencePromotionModule'
 import { EvidenceReviewModule } from './modules/EvidenceReviewModule'
@@ -91,19 +92,7 @@ function EvidenceCenterBody({ embedded }: { embedded?: boolean }) {
         {!isPapers && (
           <aside className="evidence-left">
             {state.module === 'tasks' ? (
-              <>
-                {!candidateClaim && (
-                  <div className="evidence-left-hint" data-testid="evidence-left-hint">
-                    点击任务卡片查看验证事实
-                  </div>
-                )}
-                <ClaimSummaryPanel
-                  claimText={candidateClaim?.claimText ?? ''}
-                  components={candidateClaim?.components ?? []}
-                  targetType={candidateClaim?.targetType ?? ''}
-                  granularity={candidateClaim?.granularity ?? null}
-                />
-              </>
+              <TaskFilterPreviewPanel />
             ) : state.module === 'review' || state.module === 'promotion' ? (
               <ObjectQueue
                 queue={queue}

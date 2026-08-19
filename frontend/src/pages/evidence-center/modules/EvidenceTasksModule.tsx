@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Inbox } from 'lucide-react'
+import { Inbox, Search } from 'lucide-react'
 import {
   listPaperEvidenceTaskItems,
   pausePaperEvidenceTask,
@@ -9,11 +9,12 @@ import {
 } from '../../../api/endpoints'
 import { ApiError } from '../../../api/client'
 import { useGlobalGranularity } from '../../../hooks/useGlobalGranularity'
-import { useEvidenceCenter } from '../EvidenceCenterContext'
+import { useEvidenceCenter, type TaskFilterGroup } from '../EvidenceCenterContext'
 import { navigateToEvidenceCandidates } from '../evidenceCenterUrl'
 import { CreateBatchTaskDialog } from '../components/CreateBatchTaskDialog'
 import { EmptyState } from '../components/EmptyState'
 import { ConfirmDialog } from '../../../components/ConfirmDialog'
+import { GROUP_TYPES, taskEvidenceProgress } from '../components/TaskFilterPreviewPanel'
 import {
   PREPROCESS_OUTCOME_LABELS,
   TARGET_TYPE_LABELS,
@@ -34,25 +35,30 @@ const BUSY_LABELS: Record<string, string> = {
   continue: '正在查找…',
 }
 
+const FILTER_CHIPS: { key: TaskFilterGroup; label: string }[] = [
+  { key: 'all', label: '全部' },
+  { key: 'connection', label: '连接' },
+  { key: 'circuit', label: '回路' },
+  { key: 'function', label: '功能' },
+]
+
 /** 中栏排序:处理中 → 已暂停 → 待验证 → 已完成 → 部分失败 → 失败;组内置信度升序(null 最前) */
 const STATUS_GROUP_ORDER: Record<string, number> = {
   processing: 0, paused: 1, awaiting_review: 2, completed: 3, partially_failed: 4, failed: 5,
 }
 
-const GROUP_FILTERS: { key: string; label: string; types: string[] | null }[] = [
-  { key: 'all', label: '全部', types: null },
-  { key: 'connection', label: '连接', types: ['connection', 'projection'] },
-  { key: 'circuit', label: '回路', types: ['circuit', 'circuit_step', 'circuit_function'] },
-  { key: 'function', label: '功能', types: ['region_function', 'projection_function'] },
-]
+/** 待处理(未完成)状态集合 */
+const ACTIVE_STATUSES = new Set(['processing', 'paused', 'awaiting_review', 'partially_failed'])
 
-/** 对象级任务卡片:标题=对象中英文名;整卡点击跳转证据佐证页(与数据中心入口一致) */
-function TaskCard({ task, busy, onJump, onResume, onPause, onRetry }: {
+/** 对象级任务卡片:信息层级统一(标题/Badge → 类型 → 置信度 → 证据进度 → 进度条 → 操作) */
+function TaskCard({ task, selected, busy, onSelect, onResume, onPause, onContinue, onRetry }: {
   task: PaperEvidenceTask
+  selected: boolean
   busy: CardAction | null
-  onJump: () => void
+  onSelect: () => void
   onResume: () => void
   onPause: () => void
+  onContinue: () => void
   onRetry: () => void
 }) {
   const ws = task.work_status
@@ -60,39 +66,28 @@ function TaskCard({ task, busy, onJump, onResume, onPause, onRetry }: {
     can_continue_review: false, can_pause: false, can_resume: false, can_retry_failed: false, can_view_results: false,
   }
   const typeLabel = TARGET_TYPE_LABELS[task.target_type] ?? task.target_type
-  const fallback = `${typeLabel} #${(task.target_id ?? task.id).slice(0, 8)}`
-  const title = objectCardTitle(task.display_name_cn, task.display_name_en, fallback)
+  const title = objectCardTitle(
+    task.display_name_cn,
+    task.display_name_en,
+    `${typeLabel} #${(task.target_id ?? task.id).slice(0, 8)}`,
+  )
+  const { done, total } = taskEvidenceProgress(task)
+  const pct = total > 0 ? Math.round((done / total) * 100) : 0
+  const isDone = ws === 'completed'
+  const primaryLabel = isDone ? '查看结果' : '继续验证'
 
-  let primary: { key: CardAction; label: string; handler: () => void } | null = null
-  let secondary: { key: CardAction; label: string; handler: () => void } | null = null
-  if (ws === 'paused') {
-    primary = { key: 'resume', label: '继续任务', handler: onResume }
-  } else if (ws === 'awaiting_review' || (cap.can_continue_review && ws === 'partially_failed')) {
-    primary = { key: 'continue', label: '继续验证', handler: onJump }
-    if (ws === 'partially_failed' && cap.can_retry_failed) {
-      secondary = { key: 'retry', label: '重试失败项', handler: onRetry }
-    }
-  } else if (ws === 'processing') {
-    primary = { key: 'view', label: '查看进度', handler: onJump }
-    if (cap.can_pause) secondary = { key: 'pause', label: '暂停', handler: onPause }
-  } else if (ws === 'partially_failed' || ws === 'failed') {
-    primary = { key: 'retry', label: '重试失败项', handler: onRetry }
-  } else if (ws === 'completed') {
-    primary = { key: 'view', label: '查看结果', handler: onJump }
-  }
-
-  const button = (a: { key: CardAction; label: string; handler: () => void }) => (
+  const button = (key: CardAction, label: string, handler: () => void) => (
     <button
       type="button"
-      className="btn btn-xs"
-      data-testid={`evidence-task-action-${a.key}-${task.id}`}
+      className={`btn btn-xs${key === 'continue' || key === 'view' ? ' btn-primary' : ''}`}
+      data-testid={`evidence-task-action-${key}-${task.id}`}
       disabled={busy !== null}
       onClick={e => {
         e.stopPropagation()
-        if (busy === null) a.handler()
+        if (busy === null) handler()
       }}
     >
-      {busy === a.key ? BUSY_LABELS[a.key] : a.label}
+      {busy === key ? BUSY_LABELS[key] : label}
     </button>
   )
 
@@ -100,14 +95,14 @@ function TaskCard({ task, busy, onJump, onResume, onPause, onRetry }: {
     <div
       role="button"
       tabIndex={0}
-      className="evidence-task-card evidence-task-card-clickable"
+      className={`evidence-task-card evidence-task-card-clickable${selected ? ' evidence-task-card-selected' : ''}`}
       data-testid={`evidence-task-card-${task.id}`}
-      onClick={onJump}
+      onClick={onSelect}
       onKeyDown={e => {
         if (e.target !== e.currentTarget) return
         if (e.key === 'Enter' || e.key === ' ') {
           e.preventDefault()
-          onJump()
+          onSelect()
         }
       }}
     >
@@ -119,37 +114,46 @@ function TaskCard({ task, busy, onJump, onResume, onPause, onRetry }: {
       </div>
       <div className="evidence-task-card-meta">
         <span className="evidence-task-card-type">{typeLabel}</span>
-        <span className="evidence-task-card-confidence" data-unscored={task.display_confidence == null ? 'true' : 'false'}>{formatConfidencePercent(task.display_confidence)}</span>
+        {(task.preprocess_outcome === 'non_neural_target' || task.preprocess_outcome === 'evidence_negated') && (
+          <span className="evidence-task-chip evidence-task-chip-bad" data-testid={`evidence-task-outcome-${task.id}`}>
+            {PREPROCESS_OUTCOME_LABELS[task.preprocess_outcome]}
+          </span>
+        )}
       </div>
-      {(task.preprocess_outcome === 'non_neural_target' || task.preprocess_outcome === 'evidence_negated') && (
-        <div className="evidence-task-chip evidence-task-chip-bad" data-testid={`evidence-task-outcome-${task.id}`}>
-          {PREPROCESS_OUTCOME_LABELS[task.preprocess_outcome]}
-        </div>
-      )}
-      {task.name && <div className="evidence-task-card-remark">{task.name}</div>}
-      {(primary || secondary) && (
-        <div className="evidence-task-card-actions">
-          {primary && button(primary)}
-          {secondary && button(secondary)}
-        </div>
-      )}
+      <div className="evidence-task-card-confidence" data-unscored={task.display_confidence == null ? 'true' : 'false'}>
+        {formatConfidencePercent(task.display_confidence)}
+      </div>
+      <div className="evidence-task-card-evidence">证据 {done} / {total}</div>
+      <div className="evidence-task-card-progress" data-testid={`evidence-task-progress-${task.id}`}>
+        <div className="evidence-task-card-progress-bar" style={{ width: `${pct}%` }} />
+      </div>
+      <div className="evidence-task-card-actions">
+        {ws === 'paused' ? (
+          button('resume', '继续任务', onResume)
+        ) : ws === 'awaiting_review' || ws === 'partially_failed' || ws === 'processing' ? (
+          <>
+            {button('continue', primaryLabel, onContinue)}
+            {ws === 'processing' && cap.can_pause && button('pause', '暂停', onPause)}
+            {ws === 'partially_failed' && cap.can_retry_failed && button('retry', '重试失败项', onRetry)}
+          </>
+        ) : isDone ? (
+          button('view', '查看结果', onContinue)
+        ) : ws === 'failed' || ws === 'partially_failed' ? (
+          button('retry', '重试失败项', onRetry)
+        ) : null}
+      </div>
     </div>
   )
 }
 
-/** 佐证任务中栏:对象级任务卡列表(整卡跳转证据佐证页) */
+/** 佐证任务中栏:对象级任务卡(点击=选中预览,「继续验证/查看结果」才跳转) */
 export function EvidenceTasksModule() {
   const { granularity } = useGlobalGranularity()
-  const { state } = useEvidenceCenter()
+  const { state, selectedTaskId, setSelectedTaskId, taskFilterGroup, setTaskFilterGroup } = useEvidenceCenter()
   const { tasks, loading, error, reload } = useEvidenceTaskItems()
   const { refresh } = useTaskItemsRefresh()
-  const [createOpen, setCreateOpen] = useState(false)
-  const [busy, setBusy] = useState<{ taskId: string; action: CardAction } | null>(null)
-  const [message, setMessage] = useState<string | null>(null)
-  const [retryTarget, setRetryTarget] = useState<PaperEvidenceTask | null>(null)
-  const [group, setGroup] = useState('all')
 
-  // 深链/右栏点击兼容:module=tasks 携带 target 参数时直接跳转佐证页(与卡片点击一致)
+  // 深链/右栏点击兼容:module=tasks 携带 target 参数时直接跳转佐证页(与卡片「继续验证」一致)
   useEffect(() => {
     if (state.module !== 'tasks' || !state.targetType || !state.targetId) return
     const t = tasks.find(x => x.id === state.taskId)
@@ -163,12 +167,24 @@ export function EvidenceTasksModule() {
       taskId: state.taskId,
     })
   }, [state.module, state.targetType, state.targetId, state.taskId, tasks])
+  const [createOpen, setCreateOpen] = useState(false)
+  const [busy, setBusy] = useState<{ taskId: string; action: CardAction } | null>(null)
+  const [message, setMessage] = useState<string | null>(null)
+  const [retryTarget, setRetryTarget] = useState<PaperEvidenceTask | null>(null)
+  const [search, setSearch] = useState('')
 
-  const sortedTasks = useMemo(() => {
-    const groupTypes = GROUP_FILTERS.find(g => g.key === group)?.types ?? null
+  const groupTypes = GROUP_TYPES[taskFilterGroup]
+
+  const filteredTasks = useMemo(() => {
+    const kw = search.trim().toLowerCase()
     return [...tasks]
       .filter(t => t.work_status !== 'cancelled' && t.work_status !== 'empty')
       .filter(t => !groupTypes || groupTypes.includes(t.target_type))
+      .filter(t => {
+        if (!kw) return true
+        const title = `${t.display_name_cn ?? ''} ${t.display_name_en ?? ''} ${t.name ?? ''}`.toLowerCase()
+        return title.includes(kw)
+      })
       .sort((a, b) => {
         const ga = STATUS_GROUP_ORDER[a.work_status] ?? 9
         const gb = STATUS_GROUP_ORDER[b.work_status] ?? 9
@@ -180,7 +196,18 @@ export function EvidenceTasksModule() {
         if (cb === null) return 1
         return ca - cb
       })
-  }, [tasks, group])
+  }, [tasks, groupTypes, search])
+
+  // 轻量摘要:待处理 / 进行中 / 已完成
+  const summary = useMemo(() => {
+    let pending = 0, processing = 0, completed = 0
+    for (const t of filteredTasks) {
+      if (ACTIVE_STATUSES.has(t.work_status)) pending += 1
+      if (t.work_status === 'processing') processing += 1
+      if (t.work_status === 'completed') completed += 1
+    }
+    return { pending, processing, completed }
+  }, [filteredTasks])
 
   const jumpToCandidates = (task: PaperEvidenceTask) => {
     if (!task.target_id) return
@@ -290,29 +317,35 @@ export function EvidenceTasksModule() {
   return (
     <div className="evidence-task-module">
       <div className="evidence-task-toolbar">
-        <div className="evidence-task-toolbar-title">
-          <h3>佐证任务</h3>
-          <p className="evidence-module-hint">
-            一个任务 = 一个知识对象;点击卡片进入证据佐证页,卡片按钮执行对应操作。
-          </p>
-        </div>
-        <div className="evidence-task-toolbar-actions">
-          <button type="button" className="btn btn-sm" onClick={reload}>刷新</button>
+        <div className="evidence-task-toolbar-row">
+          <div className="evidence-task-search">
+            <Search size={14} className="evidence-task-search-icon" />
+            <input
+              className="filter-input evidence-task-search-input"
+              placeholder="搜索任务…"
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              data-testid="evidence-task-search"
+            />
+          </div>
+          <div className="evidence-task-filter-chips" data-testid="evidence-task-filter-chips">
+            {FILTER_CHIPS.map(g => (
+              <button
+                key={g.key}
+                type="button"
+                className={`btn btn-xs${taskFilterGroup === g.key ? ' btn-primary' : ''}`}
+                onClick={() => setTaskFilterGroup(g.key)}
+              >
+                {g.label}
+              </button>
+            ))}
+          </div>
+          <button type="button" className="btn btn-sm" onClick={reload} data-testid="evidence-task-refresh">刷新</button>
           <button type="button" className="btn btn-sm" onClick={() => setCreateOpen(true)}>创建批量预处理</button>
         </div>
-      </div>
-
-      <div className="evidence-task-filter-chips" data-testid="evidence-task-filter-chips">
-        {GROUP_FILTERS.map(g => (
-          <button
-            key={g.key}
-            type="button"
-            className={`btn btn-xs${group === g.key ? ' btn-primary' : ''}`}
-            onClick={() => setGroup(g.key)}
-          >
-            {g.label}
-          </button>
-        ))}
+        <div className="evidence-task-summary" data-testid="evidence-task-summary">
+          待处理 {summary.pending} &nbsp; 进行中 {summary.processing} &nbsp; 已完成 {summary.completed}
+        </div>
       </div>
 
       {message && <div className="ontology-page-message" data-testid="evidence-task-message">{message}</div>}
@@ -324,7 +357,7 @@ export function EvidenceTasksModule() {
           <button type="button" className="btn btn-sm" onClick={reload}>重试</button>
         </div>
       )}
-      {!loading && !error && sortedTasks.length === 0 && (
+      {!loading && !error && filteredTasks.length === 0 && (
         <EmptyState
           icon={<Inbox size={24} />}
           title="暂无佐证任务"
@@ -333,19 +366,18 @@ export function EvidenceTasksModule() {
           onAction={() => setCreateOpen(true)}
         />
       )}
-      {!loading && !error && sortedTasks.length > 0 && (
+      {!loading && !error && filteredTasks.length > 0 && (
         <div className="evidence-task-card-grid" data-testid="evidence-task-card-grid">
-          {sortedTasks.map(t => (
+          {filteredTasks.map(t => (
             <TaskCard
               key={t.id}
               task={t}
+              selected={selectedTaskId === t.id}
               busy={busy && busy.taskId === t.id ? busy.action : null}
-              onJump={() => {
-                if (t.target_id) jumpToCandidates(t)
-                else void handleContinueReview(t)
-              }}
+              onSelect={() => setSelectedTaskId(t.id)}
               onResume={() => void handleResume(t)}
               onPause={() => void handlePause(t)}
+              onContinue={() => void handleContinueReview(t)}
               onRetry={() => setRetryTarget(t)}
             />
           ))}

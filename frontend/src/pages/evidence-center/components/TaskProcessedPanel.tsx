@@ -448,6 +448,11 @@ export function TaskProcessedPanel() {
         reviewId={historyReviewId}
         onClose={() => setHistoryReviewId(null)}
       />
+      {processed.length > 0 && (
+        <button type="button" className="evidence-processed-view-all" data-testid="evidence-processed-view-all">
+          查看全部 &gt;
+        </button>
+      )}
     </div>
   )
 }

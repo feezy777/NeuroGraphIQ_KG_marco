@@ -238,12 +238,12 @@ describe('EvidenceCenterPage', () => {
     await waitFor(() => expect(screen.getByText(/暂无论文/)).toBeTruthy())
   })
 
-  it('tasks 布局:左栏 Claim 面板(空态提示),右栏已处理面板', async () => {
+  it('tasks 布局:左栏任务筛选+预览空态,右栏已处理面板', async () => {
     window.location.hash = '#/evidence-center?module=tasks'
     const { container } = render(<EvidenceCenterPage />)
     await waitFor(() => expect(screen.getByTestId('evidence-processed-panel')).toBeTruthy())
-    expect(screen.getByTestId('evidence-left-hint')).toBeTruthy()
-    expect(screen.getByText('点击任务卡片查看验证事实')).toBeTruthy()
+    expect(screen.getByTestId('task-filter-preview')).toBeTruthy()
+    expect(screen.getByTestId('task-preview-hint').textContent).toContain('点击任务卡片查看验证事实')
     fireEvent.click(screen.getByText('证据候选'))
     await waitFor(() => expect(screen.getByTestId('evidence-queue-panel')).toBeTruthy())
     const title = () => container.querySelector('.evidence-right-panel h4')?.textContent ?? ''
@@ -467,7 +467,7 @@ describe('EvidenceCenterPage', () => {
     expect(doneItems[0].className).not.toContain('evidence-queue-item-active')
   })
 
-  it('任务卡点击 → 页面切换到 candidates 模块并带 task/target 参数', async () => {
+  it('任务卡点击 → 仅选中(URL 不变)+ 左栏预览联动', async () => {
     const taskA = { ...TASK_FIXTURE, id: 'ta' }
     vi.mocked(listPaperEvidenceTasks).mockResolvedValue({ items: [taskA], total: 1 })
     vi.mocked(listPaperEvidenceTaskItems).mockResolvedValue({ items: [] })
@@ -475,9 +475,13 @@ describe('EvidenceCenterPage', () => {
     render(<EvidenceCenterPage />)
     await waitFor(() => expect(screen.getByTestId('evidence-task-card-ta')).toBeTruthy())
     fireEvent.click(screen.getByTestId('evidence-task-card-ta'))
-    await waitFor(() => expect(window.location.hash).toContain('module=candidates'))
-    expect(window.location.hash).toContain('task_id=ta')
-    expect(window.location.hash).toContain('target_id=r1-r2')
+    // 不跳转
+    expect(window.location.hash).not.toContain('module=candidates')
+    expect(window.location.hash).not.toContain('task_id=')
+    // 左栏预览出现该任务信息
+    await waitFor(() => expect(screen.getByTestId('task-preview-card')).toBeTruthy())
+    expect(screen.getByTestId('task-preview-card').textContent).toContain('R1→R2')
+    expect(screen.getByTestId('task-preview-continue')).toBeTruthy()
   })
 
   it('StepPills 渲染五步并随 module 高亮当前步', async () => {
