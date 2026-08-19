@@ -5201,6 +5201,10 @@ async def _process_batch_item_v2(
                 if negative_query and negative_query != query:
                     async with sem_search:
                         papers = await _search_with_retry(negative_query, limit=max(10, max_papers * 3))
+                    logging.getLogger("uvicorn.error").info(
+                        "[evidence] negative round: item=%s target=%s hits=%d query=%s",
+                        item_id, target_id, len(papers), negative_query,
+                    )
                     if papers:
                         query = negative_query
                         query_is_negative = True
