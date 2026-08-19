@@ -72,12 +72,17 @@ def classify_target(region_name_cn: str | None, region_name_en: str | None) -> T
 | 候选卡片 | contradicts 徽章复用现有 direction 展示 |
 | 审核 | 否定证据方向=contradicts 正常走审核,确认后标记 |
 
-### 4.5 状态语义
+### 4.5 状态语义与治理深度
 
-- `preprocess_outcome='non_neural_target'`:靶标非神经,结构性不存在(待人工确认)。
-- `preprocess_outcome='evidence_negated'`:有论文明确否定该连接(证据否定,待人工确认)。
-- `preprocess_outcome='no_evidence_found'`:正反检索均无结果(无证据)。
-- 三者均不自动写入正式证据;人工确认后仅审计留痕。
+- `preprocess_outcome='non_neural_target'`:靶标非神经,**结构性不存在(直接标记,无需人工确认)**。
+- `preprocess_outcome='evidence_negated'`:有论文明确否定该连接(证据否定,待人工审核确认)。
+- `preprocess_outcome='no_evidence_found'`:正反检索均无结果(无证据,仍可人工手动检索)。
+
+**治理深度(隔离+清理)**:
+- 镜像行 + 佐证标记**保留**(审计链:谁/何时/为何判定不存在;删除会破坏任务/审核/审计引用)。
+- **晋升流程永久跳过**「结构性不存在」与「证据否定」边(永远不可能有支持证据 → 永不晋升 → 不污染最终图谱);「无证据」不跳过(仍可手动搜到证据)。
+- **final_kg 历史脏边清理脚本**(一次性):扫描最终图谱中靶标为非神经结构的连接 → 删除(镜像留痕仍在)。
+- 数据中心镜像浏览页:可过滤/灰色显示「结构性不存在」边,避免误认为有效连接。
 
 ## 5. 文件改动清单
 
@@ -89,6 +94,8 @@ def classify_target(region_name_cn: str | None, region_name_en: str | None) -> T
 | `frontend/src/pages/evidence-center/components/taskStatus.ts` | 新状态徽章标签与色调 |
 | `frontend/src/pages/evidence-center/modules/EvidenceCandidatesModule.tsx` | 非神经靶标提示条(替换候选工作区,不自动搜索);contradicts 徽章 |
 | `frontend/src/styles.css` | 新 chip 样式 |
+| 晋升服务 | 「结构性不存在/证据否定」边永久跳过晋升 |
+| 一次性脚本 | `backend/scripts/clean_final_non_neural_edges.py`:final_kg 靶标为非神经的连接删除(镜像留痕) |
 | 测试 | 分类器单测、流程测试(见 §6) |
 
 ## 6. 测试计划
@@ -105,4 +112,5 @@ def classify_target(region_name_cn: str | None, region_name_en: str | None) -> T
 
 - 范围:④(非神经靶标治理)+ ②(自动反向检索),方案 A(佐证流程层治理)。
 - ④ 行为(修订):识别非神经靶标后**直接标记「结构性不存在」**(无需人工确认页);在**佐证任务页任务卡**与**证据佐证页**两处提示治理内容。
+- 治理深度(修订):**隔离+清理**——镜像/佐证标记保留(审计);晋升永久跳过「结构性不存在/证据否定」;final_kg 历史脏边一次性清理脚本;数据中心浏览可过滤。
 - ② 行为:正向无结果时自动否定向检索;搜到 → 证据否定;仍无 → 无证据。
