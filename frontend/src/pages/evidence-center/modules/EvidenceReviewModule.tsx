@@ -38,6 +38,7 @@ function isReviewLinkInvalid(err: unknown): boolean {
   }
   return false
 }
+import { DIRECTION_LABEL } from '../components/types'
 import type { Direction, EvidenceLevel, WorkbenchPassage } from '../components/types'
 import { useTaskItemsRefresh } from '../components/taskItemsRefreshContext'
 import { useTaskItemResolution } from '../components/useTaskItemResolution'
@@ -453,7 +454,7 @@ export function EvidenceReviewModule() {
     // 方向与覆盖不一致时自动补备注（直接传参，不依赖异步 state）
     let effectiveNote = note
     if (!effectiveNote.trim() && tmpCoverage && direction !== tmpDirection) {
-      effectiveNote = `人工判定为 ${direction}（覆盖分析显示 ${tmpDirection}），未覆盖要素：${(tmpCoverage.uncovered_components || []).join('、') || '无'}`
+      effectiveNote = `人工判定为 ${DIRECTION_LABEL[direction] ?? direction}（覆盖分析显示 ${DIRECTION_LABEL[tmpDirection] ?? tmpDirection}），未覆盖要素：${(tmpCoverage.uncovered_components || []).join('、') || '无'}`
     }
     try {
       const reviewId = await commitReviewStatus('review_approved', new Date().toISOString(), undefined, effectiveNote)

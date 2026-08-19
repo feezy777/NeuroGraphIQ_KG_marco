@@ -10,6 +10,7 @@ import {
   type ConfidenceAdjustmentItem,
 } from '../../../api/endpoints'
 import { ConfirmDialog } from '../../../components/ConfirmDialog'
+import { DIRECTION_LABEL } from '../../evidence-center/components/types'
 
 const PAGE_SIZE = 20
 
@@ -151,7 +152,7 @@ export function PaperEvidenceReviewPanel() {
                 {matchedEvidence.length === 0 && <div className="ontology-empty">未找到对应证据记录</div>}
                 {matchedEvidence.flatMap(ev => (ev.passages ?? []).filter(p => p.is_selected).map(p => (
                   <div key={p.id} className="ew-passage">
-                    <span className="ew-meta">{p.source_scope}{p.section_title ? ` · ${p.section_title}` : ''}{p.paragraph_index != null ? ` · ¶${p.paragraph_index}` : ''} · {p.direction} · {fmt(p.confidence)}</span>
+                    <span className="ew-meta">{p.source_scope}{p.section_title ? ` · ${p.section_title}` : ''}{p.paragraph_index != null ? ` · ¶${p.paragraph_index}` : ''} · {DIRECTION_LABEL[p.direction as keyof typeof DIRECTION_LABEL] ?? p.direction} · {fmt(p.confidence)}</span>
                     <p className="ew-passage-en">{p.passage}</p>
                     {p.translation_zh && <p className="ew-passage-zh">{p.translation_zh}</p>}
                     {p.reason && <p className="ew-meta">理由：{p.reason}</p>}
@@ -164,7 +165,7 @@ export function PaperEvidenceReviewPanel() {
                 {adjustments.map(a => (
                   <div key={a.id} className="pev-adjust">
                     <span>{fmt(a.before_confidence)} → {fmt(a.after_confidence)}（建议 {fmt(a.suggested_confidence)}）</span>
-                    <span className="ew-meta">{a.direction} · {a.formula_version} · {a.status}{a.rolled_back_at ? ` · 已回滚 ${a.rollback_reason ?? ''}` : ''}</span>
+                    <span className="ew-meta">{DIRECTION_LABEL[a.direction as keyof typeof DIRECTION_LABEL] ?? a.direction} · {a.formula_version} · {a.status}{a.rolled_back_at ? ` · 已回滚 ${a.rollback_reason ?? ''}` : ''}</span>
                   </div>
                 ))}
               </section>

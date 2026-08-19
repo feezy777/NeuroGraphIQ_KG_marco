@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import type { ClaimComponent, EvidenceLevel, WorkbenchPassage } from './types'
-import { COMPONENT_LABEL, DIMENSION_HINT, DIMENSION_LABEL, LEVEL_HINT, LEVEL_LABEL } from './types'
+import { COMPONENT_LABEL, DIMENSION_HINT, DIMENSION_LABEL, DIRECTION_LABEL, LEVEL_HINT, LEVEL_LABEL } from './types'
 
 interface Props {
   passage: WorkbenchPassage
@@ -72,7 +72,7 @@ export function PassageEvidenceCard({
             {DIMENSION_LABEL[passage.evidence_dimension]}
           </span>
         )}
-        <span className="ew-passage-direction">{passage.direction}</span>
+        <span className="ew-passage-direction">{DIRECTION_LABEL[passage.direction as keyof typeof DIRECTION_LABEL] ?? passage.direction}</span>
         <span className="ew-meta">{passage.source_scope}{passage.section_title ? ` · ${passage.section_title}` : ''}{passage.paragraph_index != null ? ` · ¶${passage.paragraph_index}` : ''}</span>
         <VerificationBadge passage={passage} />
         {readOnly && (

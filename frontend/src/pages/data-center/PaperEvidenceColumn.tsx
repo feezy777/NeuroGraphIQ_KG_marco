@@ -14,7 +14,7 @@ import {
 } from '../../api/endpoints'
 import { ConfirmDialog } from '../../components/ConfirmDialog'
 import { computeTmpCoverage } from '../evidence-center/components/claimCoverage'
-import { COMPONENT_LABEL, LEVEL_LABEL } from '../evidence-center/components/types'
+import { COMPONENT_LABEL, DIRECTION_LABEL, LEVEL_LABEL } from '../evidence-center/components/types'
 
 type Direction = 'supports' | 'partial' | 'contradicts' | 'mixed' | 'not_found'
 
@@ -298,7 +298,7 @@ export function PaperEvidenceColumn({ targetType, targetId }: { targetType: stri
                             onChange={e => setSelectedKeys(prev => { const n = new Set(prev); if (e.target.checked) n.add(p.key); else n.delete(p.key); return n })} />
                           选择
                         </label>
-                        <span className="ew-meta">{p.source_scope}{p.paragraph_index != null ? ` · ¶${p.paragraph_index}` : ''} · {p.direction} · {p.confidence}</span>
+                        <span className="ew-meta">{p.source_scope}{p.paragraph_index != null ? ` · ¶${p.paragraph_index}` : ''} · {DIRECTION_LABEL[p.direction as keyof typeof DIRECTION_LABEL] ?? p.direction} · {p.confidence}</span>
                         {p.source_verified ? <span className="ew-ok">已验证</span> : <span className="ew-bad">未通过校验，禁选</span>}
                         <p className="ew-passage-en">{p.passage}</p>
                         {p.source_verified && (
@@ -338,17 +338,17 @@ export function PaperEvidenceColumn({ targetType, targetId }: { targetType: stri
               <div className="ontology-detail-row"><span>期刊/年份</span><span>{detail.journal ?? '—'} / {detail.year ?? '—'}</span></div>
               <div className="ontology-detail-row"><span>PMID</span><span>{detail.pmid ?? '—'}</span></div>
               <div className="ontology-detail-row"><span>DOI</span><span>{detail.doi ?? '—'}</span></div>
-              <div className="ontology-detail-row"><span>方向</span><span>{detail.direction ?? '—'}</span></div>
+              <div className="ontology-detail-row"><span>方向</span><span>{detail.direction ? (DIRECTION_LABEL[detail.direction as keyof typeof DIRECTION_LABEL] ?? detail.direction) : '—'}</span></div>
               <div className="ontology-detail-row"><span>证据等级</span><span>{detail.evidence_level ? (LEVEL_LABEL[detail.evidence_level as keyof typeof LEVEL_LABEL] ?? detail.evidence_level) : '—'}</span></div>
               <div className="ontology-detail-row"><span>验证状态</span><span>{detail.verification_status ?? '—'}</span></div>
               <div className="ontology-detail-row"><span>审核人</span><span>{detail.verification_by ?? '—'}</span></div>
               <div className="ontology-detail-row"><span>入库时间</span><span>{detail.created_at ? new Date(detail.created_at).toLocaleString() : '—'}</span></div>
               <div className="ontology-detail-row"><span>建议置信度</span><span>{detail.suggested_confidence ?? '—'}（{detail.confidence_adjustment_status ?? '—'}）</span></div>
               {modelVsReviewer && (
-                <div className="ew-bad">人工调整了 AI 初判：AI 初判 {detail?.model_direction} / 人工结论 {detail?.direction}</div>
+                <div className="ew-bad">人工调整了 AI 初判：AI 初判 {detail?.model_direction ? (DIRECTION_LABEL[detail.model_direction as keyof typeof DIRECTION_LABEL] ?? detail.model_direction) : '—'} / 人工结论 {detail?.direction ? (DIRECTION_LABEL[detail.direction as keyof typeof DIRECTION_LABEL] ?? detail.direction) : '—'}</div>
               )}
               {coverageVsReviewer && (
-                <div className="ew-bad">人工覆盖了系统 Coverage 判断（Coverage：{displayCoverage?.overall_direction} → 人工：{detail?.direction}）</div>
+                <div className="ew-bad">人工覆盖了系统 Coverage 判断（Coverage：{displayCoverage?.overall_direction ? (DIRECTION_LABEL[displayCoverage.overall_direction as keyof typeof DIRECTION_LABEL] ?? displayCoverage.overall_direction) : '—'} → 人工：{detail?.direction ? (DIRECTION_LABEL[detail.direction as keyof typeof DIRECTION_LABEL] ?? detail.direction) : '—'}）</div>
               )}
               {detail?.reviewer_note && (
                 <div className="ontology-detail-row"><span>审核备注</span><span>{detail.reviewer_note}</span></div>
@@ -374,7 +374,7 @@ export function PaperEvidenceColumn({ targetType, targetId }: { targetType: stri
                 <h4>原文段落（{detail.passage_count ?? 0}）</h4>
                 {(detail.passages ?? []).filter(p => p.is_selected).map(p => (
                   <div key={p.id} className="ew-passage">
-                    <span className="ew-meta">{p.source_scope}{p.section_title ? ` · ${p.section_title}` : ''}{p.paragraph_index != null ? ` · ¶${p.paragraph_index}` : ''} · {p.direction} · {p.confidence}</span>
+                    <span className="ew-meta">{p.source_scope}{p.section_title ? ` · ${p.section_title}` : ''}{p.paragraph_index != null ? ` · ¶${p.paragraph_index}` : ''} · {DIRECTION_LABEL[p.direction as keyof typeof DIRECTION_LABEL] ?? p.direction} · {p.confidence}</span>
                     <span className="ew-meta">核验：{p.source_verified ? (p.source_verification_method ?? 'exact') : '未通过'}</span>
                     {p.supported_components && p.supported_components.length > 0 && (
                       <span className="ew-meta">本段{p.direction === 'contradicts' ? '反驳' : '佐证'}：{p.supported_components.map(c => COMPONENT_LABEL[c] ?? c).join('、')}</span>

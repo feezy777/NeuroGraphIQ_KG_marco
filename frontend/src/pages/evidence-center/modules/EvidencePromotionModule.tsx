@@ -15,7 +15,6 @@ import {
   type PaperEvidenceItem,
 } from '../../../api/endpoints'
 import { useEvidenceCenter } from '../EvidenceCenterContext'
-import { ClaimPanel } from '../components/ClaimPanel'
 import { EmptyState } from '../components/EmptyState'
 import { CoveragePanel } from '../components/CoveragePanel'
 import { EvidenceDetailDrawer } from '../components/EvidenceDetailDrawer'
@@ -28,7 +27,6 @@ import { DIRECTION_LABEL, LEVEL_LABEL } from '../components/types'
 
 const DRAFT_PREFIX = 'evidence-center.review-draft.'
 
-/** T8 人工审核模块写回的完整草稿(含人工决策值) */
 interface ReviewDraft {
   passages: WorkbenchPassage[]
   modelDirection: Direction | null
@@ -43,7 +41,6 @@ interface ReviewDraft {
   note?: string
 }
 
-/** Phase 2:后端 EvidenceReviewItem 映射为晋升模块展示所需字段 */
 interface PendingItem {
   reviewId: string
   targetType: string
@@ -70,14 +67,14 @@ function mapReviewToPending(r: EvidenceReviewItem): PendingItem {
 
 function fmtDate(v: string | null | undefined): string {
   if (!v) return '—'
-  try {
-    return new Date(v).toLocaleString('zh-CN', { hour12: false })
-  } catch {
-    return v
-  }
+  try { return new Date(v).toLocaleString('zh-CN', { hour12: false }) }
+  catch { return v }
 }
 
-/** 证据晋升模块:唯一 attach 入口。待晋升(review_approved)/已晋升/已失效(按 invalidated_at 分组) */
+function fmtConf(v: number | null | undefined): string {
+  return v == null ? '—' : v.toFixed(2)
+}
+
 export function EvidencePromotionModule() {
   const { state, queue, setQueue, openTarget, setPromotionImpact, setProgress } = useEvidenceCenter()
   const [dto, setDto] = useState<EvidenceTargetDto | null>(null)
@@ -88,33 +85,29 @@ export function EvidencePromotionModule() {
   const [preview, setPreview] = useState<AttachPreviewResponse | null>(null)
   const [previewBusy, setPreviewBusy] = useState(false)
   const [confirmOpen, setConfirmOpen] = useState(false)
-  const [attachBusy, setAttachBusy] = useState(false)
+  const [promoteBusy, setPromoteBusy] = useState(false)
   const [detailEvidence, setDetailEvidence] = useState<PaperEvidenceItem | null>(null)
   const [rollbackBusy, setRollbackBusy] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
+  const [autoAdvance, setAutoAdvance] = useState(true)
+  const [promotedResult, setPromotedResult] = useState<{ before: number | null; after: number | null } | null>(null)
   const abortRef = useRef<AbortController | null>(null)
 
   const targetType = state.targetType
   const targetId = state.targetId
 
-  // ─── Phase 2:待晋升列表 = 后端 listEvidenceReviews + sessionStorage 兜底 ───
+  // ─── 待晋升列表 ───
   const refreshPending = useCallback(async () => {
     try {
       const r = await listEvidenceReviews({ review_status: 'approved', promotion_status: 'awaiting_promotion', page_size: 100 })
       setPendingItems(r.items.map(mapReviewToPending))
     } catch {
-      // 后端不可用时降级为 sessionStorage
       setPendingItems(listReviewApproved()
         .filter(rec => rec.status === 'review_approved')
         .map(rec => ({
-          reviewId: rec.targetId,
-          targetType: rec.targetType ?? '',
-          targetId: rec.targetId,
-          direction: rec.meta.direction,
-          evidenceLevel: rec.meta.evidenceLevel,
-          confidence: parseFloat(rec.meta.confidence) || 0,
-          note: rec.meta.note,
-          approvedAt: rec.meta.at,
+          reviewId: rec.targetId, targetType: rec.targetType ?? '', targetId: rec.targetId,
+          direction: rec.meta.direction, evidenceLevel: rec.meta.evidenceLevel,
+          confidence: parseFloat(rec.meta.confidence) || 0, note: rec.meta.note, approvedAt: rec.meta.at,
         })),
       )
     }
@@ -122,61 +115,41 @@ export function EvidencePromotionModule() {
 
   useEffect(() => { void refreshPending() }, [refreshPending])
 
-  // ─── 选中项:优先跟随当前对象,其次列表首个(按 targetId 匹配)——reviewId 是后端主键 ───
+  // ─── 选中项 ───
   useEffect(() => {
-    if (pendingItems.length === 0) {
-      setSelectedPendingId(null)
-      return
-    }
+    if (pendingItems.length === 0) { setSelectedPendingId(null); return }
     setSelectedPendingId(prev => {
       if (prev && pendingItems.some(r => r.reviewId === prev)) return prev
-      const matchByTarget = pendingItems.find(r => r.targetId === targetId)
-      if (matchByTarget) return matchByTarget.reviewId
-      return pendingItems[0].reviewId
+      const m = pendingItems.find(r => r.targetId === targetId)
+      return m ? m.reviewId : pendingItems[0].reviewId
     })
   }, [pendingItems, targetId])
 
   const selectedPending = pendingItems.find(r => r.reviewId === selectedPendingId) ?? null
-
-  /** 选中项的 target_type:记录自带 → 队列匹配 → 当前对象兜底 */
   const selectedTargetType = useMemo(() => {
     if (!selectedPending) return null
     if (selectedPending.targetType) return selectedPending.targetType
     const entry = queue.find(q => q.target_id === selectedPending.targetId)
-    if (entry) return entry.target_type
-    if (selectedPending.targetId === targetId) return targetType
-    return null
+    return entry ? entry.target_type : (selectedPending.targetId === targetId ? targetType : null)
   }, [selectedPending, queue, targetType, targetId])
-
   const selectedQueueEntry = queue.find(q => selectedPending && q.target_id === selectedPending.targetId)
 
-  // ─── 选中项草稿恢复(有 reviewerDirection 且含已核验片段;draft key 仍用 targetId) ───
+  // ─── 草稿恢复 ───
   useEffect(() => {
-    setDraft(null)
-    setPreview(null)
-    setDetailEvidence(null)
+    setDraft(null); setPreview(null); setDetailEvidence(null); setPromotedResult(null)
     if (!selectedPending) return
-    const draftTargetId = selectedPending.targetId
-    const raw = sessionStorage.getItem(`${DRAFT_PREFIX}${draftTargetId}`)
+    const raw = sessionStorage.getItem(`${DRAFT_PREFIX}${selectedPending.targetId}`)
     if (!raw) return
     try {
       const d = JSON.parse(raw) as Partial<ReviewDraft>
-      const hasDirection = Boolean(d.reviewerDirection)
-      const hasVerifiedPassages = Array.isArray(d.passages) && d.passages.some(p => p.source_verified)
-      if (hasDirection && hasVerifiedPassages) {
+      if (d.reviewerDirection && Array.isArray(d.passages) && d.passages.some(p => p.source_verified))
         setDraft(d as ReviewDraft)
-      }
-    } catch {
-      // 草稿损坏时忽略,保持空态
-    }
+    } catch { /* ignore */ }
   }, [selectedPending])
 
-  // ─── 选中项 Claim 数据 ───
+  // ─── Claim ───
   useEffect(() => {
-    if (!selectedTargetType || !selectedPending?.targetId) {
-      setDto(null)
-      return
-    }
+    if (!selectedTargetType || !selectedPending?.targetId) { setDto(null); return }
     let cancelled = false
     setDto(null)
     getEvidenceTarget(selectedTargetType, selectedPending.targetId)
@@ -185,370 +158,368 @@ export function EvidencePromotionModule() {
     return () => { cancelled = true }
   }, [selectedTargetType, selectedPending?.targetId])
 
-  // ─── 已晋升/已失效列表(当前对象,listPaperEvidence) ───
+  // ─── 已晋升列表 ───
   const loadList = useCallback(async () => {
-    if (!targetType || !targetId) {
-      setItems([])
-      return
-    }
-    try {
-      const r = await listPaperEvidence({ target_type: targetType, target_id: targetId, limit: 50 })
-      setItems(r.items)
-    } catch {
-      setItems([])
-    }
+    if (!targetType || !targetId) { setItems([]); return }
+    try { const r = await listPaperEvidence({ target_type: targetType, target_id: targetId, limit: 50 }); setItems(r.items) }
+    catch { setItems([]) }
   }, [targetType, targetId])
 
-  useEffect(() => {
-    void loadList()
-  }, [loadList])
+  useEffect(() => { void loadList() }, [loadList])
 
-  const selectedPassages = useMemo(
-    () => (draft?.passages ?? []).filter(p => p.source_verified),
-    [draft],
-  )
-
+  const selectedPassages = useMemo(() => (draft?.passages ?? []).filter(p => p.source_verified), [draft])
   const claimComponents = useMemo(() => dto?.claim_components ?? [], [dto])
   const coverage = useMemo(() => computeTmpCoverage(claimComponents, selectedPassages), [claimComponents, selectedPassages])
   const coverageDirection = useMemo(() => aggregateTmpDirection(coverage, selectedPassages), [coverage, selectedPassages])
-
   const currentConfidence = dto?.current_confidence ?? selectedQueueEntry?.confidence ?? null
 
-  // ─── 预计后置信度预览(草稿就绪后自动计算) ───
+  // ─── 置信度预览 ───
   const runPreview = useCallback(async () => {
-    if (!selectedTargetType || !selectedPending?.targetId || !draft?.pmid) return
-    if (selectedPassages.length === 0) {
-      setPreview(null)
-      return
+    if (!selectedTargetType || !selectedPending?.targetId || !draft?.pmid || selectedPassages.length === 0) {
+      setPreview(null); return
     }
     setPreviewBusy(true)
     abortRef.current?.abort()
     abortRef.current = new AbortController()
     try {
       const r = await attachPaperEvidencePreview({
-        target_type: selectedTargetType,
-        target_id: selectedPending.targetId,
-        pmid: draft.pmid,
+        target_type: selectedTargetType, target_id: selectedPending.targetId, pmid: draft.pmid,
         direction: draft.reviewerDirection ?? 'supports',
         reviewer_confidence: parseFloat(draft.reviewerConfidence ?? '0.8') || 0,
         passages: selectedPassages.map(p => ({
-          source_scope: p.source_scope,
-          paragraph_index: p.paragraph_index,
-          passage: p.passage,
-          direction: p.direction,
-          reason: p.reason,
-          confidence: p.confidence,
-          source_locator: p.source_locator,
-          source_verified: true,
-          supported_components: p.supported_components,
+          source_scope: p.source_scope, paragraph_index: p.paragraph_index,
+          passage: p.passage, direction: p.direction, reason: p.reason,
+          confidence: p.confidence, source_locator: p.source_locator,
+          source_verified: true, supported_components: p.supported_components,
         })),
       }, abortRef.current.signal)
       setPreview(r)
     } catch (err) {
-      // 被新一轮预览 abort 的旧请求不算失败
-      if ((err as Error)?.name !== 'AbortError') {
+      if ((err as Error)?.name !== 'AbortError')
         setMessage(`置信度预览失败：${err instanceof Error ? err.message : String(err)}`)
-      }
       setPreview(null)
-    } finally {
-      setPreviewBusy(false)
-    }
+    } finally { setPreviewBusy(false) }
   }, [selectedTargetType, selectedPending?.targetId, draft, selectedPassages])
 
   useEffect(() => { void runPreview() }, [runPreview])
 
-  // ─── Phase 2:晋升 → promoteReview(后端 Review) → 清状态 + 刷新 + 更新 queue ───
+  // ─── 确认入库 ───
   const handlePromote = useCallback(async () => {
     if (!selectedPending) return
     const { reviewId, targetId: pendingTargetId } = selectedPending
-    setAttachBusy(true)
-    setMessage(null)
+    const before = currentConfidence
+    setPromoteBusy(true); setMessage(null)
     try {
       const resp = await promoteReview(reviewId)
+      const after = preview?.final_confidence ?? null
       sessionStorage.removeItem(`${DRAFT_PREFIX}${pendingTargetId}`)
       clearReviewStatus(pendingTargetId)
-      setDraft(null)
-      setPreview(null)
-      setConfirmOpen(false)
-      // 晋升成功 → 推进 StepPills → 确认晋升
+      setDraft(null); setPreview(null); setConfirmOpen(false)
+      setPromotedResult({ before, after })
       setProgress({ promoted: true })
-      setMessage('证据已晋升并应用到知识对象')
-      setQueue(queue.map(q =>
-        q.target_id === pendingTargetId ? { ...q, status: 'completed' } : q,
-      ))
-      // 标记后端 task item 完成(镜像旧 Modal 条件调用),失败静默,不阻断晋升主流程
+      setQueue(queue.map(q => q.target_id === pendingTargetId ? { ...q, status: 'completed' } : q))
       if (state.taskId) {
         const entry = queue.find(q => q.target_id === pendingTargetId)
         if (entry?.taskItemId) {
-          try {
-            await completePaperEvidenceTaskItem(state.taskId, entry.taskItemId, resp.evidence_id ?? '')
-          } catch {
-            // 标记失败不影响已入库证据
-          }
+          completePaperEvidenceTaskItem(state.taskId, entry.taskItemId, resp.evidence_id ?? '').catch(() => {})
         }
       }
       await Promise.all([loadList(), refreshPending()])
+      // 自动下一条
+      if (autoAdvance) {
+        setTimeout(() => {
+          setPendingItems(prev => {
+            const idx = prev.findIndex(r => r.reviewId === reviewId)
+            if (idx >= 0 && idx + 1 < prev.length) {
+              setSelectedPendingId(prev[idx + 1].reviewId)
+            }
+            return prev
+          })
+        }, 1500)
+      }
     } catch (err) {
-      setMessage(`晋升失败：${err instanceof Error ? err.message : String(err)}`)
-    } finally {
-      setAttachBusy(false)
-    }
-  }, [selectedPending, queue, setQueue, loadList, refreshPending, state.taskId, setProgress])
+      setMessage(`入库失败：${err instanceof Error ? err.message : String(err)}`)
+      setConfirmOpen(false)
+    } finally { setPromoteBusy(false) }
+  }, [selectedPending, currentConfidence, queue, setQueue, loadList, refreshPending, state.taskId, setProgress, autoAdvance])
 
-  // ─── Phase 2:退回人工审核 → returnReview(后端) + 清 status + 清 draft → 跳转 review ───
+  // ─── 退回审核 ───
   const handleReturnToReview = useCallback(async () => {
     const rec = selectedPending
     if (!rec) return
-    setAttachBusy(true)
-    setMessage(null)
+    setPromoteBusy(true); setMessage(null)
     try {
       await returnReview(rec.reviewId, '退回人工审核')
       clearReviewStatus(rec.targetId)
       sessionStorage.removeItem(`${DRAFT_PREFIX}${rec.targetId}`)
-      setDraft(null)
-      setPreview(null)
-      setConfirmOpen(false)
+      setDraft(null); setPreview(null); setConfirmOpen(false)
       await refreshPending()
-      if (rec.targetType) {
-        openTarget(rec.targetType, rec.targetId, 'review')
-      } else {
+      if (rec.targetType) openTarget(rec.targetType, rec.targetId, 'review')
+      else {
         const entry = queue.find(q => q.target_id === rec.targetId)
         if (entry) openTarget(entry.target_type, entry.target_id, 'review')
       }
     } catch (err) {
       setMessage(`退回失败：${err instanceof Error ? err.message : String(err)}`)
-    } finally {
-      setAttachBusy(false)
-    }
+    } finally { setPromoteBusy(false) }
   }, [selectedPending, refreshPending, openTarget, queue])
 
-  // ─── 回滚:抽屉内 ConfirmDialog 输入原因 → rollback → 刷新列表 ───
+  // ─── 回滚 ───
   const handleRollback = useCallback(async (reason: string) => {
     const ev = detailEvidence
     if (!ev) return
-    setRollbackBusy(true)
-    setMessage(null)
-    try {
-      await rollbackPaperEvidence(ev.evidence_id, reason)
-      setDetailEvidence(null)
-      setMessage('证据已回滚')
-      await loadList()
-    } catch (err) {
-      setMessage(`回滚失败：${err instanceof Error ? err.message : String(err)}`)
-    } finally {
-      setRollbackBusy(false)
-    }
+    setRollbackBusy(true); setMessage(null)
+    try { await rollbackPaperEvidence(ev.evidence_id, reason); setDetailEvidence(null); setMessage('证据已回滚'); await loadList() }
+    catch (err) { setMessage(`回滚失败：${err instanceof Error ? err.message : String(err)}`) }
+    finally { setRollbackBusy(false) }
   }, [detailEvidence, loadList])
 
-  // ─── 右栏接入:把晋升影响状态推送给 Context,RightPanel 渲染 PromotionImpact ───
+  // ─── 右栏推送 ───
   const promotionImpact = useMemo<PromotionImpactState>(() => ({
     direction: draft?.reviewerDirection ?? selectedPending?.direction ?? 'supports',
-    currentConfidence,
-    reviewerConfidence: parseFloat(draft?.reviewerConfidence ?? '') || 0,
-    preview,
-    previewBusy,
-    evidenceNewCount: 1,
-    passagesNewCount: selectedPassages.length,
+    currentConfidence, reviewerConfidence: parseFloat(draft?.reviewerConfidence ?? '') || 0,
+    preview, previewBusy, evidenceNewCount: 1, passagesNewCount: selectedPassages.length,
     canPromote: Boolean(draft && selectedPassages.length > 0 && selectedTargetType),
     onReturnToReview: () => void handleReturnToReview(),
     onPromote: () => setConfirmOpen(true),
   }), [draft, selectedPending, currentConfidence, preview, previewBusy, selectedPassages, selectedTargetType, handleReturnToReview])
 
   useEffect(() => {
-    if (!selectedPending || !selectedTargetType || !draft) {
-      setPromotionImpact(null)
-      return
-    }
+    if (!selectedPending || !selectedTargetType || !draft) { setPromotionImpact(null); return }
     setPromotionImpact(promotionImpact)
   }, [selectedPending, selectedTargetType, draft, promotionImpact, setPromotionImpact])
-
   useEffect(() => () => { setPromotionImpact(null) }, [setPromotionImpact])
 
   const promoted = useMemo(() => items.filter(i => !i.invalidated_at), [items])
   const invalidated = useMemo(() => items.filter(i => i.invalidated_at), [items])
 
-  const pendingGroup = (
-    <section className="evidence-promotion-group" data-testid="promotion-pending-group">
-      <div className="evidence-promotion-group-head">
-        <span className="evidence-promotion-group-title">待晋升</span>
-        <span className="evidence-promotion-group-count">{pendingItems.length}</span>
-        <span className="ew-meta">来自人工审核通过（review_approved）</span>
-      </div>
-      {pendingItems.length === 0 && (
-        <EmptyState compact title="暂无待晋升的审核通过证据" />
-      )}
-      {pendingItems.map(rec => {
-        const entry = queue.find(q => q.target_id === rec.targetId)
-        const selected = rec.reviewId === selectedPendingId
-        return (
-          <div
-            key={rec.reviewId}
-            className={`evidence-promotion-row${selected ? ' evidence-promotion-row-selected' : ''}`}
-            data-testid="promotion-pending-row"
-            onClick={() => { setMessage(null); setSelectedPendingId(rec.reviewId) }}
-          >
-            <div className="evidence-promotion-row-main">
-              <strong>{entry?.label ?? rec.targetId}</strong>
-              <span className="ew-meta">
-                {DIRECTION_LABEL[rec.direction]} · {LEVEL_LABEL[rec.evidenceLevel]} · 置信度 {rec.confidence} · {fmtDate(rec.approvedAt)}
-              </span>
-            </div>
-            <span className="ew-warn">{selected ? '查看中' : '待晋升'}</span>
-          </div>
-        )
-      })}
-      {selectedPending && draft && (
-        <div className="evidence-promotion-card" data-testid="promotion-pending-detail">
-          <ClaimPanel
-            claimText={dto?.claim_text ?? ''}
-            components={claimComponents}
-            confidence={dto?.current_confidence ?? null}
-            evidenceCount={dto?.existing_evidence ?? 0}
-            targetType={selectedTargetType ?? ''}
-            granularity={dto?.granularity ?? ''}
-          />
-          <div className="evidence-promotion-paper">
-            <h4>论文</h4>
-            <strong>{draft.paperTitle || '—'}</strong>
-            <span className="ew-meta">PMID {draft.pmid || '—'}{draft.doi ? ` · DOI ${draft.doi}` : ''}</span>
-            {draft.modelAssessment && <p className="ew-meta">模型评估：{draft.modelAssessment}</p>}
-          </div>
-          {selectedPassages.length > 0 && (
-            <CoveragePanel coverage={coverage} direction={coverageDirection} />
-          )}
-          <div className="evidence-promotion-decision">
-            <h4>Reviewer 决策</h4>
-            <div className="evidence-promotion-decision-rows">
-              <div className="evidence-promotion-decision-row">
-                <span>人工方向</span>
-                <strong>{DIRECTION_LABEL[draft.reviewerDirection ?? 'supports']}</strong>
-                {draft.modelDirection && <em>AI 推荐：{DIRECTION_LABEL[draft.modelDirection]}</em>}
-              </div>
-              <div className="evidence-promotion-decision-row">
-                <span>证据等级</span>
-                <strong>{LEVEL_LABEL[draft.reviewerEvidenceLevel ?? 'indirect']}</strong>
-              </div>
-              <div className="evidence-promotion-decision-row">
-                <span>Reviewer 置信度</span>
-                <strong>{draft.reviewerConfidence ?? '—'}</strong>
-              </div>
-              <div className="evidence-promotion-decision-row">
-                <span>人工备注</span>
-                <span>{draft.note || '—'}</span>
-              </div>
-              <div className="evidence-promotion-decision-row">
-                <span>所选片段</span>
-                <span>{selectedPassages.length} 段（均已核验原文）</span>
-              </div>
-              <div className="evidence-promotion-decision-row" data-testid="promotion-confidence">
-                <span>预计后置信度</span>
-                <strong>{previewBusy ? '计算中…' : `当前 ${currentConfidence ?? '—'} → 预计晋升后置信度 ${preview?.final_confidence ?? '—'}`}</strong>
-              </div>
-            </div>
-          </div>
-          <div className="ew-meta">审核状态：review_approved · {fmtDate(selectedPending.approvedAt)}</div>
-        </div>
-      )}
-      {selectedPending && !draft && (
-        <EmptyState compact title="该对象没有可晋升的审核草稿" description="可能已被清理，可在人工审核模块重新处理。" />
-      )}
-    </section>
-  )
+  // ─── 下一项 ───
+  const nextPending = useMemo(() => {
+    if (!selectedPendingId || pendingItems.length < 2) return null
+    const idx = pendingItems.findIndex(r => r.reviewId === selectedPendingId)
+    return idx >= 0 && idx + 1 < pendingItems.length ? pendingItems[idx + 1] : null
+  }, [pendingItems, selectedPendingId])
+
+  const handleNext = useCallback(() => {
+    if (nextPending) setSelectedPendingId(nextPending.reviewId)
+  }, [nextPending])
 
   if (!targetType || !targetId) {
     return (
-      <div className="evidence-promotion">
-        {pendingGroup}
-        <EmptyState
-          icon={<MousePointerClick size={24} />}
-          title="请先从「佐证任务」或「证据候选」进入一个目标对象"
-          description="打开任务并选择目标对象后即可晋升审核通过的证据。"
-        />
+      <div className="evidence-review">
+        <div className="evidence-review-main">
+          <div className="evidence-review-toolbar"><h3>证据晋升</h3></div>
+          <EmptyState icon={<MousePointerClick size={24} />} title="请先从「佐证任务」进入一个目标对象" />
+        </div>
       </div>
     )
   }
 
   return (
-    <div className="evidence-promotion" data-testid="evidence-promotion">
-      {message && <div className="ontology-page-message">{message}</div>}
-
-      {pendingGroup}
-
-      <section className="evidence-promotion-group" data-testid="promotion-promoted-group">
-        <div className="evidence-promotion-group-head">
-          <span className="evidence-promotion-group-title">已晋升</span>
-          <span className="evidence-promotion-group-count">{promoted.length}</span>
-        </div>
-        {promoted.length === 0 && (
-          <EmptyState compact title="暂无已晋升的论文证据" />
-        )}
-        {promoted.map(ev => (
-          <div
-            key={ev.evidence_id}
-            className="evidence-promotion-row"
-            data-testid="promotion-evidence-row"
-            onClick={() => setDetailEvidence(ev)}
-          >
-            <div className="evidence-promotion-row-main">
-              <strong>{ev.title ?? ev.evidence_text}</strong>
-              <span className="ew-meta">
-                {DIRECTION_LABEL[ev.direction as keyof typeof DIRECTION_LABEL] ?? ev.direction ?? '—'} · PMID {ev.pmid ?? '—'} · {fmtDate(ev.created_at)}
-              </span>
-            </div>
-            <span className="ew-ok">已晋升</span>
+    <div className="evidence-review" data-testid="evidence-promotion">
+      <div className="evidence-review-main">
+        <div className="evidence-review-toolbar">
+          <div className="evidence-review-toolbar-title">
+            <h3>证据晋升</h3>
+            <p className="evidence-module-hint">审核通过的证据将正式入库并更新知识对象置信度</p>
           </div>
-        ))}
-      </section>
-
-      <section className="evidence-promotion-group" data-testid="promotion-invalidated-group">
-        <div className="evidence-promotion-group-head">
-          <span className="evidence-promotion-group-title">已失效</span>
-          <span className="evidence-promotion-group-count">{invalidated.length}</span>
-        </div>
-        {invalidated.length === 0 && (
-          <EmptyState compact title="暂无已失效的论文证据" />
-        )}
-        {invalidated.map(ev => (
-          <div
-            key={ev.evidence_id}
-            className="evidence-promotion-row evidence-promotion-row-invalidated"
-            data-testid="promotion-invalidated-row"
-            onClick={() => setDetailEvidence(ev)}
-          >
-            <div className="evidence-promotion-row-main">
-              <strong>{ev.title ?? ev.evidence_text}</strong>
-              <span className="ew-meta">
-                {ev.invalidation_reason ?? '—'} · {fmtDate(ev.invalidated_at)}
-              </span>
-            </div>
-            <span className="ew-bad">已失效</span>
+          <div className="evidence-review-toolbar-actions">
+            <label className="evidence-promotion-auto">
+              <input type="checkbox" checked={autoAdvance} onChange={e => setAutoAdvance(e.target.checked)} />自动下一条
+            </label>
           </div>
-        ))}
-      </section>
+        </div>
 
-      {draft && (
-        <PromotionDialog
-          open={confirmOpen}
-          targetLabel={selectedQueueEntry?.label ?? selectedPending?.targetId ?? ''}
-          claimText={dto?.claim_text ?? ''}
-          paper={{ title: draft.paperTitle, pmid: draft.pmid, doi: draft.doi ?? null }}
-          passages={selectedPassages}
-          components={claimComponents}
-          direction={draft.reviewerDirection ?? 'supports'}
-          preview={preview}
-          busy={attachBusy}
-          onConfirm={() => void handlePromote()}
-          onClose={() => setConfirmOpen(false)}
-        />
-      )}
+        {message && <div className="ontology-page-message">{message}</div>}
+
+        {/* 待晋升列表(晋升前可手动切换选中项;第3-5步重构后恢复,防多待晋升无法切换) */}
+        {pendingItems.length > 1 && (
+          <div className="evidence-promotion-pending-list" data-testid="promotion-pending-list">
+            {pendingItems.map(p => (
+              <div
+                key={p.reviewId}
+                role="button"
+                tabIndex={0}
+                className={`evidence-promotion-pending-row${p.reviewId === selectedPendingId ? ' evidence-promotion-pending-row-active' : ''}`}
+                data-testid="promotion-pending-row"
+                onClick={() => setSelectedPendingId(p.reviewId)}
+                onKeyDown={e => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault()
+                    setSelectedPendingId(p.reviewId)
+                  }
+                }}
+              >
+                <span className="evidence-promotion-pending-name">{queue.find(q => q.target_id === p.targetId)?.label ?? p.targetId}</span>
+                <span className="ew-meta">{DIRECTION_LABEL[p.direction]} · {LEVEL_LABEL[p.evidenceLevel]} · 置信度 {fmtConf(p.confidence)}</span>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {promotedResult && selectedPending && (
+          <div className="evidence-promotion-result" data-testid="promotion-result">
+            <span className="ew-ok">✅ 已入库</span>
+            <span>置信度 {fmtConf(promotedResult.before)} → {fmtConf(promotedResult.after)}</span>
+            {nextPending && (
+              <button type="button" className="btn btn-sm btn-primary" onClick={handleNext}>
+                下一项：{queue.find(q => q.target_id === nextPending.targetId)?.label ?? nextPending.targetId}
+              </button>
+            )}
+            <button type="button" className="btn btn-sm" onClick={() => setPromotedResult(null)}>关闭</button>
+          </div>
+        )}
+
+        {selectedPending && draft ? (
+          <>
+            <div className="evidence-review-paper">
+              <span className="ew-meta">{draft.paperTitle || '—'} · PMID {draft.pmid || '—'}{draft.doi ? ` · DOI ${draft.doi}` : ''}</span>
+            </div>
+
+            {selectedPassages.length > 0 && (
+              <CoveragePanel coverage={coverage} direction={coverageDirection} />
+            )}
+
+            <div className="evidence-promotion-decision">
+              <h4>审核决策</h4>
+              <div className="evidence-promotion-decision-rows">
+                <div className="evidence-promotion-decision-row">
+                  <span>人工方向</span><strong>{DIRECTION_LABEL[draft.reviewerDirection ?? 'supports']}</strong>
+                  {draft.modelDirection && <em>（AI：{DIRECTION_LABEL[draft.modelDirection]}）</em>}
+                </div>
+                <div className="evidence-promotion-decision-row">
+                  <span>证据等级</span><strong>{LEVEL_LABEL[draft.reviewerEvidenceLevel ?? 'indirect']}</strong>
+                </div>
+                <div className="evidence-promotion-decision-row">
+                  <span>Reviewer 置信度</span><strong>{draft.reviewerConfidence ?? '—'}</strong>
+                </div>
+                <div className="evidence-promotion-decision-row">
+                  <span>核验片段</span><span>{selectedPassages.length} 段</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="evidence-promotion-preview" data-testid="promotion-confidence-preview">
+              <h4>置信度变化预览</h4>
+              {previewBusy ? (
+                <span className="ew-meta">计算中…</span>
+              ) : preview ? (
+                <div className="evidence-promotion-confidence-grid">
+                  <div className="evidence-promotion-confidence-cell">
+                    <span className="evidence-promotion-confidence-label">当前</span>
+                    <strong>{fmtConf(currentConfidence)}</strong>
+                  </div>
+                  <span className="evidence-promotion-confidence-arrow">→</span>
+                  <div className="evidence-promotion-confidence-cell">
+                    <span className="evidence-promotion-confidence-label">审核人建议</span>
+                    <strong>{fmtConf(parseFloat(draft.reviewerConfidence ?? '0') || 0)}</strong>
+                  </div>
+                  <span className="evidence-promotion-confidence-arrow">→</span>
+                  <div className="evidence-promotion-confidence-cell evidence-promotion-confidence-final">
+                    <span className="evidence-promotion-confidence-label">入库后预计</span>
+                    <strong>{fmtConf(preview.final_confidence)}</strong>
+                    {preview.cap != null && <span className="ew-meta">上限 {fmtConf(preview.cap)}</span>}
+                  </div>
+                </div>
+              ) : (
+                <span className="ew-meta">无预览数据</span>
+              )}
+              {preview?.block_reasons?.length ? (
+                <div className="ew-bad">⚠ {preview.block_reasons.join('；')}</div>
+              ) : null}
+            </div>
+
+            <div className="evidence-promotion-actions">
+              <button type="button" className="btn btn-sm" disabled={promoteBusy} onClick={() => handleReturnToReview()}>
+                退回审核
+              </button>
+              <button
+                type="button" className="btn btn-sm btn-primary" data-testid="promotion-confirm-btn"
+                disabled={promoteBusy || !draft || selectedPassages.length === 0}
+                onClick={() => setConfirmOpen(true)}
+              >
+                {promoteBusy ? '处理中…' : '确认入库'}
+              </button>
+            </div>
+
+            <div className="ew-meta" style={{ marginTop: 8 }}>审核状态：review_approved · {fmtDate(selectedPending.approvedAt)}</div>
+
+            {/* 已晋升记录 */}
+            {items.length > 0 && (
+              <section className="evidence-promotion-group" style={{ marginTop: 16 }}>
+                <div className="evidence-promotion-group-head">
+                  <span className="evidence-promotion-group-title">已晋升证据</span>
+                  <span className="evidence-promotion-group-count">{promoted.length}</span>
+                </div>
+                {promoted.slice(0, 5).map(ev => (
+                  <div
+                    key={ev.evidence_id}
+                    className="evidence-promotion-row"
+                    data-testid="promotion-evidence-row"
+                    onClick={() => setDetailEvidence(ev)}
+                  >
+                    <div className="evidence-promotion-row-main">
+                      <strong>{ev.title || '—'}</strong>
+                      <span className="ew-meta">{DIRECTION_LABEL[ev.direction as keyof typeof DIRECTION_LABEL] ?? ev.direction} · PMID {ev.pmid} · {ev.created_at ? fmtDate(ev.created_at) : '—'}</span>
+                    </div>
+                    {ev.confidence_adjustment_status && (
+                      <span className="ew-ok">{ev.confidence_adjustment_status}</span>
+                    )}
+                  </div>
+                ))}
+                {invalidated.length > 0 && (
+                  <>
+                    <div className="evidence-promotion-group-head" style={{ marginTop: 8 }}>
+                      <span className="evidence-promotion-group-title">已失效</span>
+                      <span className="evidence-promotion-group-count">{invalidated.length}</span>
+                    </div>
+                    {invalidated.slice(0, 3).map(ev => (
+                      <div
+                        key={ev.evidence_id}
+                        className="evidence-promotion-row"
+                        data-testid="promotion-invalidated-row"
+                        onClick={() => setDetailEvidence(ev)}
+                      >
+                        <div className="evidence-promotion-row-main">
+                          <strong>{ev.title || '—'}</strong>
+                          <span className="ew-meta">回滚理由：{ev.invalidation_reason || '—'}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </>
+                )}
+              </section>
+            )}
+          </>
+        ) : selectedPending ? (
+          <EmptyState compact title="该对象没有可晋升的审核草稿" description="可能已被清理，可在人工审核模块重新处理。" />
+        ) : pendingItems.length === 0 ? (
+          <EmptyState compact title="暂无待晋升的审核通过证据" description="从人工审核批准证据后将在此处执行晋升。" />
+        ) : (
+          <EmptyState compact title="请从左侧队列中选择一个待晋升对象" />
+        )}
+      </div>
 
       <EvidenceDetailDrawer
         open={detailEvidence !== null}
         evidence={detailEvidence}
         onClose={() => setDetailEvidence(null)}
-        onRollback={reason => void handleRollback(reason)}
+        onRollback={(reason) => void handleRollback(reason)}
       />
-      {rollbackBusy && <div className="ew-busy">回滚中…</div>}
+
+      <PromotionDialog
+        open={confirmOpen}
+        targetLabel={selectedQueueEntry?.label ?? selectedPending?.targetId ?? ''}
+        claimText={dto?.claim_text ?? ''}
+        paper={{ title: draft?.paperTitle ?? '', pmid: draft?.pmid ?? '', doi: draft?.doi ?? null }}
+        passages={selectedPassages}
+        components={claimComponents}
+        direction={draft?.reviewerDirection ?? 'supports'}
+        preview={preview}
+        busy={promoteBusy}
+        onConfirm={() => void handlePromote()}
+        onClose={() => setConfirmOpen(false)}
+      />
     </div>
   )
 }
