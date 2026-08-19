@@ -8,6 +8,7 @@ chain should reach into raw object rows directly.
 
 from __future__ import annotations
 
+import re
 import uuid
 
 from sqlalchemy import text
@@ -98,9 +99,13 @@ def _build_claim_components(target_type: str, dto: dict) -> list[dict]:
         }
 
     if target_type in ("connection", "projection"):
+        src_cn = dto.get("source_region_cn") or ""
+        tgt_cn = dto.get("target_region_cn") or ""
         components = [
-            comp("source_region", f"源脑区为 {source}" if source else "存在确定的源脑区"),
-            comp("target_region", f"靶脑区为 {target}" if target else "存在确定的靶脑区"),
+            comp("source_region", f"源脑区为 {source}" if source else "存在确定的源脑区",
+                 metadata={"name_en": source, "name_cn": src_cn} if source else {}),
+            comp("target_region", f"靶脑区为 {target}" if target else "存在确定的靶脑区",
+                 metadata={"name_en": target, "name_cn": tgt_cn} if target else {}),
             comp("relation", f"{source or '源'} 到 {target or '靶'} 存在 {relation or '连接'} 关系"),
         ]
         if direction:
@@ -154,6 +159,8 @@ def _connection_dto(row: MirrorRegionConnection) -> dict:
         ),
         "source_region": _clean(getattr(row, "source_region_name_en", "")),
         "target_region": _clean(getattr(row, "target_region_name_en", "")),
+        "source_region_cn": _clean(getattr(row, "source_region_name_cn", "")),
+        "target_region_cn": _clean(getattr(row, "target_region_name_cn", "")),
         "canonical_terms": _join(
             [
                 _clean(getattr(row, "source_region_name_en", "")),
@@ -298,6 +305,17 @@ async def build_target_dto(
             "existing_evidence": await _count_evidence(session, target_type, target_id),
         }
     )
+    # circuit_function / circuit_step carry circuit_id as circuit_context:
+    # resolve it to the circuit name so claims read "回路「xxx」" not a UUID.
+    if target_type in ("circuit_function", "circuit_step") and dto.get("circuit_context"):
+        try:
+            cid = uuid.UUID(str(dto["circuit_context"]))
+        except (ValueError, TypeError):
+            cid = None
+        if cid is not None:
+            circuit_row = await session.get(MirrorRegionCircuit, cid)
+            if circuit_row is not None and getattr(circuit_row, "circuit_name", None):
+                dto["circuit_context"] = circuit_row.circuit_name
     dto["claim_text"] = _build_claim(target_type, dto)
     dto["structured_claim"] = {
         "target_type": target_type,
@@ -359,14 +377,34 @@ async def load_synonyms_for_terms(session: AsyncSession, terms: list[str]) -> di
 
 
 async def build_retrieval_context(
-    session: AsyncSession, target_type: str, target_id: uuid.UUID
+    session: AsyncSession,
+    target_type: str,
+    target_id: uuid.UUID,
+    *,
+    mode: str = "function",
 ) -> dict:
-    """Build the unified retrieval context from an Evidence Target DTO + ontology."""
+    """Build the unified retrieval context from an Evidence Target DTO + ontology.
+
+    mode="existence" drops function terms from retrieval (regions/relation only):
+    a paper may prove the object EXISTS (e.g. an anatomical projection) without
+    mentioning any function. The claim itself stays unchanged.
+    """
     dto = await build_target_dto(session, target_type, target_id)
     canonical = dto.get("canonical_terms") or []
     source = dto.get("source_region") or ""
     target = dto.get("target_region") or ""
     fn_terms = [t for t in canonical if t not in (source, target)]
+    if mode == "existence":
+        fn_terms = []
+    # circuit-family rows carry no region fields: derive retrieval terms from the
+    # circuit name itself (snake_case → words) minus generic words.
+    if target_type in ("circuit", "circuit_function", "circuit_step"):
+        name = dto.get("circuit_context") or dto.get("display_name") or ""
+        name_words = [
+            w for w in re.split(r"[_\-\s]+", name)
+            if len(w) > 3 and w.lower() not in _GENERIC_CIRCUIT_WORDS
+        ]
+        fn_terms = list(dict.fromkeys(fn_terms + name_words))
     synonym_map = await load_synonyms_for_terms(
         session, [t for t in [source, target] + fn_terms if t]
     )
@@ -391,6 +429,7 @@ async def build_retrieval_context(
         "structured_claim": dto.get("structured_claim") or {},
         "claim_components": dto.get("claim_components") or [],
         "claim_version": dto.get("claim_version") or "claim_v1",
+        "claim_mode": mode,
         "object_type": target_type,
         "granularity": dto.get("granularity") or "",
         "source_region": source,
@@ -408,13 +447,112 @@ async def build_retrieval_context(
     }
 
 
-async def build_search_query(session: AsyncSession, target_type: str, target_id: uuid.UUID) -> str:
+# Connection-evidence vocabulary (mirrors paper_evidence_service.CONNECTION_EVIDENCE_TERMS):
+# structural terms only — "connectivity" alone matches fMRI functional-connectivity
+# papers, which are not evidence for an anatomical projection.
+_CONNECTION_EVIDENCE_TERMS = [
+    "projection",
+    "tractography",
+    "fiber",
+    "tract",
+    "DTI",
+    "structural connectivity",
+    "white matter",
+    "thalamostriatal",
+    "thalamo-striatal",
+]
+
+# Region synonyms papers actually use ("putamen" ⊂ striatum).
+_REGION_SYNONYM_HINTS = {
+    "putamen": ["striatum", "caudate putamen", "neostriatum"],
+    "striatum": ["putamen"],
+    "thalamus": ["thalamic"],
+    "thalamic": ["thalamus"],
+}
+
+
+def _region_search_terms(region: str) -> list[str]:
+    core = _core_region_term(region)
+    terms = [region, core]
+    hints = _REGION_SYNONYM_HINTS.get((core or "").lower(), [])
+    return [t for t in dict.fromkeys(terms + hints) if t]
+
+_REGION_MODIFIER_WORDS = {
+    "right", "left", "proper", "superior", "inferior", "medial", "lateral",
+    "anterior", "posterior", "dorsal", "ventral", "caudal", "rostral",
+    "central", "deep", "superficial", "primary", "secondary", "bilateral",
+    "motor", "related", "gray", "white", "intermediate",
+}
+
+_REGION_STRUCTURAL_WORDS = {
+    "layer", "part", "area", "sublayer", "region", "sector", "division",
+}
+
+# Words too generic to retrieve on for circuit-name-based queries.
+_GENERIC_CIRCUIT_WORDS = {
+    "circuit", "pathway", "system", "sensory", "limbic", "motor",
+    "medial", "lateral", "dorsal", "ventral", "related", "function",
+    "area", "primary", "layer", "cortical", "posterior", "anterior",
+}
+
+
+def _core_region_term(region: str) -> str:
+    """'right thalamus proper' → 'thalamus'; 'Agranular insular area, posterior
+    part, layer 6b' → 'Agranular insular' (modifiers + structural suffixes stripped,
+    numeric labels dropped, remainder trimmed to last 3 words)."""
+    words = [
+        w for w in re.split(r"[\s\-,\/]+", region or "")
+        if w
+        and len(w) > 1
+        and not re.fullmatch(r"\d+[a-z]?|\d+", w)
+        and w.lower() not in _REGION_MODIFIER_WORDS
+        and w.lower() not in _REGION_STRUCTURAL_WORDS
+    ]
+    if not words:
+        return (region or "").strip()
+    core = " ".join(words).strip()
+    parts = core.split()
+    return " ".join(parts[-3:]) if len(parts) > 3 else core
+
+
+async def build_search_query(
+    session: AsyncSession,
+    target_type: str,
+    target_id: uuid.UUID,
+    *,
+    mode: str = "function",
+    abstract_only: bool = True,
+    negative: bool = False,
+) -> str:
     dto = await build_target_dto(session, target_type, target_id)
+    src = dto.get("source_region") or ""
+    tgt = dto.get("target_region") or ""
+    if mode == "existence":
+        # regions only (canonical + core term + synonym hints) — no function terms
+        terms = _region_search_terms(src) + _region_search_terms(tgt)
+    else:
+        terms = list(dto["canonical_terms"]) + _region_search_terms(src) + _region_search_terms(tgt)
+        if target_type in ("connection", "projection"):
+            terms += _CONNECTION_EVIDENCE_TERMS
     tokens = []
-    for term in dto["canonical_terms"]:
+    seen: set[str] = set()
+    for term in terms:
         term = (term or "").strip().strip('"')
-        if term and len(term) <= 80:
-            tokens.append(f'(ABSTRACT:"{term}" OR BODY:"{term}")')
+        key = term.lower()
+        if term and len(term) <= 80 and key not in seen:
+            seen.add(key)
+            tokens.append(f'ABSTRACT:"{term}"')
+            if not abstract_only:
+                tokens.append(f'BODY:"{term}"')
+    # 否定向查询:否定短语用 OR 组(任一命中即可;AND 连接多个否定短语现实中无法命中)
+    if negative:
+        neg_group = "(" + " OR ".join(
+            f'ABSTRACT:"{t}"' for t in (
+                "no projection", "does not connect", "absence of connection",
+                "not connected", "no connection",
+            )
+        ) + ")"
+        tokens.append(neg_group)
     if not tokens:
         display = (dto.get("display_name") or "").strip().strip('"')
         if display:

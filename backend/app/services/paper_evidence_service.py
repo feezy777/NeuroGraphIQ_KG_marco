@@ -5174,6 +5174,7 @@ async def _process_batch_item_v2(
                 claim_text_snapshot=context.get("claim_text") or "",
                 claim_components_snapshot=context.get("claim_components") or [],
             )
+            query_is_negative = False
             query = await build_search_query(
                 session, target_type, uuid.UUID(target_id), mode=mode
             )
@@ -5189,6 +5190,17 @@ async def _process_batch_item_v2(
                         papers = await _search_with_retry(wide_query, limit=max(10, max_papers * 3))
                     if papers:
                         query = wide_query
+            if not papers:
+                # 反向验证:正向无结果时用否定向查询再搜一轮,区分「证据否定」与「无证据」
+                negative_query = await build_search_query(
+                    session, target_type, uuid.UUID(target_id), mode=mode, abstract_only=False, negative=True
+                )
+                if negative_query and negative_query != query:
+                    async with sem_search:
+                        papers = await _search_with_retry(negative_query, limit=max(10, max_papers * 3))
+                    if papers:
+                        query = negative_query
+                        query_is_negative = True
             if not papers:
                 await _set_item_stage(
                     session, item_id, "awaiting_review",
@@ -5326,7 +5338,11 @@ async def _process_batch_item_v2(
             )
             await _set_item_stage(
                 session, item_id, "awaiting_review",
-                preprocess_outcome="evidence_found" if verified_any else "no_evidence_found",
+                preprocess_outcome=(
+                    "evidence_negated"
+                    if query_is_negative and verified_any
+                    else "evidence_found" if verified_any else "no_evidence_found"
+                ),
                 last_error_code=None if verified_any else "NO_RELEVANT_PASSAGE",
                 last_error_message=None if verified_any else "no verified passage across candidates",
                 last_error_at=None if verified_any else "SQL:now()",
