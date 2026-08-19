@@ -39,3 +39,33 @@ def test_positive_query_has_no_negation_terms():
     with patch.object(eta, "build_target_dto", AsyncMock(return_value=dto)):
         q = _run(eta.build_search_query(None, "connection", uuid.uuid4(), mode="existence"))
     assert "no projection" not in q
+
+
+def test_connection_claim_components_include_function_optional():
+    """连接主张:功能为可选组件(required=False),不影响存在性 coverage。"""
+    dto = {
+        "source_region": "Hippocampus",
+        "target_region": "Prefrontal cortex",
+        "relation": "projects to",
+        "directionality": "unidirectional",
+        "canonical_terms": ["memory consolidation"],
+    }
+    comps = eta._build_claim_components("connection", dto)
+    types = [c["component_type"] for c in comps]
+    assert types == ["source_region", "target_region", "relation", "direction", "function"]
+    fn = next(c for c in comps if c["component_type"] == "function")
+    assert fn["required"] is False
+    assert "memory consolidation" in fn["statement"]
+
+
+def test_connection_claim_components_no_function_when_no_canonical_term():
+    """无功能词时 connection 不产生 function 组件。"""
+    dto = {
+        "source_region": "BLA",
+        "target_region": "IL",
+        "relation": "projects to",
+        "directionality": "",
+        "canonical_terms": [],
+    }
+    comps = eta._build_claim_components("connection", dto)
+    assert [c["component_type"] for c in comps] == ["source_region", "target_region", "relation"]

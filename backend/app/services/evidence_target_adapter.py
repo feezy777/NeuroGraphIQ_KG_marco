@@ -110,6 +110,11 @@ def _build_claim_components(target_type: str, dto: dict) -> list[dict]:
         ]
         if direction:
             components.append(comp("direction", f"连接方向性为 {direction}"))
+        # 功能为可选补充:有功能证据的片段标注 function,不影响连接存在性 coverage
+        if function:
+            components.append(
+                comp("function", f"连接功能为「{function}」", required=False)
+            )
         return components
     if target_type == "projection_function":
         components = [

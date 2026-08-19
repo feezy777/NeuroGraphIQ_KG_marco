@@ -165,6 +165,8 @@ def test_valid_attach_rollback_under_fk():
                         "reason": "r",
                         "confidence": 0.8,
                         "semantic_confidence": 0.9,
+                        "supported_components": ["source_region", "target_region", "function"],
+                        "function_desc": "参与执行控制",
                         "source_verified": True,
                     }],
                     operator_id="integrity-test",
@@ -200,6 +202,26 @@ def test_valid_attach_rollback_under_fk():
             ).first()
             assert float(sugg[0]) == 0.9
             assert float(sugg[1]) == 0.78
+            # 功能证据 → 连接功能表(mirror_projection_functions)
+            fn = (
+                await s.execute(
+                    text(
+                        "SELECT function_term, function_category, mirror_status, review_status, "
+                        "term_id, evidence_text, raw_payload_json "
+                        "FROM mirror_projection_functions WHERE projection_id=:cid"
+                    ),
+                    {"cid": cid},
+                )
+            ).first()
+            assert fn is not None
+            # 规范化到本体中心术语(canonical_term_en),原文留存
+            assert fn[0] == "executive control"
+            assert fn[1] == "evidence_derived"
+            assert fn[2] == "llm_suggested"
+            assert fn[3] == "pending"
+            assert fn[4] is not None
+            assert "hippocampus" in fn[5].lower()
+            assert fn[6]["function_desc_raw"] == "参与执行控制"
             # rollback keeps evidence row (no physical delete) and sets invalidation audit
             rb = await pes.rollback_evidence(s, eid, reason="integrity test", operator_id="integrity-test")
             await s.commit()

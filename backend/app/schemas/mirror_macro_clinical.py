@@ -201,6 +201,11 @@ class MirrorProjectionFunctionCreate(BaseModel):
     source_atlas: str
     source_version: str | None = None
     function_term: str
+    function_term_cn: str | None = None
+    term_id: uuid.UUID | None = None
+    function_domain: str | None = None
+    function_role: str | None = None
+    effect_type: str = "unknown"
     function_category: str = FunctionCategory.unknown
     relation_type: str = FunctionRelationType.associated_with
     confidence: float | None = Field(default=None, ge=0.0, le=1.0)
@@ -242,6 +247,10 @@ class MirrorProjectionFunctionRead(BaseModel):
     connection_name_cn: str | None = None
     connection_name_en: str | None = None
     function_term: str
+    function_term_cn: str | None = None
+    function_domain: str | None = None
+    function_role: str | None = None
+    effect_type: str = "unknown"
     function_category: str
     relation_type: str
     confidence: float | None = None

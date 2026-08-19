@@ -980,6 +980,109 @@ async def pack_target_info(
     }
 
 
+async def _resolve_ontology_function(session: AsyncSession, desc: str) -> dict:
+    """把 LLM 功能描述规范化为本体中心术语(ontology_terms)。
+
+    匹配策略(active 术语优先):canonical_term_en/cn 或 synonym 精确匹配 →
+    canonical 术语作为描述子串出现(中英均可)→ 未命中返回空 dict。
+    """
+    clean = (desc or "").strip()[:512]
+    if not clean:
+        return {}
+    rows = (
+        await session.execute(
+            text(
+                "SELECT t.id::text, t.canonical_term_en, t.canonical_term_cn, "
+                "t.category, t.domain, t.role, t.effect_type "
+                "FROM ontology_terms t "
+                "LEFT JOIN ontology_term_synonyms s ON s.term_id = t.id AND s.status='active' "
+                "WHERE t.status='active' AND ("
+                "  t.canonical_term_en = :d OR t.canonical_term_cn = :d OR s.synonym_text = :d"
+                "  OR (t.canonical_term_cn IS NOT NULL AND strpos(:d, t.canonical_term_cn) > 0)"
+                "  OR (t.canonical_term_en IS NOT NULL AND strpos(:d, t.canonical_term_en) > 0)"
+                ") "
+                "ORDER BY CASE WHEN (t.canonical_term_en = :d OR t.canonical_term_cn = :d "
+                "  OR s.synonym_text = :d) THEN 0 ELSE 1 END, length(t.canonical_term_en) DESC "
+                "LIMIT 1"
+            ),
+            {"d": clean},
+        )
+    ).first()
+    if rows is None:
+        return {}
+    return {
+        "term_id": uuid.UUID(rows[0]),
+        "canonical_en": rows[1],
+        "canonical_cn": rows[2],
+        "category": rows[3],
+        "domain": rows[4],
+        "role": rows[5],
+        "effect_type": rows[6],
+    }
+
+
+async def _write_evidence_functions(
+    session: AsyncSession,
+    *,
+    target_id: uuid.UUID,
+    row: Any,
+    verified: list[dict],
+) -> None:
+    """功能证据片段 → 连接功能表(mirror_projection_functions)。
+
+    仅处理 supported_components 含 "function" 且带 function_desc 的片段;
+    function_term 优先规范化到本体中心术语(ontology_terms),未命中保留 LLM 描述;
+    evidence_text 留存证据原文,raw_payload_json 留存 LLM 原始描述,防止疑问;
+    create_projection_function 自带写入时去重合并(高 confidence 覆盖),
+    新条目 mirror_status=llm_suggested,走 Mirror 审核链。
+    """
+    fn_passages = [
+        p
+        for p in verified
+        if "function" in (p.get("supported_components") or [])
+        and (p.get("function_desc") or "").strip()
+    ]
+    if not fn_passages:
+        return
+    # 延迟导入避免模块环
+    from app.schemas.mirror_macro_clinical import MirrorProjectionFunctionCreate
+    from app.services.mirror_macro_clinical_service import create_projection_function
+
+    for p in fn_passages:
+        fn_desc = (p.get("function_desc") or "").strip()
+        norm = await _resolve_ontology_function(session, fn_desc)
+        payload = MirrorProjectionFunctionCreate(
+            projection_id=target_id,
+            granularity_level=row.granularity_level or "",
+            granularity_family=getattr(row, "granularity_family", None),
+            source_atlas=row.source_atlas or "",
+            source_version=getattr(row, "source_version", None),
+            function_term=(norm.get("canonical_en") or fn_desc)[:512],
+            function_term_cn=norm.get("canonical_cn") or fn_desc,
+            term_id=norm.get("term_id"),
+            function_domain=norm.get("domain"),
+            function_role=norm.get("role"),
+            effect_type=norm.get("effect_type") or "unknown",
+            function_category=norm.get("category") or "evidence_derived",
+            relation_type="associated_with",
+            confidence=p.get("semantic_confidence") or p.get("confidence"),
+            evidence_text=p.get("passage"),
+            raw_payload_json={
+                "source": "paper_evidence",
+                "passage_hash": p.get("passage_hash", ""),
+                "passage_text": (p.get("passage") or "")[:4000],
+                "function_desc_raw": fn_desc,
+            },
+            normalized_payload_json={
+                "function_desc": fn_desc,
+                "canonical_term_en": norm.get("canonical_en"),
+                "canonical_term_cn": norm.get("canonical_cn"),
+                "source": "paper_evidence",
+            },
+        )
+        await create_projection_function(session, payload)
+
+
 async def attach_evidence(
     session: AsyncSession,
     *,
@@ -1152,6 +1255,11 @@ async def attach_evidence(
                 source_verification_method=p.get("source_verification_method"),
                 supported_components=list(p.get("supported_components") or []),
             )
+        )
+    # 5b) 功能证据 → 连接功能表(mirror_projection_functions,llm_suggested 待审核)
+    if target_type in ("connection", "projection"):
+        await _write_evidence_functions(
+            session, target_id=target_id, row=row, verified=verified
         )
     # 6) confidence adjustment + log
     final_confidence = current
@@ -2320,11 +2428,12 @@ _JUDGE_USER = """待验证的知识主张："{claim}"
 
 规则：
 1. passage 逐字复制原文。
-2. **要素核对**：对每段检查源脑区(source_region)、靶脑区(target_region)、关系(relation)是否出现（含同义词/缩写/上位结构）。
+2. **要素核对**：对每段检查源脑区(source_region)、靶脑区(target_region)、关系(relation)、功能(function)是否出现（含同义词/缩写/上位结构）。
    - source_region 与 target_region 同段且存在连接/功能描述 → supports/partial
    - 仅出现单个脑区+功能描述 → partial（source_match/target_match 只标匹配项）
    - **至少 source+target 或 source+relation 两项同段匹配才可给 supports/partial**
    - **仅两个脑区名称共现、无任何连接/功能/临床关联 → 不算证据**（passages 不返回该段，或在 assessment 说明）
+   - **功能证据**：段落描述该连接/通路的功能（功能关联/临床意义/行为效应/参与某过程，evidence_dimension=function 或 mixed）→ supported_components 加 "function"，并输出 function_desc（功能描述，中文优先；段落提到的功能若为英文原文则给出简要中文转述）。
 3. direction：明确支持=supports；部分关联=partial；明确反对=contradicts；正反混杂=mixed。
 4. evidence_level：direct（实验直接证明）/ indirect（合理推断）/ interpretive（Discussion 解读）/ background（Introduction 背景）。
 5. evidence_pattern：direct_statement/tracing/tractography/functional_connectivity/anatomical_description/clinical_analysis。
@@ -2346,6 +2455,7 @@ _JUDGE_USER = """待验证的知识主张："{claim}"
  "direction":"partial","evidence_level":"background","reason":"<中文>",
  "confidence":<0.1-0.95按证据强度取值>,"semantic_confidence":<0.1-0.95按证据强度取值>,
  "supported_components":["source_region","target_region"],
+ "function_desc":"<功能描述,仅功能证据片段填写>",
  "evidence_dimension":"function","evidence_pattern":"functional_connectivity",
  "source_match":true,"target_match":true,"relation_match":true,
  "direction_match":true,"species_match":true}}]}}
