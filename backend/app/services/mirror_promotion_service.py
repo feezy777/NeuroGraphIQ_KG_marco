@@ -6,12 +6,14 @@ Does NOT call LLM; does NOT write kg_*; does NOT connect to external formal DB.
 
 from __future__ import annotations
 
+import logging
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import func, or_, select, text
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.final_kg import (
@@ -44,6 +46,8 @@ from app.schemas.mirror_review import MirrorReviewAction
 from app.services import mirror_review_service as mrs
 from app.services.triple_consolidation_service import normalize_triple_key
 
+_logger = logging.getLogger(__name__)
+
 VALID_TARGET_TYPES = frozenset({"connection", "function", "circuit", "triple"})
 
 MIRROR_EVIDENCE_TYPE = {
@@ -68,6 +72,17 @@ FINAL_TARGET_TYPE = {
 }
 
 PROMOTION_ORDER = ("connection", "function", "circuit", "triple")
+
+# 治理边永久跳过晋升:paper-evidence 预处理标记「结构性不存在」(non_neural_target)
+# 与「证据否定」(evidence_negated)的对象不得进入 final_kg,即使已有 review 通过。
+GOVERNANCE_SKIP_NEVER_PROMOTE = "GOVERNANCE_SKIP_NEVER_PROMOTE"
+GOVERNANCE_SKIP_OUTCOMES = frozenset({"non_neural_target", "evidence_negated"})
+# paper_evidence_task_items.target_type → 晋升 target_type 映射(triple 无证据任务支持)。
+EVIDENCE_TASK_TARGET_TYPES = {
+    "connection": ("connection", "projection"),
+    "function": ("region_function",),
+    "circuit": ("circuit",),
+}
 
 
 class EmptyTargetTypesError(ValueError):
@@ -308,6 +323,47 @@ async def detect_final_duplicate(
     return False
 
 
+async def get_governance_skip_outcome(
+    session: AsyncSession,
+    target_type: str,
+    target_id: uuid.UUID,
+) -> str | None:
+    """Return the permanent promotion-skip outcome for the target, if any.
+
+    Paper-evidence preprocessing marks structurally-impossible targets
+    (non_neural_target) and evidence-negated objects (evidence_negated) on
+    paper_evidence_task_items. Governance edges must never be promoted to
+    final_kg, regardless of review state. Takes the latest outcome for the
+    target; targets without an evidence task item return None.
+    """
+    evidence_types = EVIDENCE_TASK_TARGET_TYPES.get(target_type)
+    if not evidence_types:
+        return None
+    try:
+        row = (
+            await session.execute(
+                text(
+                    "SELECT preprocess_outcome FROM paper_evidence_task_items "
+                    "WHERE target_type = ANY(:tt) AND target_id = :oid "
+                    "ORDER BY created_at DESC LIMIT 1"
+                ),
+                {"tt": list(evidence_types), "oid": target_id},
+            )
+        ).first()
+    except SQLAlchemyError:
+        # 未迁移证据表(如运行时切换的旧库):无治理 outcome 可查,fail-open 不阻断晋升
+        _logger.warning(
+            "governance skip check skipped: evidence task table unavailable (target_type=%s, target_id=%s)",
+            target_type,
+            target_id,
+        )
+        return None
+    if row is None:
+        return None
+    outcome = row[0]
+    return outcome if outcome in GOVERNANCE_SKIP_OUTCOMES else None
+
+
 async def validate_promotion_eligibility(
     session: AsyncSession,
     target_type: str,
@@ -344,6 +400,10 @@ async def validate_promotion_eligibility(
 
     if not obj.granularity_level:
         return False, "MISSING_GRANULARITY", approve_record.id, val_summary
+
+    governance_outcome = await get_governance_skip_outcome(session, target_type, obj.id)
+    if governance_outcome is not None:
+        return False, GOVERNANCE_SKIP_NEVER_PROMOTE, approve_record.id, val_summary
 
     if await detect_final_duplicate(session, target_type, obj):
         return False, "DUPLICATE_FINAL_EXISTS", approve_record.id, val_summary

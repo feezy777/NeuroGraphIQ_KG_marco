@@ -8,8 +8,10 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy.exc import SQLAlchemyError
 
 from app.main import app
+from app.models.final_kg import FinalRegionConnection
 from app.models.mirror_kg import (
     MirrorCircuitRegion,
     MirrorEvidenceRecord,
@@ -18,9 +20,10 @@ from app.models.mirror_kg import (
     MirrorRegionConnection,
     MirrorRegionFunction,
 )
+from app.models.mirror_promotion import MirrorPromotionRecord
 from app.models.mirror_review import MirrorHumanReviewRecord
 from app.schemas.mirror_kg import MirrorPromotionStatus, MirrorReviewStatus, MirrorStatus
-from app.schemas.mirror_promotion import MirrorPromotionRequest, MirrorPromotionResponse, MirrorPromotionScope
+from app.schemas.mirror_promotion import MirrorPromotionRecordStatus, MirrorPromotionRequest, MirrorPromotionResponse, MirrorPromotionScope
 from app.schemas.mirror_review import MirrorReviewAction
 from app.services import mirror_promotion_service as mps
 
@@ -466,6 +469,214 @@ def test_no_llm_imports_in_promotion_service():
     assert "llm_extraction" not in src
     assert "FinalKgTriple" in src
     assert "FinalRegionConnection" in src
+
+
+def _approve_lookup(approve):
+    return MagicMock(scalars=MagicMock(return_value=MagicMock(first=MagicMock(return_value=approve))))
+
+
+def _outcome_lookup(outcome: str | None):
+    row = (outcome,) if outcome is not None else None
+    return MagicMock(first=MagicMock(return_value=row))
+
+
+def test_non_neural_target_ineligible_never_promote():
+    conn = _connection()
+    approve = _approve_record("connection", conn.id)
+    session = AsyncMock()
+    session.execute = AsyncMock(
+        side_effect=[_approve_lookup(approve), _outcome_lookup("non_neural_target")]
+    )
+    with patch.object(
+        mps, "get_latest_validation_summary", AsyncMock(return_value={"has_blocker": False, "has_error": False})
+    ):
+        with patch.object(mps, "detect_final_duplicate", AsyncMock(return_value=False)):
+            eligible, reason, review_id, _ = asyncio.run(
+                mps.validate_promotion_eligibility(session, "connection", conn)
+            )
+    assert not eligible
+    assert reason == mps.GOVERNANCE_SKIP_NEVER_PROMOTE
+    assert review_id == approve.id
+
+
+def test_evidence_negated_ineligible_never_promote():
+    fn = _function()
+    approve = _approve_record("function", fn.id)
+    session = AsyncMock()
+    session.execute = AsyncMock(
+        side_effect=[_approve_lookup(approve), _outcome_lookup("evidence_negated")]
+    )
+    with patch.object(
+        mps, "get_latest_validation_summary", AsyncMock(return_value={"has_blocker": False, "has_error": False})
+    ):
+        with patch.object(mps, "detect_final_duplicate", AsyncMock(return_value=False)):
+            eligible, reason, _, _ = asyncio.run(
+                mps.validate_promotion_eligibility(session, "function", fn)
+            )
+    assert not eligible
+    assert reason == mps.GOVERNANCE_SKIP_NEVER_PROMOTE
+
+
+def test_no_evidence_found_does_not_block_promotion():
+    conn = _connection()
+    approve = _approve_record("connection", conn.id)
+    session = AsyncMock()
+    session.execute = AsyncMock(
+        side_effect=[_approve_lookup(approve), _outcome_lookup("no_evidence_found")]
+    )
+    with patch.object(
+        mps, "get_latest_validation_summary", AsyncMock(return_value={"has_blocker": False, "has_error": False})
+    ):
+        with patch.object(mps, "detect_final_duplicate", AsyncMock(return_value=False)):
+            eligible, reason, _, _ = asyncio.run(
+                mps.validate_promotion_eligibility(session, "connection", conn)
+            )
+    assert eligible
+    assert reason is None
+
+
+def test_evidence_found_does_not_block_promotion():
+    conn = _connection()
+    approve = _approve_record("connection", conn.id)
+    session = AsyncMock()
+    session.execute = AsyncMock(
+        side_effect=[_approve_lookup(approve), _outcome_lookup("evidence_found")]
+    )
+    with patch.object(
+        mps, "get_latest_validation_summary", AsyncMock(return_value={"has_blocker": False, "has_error": False})
+    ):
+        with patch.object(mps, "detect_final_duplicate", AsyncMock(return_value=False)):
+            eligible, reason, _, _ = asyncio.run(
+                mps.validate_promotion_eligibility(session, "connection", conn)
+            )
+    assert eligible
+    assert reason is None
+
+
+def test_no_evidence_task_item_does_not_block_promotion():
+    conn = _connection()
+    approve = _approve_record("connection", conn.id)
+    session = AsyncMock()
+    session.execute = AsyncMock(side_effect=[_approve_lookup(approve), _outcome_lookup(None)])
+    with patch.object(
+        mps, "get_latest_validation_summary", AsyncMock(return_value={"has_blocker": False, "has_error": False})
+    ):
+        with patch.object(mps, "detect_final_duplicate", AsyncMock(return_value=False)):
+            eligible, reason, _, _ = asyncio.run(
+                mps.validate_promotion_eligibility(session, "connection", conn)
+            )
+    assert eligible
+    assert reason is None
+
+
+def test_evidence_table_missing_fails_open():
+    # 未迁移证据表(运行时切换的旧库):治理查询报 SQL 错 → fail-open,不阻断晋升
+    conn = _connection()
+    approve = _approve_record("connection", conn.id)
+    session = AsyncMock()
+    session.execute = AsyncMock(
+        side_effect=[_approve_lookup(approve), SQLAlchemyError("relation does not exist")]
+    )
+    with patch.object(
+        mps, "get_latest_validation_summary", AsyncMock(return_value={"has_blocker": False, "has_error": False})
+    ):
+        with patch.object(mps, "detect_final_duplicate", AsyncMock(return_value=False)):
+            eligible, reason, _, _ = asyncio.run(
+                mps.validate_promotion_eligibility(session, "connection", conn)
+            )
+    assert eligible
+    assert reason is None
+
+
+def test_run_skips_non_neural_target_no_final_row():
+    conn = _connection()
+    approve = _approve_record("connection", conn.id)
+    outcome = _outcome_lookup("non_neural_target")
+    session = AsyncMock()
+    session.add = MagicMock()
+    session.commit = AsyncMock()
+    session.execute = AsyncMock(
+        side_effect=[
+            _approve_lookup(approve),
+            outcome,
+            _approve_lookup(approve),
+            outcome,
+        ]
+    )
+    req = MirrorPromotionRequest(
+        target_types=["connection"],
+        dry_run=False,
+        operator="op1",
+        reason="governance skip test",
+        confirmation_text="PROMOTE MIRROR KG TO FINAL: connection COUNT 0",
+    )
+    with patch.object(mps, "collect_promotion_targets", AsyncMock(return_value=[("connection", conn)])):
+        with patch.object(
+            mps, "get_latest_validation_summary", AsyncMock(return_value={"has_blocker": False, "has_error": False})
+        ):
+            with patch.object(mps, "promote_connection", AsyncMock(side_effect=AssertionError("must not be called"))):
+                resp = asyncio.run(mps.run_mirror_promotion(session, req))
+
+    assert resp.promoted_count == 0
+    assert resp.skipped_ineligible_count == 1
+    assert resp.failed_count == 0
+    assert conn.promotion_status == MirrorPromotionStatus.not_promoted
+    assert conn.mirror_status == MirrorStatus.human_approved
+    recs = [
+        c.args[0]
+        for c in session.add.call_args_list
+        if c.args and isinstance(c.args[0], MirrorPromotionRecord)
+    ]
+    assert any(
+        r.status == MirrorPromotionRecordStatus.skipped_ineligible
+        and r.message == mps.GOVERNANCE_SKIP_NEVER_PROMOTE
+        for r in recs
+    )
+
+
+def test_run_promotes_evidence_found_control():
+    conn = _connection()
+    approve = _approve_record("connection", conn.id)
+    outcome = _outcome_lookup("evidence_found")
+    session = AsyncMock()
+    session.add = MagicMock()
+    session.commit = AsyncMock()
+
+    async def _fake_flush():
+        # assign DB-generated ids the way a real flush would
+        for c in session.add.call_args_list:
+            obj = c.args[0] if c.args else None
+            if isinstance(obj, FinalRegionConnection) and getattr(obj, "id", None) is None:
+                obj.id = uuid.uuid4()
+
+    session.flush = AsyncMock(side_effect=_fake_flush)
+    session.execute = AsyncMock(
+        side_effect=[
+            _approve_lookup(approve),
+            outcome,
+            _approve_lookup(approve),
+            outcome,
+        ]
+    )
+    req = MirrorPromotionRequest(
+        target_types=["connection"],
+        dry_run=False,
+        operator="op1",
+        reason="control test",
+        confirmation_text="PROMOTE MIRROR KG TO FINAL: connection COUNT 1",
+    )
+    with patch.object(mps, "collect_promotion_targets", AsyncMock(return_value=[("connection", conn)])):
+        with patch.object(
+            mps, "get_latest_validation_summary", AsyncMock(return_value={"has_blocker": False, "has_error": False})
+        ):
+            with patch.object(mps, "detect_final_duplicate", AsyncMock(return_value=False)):
+                with patch.object(mps, "promote_evidence_for_target", AsyncMock(return_value=1)):
+                    resp = asyncio.run(mps.run_mirror_promotion(session, req))
+
+    assert resp.promoted_count == 1
+    assert resp.skipped_ineligible_count == 0
+    assert resp.failed_count == 0
+    assert conn.promotion_status == MirrorPromotionStatus.promoted
 
 
 def test_final_kg_list_api():
