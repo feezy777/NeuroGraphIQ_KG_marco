@@ -9,7 +9,6 @@ import {
   TARGET_TYPE_LABELS,
   WORK_STATUS_LABELS,
   formatConfidencePercent,
-  objectCardTitle,
   workStatusTone,
 } from './taskStatus'
 
@@ -91,16 +90,18 @@ export function TaskFilterPreviewPanel() {
           </div>
         ) : (
           <div className="task-preview-card" data-testid="task-preview-card">
-            <div className="task-preview-title">{objectCardTitle(
-              selected.display_name_cn,
-              selected.display_name_en,
-              `${TARGET_TYPE_LABELS[selected.target_type] ?? selected.target_type} #${(selected.target_id ?? selected.id).slice(0, 8)}`,
-            )}</div>
-            <div className="task-preview-row">
+            <div className="task-preview-head">
+              <div className="task-preview-title">
+                {selected.display_name_cn?.trim() || selected.display_name_en?.trim()
+                  || `${TARGET_TYPE_LABELS[selected.target_type] ?? selected.target_type} #${(selected.target_id ?? selected.id).slice(0, 8)}`}
+              </div>
               <span className={`evidence-task-chip evidence-task-chip-${workStatusTone(selected.work_status)}`}>
                 {WORK_STATUS_LABELS[selected.work_status] ?? selected.work_status}
               </span>
             </div>
+            {selected.display_name_cn?.trim() && selected.display_name_en?.trim() && selected.display_name_en !== selected.display_name_cn && (
+              <div className="task-preview-subtitle">{selected.display_name_en}</div>
+            )}
             <div className="task-preview-detail">
               <span>对象类型</span><b>{TARGET_TYPE_LABELS[selected.target_type] ?? selected.target_type}</b>
             </div>

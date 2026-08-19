@@ -56,7 +56,9 @@ describe('EvidenceTasksModule(对象级任务卡:命名/跳转/排序/筛选)', 
     vi.mocked(endpoints.listPaperEvidenceTasks).mockResolvedValue({ items: [makeTask({})], total: 1 })
     renderModule()
     const card = await screen.findByTestId('evidence-task-card-t1')
-    expect(within(card).getByText('杏仁核 → 海马 (Amygdala → Hippocampus)')).toBeTruthy()
+    // 标题中英分离:主标题中文 + 副标题英文
+    expect(within(card).getByText('杏仁核 → 海马')).toBeTruthy()
+    expect(within(card).getByText('Amygdala → Hippocampus')).toBeTruthy()
     expect(within(card).getByText('连接')).toBeTruthy()
     expect(within(card).getByText('置信度 35%')).toBeTruthy()
     expect(within(card).getByText('待验证')).toBeTruthy()

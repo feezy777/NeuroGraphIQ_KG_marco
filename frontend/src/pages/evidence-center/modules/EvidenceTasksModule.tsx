@@ -66,11 +66,11 @@ function TaskCard({ task, selected, busy, onSelect, onResume, onPause, onContinu
     can_continue_review: false, can_pause: false, can_resume: false, can_retry_failed: false, can_view_results: false,
   }
   const typeLabel = TARGET_TYPE_LABELS[task.target_type] ?? task.target_type
-  const title = objectCardTitle(
-    task.display_name_cn,
-    task.display_name_en,
-    `${typeLabel} #${(task.target_id ?? task.id).slice(0, 8)}`,
-  )
+  // 主标题:中文优先,英文自动提升;副标题:另一语言(单语时隐藏)
+  const titleCn = task.display_name_cn?.trim()
+  const titleEn = task.display_name_en?.trim()
+  const title = titleCn || titleEn || `${typeLabel} #${(task.target_id ?? task.id).slice(0, 8)}`
+  const subtitle = titleCn && titleEn && titleEn !== titleCn ? titleEn : null
   const { done, total } = taskEvidenceProgress(task)
   const pct = total > 0 ? Math.round((done / total) * 100) : 0
   const isDone = ws === 'completed'
@@ -112,6 +112,7 @@ function TaskCard({ task, selected, busy, onSelect, onResume, onPause, onContinu
           {WORK_STATUS_LABELS[ws] ?? ws}
         </span>
       </div>
+      {subtitle && <div className="evidence-task-card-subtitle">{subtitle}</div>}
       <div className="evidence-task-card-meta">
         <span className="evidence-task-card-type">{typeLabel}</span>
         {(task.preprocess_outcome === 'non_neural_target' || task.preprocess_outcome === 'evidence_negated') && (
@@ -120,10 +121,16 @@ function TaskCard({ task, selected, busy, onSelect, onResume, onPause, onContinu
           </span>
         )}
       </div>
-      <div className="evidence-task-card-confidence" data-unscored={task.display_confidence == null ? 'true' : 'false'}>
-        {formatConfidencePercent(task.display_confidence)}
+      <div className="evidence-task-card-info-row">
+        <span className="evidence-task-card-info-label">当前置信度</span>
+        <span className="evidence-task-card-confidence" data-unscored={task.display_confidence == null ? 'true' : 'false'}>
+          {formatConfidencePercent(task.display_confidence)}
+        </span>
       </div>
-      <div className="evidence-task-card-evidence">证据 {done} / {total}</div>
+      <div className="evidence-task-card-info-row">
+        <span className="evidence-task-card-info-label">证据进度</span>
+        <span className="evidence-task-card-evidence">{done} / {total}</span>
+      </div>
       <div className="evidence-task-card-progress" data-testid={`evidence-task-progress-${task.id}`}>
         <div className="evidence-task-card-progress-bar" style={{ width: `${pct}%` }} />
       </div>
@@ -328,6 +335,11 @@ export function EvidenceTasksModule() {
               data-testid="evidence-task-search"
             />
           </div>
+          <div className="evidence-task-toolbar-spacer" />
+          <button type="button" className="btn btn-sm" onClick={reload} data-testid="evidence-task-refresh">刷新</button>
+          <button type="button" className="btn btn-sm evidence-task-create-btn" onClick={() => setCreateOpen(true)}>创建批量预处理</button>
+        </div>
+        <div className="evidence-task-toolbar-row evidence-task-toolbar-row-second">
           <div className="evidence-task-filter-chips" data-testid="evidence-task-filter-chips">
             {FILTER_CHIPS.map(g => (
               <button
@@ -340,11 +352,10 @@ export function EvidenceTasksModule() {
               </button>
             ))}
           </div>
-          <button type="button" className="btn btn-sm" onClick={reload} data-testid="evidence-task-refresh">刷新</button>
-          <button type="button" className="btn btn-sm" onClick={() => setCreateOpen(true)}>创建批量预处理</button>
-        </div>
-        <div className="evidence-task-summary" data-testid="evidence-task-summary">
-          待处理 {summary.pending} &nbsp; 进行中 {summary.processing} &nbsp; 已完成 {summary.completed}
+          <div className="evidence-task-toolbar-spacer" />
+          <div className="evidence-task-summary" data-testid="evidence-task-summary">
+            待处理 {summary.pending} · 进行中 {summary.processing} · 已完成 {summary.completed}
+          </div>
         </div>
       </div>
 
