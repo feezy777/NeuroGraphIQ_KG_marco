@@ -2066,12 +2066,12 @@ async def extract_passage_from_paper(
         "  reverse_direction_only（仅有反向证据）、functional_not_anatomical（仅有功能连接）、\n"
         "  hierarchical_only（仅有上级脑区间接证据）、species_mismatch（物种不匹配）。\n"
         "只返回一个纯 JSON 对象（不使用 markdown、代码块或尾随逗号）：\n"
-        '{"overall_direction": "supports|partial|contradicts|mixed|not_found", "paper_relevance": 0.9, '
+        '{"overall_direction": "supports|partial|contradicts|mixed|not_found", "paper_relevance": <0-1按实际评估>, '
         '"assessment": "<1-2句中文>", "evidence_dimension": "existence|function|mixed", '
         '"not_found_reason": "<若not_found必填，否则null>", '
         '"passages": [{"paragraph_id": "<id>", "section": "<section>", "passage": "<英文原文逐字引用>", '
         '"direction": "supports", "evidence_level": "direct|indirect|interpretive|background", '
-        '"reason": "<1句中文>", "confidence": 0.9, "semantic_confidence": 0.9, '
+        '"reason": "<1句中文>", "confidence": <0.1-0.95按证据强度取值>, "semantic_confidence": <0.1-0.95按证据强度取值>, '
         '"supported_components": ["source_region", "target_region", "relation"], '
         '"evidence_dimension": "existence", '
         '"evidence_pattern": "direct_statement", '
@@ -2322,6 +2322,7 @@ _JUDGE_USER = """待验证的知识主张："{claim}"
 5. evidence_pattern：direct_statement/tracing/tractography/functional_connectivity/anatomical_description/clinical_analysis。
 6. not_found：当没有段落实质支持或反对该主张时使用（仅共现不算实质）。
 7. supported_components 只列实际匹配的要素。
+8. confidence 与 semantic_confidence 必须按该段实际证据强度在 0.1-0.95 范围内逐段取值，严禁照抄本示例中的数值。
 
 只返回一个纯JSON：
 {{"overall_direction":"supports|partial|contradicts|mixed|not_found","paper_relevance":0.5,
@@ -2329,7 +2330,7 @@ _JUDGE_USER = """待验证的知识主张："{claim}"
  "not_found_reason":"<仅not_found时填写>",
  "passages":[{{"paragraph_id":"<id>","section":"<section>","passage":"<英文原文>",
  "direction":"partial","evidence_level":"background","reason":"<中文>",
- "confidence":0.4,"semantic_confidence":0.4,
+ "confidence":<0.1-0.95按证据强度取值>,"semantic_confidence":<0.1-0.95按证据强度取值>,
  "supported_components":["source_region","target_region"],
  "evidence_dimension":"function","evidence_pattern":"functional_connectivity",
  "source_match":true,"target_match":true,"relation_match":true,
