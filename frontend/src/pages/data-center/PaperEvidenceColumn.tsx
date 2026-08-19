@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import {
   attachPaperEvidence,
+  createPaperEvidenceBatch,
   extractPaperPassage,
   getEvidenceTarget,
   listPaperEvidence,
@@ -14,6 +15,7 @@ import {
 } from '../../api/endpoints'
 import { ConfirmDialog } from '../../components/ConfirmDialog'
 import { computeTmpCoverage } from '../evidence-center/components/claimCoverage'
+import { buildEvidenceUrl } from '../evidence-center/evidenceCenterUrl'
 import { COMPONENT_LABEL, DIRECTION_LABEL, LEVEL_LABEL } from '../evidence-center/components/types'
 
 type Direction = 'supports' | 'partial' | 'contradicts' | 'mixed' | 'not_found'
@@ -70,6 +72,35 @@ export function PaperEvidenceColumn({ targetType, targetId }: { targetType: stri
       setSelectedKeys(new Set())
     } catch (err) {
       setMessage(`检索失败：${err instanceof Error ? err.message : String(err)}`)
+    } finally {
+      setBusy(null)
+    }
+  }, [targetType, targetId, mode])
+
+  const createTask = useCallback(async () => {
+    setBusy('task')
+    setMessage(null)
+    try {
+      const r = await createPaperEvidenceBatch({
+        target_type: targetType,
+        scope: 'selected',
+        target_ids: [targetId],
+        mode,
+        start_paused: false,
+        name: `佐证 · ${targetId.slice(0, 8)}`,
+      })
+      setMessage(`佐证任务已创建，正在跳转任务页…`)
+      // 跳转证据中心任务页,追踪/审核统一走任务流程
+      window.location.hash = buildEvidenceUrl({
+        module: 'tasks',
+        taskId: r.task_id,
+        taskItemId: null,
+        targetType,
+        targetId,
+        paperId: null,
+      })
+    } catch (err) {
+      setMessage(`创建任务失败：${err instanceof Error ? err.message : String(err)}`)
     } finally {
       setBusy(null)
     }
@@ -242,6 +273,9 @@ export function PaperEvidenceColumn({ targetType, targetId }: { targetType: stri
           <option value="existence">存在性佐证</option>
         </select>
         <button type="button" className="btn btn-sm" disabled={busy !== null} onClick={search}>检索论文</button>
+        <button type="button" className="btn btn-sm btn-primary" disabled={busy !== null} onClick={createTask} title="创建单对象佐证任务并进入任务页(自动检索+提取+审核流程)">
+          创建佐证任务
+        </button>
       </div>
       {message && <div className="ontology-page-message">{message}</div>}
       {busy && <div className="ew-busy">处理中：{busy}</div>}
