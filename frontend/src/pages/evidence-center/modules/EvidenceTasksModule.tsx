@@ -119,7 +119,7 @@ function TaskCard({ task, busy, onJump, onResume, onPause, onRetry }: {
       </div>
       <div className="evidence-task-card-meta">
         <span className="evidence-task-card-type">{typeLabel}</span>
-        <span className="evidence-task-card-confidence">{formatConfidencePercent(task.display_confidence)}</span>
+        <span className="evidence-task-card-confidence" data-unscored={task.display_confidence == null ? 'true' : 'false'}>{formatConfidencePercent(task.display_confidence)}</span>
       </div>
       {(task.preprocess_outcome === 'non_neural_target' || task.preprocess_outcome === 'evidence_negated') && (
         <div className="evidence-task-chip evidence-task-chip-bad" data-testid={`evidence-task-outcome-${task.id}`}>
