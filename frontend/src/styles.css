@@ -13117,8 +13117,12 @@ a.paper-card-title[href]:hover { color: var(--primary, #1a73e8); text-decoration
 /* ── 中栏:对象卡(严格信息顺序,唯一权威) ── */
 .evidence-task-card-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  grid-template-columns: repeat(3, 1fr);
   gap: 12px;
+}
+/* 1366 及以下:2 列 */
+@media (max-width: 1500px) {
+  .evidence-task-card-grid { grid-template-columns: repeat(2, 1fr); }
 }
 .evidence-task-card {
   display: flex;
