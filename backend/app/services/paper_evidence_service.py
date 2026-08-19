@@ -56,7 +56,7 @@ from app.services.evidence_target_adapter import (
     build_retrieval_context,
 )
 from app.services.evidence_target_classifier import classify_target
-from app.services.paragraph_retrieval import build_windows, score_paragraphs
+from app.services.paragraph_retrieval import build_semantic_windows
 from app.services import oa_xml_parser
 from app.services import paper_fetch_service as pfs
 
@@ -2203,16 +2203,17 @@ _LOCATOR_USER = """待验证的知识主张："{claim}"
 任务：找出所有可能与该主张相关的段落。标准极宽——只要有一丝关联就返回。
 
 规则：
-1. 段落提到主张中的任一脑区名（包括同义词/上级结构/跨物种）→ 必须返回。
-2. 段落涉及脑区的任何功能/连接/临床/结构/方法学描述 → 必须返回。
+1. 段落提到主张中的任一脑区名（包括同义词/缩写/别名/上级结构/跨物种/换述表达）→ 必须返回。
+2. 语义相关即可标记：不要求关键词原词共现，同义/换述/上位概念表达也算相关。
+3. 段落涉及脑区的任何功能/连接/临床/结构/方法学描述 → 必须返回。
 3. 功能连接（fMRI/电生理/EEG/钙成像）、临床分析（疾病相关/行为实验）、
    解剖描述（组织学/染色）、方法提及（示踪剂/注射位点）→ 全部接受。
-4. 仅共现（两个脑区名称同时出现但无连接描述）→ 也要返回，relevance=0.2-0.3。
-5. relevance 评估标准（宽松）：
+5. 仅共现（两个脑区名称同时出现但无连接描述）→ 也要返回，relevance=0.2-0.3。
+6. relevance 评估标准（宽松）：
    0.8-1.0：段落直接描述该连接/投射/功能通路
    0.5-0.7：段落讨论相关脑区功能或连接，但关系不够直接
    0.2-0.4：段落仅提到相关脑区名称或结构
-6. relation_cue 分类：
+7. relation_cue 分类：
    direct_connection（直接描述投射/连接/通路）
    tracing（示踪实验）
    anatomical（解剖描述/组织学）
@@ -2221,9 +2222,9 @@ _LOCATOR_USER = """待验证的知识主张："{claim}"
    cooccurrence（仅关键词共现）
 
 只返回一个纯JSON（无markdown/代码块）：
-{{"candidates":[{{"paragraph_id":"<id>","relevance":0.6,"relation_cue":"clinical","reason":"<1句中文>"}}]}}
+{{"candidates":[{{"paragraph_id":"<语义块id>","relevance":0.6,"relation_cue":"clinical","reason":"<1句中文>"}}]}}
 
-段落窗口：
+语义块（每块为合并后的连续段落，<id> 为块标识，文本为块全文）：
 {windows}"""
 
 
@@ -2235,21 +2236,32 @@ async def locate_candidates(claim: dict, windows: list[dict], title: str = "") -
     provider = get_llm_provider("deepseek")
     claim_text = claim.get("claim_text") or claim.get("function_term") or ""
 
-    # Serialize windows with IDs
+    # Serialize semantic blocks with IDs — full block text (no 500-char truncation).
+    # Compatible with both semantic blocks ({block_id, paragraphs}) and legacy
+    # keyword windows ({context: [...]}).
     window_lines = []
     window_map: dict[str, dict] = {}
     for w in windows:
-        for p in (w.get("context") or []):
-            pid = p.get("paragraph_id", "")
-            if pid and pid not in window_map:
-                window_map[pid] = p
-                text = (p.get("passage_text") or "")[:500]
-                window_lines.append(f"<id={pid}> {text}")
+        paras = w.get("paragraphs") or w.get("context") or []
+        bid = (
+            w.get("block_id")
+            or (paras[0].get("paragraph_id") if paras else "")
+            or ""
+        )
+        if not bid or bid in window_map:
+            continue
+        text = " ".join((p.get("passage_text") or "") for p in paras)
+        window_map[bid] = {
+            "block_id": bid,
+            "passage_text": text,
+            "section_title": (paras[0] or {}).get("section_title", ""),
+        }
+        window_lines.append(f"<id={bid}> {text}")
 
     if not window_lines:
         return []
 
-    user = _LOCATOR_USER.format(claim=claim_text, windows="\n".join(window_lines[:50]))
+    user = _LOCATOR_USER.format(claim=claim_text, windows="\n".join(window_lines[:60]))
     raw_response = ""
 
     last_exc: Exception | None = None
@@ -2296,40 +2308,32 @@ _JUDGE_USER = """待验证的知识主张："{claim}"
 结构化主张：{structured}
 主张要素：{components}
 
-以下是从论文中筛选出的候选段落。请逐一判断，只要段落与主张有关联就作为证据返回。
-核心原则：宁可给低置信度的证据，也不要轻易判 not_found。让人类专家做最终判断。
+以下是从论文中筛选出的候选段落。请严格判断，只有段落**实质支持/反对**该主张时才作为证据返回。
 
 规则：
 1. passage 逐字复制原文。
-2. direction：只要有正面关联就选 supports/partial，明确反对才选 contradicts。
-   partial 是安全默认值——只要不是完全无关，都可以归入 partial。
-3. evidence_level（基于证据强度，不是基于是否有证据）：
-   direct = 实验直接证明该连接/投射
-   indirect = 需要合理推断（功能连接、跨物种、上级结构）
-   interpretive = 作者在 Discussion/Conclusion 中的解读
-   background = Introduction 中的背景描述
-4. evidence_dimension：
-   existence = 涉及解剖连接/投射/通路
-   function = 涉及功能关联/临床意义/行为效应
-   mixed = 两者都有
-5. evidence_pattern：direct_statement/anterograde_tracing/retrograde_tracing/
-   anatomical_description/tractography/functional_connectivity/clinical_analysis/cooccurrence。
-6. 仅共现也算证据（evidence_pattern=cooccurrence, confidence 0.1-0.2），不要判 not_found。
-7. 功能连接/临床分析/行为实验都是有效证据（evidence_dimension=function）。
-8. 只要段落提到主张中任一脑区名 → 至少返回 1 条 passage。
-9. not_found 仅在论文全文与主张完全无关时使用。
+2. **要素核对**：对每段检查源脑区(source_region)、靶脑区(target_region)、关系(relation)是否出现（含同义词/缩写/上位结构）。
+   - source_region 与 target_region 同段且存在连接/功能描述 → supports/partial
+   - 仅出现单个脑区+功能描述 → partial（source_match/target_match 只标匹配项）
+   - **至少 source+target 或 source+relation 两项同段匹配才可给 supports/partial**
+   - **仅两个脑区名称共现、无任何连接/功能/临床关联 → 不算证据**（passages 不返回该段，或在 assessment 说明）
+3. direction：明确支持=supports；部分关联=partial；明确反对=contradicts；正反混杂=mixed。
+4. evidence_level：direct（实验直接证明）/ indirect（合理推断）/ interpretive（Discussion 解读）/ background（Introduction 背景）。
+5. evidence_pattern：direct_statement/tracing/tractography/functional_connectivity/anatomical_description/clinical_analysis。
+6. not_found：当没有段落实质支持或反对该主张时使用（仅共现不算实质）。
+7. supported_components 只列实际匹配的要素。
 
 只返回一个纯JSON：
 {{"overall_direction":"supports|partial|contradicts|mixed|not_found","paper_relevance":0.5,
- "assessment":"<1-2句中文，说明论文与主张的关联程度>","evidence_dimension":"function|existence|mixed",
+ "assessment":"<1-2句中文>","evidence_dimension":"function|existence|mixed",
  "not_found_reason":"<仅not_found时填写>",
  "passages":[{{"paragraph_id":"<id>","section":"<section>","passage":"<英文原文>",
  "direction":"partial","evidence_level":"background","reason":"<中文>",
- "confidence":0.2,"semantic_confidence":0.2,
+ "confidence":0.4,"semantic_confidence":0.4,
  "supported_components":["source_region","target_region"],
- "evidence_dimension":"function","evidence_pattern":"cooccurrence",
- "source_match":true,"target_match":true,"relation_match":false,
- "direction_match":false,"species_match":true}}]}}
+ "evidence_dimension":"function","evidence_pattern":"functional_connectivity",
+ "source_match":true,"target_match":true,"relation_match":true,
+ "direction_match":true,"species_match":true}}]}}
 
 论文标题：{title}
 候选段落：
@@ -2356,12 +2360,11 @@ async def judge_candidates(
     components = [c.get("component_type", "") for c in (claim.get("claim_components") or [])]
 
     candidate_lines = []
-    for c in candidates[:4]:  # Top 4 candidates(缩量:大 prompt 拖慢 judge,4 段足够判定)
-        text = (c.get("passage_text") or "")[:600]
-        candidate_lines.append(
-            f"<id={c['paragraph_id']}> [{c.get('relation_cue','?')}] "
-            f"relevance={c['relevance']:.2f} | {text}"
-        )
+    for c in candidates[:6]:  # Top 6 blocks(每块 ≤800 字,送全文供要素核对)
+        cid = c.get("paragraph_id") or c.get("block_id") or ""
+        text = c.get("passage_text") or ""
+        if cid:
+            candidate_lines.append(f"<id={cid}> {text}")
 
     user = _JUDGE_USER.format(
         claim=claim_text,
@@ -2407,6 +2410,91 @@ async def judge_candidates(
     ) from last_exc
 
 
+def _normalize_semantic_blocks(windows: list[dict]) -> list[dict]:
+    """把输入统一为语义块结构。
+
+    - 已是语义块({block_id, paragraphs}) → 原样返回;
+    - 旧关键词窗口({context: [...]}) → 摊平段落(按 paragraph_id 去重、保序)后重建语义块;
+    - 无法摊平 → 原样返回(交给 locate_candidates 自身的旧结构兼容)。
+    """
+    if not windows:
+        return []
+    if any(w.get("paragraphs") for w in windows):
+        return windows
+    seen: set[str] = set()
+    paragraphs: list[dict] = []
+    for w in windows:
+        for p in w.get("context") or []:
+            pid = p.get("paragraph_id")
+            if pid:
+                if pid in seen:
+                    continue
+                seen.add(pid)
+            paragraphs.append(p)
+    if not paragraphs:
+        return windows
+    return build_semantic_windows(paragraphs)
+
+
+def _blocks_to_fallback_windows(blocks: list[dict]) -> list[dict]:
+    """语义块 → 单阶段提取器兼容的关键词窗口结构({focus_paragraph_id, context})。"""
+    out: list[dict] = []
+    for b in blocks:
+        paras = b.get("paragraphs") or []
+        if not paras:
+            continue
+        out.append(
+            {
+                "focus_paragraph_id": b.get("block_id")
+                or paras[0].get("paragraph_id"),
+                "section_title": paras[0].get("section_title", ""),
+                "paragraph_index": paras[0].get("paragraph_index"),
+                "context": paras,
+            }
+        )
+    return out
+
+
+def _build_judge_input(blocks: list[dict], hits: list[dict]) -> list[dict]:
+    """命中块全文 + 前后各 1 个邻块,供 judge 严格判定(上限 6 块)。"""
+    hit_ids = {
+        h.get("paragraph_id") or h.get("block_id")
+        for h in hits
+        if (h.get("paragraph_id") or h.get("block_id"))
+    }
+    ordered = [b for b in blocks if b.get("block_id")]
+    idx_of = {b["block_id"]: i for i, b in enumerate(ordered)}
+    out: list[dict] = []
+    used: set[str] = set()
+    for b in ordered:
+        if b["block_id"] not in hit_ids or b["block_id"] in used:
+            continue
+        span = [b]
+        i = idx_of[b["block_id"]]
+        if i > 0:
+            span.append(ordered[i - 1])
+        if i + 1 < len(ordered):
+            span.append(ordered[i + 1])
+        text = " ".join(
+            (p.get("passage_text") or "")
+            for sb in span
+            for p in (sb.get("paragraphs") or [])
+        )
+        out.append(
+            {
+                "paragraph_id": b["block_id"],
+                "passage_text": text,
+                "section_title": (b.get("paragraphs") or [{}])[0].get(
+                    "section_title", ""
+                ),
+            }
+        )
+        used.update(sb["block_id"] for sb in span)
+        if len(out) >= 6:
+            break
+    return out
+
+
 async def extract_passage_two_stage(
     *,
     claim: dict,
@@ -2414,28 +2502,32 @@ async def extract_passage_two_stage(
     windows: list[dict],
     on_stage: ExtractionStageCallback | None = None,
 ) -> dict:
-    """Two-stage extraction: locate candidates → strict evidence judge.
+    """Semantic recall:全文语义块 → LLM 定位 → 命中块严格判定。
 
-    Stage 1 (locate_candidates): high-recall, finds ALL potentially relevant paragraphs.
-    Stage 2 (judge_candidates): strict judgment on top-K located candidates.
+    Stage 1 (locate_candidates): high-recall LLM over full-text semantic blocks.
+    Stage 2 (judge_candidates): strict judgment on hit blocks + neighbor context.
     Falls back to single-stage extract_passage_from_paper if stage 1 finds nothing.
     """
-    # Stage 1: High-recall candidate locator
+    blocks = _normalize_semantic_blocks(windows)
+
+    # Stage 1: LLM 语义高召回(对全文语义块)
     await _emit_extraction_stage(on_stage, "locating")
-    candidates = await locate_candidates(claim, windows, title)
+    candidates = await locate_candidates(claim, blocks, title)
 
     if not candidates:
-        # Fallback: use single-stage extractor (no candidates found)
+        # 回退:单阶段提取(块转窗口结构,保留全文上下文)
         await _emit_extraction_stage(on_stage, "judging")
+        fallback_windows = _blocks_to_fallback_windows(blocks) if blocks else windows
         result = await extract_passage_from_paper(
-            claim=claim, title=title, windows=windows
+            claim=claim, title=title, windows=fallback_windows
         )
         result.setdefault("llm_model", get_settings().ontology_residual_model)
         return result
 
-    # Stage 2: Strict evidence judge on top candidates
+    # Stage 2: 命中块 + 邻块上下文,严格判定
     await _emit_extraction_stage(on_stage, "judging")
-    result = await judge_candidates(claim, candidates, title)
+    judge_input = _build_judge_input(blocks, candidates)
+    result = await judge_candidates(claim, judge_input, title)
 
     # If judge found no evidence but we had candidates, still return with locator info
     if result["overall_direction"] == "not_found" and candidates:
@@ -2878,17 +2970,8 @@ async def _process_batch_item(
                 await ensure_paper_passages(session, paper_source.id, paragraphs)
                 await session.commit()
                 all_paragraphs = await load_paper_passages(session, paper_source.id)
-                ranked = score_paragraphs(
-                    all_paragraphs,
-                    source_region=context.get("source_region") or "",
-                    target_region=context.get("target_region") or "",
-                    source_region_synonyms=context.get("source_region_synonyms") or [],
-                    target_region_synonyms=context.get("target_region_synonyms") or [],
-                    function_terms=context.get("function_terms") or [],
-                    function_synonyms=context.get("function_synonyms") or [],
-                    relation_keywords=context.get("relation_keywords") or [],
-                )
-                windows = build_windows(ranked, all_paragraphs)
+                # 语义召回:全文分块交给 LLM 定位(关键词评分仅作回退兜底)
+                windows = build_semantic_windows(all_paragraphs)
                 async with sem_deepseek:
                     extraction = await _extract_from_paper_with_retry(
                         claim=context,
@@ -3285,17 +3368,8 @@ async def extract_candidate_for_paper(
         stage = "retrieve"
         await emit_stage("retrieving")
         all_paragraphs = await load_paper_passages(session, paper_source.id)
-        ranked_paras = score_paragraphs(
-            all_paragraphs,
-            source_region=context.get("source_region") or "",
-            target_region=context.get("target_region") or "",
-            source_region_synonyms=context.get("source_region_synonyms") or [],
-            target_region_synonyms=context.get("target_region_synonyms") or [],
-            function_terms=context.get("function_terms") or [],
-            function_synonyms=context.get("function_synonyms") or [],
-            relation_keywords=context.get("relation_keywords") or [],
-        )
-        windows = build_windows(ranked_paras, all_paragraphs)
+        # 语义召回:全文分块交给 LLM 定位(关键词评分仅作回退兜底)
+        windows = build_semantic_windows(all_paragraphs)
 
         stage = "extract"
         async with sem_deepseek:
@@ -5263,17 +5337,8 @@ async def _process_batch_item_v2(
                 await ensure_paper_passages(session, paper_source.id, paragraphs)
                 await session.commit()
                 all_paragraphs = await load_paper_passages(session, paper_source.id)
-                ranked_paras = score_paragraphs(
-                    all_paragraphs,
-                    source_region=context.get("source_region") or "",
-                    target_region=context.get("target_region") or "",
-                    source_region_synonyms=context.get("source_region_synonyms") or [],
-                    target_region_synonyms=context.get("target_region_synonyms") or [],
-                    function_terms=context.get("function_terms") or [],
-                    function_synonyms=context.get("function_synonyms") or [],
-                    relation_keywords=context.get("relation_keywords") or [],
-                )
-                windows = build_windows(ranked_paras, all_paragraphs)
+                # 语义召回:全文分块交给 LLM 定位(关键词评分仅作回退兜底)
+                windows = build_semantic_windows(all_paragraphs)
                 stage = "extract"
                 await _set_item_stage(session, item_id, "extracting")
                 async with sem_deepseek:

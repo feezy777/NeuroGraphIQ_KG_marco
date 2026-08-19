@@ -246,8 +246,6 @@ def test_extract_doi_only_paper(monkeypatch, client):
     monkeypatch.setattr("app.routers.ontology.pes.pfs.fetch_oa_fulltext_xml", AsyncMock(return_value=""))
     monkeypatch.setattr("app.routers.ontology.pes.ensure_paper_passages", AsyncMock(return_value=[]))
     monkeypatch.setattr("app.routers.ontology.pes.load_paper_passages", AsyncMock(return_value=[]))
-    monkeypatch.setattr("app.routers.ontology.pes.score_paragraphs", lambda *a, **k: [])
-    monkeypatch.setattr("app.routers.ontology.pes.build_windows", lambda *a, **k: [])
     monkeypatch.setattr(
         "app.routers.ontology.pes.extract_passage_from_paper",
         AsyncMock(return_value={
