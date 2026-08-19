@@ -463,6 +463,9 @@ export function EvidenceCandidatesModule() {
       : null,
   [current?.target_type, current?.target_id])
 
+  // 非神经靶标治理:对象在预处理阶段已判定为解剖学上不存在(脑室/脑脊液等),整个候选工作区替换为提示条
+  const nonNeuralTarget = current?.preprocess_outcome === 'non_neural_target'
+
   const queryTerms = useMemo(() => {
     if (!dto) return []
     return [dto.source_region, dto.target_region, dto.relation, dto.function_context, dto.circuit_context]
@@ -986,6 +989,10 @@ export function EvidenceCandidatesModule() {
                   onBack={() => setEvidenceViewPaperId(null)}
                 />
               </>
+            ) : nonNeuralTarget ? (
+              <div className="ontology-page-message evidence-non-neural-banner" data-testid="evidence-non-neural-banner">
+                该对象靶标为非神经结构(脑室/脑脊液等),解剖学上不存在投射连接,已标记为不存在。
+              </div>
             ) : (
               <>
                 {manualTarget && (

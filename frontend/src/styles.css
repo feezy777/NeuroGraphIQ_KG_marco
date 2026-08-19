@@ -11264,6 +11264,9 @@ input[type="range"]::-webkit-slider-thumb {
 .ontology-page-granularity { margin-left: auto; font-size: 12px; color: var(--muted); }
 .ontology-page-filters { display: flex; align-items: center; gap: 8px; }
 .ontology-page-message { padding: 8px 12px; background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 8px; font-size: 12px; color: #1d4ed8; }
+.evidence-non-neural-banner {
+  margin-bottom: 12px;
+}
 .ontology-empty { padding: 18px; text-align: center; color: var(--muted); font-size: 13px; }
 .ontology-term-table { width: 100%; font-size: 12px; }
 .ontology-term-code { font-family: monospace; color: var(--muted); }

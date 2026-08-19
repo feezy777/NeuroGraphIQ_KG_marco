@@ -201,6 +201,20 @@ describe('EvidenceCandidatesModule', () => {
     })
   })
 
+  it('非神经靶标对象:提示条替代候选工作区(检索区/统计条/候选列表均不渲染)', async () => {
+    vi.mocked(endpoints.listPaperEvidenceTaskItems).mockResolvedValue({
+      items: [{ ...ITEM, preprocess_outcome: 'non_neural_target' }],
+    })
+    renderModule()
+    const banner = await screen.findByTestId('evidence-non-neural-banner')
+    expect(banner.textContent).toContain('非神经结构')
+    expect(banner.textContent).toContain('已标记为不存在')
+    // 候选工作区整体被替代:检索区与候选列表不渲染
+    expect(screen.queryByText(/查找相关论文/)).toBeNull()
+    expect(screen.queryByTestId('evidence-stats-bar')).toBeNull()
+    expect(screen.queryByText('A Study of R1 to R2 Projection')).toBeNull()
+  })
+
   it('不再自渲染左队列(队列由页面级 ObjectQueue 渲染)', async () => {
     renderModule()
     await waitFor(() => expect(endpoints.listPaperEvidenceTaskItems).toHaveBeenCalledWith('t1', { limit: 100 }))

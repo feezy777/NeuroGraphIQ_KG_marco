@@ -3998,7 +3998,8 @@ async def _enrich_task_display(session: AsyncSession, tasks: list[dict]) -> list
         rows = (
             await session.execute(
                 text(
-                    "SELECT DISTINCT ON (task_id) task_id::text, id::text, target_id::text, label, current_confidence "
+                    "SELECT DISTINCT ON (task_id) task_id::text, id::text, target_id::text, label, current_confidence, "
+                    "preprocess_outcome "
                     "FROM paper_evidence_task_items WHERE task_id::text = ANY(:ids) "
                     "ORDER BY task_id, updated_at DESC"
                 ),
@@ -4011,6 +4012,7 @@ async def _enrich_task_display(session: AsyncSession, tasks: list[dict]) -> list
                 "target_id": r[2],
                 "label": r[3],
                 "confidence": float(r[4]) if r[4] is not None else None,
+                "preprocess_outcome": r[5],
             }
     out: list[dict] = []
     for t in tasks:
@@ -4049,6 +4051,7 @@ async def _enrich_task_display(session: AsyncSession, tasks: list[dict]) -> list
                 "display_confidence": conf,
                 "display_name_source": name_src,
                 "display_confidence_source": conf_src,
+                "preprocess_outcome": snap.get(t["id"], {}).get("preprocess_outcome"),
             }
         )
     return out

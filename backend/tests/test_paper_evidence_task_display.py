@@ -22,7 +22,7 @@ def _run(coro):
         loop.close()
 
 
-async def _insert_task(tt, oid, *, label, conf, summary_counts=True):
+async def _insert_task(tt, oid, *, label, conf, summary_counts=True, preprocess_outcome=None):
     async with AsyncSessionLocal() as s:
         tid = (
             await s.execute(
@@ -41,10 +41,10 @@ async def _insert_task(tt, oid, *, label, conf, summary_counts=True):
         await s.execute(
             text(
                 "INSERT INTO paper_evidence_task_items "
-                "(task_id, target_type, target_id, label, current_confidence, status) "
-                "VALUES (:tid, :tt, :oid, :lbl, :conf, 'pending')"
+                "(task_id, target_type, target_id, label, current_confidence, status, preprocess_outcome) "
+                "VALUES (:tid, :tt, :oid, :lbl, :conf, 'pending', :po)"
             ),
-            {"tid": tid, "tt": tt, "oid": uuid.UUID(oid), "lbl": label, "conf": conf},
+            {"tid": tid, "tt": tt, "oid": uuid.UUID(oid), "lbl": label, "conf": conf, "po": preprocess_outcome},
         )
         await s.commit()
         return tid
@@ -94,6 +94,22 @@ def test_list_tasks_returns_cn_en_and_confidence():
         _run(case())
     finally:
         _run(_cleanup(task_ids, [oid]))
+
+
+def test_list_tasks_exposes_preprocess_outcome():
+    oid = str(uuid.uuid4())
+    task_ids: list[str] = []
+    try:
+        task_ids.append(_run(_insert_task("connection", oid, label="BLA → IL", conf=None, preprocess_outcome="non_neural_target")))
+
+        async def case():
+            async with AsyncSessionLocal() as s:
+                resp = await pes.list_paper_evidence_tasks(s, limit=10)
+                task = next(t for t in resp["items"] if t["id"] == task_ids[0])
+                assert task["preprocess_outcome"] == "non_neural_target"
+        _run(case())
+    finally:
+        _run(_cleanup(task_ids, []))
 
 
 def test_get_task_returns_display_fields():

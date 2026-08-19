@@ -5706,6 +5706,8 @@ export interface PaperEvidenceTask {
   display_confidence: number | null
   display_name_source: 'mirror_live' | 'task_snapshot' | 'fallback' | 'missing'
   display_confidence_source: 'mirror_live' | 'task_snapshot' | 'missing'
+  /** 唯一任务项的预处理结果(non_neural_target / evidence_negated / no_evidence_found;旧任务 null) */
+  preprocess_outcome: string | null
   /** 统一任务工作状态(权威口径,后端由全量对象计数推导) */
   work_status: TaskWorkStatus | string
   /** 全量对象计数(非前端已加载子集) */

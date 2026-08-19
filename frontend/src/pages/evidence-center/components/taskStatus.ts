@@ -143,6 +143,13 @@ export function workStatusTone(ws: string): string {
   }
 }
 
+/** 预处理结果中文标签(对象卡/任务卡徽章) */
+export const PREPROCESS_OUTCOME_LABELS: Record<string, string> = {
+  non_neural_target: '结构性不存在:靶标为非神经结构',
+  evidence_negated: '证据否定',
+  no_evidence_found: '无证据',
+}
+
 /** 任务卡排序:处理中 → 待验证 → 已暂停 → 部分失败 → 失败 → 已完成 → 空 → 已取消 */
 export function workStatusRank(ws: string): number {
   const order = ['processing', 'awaiting_review', 'paused', 'partially_failed', 'failed', 'completed', 'empty', 'cancelled']

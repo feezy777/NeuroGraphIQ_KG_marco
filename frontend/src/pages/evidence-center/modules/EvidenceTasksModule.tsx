@@ -15,6 +15,7 @@ import { CreateBatchTaskDialog } from '../components/CreateBatchTaskDialog'
 import { EmptyState } from '../components/EmptyState'
 import { ConfirmDialog } from '../../../components/ConfirmDialog'
 import {
+  PREPROCESS_OUTCOME_LABELS,
   TARGET_TYPE_LABELS,
   WORK_STATUS_LABELS,
   formatConfidencePercent,
@@ -120,6 +121,11 @@ function TaskCard({ task, busy, onJump, onResume, onPause, onRetry }: {
         <span className="evidence-task-card-type">{typeLabel}</span>
         <span className="evidence-task-card-confidence">{formatConfidencePercent(task.display_confidence)}</span>
       </div>
+      {(task.preprocess_outcome === 'non_neural_target' || task.preprocess_outcome === 'evidence_negated') && (
+        <div className="evidence-task-chip evidence-task-chip-bad" data-testid={`evidence-task-outcome-${task.id}`}>
+          {PREPROCESS_OUTCOME_LABELS[task.preprocess_outcome]}
+        </div>
+      )}
       {task.name && <div className="evidence-task-card-remark">{task.name}</div>}
       {(primary || secondary) && (
         <div className="evidence-task-card-actions">

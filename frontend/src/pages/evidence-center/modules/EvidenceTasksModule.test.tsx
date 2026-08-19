@@ -27,6 +27,7 @@ function makeTask(overrides: Record<string, unknown>) {
     filter_snapshot: null, versions: null,
     display_name_cn: '杏仁核 → 海马', display_name_en: 'Amygdala → Hippocampus',
     display_confidence: 0.35, display_name_source: 'mirror_live', display_confidence_source: 'mirror_live',
+    preprocess_outcome: null,
     work_status: 'awaiting_review',
     item_counts: { total: 1, processing: 0, pending: 0, awaiting_review: 1, completed: 0, skipped: 0, failed: 0, cancelled: 0 },
     capabilities: { can_continue_review: true, can_pause: false, can_resume: false, can_retry_failed: false, can_view_results: false },
@@ -59,6 +60,16 @@ describe('EvidenceTasksModule(对象级任务卡:命名/跳转/排序/筛选)', 
     expect(within(card).getByText('连接')).toBeTruthy()
     expect(within(card).getByText('置信度 35%')).toBeTruthy()
     expect(within(card).getByText('待验证')).toBeTruthy()
+  })
+
+  it('非神经靶标任务卡显示「结构性不存在」徽章', async () => {
+    vi.mocked(endpoints.listPaperEvidenceTasks).mockResolvedValue({
+      items: [makeTask({ id: 't-nn', target_id: 'c1', display_name_cn: '右旁中央 → 右侧脑室', work_status: 'awaiting_review', preprocess_outcome: 'non_neural_target' })],
+      total: 1,
+    })
+    renderModule()
+    const card = await screen.findByTestId('evidence-task-card-t-nn')
+    expect(within(card).getByText(/结构性不存在/)).toBeTruthy()
   })
 
   it('中文缺失仅英文;name 备注作第三行不替换标题', async () => {
