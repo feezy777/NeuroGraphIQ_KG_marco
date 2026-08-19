@@ -43,13 +43,13 @@ def classify_target(region_name_cn: str | None, region_name_en: str | None) -> T
 - 命中 → `non_neural`;未命中 → `unknown`(按神经处理,不误杀)。
 - 纯函数、无 DB、可单测。
 
-### 4.2 流程接入(④)
+### 4.2 流程接入(④,直接标记不存在)
 
 - **创建 item 时**(`create_batch_task` 的 per-object 循环):判定靶标(`_batch_scope_label` 拿到的名称或镜像行 target_region)→ `non_neural` → item 直接写入 `preprocess_outcome='non_neural_target'`、状态 `awaiting_review`,**不调度后台论文检索**。
-- **对象卡/任务卡**:新徽章「结构性不存在:靶标为非神经结构」。
-- **人工确认页**(进入对象后,当 `preprocess_outcome='non_neural_target'` 时替代候选工作区):
-  - 「确认不存在」→ 审计记录 + item 标记 `evidence_negated`(等同证据否定,留痕;不入晋升)。
-  - 「误判,继续检索」→ 清除 `non_neural_target` 标记,恢复普通流程(重新预处理/手动搜索)。
+- **直接标记不存在**:非神经靶标对象**自动标记为「结构性不存在」**(等同证据否定),无需人工确认页;审计自动留痕(创建时记录)。
+- **两处页面提示**:
+  - **佐证任务页**(任务卡):卡片上显示徽章/提示「结构性不存在:靶标为非神经结构」,点击进入证据佐证页同样展示该提示。
+  - **证据佐证页**(candidates):顶部提示条「该对象靶标为非神经结构(如脑室/脑脊液),解剖学上不存在投射连接,已标记为不存在」;不展示候选工作区/不自动搜索。
 - 反向检索(§4.3)对非神经靶标对象不触发(已跳过检索)。
 
 ### 4.3 自动反向检索(②)
@@ -67,8 +67,8 @@ def classify_target(region_name_cn: str | None, region_name_en: str | None) -> T
 
 | 元素 | 行为 |
 |---|---|
-| 任务/对象卡徽章 | 「结构性不存在」「证据否定」「无证据」新状态 chip(灰/红/橙) |
-| 人工确认页 | 非神经靶标对象进入后显示确认卡(确认不存在 / 误判继续检索),不显示候选工作区 |
+| 佐证任务页任务卡徽章 | 「结构性不存在:靶标为非神经结构」chip(灰),点击进入证据佐证页 |
+| 证据佐证页提示条 | 非神经靶标对象:顶部提示「靶标为非神经结构,解剖学上不存在投射连接,已标记为不存在」;不展示候选工作区、不自动搜索 |
 | 候选卡片 | contradicts 徽章复用现有 direction 展示 |
 | 审核 | 否定证据方向=contradicts 正常走审核,确认后标记 |
 
@@ -87,7 +87,7 @@ def classify_target(region_name_cn: str | None, region_name_en: str | None) -> T
 | `backend/app/services/paper_evidence_service.py` | `create_batch_task` 判定靶标并跳过检索;`build_search_query` 加 `negative` 参数;预处理无结果时自动反向检索;新 outcome 状态 |
 | `backend/app/services/paper_evidence_extraction_run_service.py` | 手动提取 run 的正向无结果也触发反向检索(可选,与预处理一致) |
 | `frontend/src/pages/evidence-center/components/taskStatus.ts` | 新状态徽章标签与色调 |
-| `frontend/src/pages/evidence-center/modules/EvidenceCandidatesModule.tsx` | 非神经靶标确认页(确认不存在/误判继续检索);contradicts 徽章 |
+| `frontend/src/pages/evidence-center/modules/EvidenceCandidatesModule.tsx` | 非神经靶标提示条(替换候选工作区,不自动搜索);contradicts 徽章 |
 | `frontend/src/styles.css` | 新 chip 样式 |
 | 测试 | 分类器单测、流程测试(见 §6) |
 
@@ -95,8 +95,8 @@ def classify_target(region_name_cn: str | None, region_name_en: str | None) -> T
 
 - **分类器单测**:脑室/脑膜/脉络丛中英文命中;正常脑区(杏仁核/皮质层/脑干核团)不误伤;未知名回退 `unknown`。
 - **流程测试**:
-  - 非神经靶标任务创建 → item 直接标记 `non_neural_target`、不调度检索。
-  - 误判恢复:清除标记后重新进入普通流程。
+  - 非神经靶标任务创建 → item 直接标记 `non_neural_target`、不调度检索、自动审计留痕。
+  - 佐证任务页任务卡显示「结构性不存在」徽章;证据佐证页显示提示条且不自动搜索。
   - 反向检索命中 → `evidence_negated` + contradicts 候选;未命中 → 保持 `no_evidence_found`。
   - 反向证据审核确认 → 审计留痕。
 - **回归**:现有证据测试全绿(分类器默认 `unknown` 不改变现有行为;正向命中对象不触发反向检索)。
@@ -104,5 +104,5 @@ def classify_target(region_name_cn: str | None, region_name_en: str | None) -> T
 ## 7. 用户确认记录
 
 - 范围:④(非神经靶标治理)+ ②(自动反向检索),方案 A(佐证流程层治理)。
-- ④ 行为:自动标记「结构性不存在」+ 人工确认(确认不存在 / 误判继续检索)。
+- ④ 行为(修订):识别非神经靶标后**直接标记「结构性不存在」**(无需人工确认页);在**佐证任务页任务卡**与**证据佐证页**两处提示治理内容。
 - ② 行为:正向无结果时自动否定向检索;搜到 → 证据否定;仍无 → 无证据。
