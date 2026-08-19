@@ -749,6 +749,15 @@ async def paper_evidence_extraction_run_get(
         return await extraction_run_svc.get_run_detail(session, run_id)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": str(exc)})
+    except Exception as exc:  # noqa: BLE001 — 兜底:轮询端点必须可诊断,不能裸 500
+        import logging
+        logging.getLogger("uvicorn.error").exception(
+            "extraction-run detail failed run_id=%s", run_id
+        )
+        raise HTTPException(
+            status_code=500,
+            detail={"code": "EXTRACTION_RUN_DETAIL_FAILED", "message": str(exc)[:300]},
+        )
 
 
 @router.post("/evidence/extraction-runs/{run_id}/cancel")
