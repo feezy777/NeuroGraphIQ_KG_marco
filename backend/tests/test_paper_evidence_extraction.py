@@ -210,3 +210,51 @@ def test_two_stage_falls_back_when_locate_empty():
     assert "_two_stage" not in result
     # 回退传的是窗口结构(context)而非块,兼容单阶段提取器
     assert mock_extract.await_args.kwargs["windows"][0]["context"]
+
+
+def test_ensure_chinese_fields_translates_english_reason_and_assessment():
+    """模型理由(reason)/模型判断(assessment):纯英文自动翻译为中文,中文不动。"""
+    extraction = {
+        "overall_direction": "supports",
+        "assessment": "The paper directly demonstrates the projection.",
+        "passages": [
+            {"paragraph_id": "p1", "reason": "Direct tracing evidence supports the claim.",
+             "direction": "supports"},
+            {"paragraph_id": "p2", "reason": "间接证据支持", "direction": "partial"},
+        ],
+    }
+
+    async def fake_translate(texts):
+        return {"translations": [f"[zh]{t}" for t in texts]}
+
+    mock_tt = AsyncMock(side_effect=fake_translate)
+    with patch.object(pes, "translate_texts", mock_tt):
+        out = _run(pes._ensure_chinese_fields(extraction))
+    assert mock_tt.await_count == 1
+    assert out["assessment"] == "[zh]The paper directly demonstrates the projection."
+    assert out["passages"][0]["reason"] == "[zh]Direct tracing evidence supports the claim."
+    assert out["passages"][1]["reason"] == "间接证据支持"  # 已含中文,不翻译
+
+
+def test_ensure_chinese_fields_no_llm_call_when_all_chinese():
+    """全中文 reason/assessment → 不触发翻译调用。"""
+    extraction = {
+        "assessment": "论文直接证明了该投射。",
+        "passages": [{"paragraph_id": "p1", "reason": "直接证据", "direction": "supports"}],
+    }
+    with patch.object(pes, "translate_texts", new=AsyncMock()) as mock_tt:
+        out = _run(pes._ensure_chinese_fields(extraction))
+    assert out["assessment"] == "论文直接证明了该投射。"
+    mock_tt.assert_not_awaited()
+
+
+def test_ensure_chinese_fields_translation_failure_keeps_original():
+    """翻译失败不影响提取结果(保持原文)。"""
+    extraction = {"assessment": "English assessment only.", "passages": []}
+
+    async def fail(texts):
+        raise RuntimeError("provider down")
+
+    with patch.object(pes, "translate_texts", new=fail):
+        out = _run(pes._ensure_chinese_fields(extraction))
+    assert out["assessment"] == "English assessment only."

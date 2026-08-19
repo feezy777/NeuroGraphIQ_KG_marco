@@ -3062,6 +3062,48 @@ async def _verify_paper_with_retry(pmid: str) -> dict | None:
     raise last_exc or RuntimeError("paper verification failed")
 
 
+_CJK_RE = re.compile(r"[一-鿿]")
+
+
+def _has_chinese(text: str) -> bool:
+    """是否已含中文字符(含中文即视为可展示,避免误翻译中英混杂文本)。"""
+    return bool(_CJK_RE.search(text or ""))
+
+
+async def _ensure_chinese_fields(extraction: dict) -> dict:
+    """模型理由(reason)与模型判断(assessment)保障中文。
+
+    纯英文文本批量翻译回填(调 translate_texts);已含中文的不动;
+    翻译失败保持原文,不阻断提取结果。
+    """
+    passages = extraction.get("passages") or []
+    to_translate: list[str] = []
+    targets: list[tuple[str, int, str]] = []  # (field, passage_idx, original)
+    assessment = extraction.get("assessment")
+    if assessment and not _has_chinese(str(assessment)):
+        to_translate.append(str(assessment))
+        targets.append(("assessment", -1, str(assessment)))
+    for i, p in enumerate(passages):
+        reason = p.get("reason") or ""
+        if reason and not _has_chinese(reason):
+            to_translate.append(reason)
+            targets.append(("reason", i, reason))
+    if not targets:
+        return extraction
+    try:
+        translations = (await translate_texts(to_translate)).get("translations") or []
+        for (field, idx, _orig), zh in zip(targets, translations):
+            if not zh:
+                continue
+            if field == "assessment":
+                extraction["assessment"] = zh
+            else:
+                passages[idx]["reason"] = zh
+    except Exception:  # noqa: BLE001 — 翻译失败不阻断提取
+        pass
+    return extraction
+
+
 async def _extract_from_paper_with_retry(
     *,
     claim: dict,
@@ -3073,9 +3115,10 @@ async def _extract_from_paper_with_retry(
     last_exc: Exception | None = None
     for attempt in range(BATCH_ITEM_RETRIES):
         try:
-            return await extract_passage_two_stage(
+            result = await extract_passage_two_stage(
                 claim=claim, title=title, windows=windows, on_stage=on_stage
             )
+            return await _ensure_chinese_fields(result)
         except (ValueError, ValidationError, httpx.HTTPError) as exc:
             last_exc = exc
             if attempt < BATCH_ITEM_RETRIES - 1:
