@@ -180,3 +180,43 @@ def build_windows(
             }
         )
     return windows
+
+
+def build_semantic_windows(
+    paragraphs: list[dict],
+    target_chars: int = 800,
+    max_windows: int = 60,
+) -> list[dict]:
+    """跨段合并为语义块(保持段落完整、保序)。每块 {block_id, paragraphs}。
+
+    - 摘要段落总在最前(第一块起始);
+    - 段落到 target_chars 上限即封块,单段超过上限单独成块;
+    - 最多 max_windows 块(超出丢弃尾部,返回可处理的上限)。
+    """
+    ordered = list(paragraphs)
+    # abstract 优先置前
+    ordered.sort(key=lambda p: 0 if p.get("source_scope") == "abstract" else 1)
+
+    blocks: list[dict] = []
+    current: list[dict] = []
+    current_len = 0
+    for para in ordered:
+        text = para.get("passage_text") or ""
+        length = len(text)
+        if current and current_len >= target_chars:
+            blocks.append({
+                "block_id": current[0].get("paragraph_id") or f"block_{len(blocks)}",
+                "paragraphs": current,
+            })
+            current = []
+            current_len = 0
+            if len(blocks) >= max_windows:
+                break
+        current.append(para)
+        current_len += length
+    if current and len(blocks) < max_windows:
+        blocks.append({
+            "block_id": current[0].get("paragraph_id") or f"block_{len(blocks)}",
+            "paragraphs": current,
+        })
+    return blocks[:max_windows]
