@@ -189,6 +189,31 @@ class TestBatchStateMachine:
         finally:
             _run(_cleanup([task_id]))
 
+    def test_non_neural_target_marked_without_search(self):
+        oid = str(uuid.uuid4())
+        # 靶标名含「脑室」→ 创建即标记结构性不存在
+        with (
+            patch.object(pes, "_resolve_scope_ids", new=AsyncMock(return_value=[oid])),
+            patch.object(pes, "_resolve_scope_ids_low_confidence", new=AsyncMock(return_value=[oid])),
+            patch.object(
+                pes,
+                "_batch_scope_label",
+                new=AsyncMock(side_effect=lambda s, tt, o: (f"X → 侧脑室", 0.1)),
+            ),
+            patch.object(pes, "_classify_item_target", new=AsyncMock(return_value="non_neural")),
+        ):
+            result = _run(_make_task_inner(target_ids=[oid], start_paused=True))
+        task_id = result["task_id"]
+        try:
+            items = _run(_read_task_items(task_id))
+            assert len(items) == 1
+            assert items[0][0].startswith("X → 侧脑室")
+            # 标记结构性不存在
+            outcome = _run(_read_item_outcome(task_id))
+            assert outcome == "non_neural_target"
+        finally:
+            _run(_cleanup([task_id]))
+
 
 class TestReviewQueueStatsAudit:
     def test_review_queue_resolve_and_stats_shape(self):
@@ -261,6 +286,16 @@ async def _read_task_items(task_id):
                 {"tid": task_id},
             )
         ).all()
+
+
+async def _read_item_outcome(task_id):
+    async with AsyncSessionLocal() as s:
+        return (
+            await s.execute(
+                text("SELECT preprocess_outcome FROM paper_evidence_task_items WHERE task_id::text=:tid"),
+                {"tid": task_id},
+            )
+        ).scalar_one()
 
 
 async def _run_loop(task_id):

@@ -55,6 +55,7 @@ from app.services.evidence_target_adapter import (
     build_target_dto,
     build_retrieval_context,
 )
+from app.services.evidence_target_classifier import classify_target
 from app.services.paragraph_retrieval import build_windows, score_paragraphs
 from app.services import oa_xml_parser
 from app.services import paper_fetch_service as pfs
@@ -5807,6 +5808,26 @@ async def materialize_task_items_background(task_id: str) -> None:
                 await session.rollback()
 
 
+async def _classify_item_target(
+    session: AsyncSession, target_type: str, target_id: uuid.UUID
+) -> str:
+    """查镜像行靶标名并分类:connection/projection 取 target_region 名,其余类型返回 unknown。"""
+    if target_type not in ("connection", "projection"):
+        return "unknown"
+    row = (
+        await session.execute(
+            text(
+                "SELECT target_region_name_cn, target_region_name_en "
+                "FROM mirror_region_connections WHERE id = :oid"
+            ),
+            {"oid": target_id},
+        )
+    ).first()
+    if row is None:
+        return "unknown"
+    return classify_target(row[0], row[1])
+
+
 async def create_batch_task(
     session: AsyncSession,
     *,
@@ -5895,6 +5916,9 @@ async def create_batch_task(
     task_ids: list[str] = []
     for oid in fresh_ids:
         label, conf = await _batch_scope_label(session, target_type, uuid.UUID(oid))
+        # 非神经靶标(脑室/脑脊液/脑膜等):直接标记结构性不存在,不进入论文检索
+        target_kind = await _classify_item_target(session, target_type, uuid.UUID(oid))
+        preprocess_outcome = "non_neural_target" if target_kind == "non_neural" else None
         task_id = (
             await session.execute(
                 text(
@@ -5929,19 +5953,29 @@ async def create_batch_task(
         await session.execute(
             text(
                 "INSERT INTO paper_evidence_task_items "
-                "(task_id, target_type, target_id, label, current_confidence, status) "
-                "VALUES (:tid, :tt, :oid, :label, :conf, 'pending')"
+                "(task_id, target_type, target_id, label, current_confidence, status, preprocess_outcome) "
+                "VALUES (:tid, :tt, :oid, :label, :conf, :status, :po)"
             ),
-            {"tid": task_id, "tt": target_type, "oid": uuid.UUID(oid), "label": label, "conf": conf},
+            {
+                "tid": task_id, "tt": target_type, "oid": uuid.UUID(oid), "label": label, "conf": conf,
+                "status": "pending", "po": preprocess_outcome,
+            },
         )
         await _write_audit(
             session,
             action_type="EVIDENCE_TASK_CREATE",
             entity_type="evidence_task",
             entity_id=uuid.UUID(task_id),
-            after_data={"target_type": target_type, "target_id": oid, "scope": scope, "mode": mode},
+            after_data={
+                "target_type": target_type, "target_id": oid, "scope": scope, "mode": mode,
+                **({"non_neural_target": True} if preprocess_outcome == "non_neural_target" else {}),
+            },
             operator_id=created_by,
-            reason="single-object evidence task created",
+            reason=(
+                "single-object evidence task created; target is non-neural structure, marked structurally non-existent"
+                if preprocess_outcome == "non_neural_target"
+                else "single-object evidence task created"
+            ),
         )
         task_ids.append(task_id)
     await session.commit()
