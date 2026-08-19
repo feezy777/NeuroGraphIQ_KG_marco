@@ -29,6 +29,8 @@ export interface ReviewerDecisionPanelProps {
   taskLinkReady?: boolean
   /** S6:任务关联解析失败原因(展示明确错误,禁止降级为独立审核) */
   taskLinkError?: string | null
+  /** DeepSeek 语义推荐置信度(选中片段 semantic_confidence 最大值,供人工参考) */
+  deepseekSuggested?: number | null
   onApprove?: () => void
   onReject?: () => void
 }
@@ -62,6 +64,7 @@ export function ReviewerDecisionPanel({
   reviewStatus = null,
   taskLinkReady = true,
   taskLinkError = null,
+  deepseekSuggested = null,
   onApprove,
   onReject,
 }: ReviewerDecisionPanelProps) {
@@ -129,7 +132,9 @@ export function ReviewerDecisionPanel({
         <input type="range" min={0} max={0.85} step={0.01} value={Math.min(0.85, reviewer)}
           onChange={e => onConfidenceChange(e.target.value)} />
         <input className="filter-input" value={confidence} onChange={e => onConfidenceChange(e.target.value)} />
-        <span className="ew-meta">DeepSeek semantic confidence 仅供参考，不是图谱 confidence。</span>
+        {deepseekSuggested != null && deepseekSuggested > 0 && (
+          <span className="ew-meta">DeepSeek 推荐置信度：{fmt(deepseekSuggested)}（按片段语义评估，供人工参考后调整）</span>
+        )}
       </div>
 
       <div className="ew-field">

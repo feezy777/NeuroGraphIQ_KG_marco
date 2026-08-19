@@ -164,6 +164,7 @@ def test_valid_attach_rollback_under_fk():
                         "direction": "supports",
                         "reason": "r",
                         "confidence": 0.8,
+                        "semantic_confidence": 0.9,
                         "source_verified": True,
                     }],
                     operator_id="integrity-test",
@@ -187,6 +188,18 @@ def test_valid_attach_rollback_under_fk():
             assert row[1] is not None
             assert row[2] is True
             assert row[3] == "exact"
+            # DeepSeek 语义推荐置信度 = 选中片段 semantic_confidence 最大值
+            sugg = (
+                await s.execute(
+                    text(
+                        "SELECT suggested_confidence, reviewer_confidence "
+                        "FROM mirror_evidence_records WHERE id=:eid"
+                    ),
+                    {"eid": eid},
+                )
+            ).first()
+            assert float(sugg[0]) == 0.9
+            assert float(sugg[1]) == 0.78
             # rollback keeps evidence row (no physical delete) and sets invalidation audit
             rb = await pes.rollback_evidence(s, eid, reason="integrity test", operator_id="integrity-test")
             await s.commit()

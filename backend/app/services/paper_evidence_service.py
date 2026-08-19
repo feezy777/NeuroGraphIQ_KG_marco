@@ -1065,6 +1065,14 @@ async def attach_evidence(
     duplicate_count = await _count_duplicate_hashes(session, target_type, target_id, hashes)
     if duplicate_count:
         raise ValueError(f"{duplicate_count} duplicate passage(s) already stored for this object")
+    # DeepSeek 语义推荐置信度:选中片段 semantic_confidence 的最大值(供人工参考)
+    deepseek_suggested = None
+    if verified:
+        vals = [
+            float(p.get("semantic_confidence") or p.get("confidence") or 0)
+            for p in verified
+        ]
+        deepseek_suggested = max(vals)
     # 3) deterministic confidence rule (human_verified only)
     current = float(row.confidence) if getattr(row, "confidence", None) is not None else None
     adjustment = None
@@ -1099,7 +1107,7 @@ async def attach_evidence(
         paper_title=paper["title"] or None,
         paper_journal=paper["journal"] or None,
         paper_year=int(paper["year"]) if str(paper["year"]).isdigit() else None,
-        suggested_confidence=reviewer_confidence,
+        suggested_confidence=deepseek_suggested or reviewer_confidence,
         reviewer_confidence=reviewer_confidence,
         confidence_adjustment_status=(
             adjustment.adjustment_status if adjustment else "none"
@@ -1157,7 +1165,7 @@ async def attach_evidence(
                 target_id=target_id,
                 evidence_id=record.id,
                 before_confidence=before,
-                suggested_confidence=reviewer_confidence,
+                suggested_confidence=deepseek_suggested or reviewer_confidence,
                 reviewer_confidence=reviewer_confidence,
                 calculated_confidence=final_confidence,
                 after_confidence=final_confidence,
@@ -2322,7 +2330,13 @@ _JUDGE_USER = """待验证的知识主张："{claim}"
 5. evidence_pattern：direct_statement/tracing/tractography/functional_connectivity/anatomical_description/clinical_analysis。
 6. not_found：当没有段落实质支持或反对该主张时使用（仅共现不算实质）。
 7. supported_components 只列实际匹配的要素。
-8. confidence 与 semantic_confidence 必须按该段实际证据强度在 0.1-0.95 范围内逐段取值，严禁照抄本示例中的数值。
+8. confidence/semantic_confidence 评分标准（按该段**语义与主张的吻合度**逐段评估，严禁照抄示例数值）：
+   - 0.8-0.95：source+target+relation 三项同段匹配，且为直接实验证据（direct_statement/tracing）
+   - 0.6-0.79：source+target 同段匹配，evidence_level 为 indirect/interpretive
+   - 0.4-0.59：仅单要素匹配，或经上位结构/跨物种间接支持（background）
+   - 0.2-0.39：弱关联（泛化提及、语义相关但无具体连接/功能描述）
+   - <0.2：仅名称共现，无任何实质关联
+   semantic_confidence 取同段 confidence（或略高 0.05，表示语义吻合度），两值都须落在上表区间。
 
 只返回一个纯JSON：
 {{"overall_direction":"supports|partial|contradicts|mixed|not_found","paper_relevance":0.5,

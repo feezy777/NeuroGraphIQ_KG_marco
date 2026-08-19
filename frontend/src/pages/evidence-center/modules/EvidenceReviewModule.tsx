@@ -533,6 +533,9 @@ export function EvidenceReviewModule() {
     previewBusy,
     coverage: selectedPassages.length > 0 ? tmpCoverage : null,
     currentConfidence: dto?.current_confidence ?? null,
+    deepseekSuggested: selectedPassages.length > 0
+      ? (selectedPassages.reduce((m, p) => Math.max(m, p.semantic_confidence ?? 0), 0) || null)
+      : null,
     reviewStatus,
     reviewBusy,
     taskLinkReady: taskLink.kind !== 'resolving' && taskLink.kind !== 'error',
