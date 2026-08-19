@@ -1,6 +1,6 @@
 # 证据片段语义化召回 实施计划
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** 把证据片段召回从「关键词评分窗口 + 宽松判定」改为「全文语义块 + LLM 语义召回 + 要素严格核对」,针对 deepseek-v4-flash。
 
@@ -30,7 +30,7 @@
 **Interfaces:**
 - Produces: `build_semantic_windows(paragraphs: list[dict], target_chars: int = 800, max_windows: int = 60) -> list[dict]`,每块 `{block_id, paragraphs: [...]}`;Task 2 使用。
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 ```python
 # 追加到 test_paragraph_retrieval.py(不存在则新建,含 import)
@@ -76,12 +76,12 @@ def test_max_windows_cap():
     assert len(blocks) == 60
 ```
 
-- [ ] **Step 2: 运行确认失败**
+- [x] **Step 2: 运行确认失败**
 
 Run: `cd backend && ./.venv/Scripts/python.exe -m pytest tests/test_paragraph_retrieval.py -q -k semantic`
 Expected: FAIL(ImportError:`cannot import name 'build_semantic_windows'`)
 
-- [ ] **Step 3: 实现**
+- [x] **Step 3: 实现**
 
 `paragraph_retrieval.py` 末尾追加:
 
@@ -126,12 +126,12 @@ def build_semantic_windows(
     return blocks[:max_windows]
 ```
 
-- [ ] **Step 4: 运行确认通过**
+- [x] **Step 4: 运行确认通过**
 
 Run: `cd backend && ./.venv/Scripts/python.exe -m pytest tests/test_paragraph_retrieval.py -q`
 Expected: 全部通过(含新增 4 例)
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add backend/app/services/paragraph_retrieval.py backend/tests/test_paragraph_retrieval.py
@@ -149,7 +149,7 @@ git commit -m "feat(evidence): build_semantic_windows — paragraph blocks for L
 - Consumes: Task 1 的 `build_semantic_windows`
 - Produces: `locate_candidates(claim, blocks, title)` 对语义块高召回;Task 3 使用命中块
 
-- [ ] **Step 1: 写失败测试(断言块输入与语义 prompt)**
+- [x] **Step 1: 写失败测试(断言块输入与语义 prompt)**
 
 在 `backend/tests/test_paper_evidence_extraction.py`(或同目录现测试文件)追加:
 
@@ -190,12 +190,12 @@ def test_locate_uses_blocks_and_returns_hits():
     assert hits[0]["passage_text"] == "text two"
 ```
 
-- [ ] **Step 2: 运行确认失败**
+- [x] **Step 2: 运行确认失败**
 
 Run: `cd backend && ./.venv/Scripts/python.exe -m pytest tests/test_paper_evidence_extraction.py -q -k locate_uses_blocks`
 Expected: FAIL(当前实现从 windows 的 context 取段,blocks 结构不匹配 → 空结果)
 
-- [ ] **Step 3: 实现**
+- [x] **Step 3: 实现**
 
 `locate_candidates` 的窗口序列化段替换为块序列化(每块完整 800 字,不截断):
 
@@ -221,14 +221,14 @@ Expected: FAIL(当前实现从 windows 的 context 取段,blocks 结构不匹配
 
 同时 `_LOCATOR_USER` 的「段落窗口」说明改为「语义块」,并保留语义导向指令(已符合);命中解析处 `window_map[pid]` 取 passage_text/section 不变。
 
-- [ ] **Step 4: 运行确认通过**
+- [x] **Step 4: 运行确认通过**
 
 Run: `cd backend && ./.venv/Scripts/python.exe -m pytest tests/test_paper_evidence_extraction.py tests/test_paper_evidence_batch.py tests/test_paper_evidence_batch_phase4.py -q`
 Expected: 全部通过(语义块序列化兼容旧 windows 结构?——检查调用方:two_stage 传入的 windows 由 Task 4 改为 blocks;旧测试若仍传 windows(context 结构)会空——Task 2 仅改序列化,保留对两种结构的兼容:`w.get("context")` 旧结构时走旧逻辑)
 
 **兼容要求**:序列化逻辑同时支持 `{context: [...]}`(旧)与 `{paragraphs: [...]}`/`{block_id, paragraphs}`(新),避免 Task 2 单独落地时破坏现有调用。
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add backend/app/services/paper_evidence_service.py backend/tests/test_paper_evidence_extraction.py
@@ -246,7 +246,7 @@ git commit -m "feat(evidence): locate_candidates accepts semantic blocks (full t
 - Consumes: Task 2 命中块(带 passage_text/section)
 - Produces: judge 仅对要素匹配段落给证据;共现降级为 not_found 或空 supported_components
 
-- [ ] **Step 1: 写失败测试(断言新 prompt 指令与严格判定)**
+- [x] **Step 1: 写失败测试(断言新 prompt 指令与严格判定)**
 
 追加到 `tests/test_paper_evidence_extraction.py`:
 
@@ -259,12 +259,12 @@ def test_judge_user_prompt_requires_component_match():
 
 (prompt 是常量,直接断言指令存在;同时按新 prompt 语义验证 mock LLM 输出 not_found 时 judge 返回 not_found。)
 
-- [ ] **Step 2: 运行确认失败**
+- [x] **Step 2: 运行确认失败**
 
 Run: `cd backend && ./.venv/Scripts/python.exe -m pytest tests/test_paper_evidence_extraction.py -q -k judge_user_prompt`
 Expected: FAIL(当前 prompt 无严格指令)
 
-- [ ] **Step 3: 实现**
+- [x] **Step 3: 实现**
 
 `_JUDGE_USER` 替换为严格版(核心变化:要素至少两项匹配才给证据;共现不算):
 
@@ -315,12 +315,12 @@ _JUDGE_USER = """待验证的知识主张："{claim}"
 
 (judge 命中块 passage_text 来自 Task 2 的 locate 返回——locate 返回 block_id + 块全文;为给 judge 邻块上下文,调用方拼接。)
 
-- [ ] **Step 4: 运行确认通过**
+- [x] **Step 4: 运行确认通过**
 
 Run: `cd backend && ./.venv/Scripts/python.exe -m pytest tests/test_paper_evidence_extraction.py tests/test_paper_evidence_batch_phase4.py -q`
 Expected: 全部通过
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add backend/app/services/paper_evidence_service.py backend/tests/test_paper_evidence_extraction.py
@@ -338,7 +338,7 @@ git commit -m "feat(evidence): strict judge — component match required, co-occ
 - Consumes: Task 1 的 `build_semantic_windows`、Task 2/3 的 locate/judge
 - Produces: 全文语义块 → locate → judge;0 命中回退关键词窗口单阶段
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 追加到 `tests/test_paper_evidence_extraction.py`:
 
@@ -382,12 +382,12 @@ def test_two_stage_falls_back_when_locate_empty():
     assert result["overall_direction"] == "partial"
 ```
 
-- [ ] **Step 2: 运行确认失败**
+- [x] **Step 2: 运行确认失败**
 
 Run: `cd backend && ./.venv/Scripts/python.exe -m pytest tests/test_paper_evidence_extraction.py -q -k two_stage`
 Expected: FAIL(locate 对 blocks 结构返回空或序列化失败)
 
-- [ ] **Step 3: 实现**
+- [x] **Step 3: 实现**
 
 `extract_passage_two_stage` 改造:
 
@@ -461,12 +461,12 @@ def _build_judge_input(blocks: list[dict], hits: list[dict]) -> list[dict]:
 
 注意:Task 3 的 judge 已改用 `candidates[:6]` + `passage_text`;locate 返回的 passage_text 是块全文,此处用邻块拼接。
 
-- [ ] **Step 4: 运行确认通过**
+- [x] **Step 4: 运行确认通过**
 
 Run: `cd backend && ./.venv/Scripts/python.exe -m pytest tests/test_paper_evidence_extraction.py tests/test_paper_evidence_batch_phase4.py tests/test_paper_evidence.py -q`
 Expected: 全部通过
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add backend/app/services/paper_evidence_service.py backend/tests/test_paper_evidence_extraction.py
@@ -483,12 +483,12 @@ git commit -m "feat(evidence): two-stage extraction on semantic blocks with keyw
 **Interfaces:**
 - Consumes: 全部前序任务
 
-- [ ] **Step 1: 后端全量**
+- [x] **Step 1: 后端全量**
 
 Run: `cd backend && ./.venv/Scripts/python.exe -m pytest tests/ -q`
 Expected: 全部通过(仅既有 6 个基线失败)
 
-- [ ] **Step 2: 实测一篇提取(计时 + 片段质量)**
+- [x] **Step 2: 实测一篇提取(计时 + 片段质量)**
 
 Run(临时脚本,调 `extract_candidate_for_paper` 对一篇真实论文计时):
 
@@ -514,6 +514,6 @@ asyncio.run(main())
 
 Expected: 完成且 passage 方向/内容合理(相对旧流程,共现噪声段应减少)。
 
-- [ ] **Step 3: 冒烟**
+- [x] **Step 3: 冒烟**
 
 前后端 dev 服务运行中;佐证任务页创建/手动提取一个对象,确认无报错。
