@@ -352,11 +352,49 @@ def test_materialize_missing_row_falls_back_to_target_id():
                 )
                 assert inserted == 1
                 row = (await s.execute(
-                    text("SELECT label, current_confidence FROM paper_evidence_task_items WHERE task_id::text=:tid"),
+                    text(
+                        "SELECT label, current_confidence, preprocess_outcome "
+                        "FROM paper_evidence_task_items WHERE task_id::text=:tid"
+                    ),
                     {"tid": task_id},
                 )).first()
                 assert row[0] == ghost
                 assert row[1] is None
+                # 镜像行缺失 → 分类回退 unknown,不误标 non_neural_target
+                assert row[2] is None
         _run(case())
     finally:
         _run(_cleanup_case(task_id, []))
+
+
+def test_materialize_classifies_non_neural_target():
+    """物化路径同样执行非神经靶标分类:侧脑室连接 → preprocess_outcome='non_neural_target'。"""
+    conn_ids: list[str] = []
+    task_id: str | None = None
+    try:
+        async def case():
+            nonlocal task_id
+            async with AsyncSessionLocal() as s:
+                cid = await _make_connection(
+                    s, confidence=0.3, tgt_cn="侧脑室", tgt_en="Lateral ventricle",
+                )
+                conn_ids.append(cid)
+                task_id = await _make_task(s, [cid])
+                inserted, _ = await pes._materialize_page(
+                    s, task_id=task_id, target_type="connection",
+                    filter_snapshot=None, cursor=None, batch_size=100, selected_ids=[cid],
+                )
+                assert inserted == 1
+                row = (await s.execute(
+                    text(
+                        "SELECT label, current_confidence, preprocess_outcome "
+                        "FROM paper_evidence_task_items WHERE task_id::text=:tid"
+                    ),
+                    {"tid": task_id},
+                )).first()
+                assert row[0] == "体感区，第4层 → 侧脑室"
+                assert float(row[1]) == 0.3
+                assert row[2] == "non_neural_target"
+        _run(case())
+    finally:
+        _run(_cleanup_case(task_id, conn_ids))

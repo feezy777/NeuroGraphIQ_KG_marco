@@ -289,6 +289,56 @@ class TestBatchStateMachine:
             _run(_cleanup_batch_paper())
 
 
+    def test_negative_round_supports_direction_not_marked_negated(self):
+        """否定向检索命中但提取方向为 supports → 不被误标 evidence_negated(仅 contradicts 才标否定)。"""
+        oid = str(uuid.uuid4())
+        result = self._make_task([oid])
+        task_id = result["task_id"]
+        try:
+            context = {
+                "claim_text": "memory consolidation",
+                "structured_claim": {},
+                "object_type": "connection",
+                "granularity": "macro",
+                "source_region": "Hippocampus",
+                "target_region": "Prefrontal cortex",
+                "source_region_synonyms": [],
+                "target_region_synonyms": [],
+                "function_terms": ["memory consolidation"],
+                "function_synonyms": [],
+                "relation_keywords": ["projection"],
+            }
+            meta = {**_paper(), "pmcid": "PMC10002"}
+            extraction = {
+                **_extraction(),
+                "overall_direction": "supports",
+                "llm_model": "deepseek-test",
+            }
+            with (
+                # call 1 = 初始正向;call 2 = wide(与 query 相同 → 跳过);call 3 = 否定向命中
+                patch.object(pes, "build_search_query", new=AsyncMock(side_effect=["pos q", "pos q", "neg q"])),
+                patch.object(pes, "_search_with_retry", new=AsyncMock(side_effect=[[], [_paper(pmid="10002")]])),
+                patch.object(pes, "build_retrieval_context", new=AsyncMock(return_value=context)),
+                patch.object(
+                    pes, "semantic_filter_papers",
+                    new=AsyncMock(side_effect=lambda papers, ctx: (papers, [])),
+                ),
+                patch.object(pes, "_verify_paper_with_retry", new=AsyncMock(return_value=meta)),
+                patch.object(pes.pfs, "fetch_oa_fulltext_xml", new=AsyncMock(return_value="")),
+                patch.object(pes, "_extract_from_paper_with_retry", new=AsyncMock(return_value=extraction)),
+            ):
+                _run(_run_loop(task_id))
+            items = _run(_read_task_items(task_id))
+            assert items[0][1] == "awaiting_review"
+            outcome = _run(_read_item_outcome(task_id))
+            assert outcome == "evidence_found"
+            direction = _run(_read_item_model_direction(task_id))
+            assert direction == "supports"
+        finally:
+            _run(_cleanup([task_id]))
+            _run(_cleanup_batch_paper(pmid="10002"))
+
+
 class TestReviewQueueStatsAudit:
     def test_review_queue_resolve_and_stats_shape(self):
         target_id = uuid.uuid4()
@@ -535,10 +585,11 @@ async def _find_audit(target_id):
         ).scalars().all()
 
 
-async def _cleanup_batch_paper():
+async def _cleanup_batch_paper(pmid="10001"):
     async with AsyncSessionLocal() as s:
         await s.execute(
-            text("DELETE FROM paper_passages WHERE paper_id IN (SELECT id FROM paper_sources WHERE pmid='10001')")
+            text("DELETE FROM paper_passages WHERE paper_id IN (SELECT id FROM paper_sources WHERE pmid=:pmid)"),
+            {"pmid": pmid},
         )
-        await s.execute(text("DELETE FROM paper_sources WHERE pmid='10001'"))
+        await s.execute(text("DELETE FROM paper_sources WHERE pmid=:pmid"), {"pmid": pmid})
         await s.commit()

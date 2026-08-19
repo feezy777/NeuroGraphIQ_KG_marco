@@ -5348,6 +5348,7 @@ async def _process_batch_item_v2(
                 preprocess_outcome=(
                     "evidence_negated"
                     if query_is_negative and verified_any
+                    and (candidates[0].get("model_direction") == "contradicts")
                     else "evidence_found" if verified_any else "no_evidence_found"
                 ),
                 last_error_code=None if verified_any else "NO_RELEVANT_PASSAGE",
@@ -5700,11 +5701,15 @@ async def _materialize_page(
         else:
             snapshot_label = str(oid)
             snapshot_conf = None
+        # 批量物化路径同样做非神经靶标分类:与单对象创建路径一致,直接落
+        # non_neural_target 跳过论文检索;镜像行缺失时回退 unknown(与 label 回退一致)
+        target_kind = await _classify_item_target(session, target_type, oid_uuid)
+        po = "non_neural_target" if target_kind == "non_neural" else None
         result = await session.execute(
             text(
                 "INSERT INTO paper_evidence_task_items "
-                "(task_id, target_type, target_id, label, current_confidence, status) "
-                "SELECT CAST(:tid AS uuid), CAST(:tt AS varchar), t.id, CAST(:lbl AS varchar), :conf, 'pending' "
+                "(task_id, target_type, target_id, label, current_confidence, status, preprocess_outcome) "
+                "SELECT CAST(:tid AS uuid), CAST(:tt AS varchar), t.id, CAST(:lbl AS varchar), :conf, 'pending', :po "
                 "FROM unnest(ARRAY[:oid]::uuid[]) t(id) "
                 "WHERE NOT EXISTS ("
                 "  SELECT 1 FROM paper_evidence_task_items a "
@@ -5719,6 +5724,7 @@ async def _materialize_page(
                 "oid": oid,
                 "lbl": snapshot_label,
                 "conf": snapshot_conf,
+                "po": po,
             },
         )
         inserted += result.rowcount or 0
