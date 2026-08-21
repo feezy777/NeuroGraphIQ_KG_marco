@@ -1,0 +1,445 @@
+d17fd5edd9179611de41971def0dbdfedcaa8162 feat(evidence): promotion skips structurally-impossible and negated edges
+---DIFF---
+diff --git a/backend/app/services/mirror_promotion_service.py b/backend/app/services/mirror_promotion_service.py
+index 295d821..371a2d1 100644
+--- a/backend/app/services/mirror_promotion_service.py
++++ b/backend/app/services/mirror_promotion_service.py
+@@ -1,24 +1,26 @@
+ """Mirror KG Promotion to Final KG service (Step 9).
+ 
+ Deterministic DB promotion from human_approved Mirror KG objects to final_* tables.
+ Does NOT call LLM; does NOT write kg_*; does NOT connect to external formal DB.
+ """
+ 
+ from __future__ import annotations
+ 
++import logging
+ import uuid
+ from dataclasses import dataclass
+ from datetime import datetime, timezone
+ from typing import Any
+ 
+-from sqlalchemy import func, or_, select
++from sqlalchemy import func, or_, select, text
++from sqlalchemy.exc import SQLAlchemyError
+ from sqlalchemy.ext.asyncio import AsyncSession
+ 
+ from app.models.final_kg import (
+     FinalCircuitRegion,
+     FinalEvidenceRecord,
+     FinalKgTriple,
+     FinalRegionCircuit,
+     FinalRegionConnection,
+     FinalRegionFunction,
+ )
+@@ -37,20 +39,22 @@ from app.schemas.mirror_promotion import (
+     MirrorPromotionPreviewItem,
+     MirrorPromotionRecordStatus,
+     MirrorPromotionRequest,
+     MirrorPromotionResponse,
+     MirrorPromotionRunStatus,
+ )
+ from app.schemas.mirror_review import MirrorReviewAction
+ from app.services import mirror_review_service as mrs
+ from app.services.triple_consolidation_service import normalize_triple_key
+ 
++_logger = logging.getLogger(__name__)
++
+ VALID_TARGET_TYPES = frozenset({"connection", "function", "circuit", "triple"})
+ 
+ MIRROR_EVIDENCE_TYPE = {
+     "connection": "mirror_connection",
+     "function": "mirror_function",
+     "circuit": "mirror_circuit",
+     "triple": "mirror_triple",
+ }
+ 
+ FINAL_EVIDENCE_TYPE = {
+@@ -62,20 +66,31 @@ FINAL_EVIDENCE_TYPE = {
+ 
+ FINAL_TARGET_TYPE = {
+     "connection": "final_connection",
+     "function": "final_function",
+     "circuit": "final_circuit",
+     "triple": "final_triple",
+ }
+ 
+ PROMOTION_ORDER = ("connection", "function", "circuit", "triple")
+ 
++# 治理边永久跳过晋升:paper-evidence 预处理标记「结构性不存在」(non_neural_target)
++# 与「证据否定」(evidence_negated)的对象不得进入 final_kg,即使已有 review 通过。
++GOVERNANCE_SKIP_NEVER_PROMOTE = "GOVERNANCE_SKIP_NEVER_PROMOTE"
++GOVERNANCE_SKIP_OUTCOMES = frozenset({"non_neural_target", "evidence_negated"})
++# paper_evidence_task_items.target_type → 晋升 target_type 映射(triple 无证据任务支持)。
++EVIDENCE_TASK_TARGET_TYPES = {
++    "connection": ("connection", "projection"),
++    "function": ("region_function",),
++    "circuit": ("circuit",),
++}
++
+ 
+ class EmptyTargetTypesError(ValueError):
+     pass
+ 
+ 
+ class InvalidTargetTypeError(ValueError):
+     pass
+ 
+ 
+ class MissingOperatorError(ValueError):
+@@ -301,20 +316,61 @@ async def detect_final_duplicate(
+                 granularity_family=row.granularity_family,
+                 resource_id=row.resource_id,
+                 batch_id=row.batch_id,
+             ) == key:
+                 return True
+         return False
+ 
+     return False
+ 
+ 
++async def get_governance_skip_outcome(
++    session: AsyncSession,
++    target_type: str,
++    target_id: uuid.UUID,
++) -> str | None:
++    """Return the permanent promotion-skip outcome for the target, if any.
++
++    Paper-evidence preprocessing marks structurally-impossible targets
++    (non_neural_target) and evidence-negated objects (evidence_negated) on
++    paper_evidence_task_items. Governance edges must never be promoted to
++    final_kg, regardless of review state. Takes the latest outcome for the
++    target; targets without an evidence task item return None.
++    """
++    evidence_types = EVIDENCE_TASK_TARGET_TYPES.get(target_type)
++    if not evidence_types:
++        return None
++    try:
++        row = (
++            await session.execute(
++                text(
++                    "SELECT preprocess_outcome FROM paper_evidence_task_items "
++                    "WHERE target_type = ANY(:tt) AND target_id = :oid "
++                    "ORDER BY created_at DESC LIMIT 1"
++                ),
++                {"tt": list(evidence_types), "oid": target_id},
++            )
++        ).first()
++    except SQLAlchemyError:
++        # 未迁移证据表(如运行时切换的旧库):无治理 outcome 可查,fail-open 不阻断晋升
++        _logger.warning(
++            "governance skip check skipped: evidence task table unavailable (target_type=%s, target_id=%s)",
++            target_type,
++            target_id,
++        )
++        return None
++    if row is None:
++        return None
++    outcome = row[0]
++    return outcome if outcome in GOVERNANCE_SKIP_OUTCOMES else None
++
++
+ async def validate_promotion_eligibility(
+     session: AsyncSession,
+     target_type: str,
+     obj: Any,
+ ) -> tuple[bool, str | None, uuid.UUID | None, dict[str, Any]]:
+     if obj is None:
+         return False, "TARGET_NOT_FOUND", None, {}
+ 
+     if obj.mirror_status != MirrorStatus.human_approved:
+         return False, "NOT_HUMAN_APPROVED", None, {}
+@@ -338,20 +394,24 @@ async def validate_promotion_eligibility(
+     val_summary = await get_latest_validation_summary(session, target_type, obj.id)
+     if val_summary.get("has_blocker") or val_summary.get("has_error"):
+         return False, "HAS_VALIDATION_BLOCKER", approve_record.id, val_summary
+ 
+     if not obj.source_atlas:
+         return False, "MISSING_SOURCE_ATLAS", approve_record.id, val_summary
+ 
+     if not obj.granularity_level:
+         return False, "MISSING_GRANULARITY", approve_record.id, val_summary
+ 
++    governance_outcome = await get_governance_skip_outcome(session, target_type, obj.id)
++    if governance_outcome is not None:
++        return False, GOVERNANCE_SKIP_NEVER_PROMOTE, approve_record.id, val_summary
++
+     if await detect_final_duplicate(session, target_type, obj):
+         return False, "DUPLICATE_FINAL_EXISTS", approve_record.id, val_summary
+ 
+     return True, None, approve_record.id, val_summary
+ 
+ 
+ def _scope_from_request(request: MirrorPromotionRequest) -> PromotionScope:
+     scope = request.scope
+     default_mirror = [MirrorStatus.human_approved]
+     default_review = [MirrorReviewStatus.approved]
+diff --git a/backend/tests/test_mirror_promotion_to_final.py b/backend/tests/test_mirror_promotion_to_final.py
+index 2e03bd4..69ed79b 100644
+--- a/backend/tests/test_mirror_promotion_to_final.py
++++ b/backend/tests/test_mirror_promotion_to_final.py
+@@ -1,33 +1,36 @@
+ """Mirror KG Promotion to Final KG tests (no LLM, no network)."""
+ 
+ from __future__ import annotations
+ 
+ import asyncio
+ import uuid
+ from unittest.mock import AsyncMock, MagicMock, patch
+ 
+ import pytest
+ from fastapi.testclient import TestClient
++from sqlalchemy.exc import SQLAlchemyError
+ 
+ from app.main import app
++from app.models.final_kg import FinalRegionConnection
+ from app.models.mirror_kg import (
+     MirrorCircuitRegion,
+     MirrorEvidenceRecord,
+     MirrorKgTriple,
+     MirrorRegionCircuit,
+     MirrorRegionConnection,
+     MirrorRegionFunction,
+ )
++from app.models.mirror_promotion import MirrorPromotionRecord
+ from app.models.mirror_review import MirrorHumanReviewRecord
+ from app.schemas.mirror_kg import MirrorPromotionStatus, MirrorReviewStatus, MirrorStatus
+-from app.schemas.mirror_promotion import MirrorPromotionRequest, MirrorPromotionResponse, MirrorPromotionScope
++from app.schemas.mirror_promotion import MirrorPromotionRecordStatus, MirrorPromotionRequest, MirrorPromotionResponse, MirrorPromotionScope
+ from app.schemas.mirror_review import MirrorReviewAction
+ from app.services import mirror_promotion_service as mps
+ 
+ 
+ def _connection(**kwargs) -> MirrorRegionConnection:
+     defaults = dict(
+         id=uuid.uuid4(),
+         batch_id=uuid.uuid4(),
+         resource_id=uuid.uuid4(),
+         source_atlas="Macro96",
+@@ -461,18 +464,226 @@ def test_no_llm_imports_in_promotion_service():
+ 
+     src = inspect.getsource(mod)
+     assert "deepseek" not in src.lower()
+     assert "kimi" not in src.lower()
+     assert "openai" not in src.lower()
+     assert "llm_extraction" not in src
+     assert "FinalKgTriple" in src
+     assert "FinalRegionConnection" in src
+ 
+ 
++def _approve_lookup(approve):
++    return MagicMock(scalars=MagicMock(return_value=MagicMock(first=MagicMock(return_value=approve))))
++
++
++def _outcome_lookup(outcome: str | None):
++    row = (outcome,) if outcome is not None else None
++    return MagicMock(first=MagicMock(return_value=row))
++
++
++def test_non_neural_target_ineligible_never_promote():
++    conn = _connection()
++    approve = _approve_record("connection", conn.id)
++    session = AsyncMock()
++    session.execute = AsyncMock(
++        side_effect=[_approve_lookup(approve), _outcome_lookup("non_neural_target")]
++    )
++    with patch.object(
++        mps, "get_latest_validation_summary", AsyncMock(return_value={"has_blocker": False, "has_error": False})
++    ):
++        with patch.object(mps, "detect_final_duplicate", AsyncMock(return_value=False)):
++            eligible, reason, review_id, _ = asyncio.run(
++                mps.validate_promotion_eligibility(session, "connection", conn)
++            )
++    assert not eligible
++    assert reason == mps.GOVERNANCE_SKIP_NEVER_PROMOTE
++    assert review_id == approve.id
++
++
++def test_evidence_negated_ineligible_never_promote():
++    fn = _function()
++    approve = _approve_record("function", fn.id)
++    session = AsyncMock()
++    session.execute = AsyncMock(
++        side_effect=[_approve_lookup(approve), _outcome_lookup("evidence_negated")]
++    )
++    with patch.object(
++        mps, "get_latest_validation_summary", AsyncMock(return_value={"has_blocker": False, "has_error": False})
++    ):
++        with patch.object(mps, "detect_final_duplicate", AsyncMock(return_value=False)):
++            eligible, reason, _, _ = asyncio.run(
++                mps.validate_promotion_eligibility(session, "function", fn)
++            )
++    assert not eligible
++    assert reason == mps.GOVERNANCE_SKIP_NEVER_PROMOTE
++
++
++def test_no_evidence_found_does_not_block_promotion():
++    conn = _connection()
++    approve = _approve_record("connection", conn.id)
++    session = AsyncMock()
++    session.execute = AsyncMock(
++        side_effect=[_approve_lookup(approve), _outcome_lookup("no_evidence_found")]
++    )
++    with patch.object(
++        mps, "get_latest_validation_summary", AsyncMock(return_value={"has_blocker": False, "has_error": False})
++    ):
++        with patch.object(mps, "detect_final_duplicate", AsyncMock(return_value=False)):
++            eligible, reason, _, _ = asyncio.run(
++                mps.validate_promotion_eligibility(session, "connection", conn)
++            )
++    assert eligible
++    assert reason is None
++
++
++def test_evidence_found_does_not_block_promotion():
++    conn = _connection()
++    approve = _approve_record("connection", conn.id)
++    session = AsyncMock()
++    session.execute = AsyncMock(
++        side_effect=[_approve_lookup(approve), _outcome_lookup("evidence_found")]
++    )
++    with patch.object(
++        mps, "get_latest_validation_summary", AsyncMock(return_value={"has_blocker": False, "has_error": False})
++    ):
++        with patch.object(mps, "detect_final_duplicate", AsyncMock(return_value=False)):
++            eligible, reason, _, _ = asyncio.run(
++                mps.validate_promotion_eligibility(session, "connection", conn)
++            )
++    assert eligible
++    assert reason is None
++
++
++def test_no_evidence_task_item_does_not_block_promotion():
++    conn = _connection()
++    approve = _approve_record("connection", conn.id)
++    session = AsyncMock()
++    session.execute = AsyncMock(side_effect=[_approve_lookup(approve), _outcome_lookup(None)])
++    with patch.object(
++        mps, "get_latest_validation_summary", AsyncMock(return_value={"has_blocker": False, "has_error": False})
++    ):
++        with patch.object(mps, "detect_final_duplicate", AsyncMock(return_value=False)):
++            eligible, reason, _, _ = asyncio.run(
++                mps.validate_promotion_eligibility(session, "connection", conn)
++            )
++    assert eligible
++    assert reason is None
++
++
++def test_evidence_table_missing_fails_open():
++    # 未迁移证据表(运行时切换的旧库):治理查询报 SQL 错 → fail-open,不阻断晋升
++    conn = _connection()
++    approve = _approve_record("connection", conn.id)
++    session = AsyncMock()
++    session.execute = AsyncMock(
++        side_effect=[_approve_lookup(approve), SQLAlchemyError("relation does not exist")]
++    )
++    with patch.object(
++        mps, "get_latest_validation_summary", AsyncMock(return_value={"has_blocker": False, "has_error": False})
++    ):
++        with patch.object(mps, "detect_final_duplicate", AsyncMock(return_value=False)):
++            eligible, reason, _, _ = asyncio.run(
++                mps.validate_promotion_eligibility(session, "connection", conn)
++            )
++    assert eligible
++    assert reason is None
++
++
++def test_run_skips_non_neural_target_no_final_row():
++    conn = _connection()
++    approve = _approve_record("connection", conn.id)
++    outcome = _outcome_lookup("non_neural_target")
++    session = AsyncMock()
++    session.add = MagicMock()
++    session.commit = AsyncMock()
++    session.execute = AsyncMock(
++        side_effect=[
++            _approve_lookup(approve),
++            outcome,
++            _approve_lookup(approve),
++            outcome,
++        ]
++    )
++    req = MirrorPromotionRequest(
++        target_types=["connection"],
++        dry_run=False,
++        operator="op1",
++        reason="governance skip test",
++        confirmation_text="PROMOTE MIRROR KG TO FINAL: connection COUNT 0",
++    )
++    with patch.object(mps, "collect_promotion_targets", AsyncMock(return_value=[("connection", conn)])):
++        with patch.object(
++            mps, "get_latest_validation_summary", AsyncMock(return_value={"has_blocker": False, "has_error": False})
++        ):
++            with patch.object(mps, "promote_connection", AsyncMock(side_effect=AssertionError("must not be called"))):
++                resp = asyncio.run(mps.run_mirror_promotion(session, req))
++
++    assert resp.promoted_count == 0
++    assert resp.skipped_ineligible_count == 1
++    assert resp.failed_count == 0
++    assert conn.promotion_status == MirrorPromotionStatus.not_promoted
++    assert conn.mirror_status == MirrorStatus.human_approved
++    recs = [
++        c.args[0]
++        for c in session.add.call_args_list
++        if c.args and isinstance(c.args[0], MirrorPromotionRecord)
++    ]
++    assert any(
++        r.status == MirrorPromotionRecordStatus.skipped_ineligible
++        and r.message == mps.GOVERNANCE_SKIP_NEVER_PROMOTE
++        for r in recs
++    )
++
++
++def test_run_promotes_evidence_found_control():
++    conn = _connection()
++    approve = _approve_record("connection", conn.id)
++    outcome = _outcome_lookup("evidence_found")
++    session = AsyncMock()
++    session.add = MagicMock()
++    session.commit = AsyncMock()
++
++    async def _fake_flush():
++        # assign DB-generated ids the way a real flush would
++        for c in session.add.call_args_list:
++            obj = c.args[0] if c.args else None
++            if isinstance(obj, FinalRegionConnection) and getattr(obj, "id", None) is None:
++                obj.id = uuid.uuid4()
++
++    session.flush = AsyncMock(side_effect=_fake_flush)
++    session.execute = AsyncMock(
++        side_effect=[
++            _approve_lookup(approve),
++            outcome,
++            _approve_lookup(approve),
++            outcome,
++        ]
++    )
++    req = MirrorPromotionRequest(
++        target_types=["connection"],
++        dry_run=False,
++        operator="op1",
++        reason="control test",
++        confirmation_text="PROMOTE MIRROR KG TO FINAL: connection COUNT 1",
++    )
++    with patch.object(mps, "collect_promotion_targets", AsyncMock(return_value=[("connection", conn)])):
++        with patch.object(
++            mps, "get_latest_validation_summary", AsyncMock(return_value={"has_blocker": False, "has_error": False})
++        ):
++            with patch.object(mps, "detect_final_duplicate", AsyncMock(return_value=False)):
++                with patch.object(mps, "promote_evidence_for_target", AsyncMock(return_value=1)):
++                    resp = asyncio.run(mps.run_mirror_promotion(session, req))
++
++    assert resp.promoted_count == 1
++    assert resp.skipped_ineligible_count == 0
++    assert resp.failed_count == 0
++    assert conn.promotion_status == MirrorPromotionStatus.promoted
++
++
+ def test_final_kg_list_api():
+     client = TestClient(app)
+     with patch("app.routers.final_kg.fks.list_final_connections", AsyncMock(return_value=([], 0))):
+         with patch("app.database.get_db") as mock_get_db:
+             mock_get_db.return_value = AsyncMock()
+             resp = client.get("/api/final-kg/connections")
+     assert resp.status_code == 200
+     assert resp.json()["total"] == 0

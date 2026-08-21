@@ -179,6 +179,7 @@ export function CandidateCircuitTable({ granularityLevel }: Props) {
     blockCount: number
     skipCount: number
   } | null>(null)
+  const [selectAllLoading, setSelectAllLoading] = useState(false)
   const [repairModal, setRepairModal] = useState<{
     open: boolean
     circuitIds: string[]
@@ -232,6 +233,28 @@ export function CandidateCircuitTable({ granularityLevel }: Props) {
   }, [granFilter, search, page, pageSize])
 
   useEffect(() => { fetchData() }, [fetchData])
+
+  // Select all matching data across all pages
+  const handleSelectAll = useCallback(async () => {
+    setSelectAllLoading(true)
+    try {
+      const params = new URLSearchParams()
+      if (granFilter && granFilter !== 'all') params.set('granularity_level', granFilter)
+      if (search) params.set('search', search)
+      params.set('only_not_promoted', 'true')
+      params.set('limit', '10000')
+      params.set('offset', '0')
+      const res = await fetch(`/api/validation/circuit/candidates?${params}`)
+      if (!res.ok) throw new Error(`API错误: ${res.status}`)
+      const data = await res.json()
+      const allIds = (data.items || []).map((item: CandidateCircuit) => item.id)
+      setSelected(new Set(allIds))
+    } catch {
+      // silently fail
+    } finally {
+      setSelectAllLoading(false)
+    }
+  }, [granFilter, search])
 
   // Selection
   const toggleSelect = (id: string) => {
@@ -389,6 +412,25 @@ export function CandidateCircuitTable({ granularityLevel }: Props) {
           </button>
 
           <span className="vr-total" style={{ marginLeft: 8 }}>共 {total} 条</span>
+
+          <button
+            className="btn btn-sm btn-outline"
+            onClick={handleSelectAll}
+            disabled={selectAllLoading || total === 0}
+            style={{ marginLeft: 'auto', fontSize: 12 }}
+            title="选中当前筛选条件下的全部数据"
+          >
+            {selectAllLoading ? '加载中…' : '全选所有'}
+          </button>
+          {selected.size > 0 && (
+            <button
+              className="btn btn-sm btn-outline"
+              onClick={() => setSelected(new Set())}
+              style={{ fontSize: 12 }}
+            >
+              清除 ({selected.size})
+            </button>
+          )}
         </div>
       </div>
 

@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 720" width="1280" height="720">
+  <g id="background"><rect width="1280" height="720" fill="#F7FAFC" /></g>
+  <g id="header"><rect x="56" y="42" width="8" height="40" fill="#1F9FB5" /><text x="80" y="72" font-family="Microsoft YaHei, Arial, sans-serif" font-size="34" font-weight="700" fill="#17324D">结论与 Q&amp;A</text></g>
+  <g id="points">
+  <path fill="#FFFFFF" stroke="#CBD5E0" d="M66,160 H1214 A10,10 0 0 1 1224,170 V240 A10,10 0 0 1 1214,250 H66 A10,10 0 0 1 56,240 V170 A10,10 0 0 1 66,160 Z" /><circle cx="110" cy="205" r="24" fill="#1F9FB5" /><text x="110" y="212" text-anchor="middle" font-family="Arial, sans-serif" font-size="20" font-weight="700" fill="#FFFFFF">1</text><text x="160" y="215" font-family="Microsoft YaHei, Arial, sans-serif" font-size="24" fill="#243447">受控 LLM + Mirror 是关键</text>
+  <path fill="#FFFFFF" stroke="#CBD5E0" d="M66,270 H1214 A10,10 0 0 1 1224,280 V350 A10,10 0 0 1 1214,360 H66 A10,10 0 0 1 56,350 V280 A10,10 0 0 1 66,270 Z" /><circle cx="110" cy="315" r="24" fill="#1F9FB5" /><text x="110" y="322" text-anchor="middle" font-family="Arial, sans-serif" font-size="20" font-weight="700" fill="#FFFFFF">2</text><text x="160" y="325" font-family="Microsoft YaHei, Arial, sans-serif" font-size="24" fill="#243447">八步溯源保证可追责</text>
+  <path fill="#FFFFFF" stroke="#CBD5E0" d="M66,380 H1214 A10,10 0 0 1 1224,390 V460 A10,10 0 0 1 1214,470 H66 A10,10 0 0 1 56,460 V390 A10,10 0 0 1 66,380 Z" /><circle cx="110" cy="425" r="24" fill="#1F9FB5" /><text x="110" y="432" text-anchor="middle" font-family="Arial, sans-serif" font-size="20" font-weight="700" fill="#FFFFFF">3</text><text x="160" y="435" font-family="Microsoft YaHei, Arial, sans-serif" font-size="24" fill="#243447">宏观临床层已落地并可继续扩展</text>
+  </g>
+  <path fill="#17324D" d="M66,520 H1214 A10,10 0 0 1 1224,530 V630 A10,10 0 0 1 1214,640 H66 A10,10 0 0 1 56,630 V530 A10,10 0 0 1 66,520 Z" /><text x="640" y="590" text-anchor="middle" font-family="Arial, sans-serif" font-size="48" font-weight="700" fill="#FFFFFF">Q&amp;A</text>
+  <g id="footer"><text x="1224" y="696" text-anchor="end" font-family="Arial, sans-serif" font-size="12" fill="#8492A0">15</text></g>
+</svg>

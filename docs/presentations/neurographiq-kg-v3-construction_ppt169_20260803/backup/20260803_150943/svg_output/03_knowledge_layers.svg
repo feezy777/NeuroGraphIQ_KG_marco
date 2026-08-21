@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 720" width="1280" height="720">
+  <g id="background"><rect width="1280" height="720" fill="#FFFFFF"/></g>
+  <g id="header"><text x="64" y="72" font-family="Cambria, SimSun, serif" font-size="34" font-weight="700" fill="#1A365D">七层知识体系把脑区事实组织为可治理、可查询、可映射的结构</text><line x1="64" y1="98" x2="1216" y2="98" stroke="#CBD5DF"/></g>
+  <g id="layer-stack">
+    <polygon points="94,566 606,566 648,520 136,520" fill="#1A365D"/><text x="370" y="551" text-anchor="middle" font-family="Microsoft YaHei, Arial, sans-serif" font-size="20" font-weight="700" fill="#FFFFFF">脑区实体层</text>
+    <polygon points="136,510 648,510 690,464 178,464" fill="#1A365D" fill-opacity="0.90"/><text x="412" y="495" text-anchor="middle" font-family="Microsoft YaHei, Arial, sans-serif" font-size="20" font-weight="700" fill="#FFFFFF">连接层</text>
+    <polygon points="178,454 690,454 732,408 220,408" fill="#3182CE"/><text x="454" y="439" text-anchor="middle" font-family="Microsoft YaHei, Arial, sans-serif" font-size="20" font-weight="700" fill="#FFFFFF">回路层</text>
+    <polygon points="220,398 732,398 774,352 262,352" fill="#3182CE" fill-opacity="0.82"/><text x="496" y="383" text-anchor="middle" font-family="Microsoft YaHei, Arial, sans-serif" font-size="20" font-weight="700" fill="#FFFFFF">功能层</text>
+    <polygon points="262,342 774,342 816,296 304,296" fill="#DD6B20"/><text x="538" y="327" text-anchor="middle" font-family="Microsoft YaHei, Arial, sans-serif" font-size="20" font-weight="700" fill="#FFFFFF">证据层</text>
+    <polygon points="304,286 816,286 858,240 346,240" fill="#38A169"/><text x="580" y="271" text-anchor="middle" font-family="Microsoft YaHei, Arial, sans-serif" font-size="20" font-weight="700" fill="#FFFFFF">三元组层</text>
+    <polygon points="346,230 858,230 900,184 388,184" fill="#1A365D"/><text x="622" y="215" text-anchor="middle" font-family="Microsoft YaHei, Arial, sans-serif" font-size="20" font-weight="700" fill="#FFFFFF">映射层</text>
+  </g>
+  <g id="principle"><text x="940" y="206" font-family="Cambria, SimSun, serif" font-size="40" font-weight="700" fill="#1A365D">同粒度构建</text><text x="940" y="252" font-family="Microsoft YaHei, Arial, sans-serif" font-size="18" fill="#5F6F7F">实体、连接、回路与功能</text><text x="940" y="283" font-family="Microsoft YaHei, Arial, sans-serif" font-size="18" fill="#5F6F7F">在同一粒度边界内推理</text><line x1="940" y1="322" x2="1176" y2="322" stroke="#3182CE" stroke-width="3"/><text x="940" y="380" font-family="Cambria, SimSun, serif" font-size="40" font-weight="700" fill="#DD6B20">显式跨粒度</text><text x="940" y="426" font-family="Microsoft YaHei, Arial, sans-serif" font-size="18" fill="#5F6F7F">exact_match · part_of · overlaps</text><text x="940" y="457" font-family="Microsoft YaHei, Arial, sans-serif" font-size="18" fill="#5F6F7F">禁止仅凭名称相似度自动合并</text></g>
+  <g id="takeaway"><rect x="64" y="620" width="1152" height="48" fill="#F4F7FA"/><text x="640" y="651" text-anchor="middle" font-family="Microsoft YaHei, Arial, sans-serif" font-size="18" font-weight="700" fill="#1A365D">层级不是展示顺序，而是治理边界：每一层都有独立语义、来源与审核责任。</text></g>
+  <g id="footer"><text x="1216" y="698" text-anchor="end" font-family="Arial, sans-serif" font-size="11" fill="#8492A0">03</text></g>
+</svg>

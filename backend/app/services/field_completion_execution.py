@@ -830,6 +830,21 @@ async def execute_circuit_bundle_fields(
                     session.add(item)
                     items.append(item)
                     continue
+                from app.services.llm_field_completion_service import validate_field_value_quality
+                accept, reject_reason, quality_warnings = validate_field_value_quality(resolved, value)
+                if quality_warnings:
+                    warnings.extend(quality_warnings)
+                if not accept:
+                    item = make_item(
+                        run.id, request.target_type.value, cid, resolved,
+                        old_value=get_field_value(circuit, resolved),
+                        status=ItemStatus.skipped_invalid_field,
+                        suggested=value,
+                        error_message=reject_reason,
+                    )
+                    session.add(item)
+                    items.append(item)
+                    continue
                 try:
                     old_val = get_field_value(circuit, resolved)
                     status = apply_field_update(
@@ -1302,8 +1317,10 @@ async def execute_per_connection_fields(
 ) -> tuple[int, int]:
     """One LLM call per connection — all 11 fields at once. Returns (model_call_count, llm_applied)."""
     import json as _json
-    from app.services.field_completion_registry import is_deterministic_field, is_empty_value, get_field_value
-    from app.services.llm_field_completion_service import OverwritePolicy
+    from app.services.field_completion_registry import (
+        is_deterministic_field, is_empty_value, get_field_value, resolve_field_name,
+    )
+    from app.services.llm_field_completion_service import OverwritePolicy, validate_field_value_quality
 
     enrichable = list(entry.enrichable_fields)
     det_fields = {f for f in enrichable if is_deterministic_field(entry, f)}
@@ -1362,10 +1379,33 @@ async def execute_per_connection_fields(
                     parsed = _json.loads(cleaned)
                 except _json.JSONDecodeError:
                     pass
-            if parsed is None:
-                parsed = {}
+            if parsed is None or not isinstance(parsed, dict):
+                parse_msg = (
+                    "failed to parse LLM response"
+                    if raw_text.strip()
+                    else "empty provider response"
+                )
+                errors.append(f"Connection {str(tid)[:12]}: {parse_msg}")
+                item = make_item(
+                    run.id, request.target_type.value, tid, "_parse_",
+                    old_value=None, status=ItemStatus.failed,
+                    error_message=parse_msg,
+                    reasoning_summary="Per-connection LLM completion",
+                )
+                session.add(item)
+                items.append(item)
+                processed += 1
+                continue
         except Exception as exc:
             errors.append(f"Connection {str(tid)[:12]}: LLM failed - {exc}")
+            item = make_item(
+                run.id, request.target_type.value, tid, "_parse_",
+                old_value=None, status=ItemStatus.failed,
+                error_message=str(exc),
+                reasoning_summary="Per-connection LLM completion",
+            )
+            session.add(item)
+            items.append(item)
             processed += 1
             continue
 
@@ -1376,44 +1416,98 @@ async def execute_per_connection_fields(
         }
         _dir_map = {'directed': 'directed', 'undirected': 'undirected', 'bidirectional': 'bidirectional'}
 
-        # Apply each field from LLM response
-        for field_name in llm_fields:
-            value = parsed.get(field_name)
+        # Apply each field from LLM response (accepts flat fields or
+        # {"field_updates": [...]}; rejects unknown/readonly fields explicitly).
+        raw_updates = parsed.get("field_updates")
+        if isinstance(raw_updates, list):
+            update_items: list[tuple[str, Any, dict[str, Any]]] = [
+                (str(_u["field_name"]), _u.get("value"), _u)
+                for _u in raw_updates
+                if isinstance(_u, dict) and _u.get("field_name")
+            ]
+        else:
+            update_items = [
+                (str(k), v, {"field_name": k, "value": v})
+                for k, v in parsed.items()
+                if k != "field_updates"
+            ]
+
+        for field_name, value, upd in update_items:
             if value is None or is_empty_value(value):
                 continue
+            resolved = resolve_field_name(entry, field_name)
+            if resolved is None:
+                item = make_item(
+                    run.id, request.target_type.value, tid, field_name,
+                    old_value=get_field_value(target, field_name),
+                    status=ItemStatus.skipped_invalid_field,
+                    suggested=value,
+                    error_message=f"invalid field_name: {field_name}",
+                    reasoning_summary="Per-connection LLM completion",
+                )
+                session.add(item)
+                items.append(item)
+                continue
+            if resolved not in llm_fields:
+                item = make_item(
+                    run.id, request.target_type.value, tid, resolved,
+                    old_value=get_field_value(target, resolved),
+                    status=ItemStatus.skipped_invalid_field,
+                    suggested=value,
+                    error_message=f"field {resolved} is not in the completion scope",
+                    reasoning_summary="Per-connection LLM completion",
+                )
+                session.add(item)
+                items.append(item)
+                continue
+            accept, reject_reason, quality_warnings = validate_field_value_quality(resolved, value)
+            if quality_warnings:
+                warnings.extend(quality_warnings)
+            if not accept:
+                item = make_item(
+                    run.id, request.target_type.value, tid, resolved,
+                    old_value=get_field_value(target, resolved),
+                    status=ItemStatus.skipped_invalid_field,
+                    suggested=value,
+                    error_message=reject_reason,
+                    reasoning_summary="Per-connection LLM completion",
+                )
+                session.add(item)
+                items.append(item)
+                continue
             # Normalize connection_type and directionality to DB-valid values
-            if field_name == 'projection_type':
+            if resolved == 'projection_type':
                 v = str(value).strip().lower()
                 value = _conn_type_map.get(v, v if v in (
                     'structural_connection','functional_connectivity','effective_connectivity',
                     'projection','association','coactivation','uncertain_connection','unknown'
                 ) else 'uncertain_connection')
-            elif field_name == 'directionality':
+            elif resolved == 'directionality':
                 v = str(value).strip().lower()
                 value = _dir_map.get(v, v if v in ('directed','undirected','bidirectional','unknown') else 'unknown')
             try:
-                old_value = get_field_value(target, field_name)  # Capture BEFORE mutation
+                old_value = get_field_value(target, resolved)  # Capture BEFORE mutation
                 status = apply_field_update(
-                    target, field_name, value,
+                    target, resolved, value,
                     entry=entry, overwrite_policy=request.overwrite_policy,
                     create_mirror_updates=request.create_mirror_updates,
                     run_id=run.id, resolved_model=resolved_model,
-                    confidence=parsed.get('confidence_score'),
+                    confidence=upd.get('confidence') or parsed.get('confidence_score'),
                 )
                 if status and 'applied' in (status.value if hasattr(status, 'value') else str(status)):
                     llm_applied += 1
                 item = make_item(
-                    run.id, request.target_type.value, tid, field_name,
+                    run.id, request.target_type.value, tid, resolved,
                     old_value=old_value,
                     status=status,
                     suggested=value,
-                    reasoning_summary=f"Per-connection LLM completion for {field_name}",
+                    reasoning_summary=f"Per-connection LLM completion for {resolved}",
                 )
                 session.add(item)
                 items.append(item)
             except Exception as exc:
-                logger.warning("field completion failed target=%s field=%s: %s", tid, field_name, exc)
-                errors.append(f"target {str(tid)[:12]} field {field_name}: {exc}")
+                logger.warning("field completion failed target=%s field=%s: %s", tid, resolved, exc)
+                errors.append(f"target {str(tid)[:12]} field {resolved}: {exc}")
 
         processed += 1
         # Progress update every 10 connections
@@ -1590,6 +1684,9 @@ async def execute_batched_llm_fields(
             upd_field = upd.get("field_name", "")
             tid_raw = upd.get("target_id")
             tid_key = str(tid_raw) if tid_raw is not None else ""
+            if not tid_key and len(pack) == 1:
+                # Single-target runs: LLM often omits target_id; assign the only target.
+                tid_key = str(pack[0].get("target_id") or "")
             if tid_key not in target_map:
                 continue
             tid, target = target_map[tid_key]

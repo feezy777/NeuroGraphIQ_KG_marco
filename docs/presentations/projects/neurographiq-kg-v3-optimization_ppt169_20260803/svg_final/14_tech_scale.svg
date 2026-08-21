@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 720" width="1280" height="720">
+  <g id="background"><rect width="1280" height="720" fill="#F7FAFC" /></g>
+  <g id="header">
+  <rect x="56" y="42" width="8" height="40" fill="#1F9FB5" />
+  <text x="80" y="72" font-family="Microsoft YaHei, Arial, sans-serif" font-size="34" font-weight="700" fill="#17324D">技术栈与工程规模</text>
+  <text x="80" y="104" font-family="Microsoft YaHei, Arial, sans-serif" font-size="16" fill="#5A6A7A">指标来自仓库统计；不做不可核验承诺</text>
+  </g>
+  <g id="stack">
+  <path fill="#FFFFFF" stroke="#1F9FB5" stroke-width="2" d="M66,140 H406 A10,10 0 0 1 416,150 V220 A10,10 0 0 1 406,230 H66 A10,10 0 0 1 56,220 V150 A10,10 0 0 1 66,140 Z" /><text x="236" y="195" text-anchor="middle" font-family="Arial, sans-serif" font-size="28" font-weight="700" fill="#1F9FB5">FastAPI</text>
+  <path fill="#FFFFFF" stroke="#17324D" stroke-width="2" d="M458,140 H798 A10,10 0 0 1 808,150 V220 A10,10 0 0 1 798,230 H458 A10,10 0 0 1 448,220 V150 A10,10 0 0 1 458,140 Z" /><text x="628" y="195" text-anchor="middle" font-family="Arial, sans-serif" font-size="28" font-weight="700" fill="#17324D">React</text>
+  <path fill="#FFFFFF" stroke="#2F855A" stroke-width="2" d="M850,140 H1190 A10,10 0 0 1 1200,150 V220 A10,10 0 0 1 1190,230 H850 A10,10 0 0 1 840,220 V150 A10,10 0 0 1 850,140 Z" /><text x="1020" y="195" text-anchor="middle" font-family="Arial, sans-serif" font-size="28" font-weight="700" fill="#2F855A">PostgreSQL</text>
+  </g>
+  <g id="kpis">
+  <path fill="#FFFFFF" stroke="#CBD5E0" d="M66,280 H406 A10,10 0 0 1 416,290 V390 A10,10 0 0 1 406,400 H66 A10,10 0 0 1 56,390 V290 A10,10 0 0 1 66,280 Z" /><text x="84" y="335" font-family="Arial, sans-serif" font-size="36" font-weight="700" fill="#1F9FB5">5</text><text x="84" y="375" font-family="Microsoft YaHei, Arial, sans-serif" font-size="18" fill="#243447">粒度</text>
+  <path fill="#FFFFFF" stroke="#CBD5E0" d="M458,280 H798 A10,10 0 0 1 808,290 V390 A10,10 0 0 1 798,400 H458 A10,10 0 0 1 448,390 V290 A10,10 0 0 1 458,280 Z" /><text x="476" y="335" font-family="Arial, sans-serif" font-size="36" font-weight="700" fill="#1F9FB5">166/96</text><text x="476" y="375" font-family="Microsoft YaHei, Arial, sans-serif" font-size="18" fill="#243447">AAL3 / Macro96</text>
+  <path fill="#FFFFFF" stroke="#CBD5E0" d="M850,280 H1190 A10,10 0 0 1 1200,290 V390 A10,10 0 0 1 1190,400 H850 A10,10 0 0 1 840,390 V290 A10,10 0 0 1 850,280 Z" /><text x="868" y="335" font-family="Arial, sans-serif" font-size="36" font-weight="700" fill="#1F9FB5">12</text><text x="868" y="375" font-family="Microsoft YaHei, Arial, sans-serif" font-size="18" fill="#243447">规则</text>
+  <path fill="#FFFFFF" stroke="#CBD5E0" d="M66,430 H406 A10,10 0 0 1 416,440 V540 A10,10 0 0 1 406,550 H66 A10,10 0 0 1 56,540 V440 A10,10 0 0 1 66,430 Z" /><text x="84" y="485" font-family="Arial, sans-serif" font-size="36" font-weight="700" fill="#1F9FB5">7</text><text x="84" y="525" font-family="Microsoft YaHei, Arial, sans-serif" font-size="18" fill="#243447">类提取</text>
+  <path fill="#FFFFFF" stroke="#CBD5E0" d="M458,430 H798 A10,10 0 0 1 808,440 V540 A10,10 0 0 1 798,550 H458 A10,10 0 0 1 448,540 V440 A10,10 0 0 1 458,430 Z" /><text x="476" y="485" font-family="Arial, sans-serif" font-size="36" font-weight="700" fill="#1F9FB5">42</text><text x="476" y="525" font-family="Microsoft YaHei, Arial, sans-serif" font-size="18" fill="#243447">路由</text>
+  <path fill="#FFFFFF" stroke="#CBD5E0" d="M850,430 H1190 A10,10 0 0 1 1200,440 V540 A10,10 0 0 1 1190,550 H850 A10,10 0 0 1 840,540 V440 A10,10 0 0 1 850,430 Z" /><text x="868" y="485" font-family="Arial, sans-serif" font-size="36" font-weight="700" fill="#1F9FB5">88</text><text x="868" y="525" font-family="Microsoft YaHei, Arial, sans-serif" font-size="18" fill="#243447">服务</text>
+  </g>
+  <path fill="#EDF2F7" d="M66,580 H1214 A10,10 0 0 1 1224,590 V640 A10,10 0 0 1 1214,650 H66 A10,10 0 0 1 56,640 V590 A10,10 0 0 1 66,580 Z" /><text x="80" y="625" font-family="Microsoft YaHei, Arial, sans-serif" font-size="18" fill="#243447">1173 测试口径：仓库可复现统计，非营销口号</text>
+  <g id="footer"><text x="1224" y="696" text-anchor="end" font-family="Arial, sans-serif" font-size="12" fill="#8492A0">14</text></g>
+</svg>

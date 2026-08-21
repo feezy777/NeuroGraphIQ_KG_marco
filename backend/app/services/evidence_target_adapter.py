@@ -381,6 +381,32 @@ async def load_synonyms_for_terms(session: AsyncSession, terms: list[str]) -> di
     return result
 
 
+async def _target_species(
+    session: AsyncSession, target_type: str, target_id: uuid.UUID
+) -> str | None:
+    """Explicit species from atlas_resources metadata (BR1).
+
+    Species source of truth is resource-level metadata; atlas-name string
+    inference is banned (Allen_HBA is human and must never be labelled mouse).
+    Returns None when the target row or its resource is missing.
+    """
+    model = TARGET_MODELS.get(target_type)
+    if model is None:
+        return None
+    row = await session.get(model, target_id)
+    if row is None:
+        return None
+    resource_id = getattr(row, "resource_id", None)
+    if resource_id is None:
+        return None
+    species = (
+        await session.execute(
+            text("SELECT species FROM atlas_resources WHERE id = :rid"), {"rid": resource_id}
+        )
+    ).scalar_one_or_none()
+    return str(species) if species else None
+
+
 async def build_retrieval_context(
     session: AsyncSession,
     target_type: str,
@@ -395,6 +421,7 @@ async def build_retrieval_context(
     mentioning any function. The claim itself stays unchanged.
     """
     dto = await build_target_dto(session, target_type, target_id)
+    species = await _target_species(session, target_type, target_id)
     canonical = dto.get("canonical_terms") or []
     source = dto.get("source_region") or ""
     target = dto.get("target_region") or ""
@@ -437,6 +464,7 @@ async def build_retrieval_context(
         "claim_mode": mode,
         "object_type": target_type,
         "granularity": dto.get("granularity") or "",
+        "species": species,
         "source_region": source,
         "target_region": target,
         "source_region_synonyms": synonyms_for(source),

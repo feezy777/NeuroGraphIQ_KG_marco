@@ -698,6 +698,7 @@ def _make_item(
 _MODEL_TIER_PRIORITY = {
     "deepseek-reasoner": 40,
     "deepseek-v4-pro": 30,
+    "deepseek-v4-flash": 25,
     "deepseek-chat": 20,
     "kimi": 10,
 }
@@ -1583,12 +1584,30 @@ async def _execute_field_completion_core(
 
     if request.target_type == TargetType.circuit:
         if template_plan:
-            model_call_count, llm_applied = await execute_circuit_bundle_fields(
-                session, run, request, targets, items, warnings, errors,
-                provider_key=provider_key, resolved_model=resolved_model,
-                make_item=_make_item, apply_field_update=apply_field_update,
-                call_provider=call_provider, check_cancelled=_check_cancelled,
-            )
+            if len(targets) > 1:
+                # Multi-circuit bulk completion: batch all targets into one prompt
+                # (one LLM call per pack) instead of one call per circuit.
+                model_call_count, rejected_count, estimated_input_tokens, pack_count, llm_applied = (
+                    await execute_batched_llm_fields(
+                        session, run, request, entry, targets, items, warnings, errors,
+                        provider_key=provider_key, resolved_model=resolved_model,
+                        canonical_cache=canonical_cache or {},
+                        make_item=_make_item, apply_field_update=apply_field_update,
+                        call_provider=call_provider,
+                        parse_field_completion_provider_response=parse_field_completion_provider_response,
+                        validate_field_updates=validate_field_updates,
+                        validate_field_value_quality=validate_field_value_quality,
+                        format_reasoning_with_consistency=format_reasoning_with_consistency,
+                        check_cancelled=_check_cancelled,
+                    )
+                )
+            else:
+                model_call_count, llm_applied = await execute_circuit_bundle_fields(
+                    session, run, request, targets, items, warnings, errors,
+                    provider_key=provider_key, resolved_model=resolved_model,
+                    make_item=_make_item, apply_field_update=apply_field_update,
+                    call_provider=call_provider, check_cancelled=_check_cancelled,
+                )
         else:
             model_call_count, llm_applied = 0, 0
     elif request.target_type == TargetType.projection:
@@ -1630,6 +1649,19 @@ async def _execute_field_completion_core(
         run.errors_json = to_jsonable(errors)
         await session.commit()
         return items, warnings, errors
+
+    # P1.3: field completion writes function text directly; re-anchor any
+    # function-typed targets so term_id never goes stale (unified resolver).
+    from app.services.function_term_service import reanchor_function_targets
+
+    reanchor_counts = await reanchor_function_targets(
+        session, targets, created_by="field_completion"
+    )
+    if reanchor_counts:
+        warnings.append(
+            "function term re-anchored after field completion: "
+            + ", ".join(f"{k}={v}" for k, v in sorted(reanchor_counts.items()))
+        )
 
     warning_count = len(warnings)
     counts = summarize_completion_run(run, items)

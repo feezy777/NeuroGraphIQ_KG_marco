@@ -189,6 +189,7 @@ Cross-granularity mapping uses explicit `mapping_type` (`exact_match`, `part_of`
 | `/api/settings` | LLM & system settings |
 | `/api/database` | Database admin (runtime DB switch) |
 | `/api/workbench` | Workbench pipeline aggregation |
+| `/api/ontology-query` | Ontology Query（规则 NL 查询：意图分类 + 实体解析，无 LLM） |
 
 ## Critical Development Constraints
 
@@ -219,12 +220,17 @@ The project has [Superpowers](https://github.com/obra/superpowers) methodology s
 
 ---
 
-## Current Session State (2026-06-24)
+## Current Session State (2026-08-21)
 
 ### Recent Completed Changes
 
 | Area | Change | Files |
 |------|--------|-------|
+| **Ontology Query Phase 1** | 可控 NL 图谱查询 `POST /api/ontology-query`：规则意图分类（5 意图，无 LLM）+ 实体解析（cn→en→aliases→synonyms 全等匹配，无匹配→unresolved）+ 复用 canonical service（禁重复 SQL）；13 tests 全绿 | `services/ontology_query_service.py`, `routers/ontology_query.py`, `schemas/ontology_query.py`, `tests/test_ontology_query.py`, `main.py` |
+| **BR3 多尺度粒度体系** | granularity 词表升级为 macro→meso→subregion→cyto→molecular 五级主尺度 (10 级交错 level_order) + 旧值兼容映射 (granularity_level_compat_map); Macro96 数据不动 | `20260826_multiscale_granularity_refactor.sql`, `ontology.py`, `canonical_region_service.py` |
+| **BR3 Atlas 数据层** | atlas_region_resources/mappings (exact/broader/narrower/uncertain + 跨物种 homology 守卫) + cell_type_registry / region_cell_alignment / molecular_entity_registry / region_molecular_alignment; Allen 小鼠 P56 1327 行导入; 7 canonical 锚点 (3 meso + 4 subregion); 10 demo 映射; 完整性检查扩展 (ORPHAN_ATLAS_PARENT / ATLAS_CROSS_SPECIES_MAPPING / ATLAS_MAPPING_CONFLICT / MERGED_REGION_ALIGNMENT); identity-preserving merge 端点 | `20260827_multiscale_atlas_layer.sql`, `models/multiscale.py`, `services/multiscale_service.py`, `routers/multiscale.py`, `docs/MULTISCALE_GRANULARITY_ARCHITECTURE.md` |
+| **Backend** | ResourceRead 粒度枚举与 DB CHECK 对齐 (新增 subregion/cyto/sub_connectivity) — 修复 atlas 来源登记后 /api/resources 列表 500 | `schemas/resource.py` |
+| **Tests** | BR3 12 tests (Macro96 不变/词表/atlas 导入/映射可追溯/无环/merge 身份+去重守卫) | `tests/test_multiscale_ontology.py` |
 | **LLM Extraction** | Added "字段补全" Tab (连接/回路/Bundle 补全) | `FieldCompletionTab.tsx`, `ModelSelector.tsx`, `ProgressPanel.tsx`, `llmDataFirstTypes.ts` |
 | **LLM Extraction** | Added quick extraction cards (脑区功能/连接+功能/回路+步骤+功能) — 选中候选后显示，一键触发 | `LlmExtractionPage.tsx` + CSS |
 | **LLM Extraction** | Provider/Model 切换联动修复 — 切换 Provider 自动重置 Model 为默认值 | `LlmExtractionPage.tsx` |

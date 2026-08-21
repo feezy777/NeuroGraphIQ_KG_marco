@@ -31,7 +31,10 @@ from app.schemas.mirror_macro_clinical import (
     MirrorDualModelVerificationRunCreate,
     MirrorProjectionFunctionCreate,
 )
-from app.services.ontology_service import ground_written_records
+from app.services.function_term_service import (
+    anchor_function_relation,
+    resolve_or_propose_function_term,
+)
 
 
 class MirrorCircuitNotFoundError(Exception):
@@ -301,11 +304,16 @@ async def _validate_projection_function_refs(
 async def _find_existing_projection_function_for_merge(
     session: AsyncSession,
     payload: MirrorProjectionFunctionCreate,
+    *,
+    term_id: uuid.UUID | None = None,
 ) -> MirrorProjectionFunction | None:
     """Find existing projection function with the same canonical key.
 
-    Canonical key: (projection_id, function_term_key, function_category, relation_type)
-    where function_term_key is function_term_en.strip().lower().
+    Canonical key: (projection_id, term_id | function_term_key, function_category, relation_type).
+    P1.3: identity prefers the canonical term_id (never the raw text); when the
+    text is unresolved (term_id None) we fall back to normalized-text equality
+    so re-extraction still dedups. Other semantic qualifiers (category /
+    relation_type) are always kept in the key (P1.2 constraint A).
     Excludes records that are rejected, failed/promoted, or superseded.
     """
     blocked_review = frozenset({MirrorReviewStatus.rejected})
@@ -318,6 +326,10 @@ async def _find_existing_projection_function_for_merge(
         MirrorProjectionFunction.review_status.notin_(blocked_review),
         MirrorProjectionFunction.promotion_status.notin_(blocked_promo),
     )
+    if term_id is not None:
+        base = base.where(MirrorProjectionFunction.term_id == term_id)
+        return (await session.execute(base.order_by(MirrorProjectionFunction.created_at.desc()).limit(1))).scalar_one_or_none()
+
     rows = (
         await session.execute(
             base.order_by(MirrorProjectionFunction.created_at.desc())
@@ -337,7 +349,15 @@ async def create_projection_function(
 ) -> MirrorProjectionFunction:
     await _validate_projection_function_refs(session, payload)
 
-    existing = await _find_existing_projection_function_for_merge(session, payload)
+    # P1.3: resolve the canonical Function term before dedup so relation
+    # identity is term_id-based, not text-based.
+    term_res = await resolve_or_propose_function_term(
+        session, payload.function_term, created_by="extraction",
+        source="create_projection_function",
+    )
+    existing = await _find_existing_projection_function_for_merge(
+        session, payload, term_id=term_res.term_id
+    )
     if existing is not None:
         old_conf = existing.confidence or 0.0
         new_conf = payload.confidence or 0.0
@@ -354,12 +374,20 @@ async def create_projection_function(
             existing.mirror_status = MirrorStatus.llm_suggested
             await session.flush()
             await session.refresh(existing)
-            await ground_written_records(
+            await anchor_function_relation(
                 session,
-                target_type="circuit_function",
-                rows=[existing],
+                target_type="projection_function",
+                row=existing,
                 created_by="extraction",
             )
+        # P1.6: incremental projection
+        from app.services.function_triple_projection_service import (
+            reconcile_function_subject,
+        )
+
+        await reconcile_function_subject(
+            session, subject_type="connection", subject_id=existing.projection_id
+        )
         return existing
 
     data = payload.model_dump()
@@ -370,6 +398,20 @@ async def create_projection_function(
     session.add(row)
     await session.flush()
     await session.refresh(row)
+    await anchor_function_relation(
+        session,
+        target_type="projection_function",
+        row=row,
+        created_by="extraction",
+    )
+    # P1.6: incremental projection
+    from app.services.function_triple_projection_service import (
+        reconcile_function_subject,
+    )
+
+    await reconcile_function_subject(
+        session, subject_type="connection", subject_id=row.projection_id
+    )
     return row
 
 
@@ -918,11 +960,15 @@ async def _validate_circuit_function_refs(
 async def _find_existing_circuit_function_for_merge(
     session: AsyncSession,
     payload: MirrorCircuitFunctionCreate,
+    *,
+    term_id: uuid.UUID | None = None,
 ) -> MirrorCircuitFunction | None:
     """Find existing circuit function with the same canonical key.
 
-    Canonical key: (circuit_id, function_term_key, function_domain, function_role, effect_type)
-    where function_term_key is function_term_en.strip().lower().
+    Canonical key: (circuit_id, term_id | function_term_key, function_domain,
+    function_role, effect_type). P1.3: identity prefers the canonical term_id;
+    unresolved text falls back to normalized-text equality. Semantic qualifiers
+    (domain / role / effect_type) are always kept in the key (P1.2 constraint A).
     Excludes records that are rejected, failed/promoted, or superseded.
     """
     blocked_review = frozenset({MirrorReviewStatus.rejected})
@@ -936,6 +982,10 @@ async def _find_existing_circuit_function_for_merge(
         MirrorCircuitFunction.review_status.notin_(blocked_review),
         MirrorCircuitFunction.promotion_status.notin_(blocked_promo),
     )
+    if term_id is not None:
+        base = base.where(MirrorCircuitFunction.term_id == term_id)
+        return (await session.execute(base.order_by(MirrorCircuitFunction.created_at.desc()).limit(1))).scalar_one_or_none()
+
     rows = (
         await session.execute(
             base.order_by(MirrorCircuitFunction.created_at.desc())
@@ -949,13 +999,61 @@ async def _find_existing_circuit_function_for_merge(
     return None
 
 
+async def sync_circuit_function_from_association(
+    session: AsyncSession,
+    *,
+    circuit: MirrorRegionCircuit,
+    function_association: str | None,
+    created_by: str = "circuit_extraction",
+) -> MirrorCircuitFunction | None:
+    """P1.4: keep mirror_circuit_functions as the sole authority for circuit
+    functions. When a circuit is created/merged with a function_association
+    text, materialize it as a formal CircuitFunctionRelation via
+    create_circuit_function (dedup + unified term anchoring).
+
+    function_association itself stays as a display/source snapshot column —
+    it is never the identity or the KG relation source.
+    """
+    if not isinstance(circuit, MirrorRegionCircuit):
+        # mock / non-ORM circuit (unit tests): nothing real to materialize
+        return None
+    text = (function_association or "").strip()
+    if not text:
+        return None
+    payload = MirrorCircuitFunctionCreate(
+        circuit_id=circuit.id,
+        resource_id=circuit.resource_id,
+        batch_id=circuit.batch_id,
+        llm_run_id=circuit.llm_run_id,
+        llm_item_id=circuit.llm_item_id,
+        granularity_level=circuit.granularity_level,
+        granularity_family=circuit.granularity_family,
+        source_atlas=circuit.source_atlas,
+        source_version=circuit.source_version,
+        function_term_en=text[:512],
+        confidence=circuit.confidence,
+        evidence_text=circuit.evidence_text,
+        uncertainty_reason=circuit.uncertainty_reason,
+        raw_payload_json={"source": "function_association_sync", "association_text": text},
+        created_by=created_by,
+    )
+    return await create_circuit_function(session, payload)
+
+
 async def create_circuit_function(
     session: AsyncSession,
     payload: MirrorCircuitFunctionCreate,
 ) -> MirrorCircuitFunction:
     await _validate_circuit_function_refs(session, payload)
 
-    existing = await _find_existing_circuit_function_for_merge(session, payload)
+    # P1.3: resolve the canonical Function term before dedup (term_id identity).
+    term_res = await resolve_or_propose_function_term(
+        session, payload.function_term_en or payload.function_term_cn,
+        created_by="extraction", source="create_circuit_function",
+    )
+    existing = await _find_existing_circuit_function_for_merge(
+        session, payload, term_id=term_res.term_id
+    )
     if existing is not None:
         old_conf = existing.confidence or 0.0
         new_conf = payload.confidence or 0.0
@@ -976,6 +1074,20 @@ async def create_circuit_function(
             existing.mirror_status = MirrorStatus.llm_suggested
             await session.flush()
             await session.refresh(existing)
+            await anchor_function_relation(
+                session,
+                target_type="circuit_function",
+                row=existing,
+                created_by="extraction",
+            )
+        # P1.6: incremental projection
+        from app.services.function_triple_projection_service import (
+            reconcile_function_subject,
+        )
+
+        await reconcile_function_subject(
+            session, subject_type="circuit", subject_id=existing.circuit_id
+        )
         return existing
 
     data = payload.model_dump()
@@ -986,10 +1098,18 @@ async def create_circuit_function(
     session.add(row)
     await session.flush()
     await session.refresh(row)
-    await ground_written_records(
+    await anchor_function_relation(
         session,
         target_type="circuit_function",
-        rows=[row],
+        row=row,
         created_by="extraction",
+    )
+    # P1.6: incremental projection
+    from app.services.function_triple_projection_service import (
+        reconcile_function_subject,
+    )
+
+    await reconcile_function_subject(
+        session, subject_type="circuit", subject_id=row.circuit_id
     )
     return row

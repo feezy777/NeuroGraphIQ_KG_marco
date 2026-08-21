@@ -437,6 +437,7 @@ export const fetchCandidates = (p?: {
   generation_run_id?: string
   parse_run_id?: string
   granularity_level?: string
+  search?: string
   limit?: number
   offset?: number
 }) => getJson<Paginated<CandidateBrainRegion>>('/api/candidates/brain-regions', p)
@@ -444,6 +445,8 @@ export interface CandidateStatusSummary {
   total: number
   by_status: Array<{ candidate_status: string; count: number }>
 }
+export const getCandidateRegion = (candidateId: string) =>
+  getJson<CandidateBrainRegion>(`/api/candidates/brain-regions/${candidateId}`)
 export const fetchCandidateStatusSummary = (p?: { batch_id?: string; resource_id?: string }) =>
   getJson<CandidateStatusSummary>('/api/candidates/brain-regions/status-summary', p)
 export const fetchCandidateOptions = () => getJson<Record<string, string[]>>('/api/candidates/options')
@@ -1840,10 +1843,15 @@ export const getExtractionPromptTemplates = (category = 'extraction') =>
 
 export interface MirrorRegionConnection {
   id: string
+  canonical_id: string | null
   source_region_candidate_id: string | null
   target_region_candidate_id: string | null
   source_region_final_id: string | null
   target_region_final_id: string | null
+  source_region_name_cn: string | null
+  source_region_name_en: string | null
+  target_region_name_cn: string | null
+  target_region_name_en: string | null
   resource_id: string | null
   batch_id: string | null
   llm_run_id: string | null
@@ -1873,8 +1881,11 @@ export interface MirrorRegionConnection {
 
 export interface MirrorRegionFunction {
   id: string
+  canonical_id: string | null
   region_candidate_id: string | null
   region_final_id: string | null
+  region_name_cn: string | null
+  region_name_en: string | null
   resource_id: string | null
   batch_id: string | null
   llm_run_id: string | null
@@ -1910,6 +1921,7 @@ export interface MirrorCircuitRegion {
 
 export interface MirrorRegionCircuit {
   id: string
+  canonical_id: string | null
   resource_id: string | null
   batch_id: string | null
   llm_run_id: string | null
@@ -1919,6 +1931,7 @@ export interface MirrorRegionCircuit {
   source_atlas: string
   source_version: string | null
   circuit_name: string
+  name_cn: string | null
   circuit_type: string
   function_association: string | null
   description: string | null
@@ -2056,6 +2069,7 @@ export const listMirrorCircuits = (p?: {
   mirror_status?: string
   review_status?: string
   llm_run_id?: string
+  candidate_id?: string
   confidence_min?: number
   confidence_max?: number
   confidence_include_null?: boolean
@@ -4916,8 +4930,10 @@ export const runDeterministicGrounding = (body: { target_type: string; limit?: n
     body,
   )
 
-export const listOntologyTerms = (p?: { status?: string; q?: string; limit?: number; offset?: number }) =>
-  getJson<OntologyTermList>('/api/ontology/terms', p)
+export const listOntologyTerms = (
+  p?: { status?: string; q?: string; limit?: number; offset?: number },
+  signal?: AbortSignal,
+) => getJson<OntologyTermList>('/api/ontology/terms', p, signal)
 
 export const proposeOntologyTerm = (body: {
   canonical_term_en: string
@@ -5225,6 +5241,438 @@ export const listAuditRuns = (p?: { limit?: number; offset?: number }) =>
 
 export const listChangeLogs = (p?: { entity_type?: string; entity_id?: string; action_type?: string; limit?: number; offset?: number }) =>
   getJson<{ items: ChangeLogItem[]; total: number }>('/api/ontology/change-logs', p)
+
+// ──── Canonical Region Browser (Ontology Tree) ────────────────────────
+
+export interface CanonicalRegion {
+  id: string
+  region_code: string
+  canonical_name_en: string
+  canonical_name_cn: string | null
+  species: string
+  granularity_domain: string
+  granularity_level: string
+  hemisphere_policy: string
+  /** BR4：左右信息存 laterality 字段（不创建 left_/right_ 前缀实体） */
+  laterality: string
+  status: string
+  description: string | null
+  confidence: number | null
+  source_summary: Record<string, unknown>
+  external_mappings: Record<string, unknown>
+  created_by: string
+  created_at: string
+  updated_at: string
+}
+
+export interface RegionTreeItem {
+  id: string
+  region_code: string
+  canonical_name_en: string
+  granularity_level: string
+  species: string
+  depth: number
+}
+
+export interface RegionEndpointRef {
+  id: string
+  region_code: string
+  canonical_name_en: string
+  canonical_name_cn: string | null
+  granularity_level: string
+}
+
+export interface RegionConnectionItem {
+  connection_id: string
+  connection_code: string
+  connection_type: string
+  directionality_policy: string
+  status: string
+  confidence: number | null
+  direction: 'outgoing' | 'incoming'
+  endpoint_region: RegionEndpointRef
+}
+
+export interface RegionCircuitItem {
+  circuit_id: string
+  circuit_code: string
+  canonical_name_en: string
+  circuit_type: string
+  status: string
+  role: string
+  order_index: number
+  confidence: number | null
+}
+
+export interface RegionFunctionItem {
+  function_term_id: string
+  term_code: string
+  canonical_term_en: string
+  canonical_term_cn: string | null
+  relation_type: string
+  circuit_code: string
+  circuit_name: string
+  confidence: number | null
+}
+
+export interface RegionCandidateItem {
+  candidate_id: string
+  source_atlas: string
+  source_version: string
+  raw_name: string
+  std_name: string | null
+  en_name: string | null
+  cn_name: string | null
+  laterality: string
+  granularity_level: string
+  granularity_family: string
+  alignment_status: string
+  candidate_status: string
+  uberon_iri: string | null
+  nifstd_iri: string | null
+  created_at: string
+}
+
+export const listCanonicalRegionRoots = (signal?: AbortSignal) =>
+  getJson<CanonicalRegion[]>('/api/canonical-regions/roots', undefined, signal)
+
+/** 全量列表（后端支持 granularity_level/status/species 过滤；搜索场景用全量） */
+export const listCanonicalRegions = (signal?: AbortSignal) =>
+  getJson<CanonicalRegion[]>('/api/canonical-regions', undefined, signal)
+
+export const getCanonicalRegion = (regionId: string, signal?: AbortSignal) =>
+  getJson<CanonicalRegion>(`/api/canonical-regions/${regionId}`, undefined, signal)
+
+export const getCanonicalRegionParent = (regionId: string, signal?: AbortSignal) =>
+  getJson<CanonicalRegion | null>(`/api/canonical-regions/${regionId}/parent`, undefined, signal)
+
+export const listCanonicalRegionAncestors = (regionId: string, signal?: AbortSignal) =>
+  getJson<RegionTreeItem[]>(`/api/canonical-regions/${regionId}/ancestors`, undefined, signal)
+
+export const listCanonicalRegionChildren = (regionId: string, signal?: AbortSignal) =>
+  getJson<CanonicalRegion[]>(`/api/canonical-regions/${regionId}/children`, undefined, signal)
+
+export const listRegionConnections = (regionId: string, signal?: AbortSignal) =>
+  getJson<RegionConnectionItem[]>(`/api/canonical-regions/${regionId}/connections`, undefined, signal)
+
+export const listRegionCircuits = (regionId: string, signal?: AbortSignal) =>
+  getJson<RegionCircuitItem[]>(`/api/canonical-regions/${regionId}/circuits`, undefined, signal)
+
+export const listRegionFunctions = (regionId: string, signal?: AbortSignal) =>
+  getJson<RegionFunctionItem[]>(`/api/canonical-regions/${regionId}/functions`, undefined, signal)
+
+export const listRegionCandidates = (regionId: string, signal?: AbortSignal) =>
+  getJson<RegionCandidateItem[]>(`/api/canonical-regions/${regionId}/candidates`, undefined, signal)
+
+/** 按粒度层级过滤的脑区列表（尺度选择器 → 树顶层） */
+export const listCanonicalRegionsByLevel = (granularityLevel: string, signal?: AbortSignal) =>
+  getJson<CanonicalRegion[]>('/api/canonical-regions', { granularity_level: granularityLevel }, signal)
+
+// ──── BR3 atlas layer: atlas 区域资源 + atlas → canonical 映射 ────────────
+
+export interface AtlasRegionItem {
+  id: string
+  atlas_resource_id: string | null
+  atlas_name: string
+  atlas_version: string
+  atlas_region_id: string
+  region_name: string
+  region_acronym: string | null
+  parent_region_id: string | null
+  species: string
+  hemisphere: string
+  source_file: string | null
+  status: string
+  created_at: string
+  updated_at: string
+}
+
+export interface AtlasRegionMappingItem {
+  id: string
+  atlas_region_id: string
+  canonical_region_id: string | null
+  mapping_type: string
+  confidence: number | null
+  species_relation: string
+  match_details: Record<string, unknown>
+  provenance: Record<string, unknown>
+  status: string
+  created_by: string
+  created_at: string
+  updated_at: string
+}
+
+/** 全量 atlas 区域（limit 2000：Allen mouse P56 1327 行超过默认 500 上限） */
+export const listAtlasRegions = (signal?: AbortSignal) =>
+  getJson<AtlasRegionItem[]>('/api/multiscale/atlas-regions', { limit: 2000 }, signal)
+
+export const listAtlasRegionMappings = (
+  p: { canonical_region_id: string },
+  signal?: AbortSignal,
+) => getJson<AtlasRegionMappingItem[]>('/api/multiscale/atlas-mappings', p, signal)
+
+// ──── BR4 multiscale: cross-layer cell types / molecular entities ───────────
+// 跨层注册表独立于脑区层级：cell type / molecular entity 永不进入
+// canonical_brain_regions 的 partonomy，仅通过 alignment 表关联。
+
+export interface CellTypeItem {
+  id: string
+  cell_type_code: string
+  canonical_name_en: string
+  canonical_name_cn: string | null
+  species: string
+  taxonomy_source: string | null
+  taxonomy_version: string | null
+  external_iri: string | null
+  description: string | null
+  status: string
+  created_at: string
+  updated_at: string
+}
+
+export interface MolecularEntityItem {
+  id: string
+  entity_code: string
+  entity_type: string
+  canonical_name_en: string
+  canonical_name_cn: string | null
+  external_iri: string | null
+  species: string
+  description: string | null
+  status: string
+  created_at: string
+  updated_at: string
+}
+
+export interface RegionCellAlignmentItem {
+  id: string
+  region_id: string
+  cell_type_id: string
+  mapping_type: string
+  confidence: number | null
+  provenance: Record<string, unknown>
+  created_at: string
+  updated_at: string
+}
+
+export interface RegionMolecularAlignmentItem {
+  id: string
+  region_id: string
+  molecular_entity_id: string
+  entity_type: string
+  evidence_type: string
+  confidence: number | null
+  source: string | null
+  provenance: Record<string, unknown>
+  created_at: string
+  updated_at: string
+}
+
+export interface MultiscaleRegionCellType {
+  cell_type_id: string
+  cell_type_code: string
+  canonical_name_en: string
+  canonical_name_cn: string | null
+  taxonomy_source: string | null
+  mapping_type: string
+  confidence: number | null
+}
+
+export interface MultiscaleRegionMolecule {
+  molecular_entity_id: string
+  entity_code: string
+  canonical_name_en: string
+  entity_type: string
+  evidence_type: string
+  confidence: number | null
+  source: string | null
+}
+
+/** GET /canonical-regions/{id}/multiscale — 一个区域跨所有尺度的统一视图 */
+export interface CanonicalRegionMultiscaleView {
+  region: CanonicalRegion
+  parents: RegionTreeItem[]
+  children: CanonicalRegion[]
+  meso_regions: CanonicalRegion[]
+  subregions: CanonicalRegion[]
+  fine_regions: CanonicalRegion[]
+  cell_types: MultiscaleRegionCellType[]
+  molecules: MultiscaleRegionMolecule[]
+}
+
+export const getCanonicalRegionMultiscale = (regionId: string, signal?: AbortSignal) =>
+  getJson<CanonicalRegionMultiscaleView>(
+    `/api/canonical-regions/${regionId}/multiscale`,
+    undefined,
+    signal,
+  )
+
+export const listCellTypes = (signal?: AbortSignal) =>
+  getJson<CellTypeItem[]>('/api/multiscale/cell-types', undefined, signal)
+
+export const listMolecularEntities = (signal?: AbortSignal) =>
+  getJson<MolecularEntityItem[]>('/api/multiscale/molecular-entities', undefined, signal)
+
+/** 反向查询：cell_type → 对齐区域（region_id 可选正向过滤） */
+export const listRegionCellAlignments = (
+  p: { cell_type_id?: string; region_id?: string },
+  signal?: AbortSignal,
+) => getJson<RegionCellAlignmentItem[]>('/api/multiscale/region-cell-alignments', p, signal)
+
+/** 反向查询：molecular entity → 对齐区域（region_id 可选正向过滤） */
+export const listRegionMolecularAlignments = (
+  p: { molecular_entity_id?: string; region_id?: string },
+  signal?: AbortSignal,
+) => getJson<RegionMolecularAlignmentItem[]>('/api/multiscale/region-molecular-alignments', p, signal)
+
+/** candidate → canonical 脑区解析结果（/api/canonical-regions/resolve-candidate/{candidateId}） */
+export interface CandidateCanonicalResolution {
+  resolved: boolean
+  canonical_region_id?: string
+  region_code?: string
+  canonical_name_en?: string
+}
+
+export const resolveCandidateToCanonicalRegion = (candidateId: string, signal?: AbortSignal) =>
+  getJson<CandidateCanonicalResolution>(
+    `/api/canonical-regions/resolve-candidate/${candidateId}`,
+    undefined,
+    signal,
+  )
+
+// ──── Canonical Connections / Circuits / Function Terms (Ontology Browser) ────
+
+export interface CanonicalConnection {
+  id: string
+  connection_code: string
+  source_region_id: string
+  target_region_id: string
+  connection_type: string
+  directionality_policy: string
+  species: string
+  granularity_level: string
+  status: string
+  confidence: number | null
+  source_summary: Record<string, unknown>
+  evidence_summary: Record<string, unknown>
+  provenance_json: Record<string, unknown>
+  replaced_by_connection_id: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface CanonicalCircuit {
+  id: string
+  circuit_code: string
+  canonical_name_en: string
+  canonical_name_cn: string | null
+  species: string
+  granularity_level: string
+  circuit_type: string
+  status: string
+  description: string | null
+  confidence: number | null
+  source_summary: Record<string, unknown>
+  provenance_json: Record<string, unknown>
+  replaced_by_circuit_id: string | null
+  created_by: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface CanonicalCircuitRegionLink {
+  id: string
+  circuit_id: string
+  region_id: string
+  role: string
+  order_index: number
+  confidence: number | null
+  provenance_json: Record<string, unknown>
+  created_at: string
+}
+
+export interface CanonicalCircuitConnectionLink {
+  id: string
+  circuit_id: string
+  connection_id: string
+  role: string
+  confidence: number | null
+  provenance_json: Record<string, unknown>
+  created_at: string
+}
+
+export interface CanonicalCircuitFunctionLink {
+  id: string
+  circuit_id: string
+  function_term_id: string
+  relation_type: string
+  confidence: number | null
+  provenance_json: Record<string, unknown>
+  created_at: string
+}
+
+export interface OntologyTermDetail {
+  term: Record<string, unknown>
+  synonyms: Array<Record<string, unknown>>
+  external_mappings: Array<Record<string, unknown>>
+  references: { items: Array<{ target_type: string; target_id: string; function_term: string; granularity_level: string }>; total: number }
+  change_logs: Array<Record<string, unknown>>
+}
+
+export const listCanonicalConnections = (signal?: AbortSignal) =>
+  getJson<CanonicalConnection[]>('/api/canonical-connections', undefined, signal)
+
+export const getCanonicalConnection = (connectionId: string, signal?: AbortSignal) =>
+  getJson<CanonicalConnection>(`/api/canonical-connections/${connectionId}`, undefined, signal)
+
+export const listCanonicalCircuits = (signal?: AbortSignal) =>
+  getJson<CanonicalCircuit[]>('/api/canonical-circuits', undefined, signal)
+
+export const getCanonicalCircuit = (circuitId: string, signal?: AbortSignal) =>
+  getJson<CanonicalCircuit>(`/api/canonical-circuits/${circuitId}`, undefined, signal)
+
+export const listCanonicalCircuitRegions = (circuitId: string, signal?: AbortSignal) =>
+  getJson<CanonicalCircuitRegionLink[]>(`/api/canonical-circuits/${circuitId}/regions`, undefined, signal)
+
+export const listCanonicalCircuitConnections = (circuitId: string, signal?: AbortSignal) =>
+  getJson<CanonicalCircuitConnectionLink[]>(`/api/canonical-circuits/${circuitId}/connections`, undefined, signal)
+
+export const listCanonicalCircuitFunctions = (circuitId: string, signal?: AbortSignal) =>
+  getJson<CanonicalCircuitFunctionLink[]>(`/api/canonical-circuits/${circuitId}/functions`, undefined, signal)
+
+export const getOntologyTermDetail = (termId: string, signal?: AbortSignal) =>
+  getJson<OntologyTermDetail>(`/api/ontology/terms/${termId}/detail`, undefined, signal)
+
+// ──── Ontology Function Hierarchy ──────────────────────────────────────
+
+export interface HierarchyNodeRead {
+  term_id: string
+  term_code: string | null
+  canonical_term_en: string | null
+  canonical_term_cn: string | null
+  term_status: string | null
+}
+
+export interface HierarchyRelationRead {
+  id: string
+  child: HierarchyNodeRead
+  predicate: string
+  parent: HierarchyNodeRead
+  status: string
+  source?: string | null
+  confidence?: number | null
+}
+
+export interface HierarchyRelationList {
+  items: HierarchyRelationRead[]
+  total: number
+}
+
+export const listTermHierarchyParents = (termId: string, signal?: AbortSignal) =>
+  getJson<HierarchyRelationList>(`/api/ontology/hierarchy/terms/${termId}/parents`, undefined, signal)
+
+export const listTermHierarchyChildren = (termId: string, signal?: AbortSignal) =>
+  getJson<HierarchyRelationList>(`/api/ontology/hierarchy/terms/${termId}/children`, undefined, signal)
 
 // ──── Paper Evidence (Phase B) ────────────────────────────────────────
 

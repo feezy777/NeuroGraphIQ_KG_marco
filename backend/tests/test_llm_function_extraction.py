@@ -245,10 +245,12 @@ def test_mock_deepseek_creates_run_item():
     assert result.run_id is not None
     assert result.item_id is not None
     assert result.mirror_function_created_count == 1
-    assert result.triple_created_count == 1
+    # P1.8: triples are produced by incremental projection, not extraction
+    assert result.triple_created_count == 0
     assert result.evidence_created_count == 1
     cmf.assert_called_once()
-    cmt.assert_called_once()
+    # P1.8: extraction no longer writes triples directly (incremental projection does)
+    cmt.assert_not_called()
     cme.assert_called_once()
 
 

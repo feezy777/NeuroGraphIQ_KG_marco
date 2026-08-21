@@ -29,11 +29,11 @@ function parseNavFromUrl(): DataCenterNavState {
   return {
     tab,
     rawTab: q.rawTab === 'macro96' ? 'macro96' : 'aal3',
-    mirrorTab: (['connections', 'functions', 'circuits', 'triples', 'evidence'].includes(q.mirrorTab)
+    mirrorTab: (['connections', 'functions', 'circuits', 'triples'].includes(q.mirrorTab)
       ? q.mirrorTab : DEFAULT_NAV.mirrorTab) as MirrorKgSubTab,
     macroTab: (['circuit_steps', 'projection_functions', 'memberships', 'circuit_functions', 'cross_validation', 'dual_model'].includes(q.macroTab)
       ? q.macroTab : DEFAULT_NAV.macroTab) as MacroClinicalSubTab,
-    finalTab: (['circuit', 'circuit_step', 'projection', 'projection_function', 'membership', 'region_function', 'circuit_function', 'triple', 'evidence'].includes(q.finalTab)
+    finalTab: (['circuit', 'circuit_step', 'projection', 'projection_function', 'membership', 'region_function', 'circuit_function', 'triple'].includes(q.finalTab)
       ? q.finalTab : DEFAULT_NAV.finalTab) as FinalKgSubTab,
     batchId: q.batch_id ?? '',
     resourceId: q.resource_id ?? '',

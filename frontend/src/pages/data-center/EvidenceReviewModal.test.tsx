@@ -28,9 +28,9 @@ describe('EvidenceReviewModal 兼容壳(跳转 Evidence Center)', () => {
     window.location.hash = ''
   })
 
-  it('open 时跳转 hash 含 /evidence-center 且 module=candidates', () => {
+  it('open 时跳转 hash 含 /validation-center 且 module=candidates', () => {
     render(<EvidenceReviewModal open onClose={vi.fn()} initialItems={[ITEM_A]} />)
-    expect(window.location.hash).toContain('/evidence-center')
+    expect(window.location.hash).toContain('/validation-center')
     expect(window.location.hash).toContain('module=candidates')
   })
 

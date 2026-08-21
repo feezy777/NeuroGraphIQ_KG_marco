@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 720" width="1280" height="720">
+  <g id="background"><rect width="1280" height="720" fill="#FFFFFF"/></g>
+  <g id="header"><text x="56" y="70" font-family="Cambria, SimSun, serif" font-size="34" font-weight="700" fill="#1A365D">确定性规则先拦截硬错误，再将疑难问题交给受控增强</text><text x="56" y="102" font-family="Microsoft YaHei, Arial, sans-serif" font-size="14" fill="#5F6F7F">规则负责判定，LLM 只生成建议，人工负责采纳</text></g>
+  <g id="rule-matrix">
+    <rect x="56" y="140" width="620" height="470" rx="8" fill="#F4F7FA"/>
+    <text x="82" y="182" font-family="Microsoft YaHei, Arial, sans-serif" font-size="24" font-weight="700" fill="#1A365D">12 条确定性规则</text>
+    <line x1="82" y1="202" x2="650" y2="202" stroke="#CBD5DF"/>
+    <text x="88" y="248" font-family="Microsoft YaHei, Arial, sans-serif" font-size="18" font-weight="700" fill="#3182CE">完整性</text><text x="220" y="248" font-family="Microsoft YaHei, Arial, sans-serif" font-size="18" fill="#243447">必填字段 · 数据类型</text>
+    <text x="88" y="302" font-family="Microsoft YaHei, Arial, sans-serif" font-size="18" font-weight="700" fill="#3182CE">语义 ID</text><text x="220" y="302" font-family="Microsoft YaHei, Arial, sans-serif" font-size="18" fill="#243447">命名规范 · 可重复生成</text>
+    <text x="88" y="356" font-family="Microsoft YaHei, Arial, sans-serif" font-size="18" font-weight="700" fill="#3182CE">唯一性</text><text x="220" y="356" font-family="Microsoft YaHei, Arial, sans-serif" font-size="18" fill="#243447">候选键 · 重复记录</text>
+    <text x="88" y="410" font-family="Microsoft YaHei, Arial, sans-serif" font-size="18" font-weight="700" fill="#3182CE">拓扑</text><text x="220" y="410" font-family="Microsoft YaHei, Arial, sans-serif" font-size="18" fill="#243447">自环 · 孤立 · 关系端点</text>
+    <text x="88" y="464" font-family="Microsoft YaHei, Arial, sans-serif" font-size="18" font-weight="700" fill="#3182CE">溯源</text><text x="220" y="464" font-family="Microsoft YaHei, Arial, sans-serif" font-size="18" fill="#243447">资源 · 批次 · 原始定位</text>
+    <text x="88" y="518" font-family="Microsoft YaHei, Arial, sans-serif" font-size="18" font-weight="700" fill="#3182CE">证据</text><text x="220" y="518" font-family="Microsoft YaHei, Arial, sans-serif" font-size="18" fill="#243447">引用 · 原始响应 · 模型信息</text>
+    <rect x="82" y="550" width="568" height="40" fill="#1A365D"/><text x="366" y="576" text-anchor="middle" font-family="Microsoft YaHei, Arial, sans-serif" font-size="16" font-weight="700" fill="#FFFFFF">Blocker 必须修复 · Warning 可带标记继续</text>
+  </g>
+  <g id="quality-score">
+    <rect x="710" y="140" width="514" height="180" rx="8" fill="#FFFFFF" stroke="#CBD5DF"/>
+    <text x="738" y="180" font-family="Microsoft YaHei, Arial, sans-serif" font-size="24" font-weight="700" fill="#1A365D">Quality Score</text>
+    <text x="738" y="224" font-family="Microsoft YaHei, Arial, sans-serif" font-size="18" fill="#243447">完整性 30% · 溯源 20% · 拓扑 20%</text>
+    <text x="738" y="260" font-family="Microsoft YaHei, Arial, sans-serif" font-size="18" fill="#243447">证据 20% · 关联 10%</text>
+    <rect x="738" y="282" width="458" height="18" fill="#CBD5DF"/><rect x="738" y="282" width="366" height="18" fill="#38A169"/><text x="1104" y="278" font-family="Arial, sans-serif" font-size="14" font-weight="700" fill="#38A169">80</text>
+  </g>
+  <g id="decision">
+    <polygon points="890,350 1010,420 890,490 770,420" fill="#DD6B20"/><text x="890" y="414" text-anchor="middle" font-family="Microsoft YaHei, Arial, sans-serif" font-size="18" font-weight="700" fill="#FFFFFF">Score ≥ 80?</text>
+    <text x="890" y="440" text-anchor="middle" font-family="Microsoft YaHei, Arial, sans-serif" font-size="14" fill="#FFFFFF">规则通过</text>
+    <rect x="1045" y="374" width="179" height="92" rx="8" fill="#38A169"/><text x="1134" y="410" text-anchor="middle" font-family="Microsoft YaHei, Arial, sans-serif" font-size="18" font-weight="700" fill="#FFFFFF">通过</text><text x="1134" y="440" text-anchor="middle" font-family="Microsoft YaHei, Arial, sans-serif" font-size="14" fill="#FFFFFF">进入提取队列</text>
+    <rect x="710" y="520" width="238" height="90" rx="8" fill="#3182CE"/><text x="829" y="555" text-anchor="middle" font-family="Microsoft YaHei, Arial, sans-serif" font-size="18" font-weight="700" fill="#FFFFFF">Tier 1</text><text x="829" y="585" text-anchor="middle" font-family="Microsoft YaHei, Arial, sans-serif" font-size="16" fill="#FFFFFF">确定性修复</text>
+    <rect x="986" y="520" width="238" height="90" rx="8" fill="#1A365D"/><text x="1105" y="555" text-anchor="middle" font-family="Microsoft YaHei, Arial, sans-serif" font-size="18" font-weight="700" fill="#FFFFFF">Tier 2</text><text x="1105" y="585" text-anchor="middle" font-family="Microsoft YaHei, Arial, sans-serif" font-size="16" fill="#FFFFFF">DeepSeek 建议 + 人工决策</text>
+  </g>
+  <g id="footer"><text x="56" y="690" font-family="Microsoft YaHei, Arial, sans-serif" font-size="11" fill="#8492A0">Source: validation and data enhancement engine</text><text x="1224" y="690" text-anchor="end" font-family="Arial, sans-serif" font-size="11" fill="#8492A0">06</text></g>
+</svg>

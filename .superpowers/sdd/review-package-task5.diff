@@ -1,0 +1,511 @@
+d84d890720256af5c48aac9d0ebe659c00bfff30 feat(evidence): task list/detail display fields (cn/en name + confidence, no N+1)
+---DIFF---
+diff --git a/backend/app/services/paper_evidence_service.py b/backend/app/services/paper_evidence_service.py
+index 400b421..229df54 100644
+--- a/backend/app/services/paper_evidence_service.py
++++ b/backend/app/services/paper_evidence_service.py
+@@ -3812,36 +3812,134 @@ def _build_capabilities(raw_status: str, counts: dict[str, int]) -> dict:
+     terminal = counts.get("completed", 0) + counts.get("skipped", 0) + failed
+     return {
+         "can_pause": raw_status in ("pending", "running"),
+         "can_resume": raw_status == "paused",
+         "can_retry_failed": failed > 0 and raw_status != "cancelled",
+         "can_continue_review": awaiting > 0 and raw_status != "cancelled",
+         "can_view_results": terminal > 0,
+     }
+ 
+ 
++async def _enrich_task_display(session: AsyncSession, tasks: list[dict]) -> list[dict]:
++    """为任务字典补充 display_name_cn/display_name_en/display_confidence 与来源标记(批量,无 N+1)。
++
++    - 按 target_type 分组批量 JOIN 镜像表取实时中英名与置信度;
++    - 镜像行缺失时,从任务 items 取唯一对象的快照 label/current_confidence 兜底;
++    - 再兜底:非 UUID 快照 label → 「类型中文 #短ID」;置信度实时 → 快照 → None。
++    """
++    if not tasks:
++        return tasks
++    by_type: dict[str, list[str]] = {}
++    for t in tasks:
++        oid = t.get("target_id")
++        if oid and t["target_type"] in TARGET_MODELS:
++            by_type.setdefault(t["target_type"], []).append(oid)
++    live: dict[tuple[str, str], dict] = {}
++    for tt, oids in by_type.items():
++        table = TARGET_MODELS[tt]
++        name_cols = _LIVE_NAME_COLUMNS.get(tt, "")
++        sel = ", ".join(f"m.{c}" for c in name_cols.split(", ")) if name_cols else ""
++        sel = (sel + ", " if sel else "") + "m.confidence AS live_confidence"
++        if tt == "circuit_function":
++            sel += ", m.confidence_score"
++        rows = (
++            await session.execute(
++                text(
++                    f"SELECT m.id, {sel} FROM {table.__tablename__} m WHERE m.id = ANY(:ids)"
++                ),
++                {"ids": [uuid.UUID(o) for o in oids]},
++            )
++        ).all()
++        for r in rows:
++            live[(tt, str(r._mapping["id"]))] = r._mapping
++    # 仅对镜像行缺失的任务取 items 快照(有实时行的任务不再多一次查询;target_id 为空的旧任务不查)
++    snap: dict[str, dict] = {}
++    need_item = [
++        t["id"]
++        for t in tasks
++        if t.get("target_id")
++        and (t["target_type"], str(t.get("target_id"))) not in live
++    ]
++    if need_item:
++        rows = (
++            await session.execute(
++                text(
++                    "SELECT DISTINCT ON (task_id) task_id::text, target_id::text, label, current_confidence "
++                    "FROM paper_evidence_task_items WHERE task_id::text = ANY(:ids) "
++                    "ORDER BY task_id, updated_at DESC"
++                ),
++                {"ids": need_item},
++            )
++        ).all()
++        for r in rows:
++            snap[r[0]] = {
++                "target_id": r[1],
++                "label": r[2],
++                "confidence": float(r[3]) if r[3] is not None else None,
++            }
++    out: list[dict] = []
++    for t in tasks:
++        tt = t["target_type"]
++        oid = t.get("target_id") or snap.get(t["id"], {}).get("target_id")
++        m = live.get((tt, oid)) if oid else None
++        cn = en = None
++        conf = None
++        name_src = "missing"
++        if m is not None:
++            cn, en = mirror_live_display_name_parts(tt, m.get)
++            conf = mirror_live_confidence(tt, m.get)
++            if cn is not None or en is not None:
++                name_src = "mirror_live"
++        if cn is None and en is None:
++            lbl = snap.get(t["id"], {}).get("label")
++            if lbl and not _UUID_RE.fullmatch(str(lbl)):
++                cn, name_src = str(lbl), "task_snapshot"
++            elif oid:
++                cn = f"{TARGET_TYPE_LABELS_CN.get(tt, tt)} #{oid[:8]}"
++                name_src = "fallback"
++        if conf is None:
++            sn = snap.get(t["id"], {}).get("confidence")
++            if sn is not None:
++                conf, conf_src = sn, "task_snapshot"
++            else:
++                conf_src = "mirror_live" if m is not None else "missing"
++        else:
++            conf_src = "mirror_live"
++        out.append(
++            {
++                **t,
++                "display_name_cn": cn,
++                "display_name_en": en,
++                "display_confidence": conf,
++                "display_name_source": name_src,
++                "display_confidence_source": conf_src,
++            }
++        )
++    return out
++
++
+ async def list_paper_evidence_tasks(
+     session: AsyncSession, limit: int = 50, offset: int = 0, status: str | None = None
+ ) -> dict:
+     where = ""
+     params: dict = {"lim": limit, "off": offset}
+     if status:
+         where = "WHERE status = :st"
+         params["st"] = status
+     rows = (
+         await session.execute(
+             text(
+                 f"SELECT id::text, target_type, scope, mode, max_papers_per_object, status, "
+                 f"total_items, processed_items, awaiting_review_items, failed_items, summary, "
+                 f"created_by, created_at, started_at, finished_at, error_message, "
+                 f"review_status, name, granularity_level, materialization_status, "
+-                f"estimated_target_count, materialized_target_count, confidence_lt "
++                f"estimated_target_count, materialized_target_count, confidence_lt, target_id::text "
+                 f"FROM paper_evidence_tasks {where} ORDER BY created_at DESC LIMIT :lim OFFSET :off"
+             ),
+             params,
+         )
+     ).all()
+     total = (
+         await session.execute(text(f"SELECT COUNT(*) FROM paper_evidence_tasks {where}"), params)
+     ).scalar_one()
+     # 旧任务可能缺 summary.counts:一次性批量聚合补齐(避免逐任务 N+1)
+     fallback_ids = [
+@@ -3867,20 +3965,21 @@ async def list_paper_evidence_tasks(
+         return fallback_counts.get(task_id, {})
+ 
+     items: list[dict] = []
+     for r in rows:
+         raw_status = r[5]
+         counts = _summary_counts(r[0], r[10])
+         items.append(
+             {
+                 "id": r[0],
+                 "target_type": r[1],
++                "target_id": r[23],
+                 "scope": r[2],
+                 "mode": r[3],
+                 "max_papers_per_object": r[4],
+                 "status": raw_status,
+                 "total_items": r[6],
+                 "processed_items": r[7],
+                 "awaiting_review_items": r[8],
+                 "failed_items": r[9],
+                 "summary": r[10],
+                 "created_by": r[11],
+@@ -3893,33 +3992,33 @@ async def list_paper_evidence_tasks(
+                 "granularity_level": r[18],
+                 "materialization_status": r[19],
+                 "estimated_target_count": r[20],
+                 "materialized_target_count": r[21],
+                 "confidence_lt": float(r[22]) if r[22] is not None else None,
+                 "work_status": _derive_work_status(raw_status, counts),
+                 "item_counts": _build_item_counts(counts),
+                 "capabilities": _build_capabilities(raw_status, counts),
+             }
+         )
+-    return {"items": items, "total": total}
++    return {"items": await _enrich_task_display(session, items), "total": total}
+ 
+ 
+ async def get_batch_task(session: AsyncSession, task_id: str) -> dict:
+     task = (
+         await session.execute(
+             text(
+                 "SELECT id::text, target_type, scope, mode, max_papers_per_object, status, summary, "
+                 "total_items, processed_items, awaiting_review_items, failed_items, created_by, "
+                 "created_at, started_at, finished_at, error_message, review_status, name, "
+                 "granularity_level, only_oa, confidence_lt, stop_after_strong_support, "
+                 "scope_type, filter_snapshot, estimated_target_count, materialized_target_count, "
+-                "materialization_status, materialization_cursor, materialization_error "
++                "materialization_status, materialization_cursor, materialization_error, target_id::text "
+                 "FROM paper_evidence_tasks WHERE id::text = :tid"
+             ),
+             {"tid": task_id},
+         )
+     ).first()
+     if task is None:
+         raise ValueError("task not found")
+     counts = (
+         await session.execute(
+             text(
+@@ -3938,58 +4037,61 @@ async def get_batch_task(session: AsyncSession, task_id: str) -> dict:
+         await session.execute(
+             text(
+                 "SELECT preprocessing_version, retrieval_version, prompt_version, llm_model "
+                 "FROM paper_evidence_task_items WHERE task_id::text=:tid "
+                 "AND preprocessing_version IS NOT NULL "
+                 "ORDER BY updated_at DESC LIMIT 1"
+             ),
+             {"tid": task_id},
+         )
+     ).first()
+-    return {
+-        "task": {
+-            "id": task[0],
+-            "target_type": task[1],
+-            "scope": task[2],
+-            "mode": task[3],
+-            "max_papers_per_object": task[4],
+-            "status": task[5],
+-            "summary": task[6],
+-            "total_items": task[7],
+-            "processed_items": task[8],
+-            "awaiting_review_items": task[9],
+-            "failed_items": task[10],
+-            "created_by": task[11],
+-            "created_at": task[12].isoformat() if task[12] else None,
+-            "started_at": task[13].isoformat() if task[13] else None,
+-            "finished_at": task[14].isoformat() if task[14] else None,
+-            "error_message": task[15],
+-            "review_status": task[16],
+-            "name": task[17],
+-            "granularity_level": task[18],
+-            "only_oa": task[19],
+-            "confidence_lt": float(task[20]) if task[20] is not None else None,
+-            "stop_after_strong_support": task[21],
+-            "scope_type": task[22],
+-            "filter_snapshot": task[23],
+-            "estimated_target_count": task[24],
+-            "materialized_target_count": task[25],
+-            "materialization_status": task[26],
+-            "materialization_cursor": str(task[27]) if task[27] else None,
+-            "materialization_error": task[28],
+-            "versions": {
+-                "preprocessing_version": versions[0] if versions else None,
+-                "retrieval_version": versions[1] if versions else None,
+-                "prompt_version": versions[2] if versions else None,
+-                "llm_model": versions[3] if versions else None,
+-            },
++    task_dict = {
++        "id": task[0],
++        "target_type": task[1],
++        "target_id": task[29],
++        "scope": task[2],
++        "mode": task[3],
++        "max_papers_per_object": task[4],
++        "status": task[5],
++        "summary": task[6],
++        "total_items": task[7],
++        "processed_items": task[8],
++        "awaiting_review_items": task[9],
++        "failed_items": task[10],
++        "created_by": task[11],
++        "created_at": task[12].isoformat() if task[12] else None,
++        "started_at": task[13].isoformat() if task[13] else None,
++        "finished_at": task[14].isoformat() if task[14] else None,
++        "error_message": task[15],
++        "review_status": task[16],
++        "name": task[17],
++        "granularity_level": task[18],
++        "only_oa": task[19],
++        "confidence_lt": float(task[20]) if task[20] is not None else None,
++        "stop_after_strong_support": task[21],
++        "scope_type": task[22],
++        "filter_snapshot": task[23],
++        "estimated_target_count": task[24],
++        "materialized_target_count": task[25],
++        "materialization_status": task[26],
++        "materialization_cursor": str(task[27]) if task[27] else None,
++        "materialization_error": task[28],
++        "versions": {
++            "preprocessing_version": versions[0] if versions else None,
++            "retrieval_version": versions[1] if versions else None,
++            "prompt_version": versions[2] if versions else None,
++            "llm_model": versions[3] if versions else None,
+         },
++    }
++    task_dict = (await _enrich_task_display(session, [task_dict]))[0]
++    return {
++        "task": task_dict,
+         "counts": status_map,
+         "processed": processed,
+     }
+ 
+ 
+ async def list_batch_items(
+     session: AsyncSession,
+     task_id: str,
+     limit: int = 50,
+     offset: int = 0,
+diff --git a/backend/tests/test_paper_evidence_task_display.py b/backend/tests/test_paper_evidence_task_display.py
+new file mode 100644
+index 0000000..0a5c443
+--- /dev/null
++++ b/backend/tests/test_paper_evidence_task_display.py
+@@ -0,0 +1,206 @@
++# -*- coding: utf-8 -*-
++"""任务列表/详情 display 字段:中英名+置信度、兜底链、无 N+1。"""
++
++from __future__ import annotations
++
++import asyncio
++import json
++import uuid
++
++from sqlalchemy import text
++
++from app.database import AsyncSessionLocal
++from app.services import paper_evidence_service as pes
++
++
++def _run(coro):
++    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
++    loop = asyncio.new_event_loop()
++    try:
++        return loop.run_until_complete(coro)
++    finally:
++        loop.close()
++
++
++async def _insert_task(tt, oid, *, label, conf, summary_counts=True):
++    async with AsyncSessionLocal() as s:
++        tid = (
++            await s.execute(
++                text(
++                    "INSERT INTO paper_evidence_tasks "
++                    "(target_type, target_id, scope, mode, max_papers_per_object, status, total_items, summary) "
++                    "VALUES (:tt, :oid, 'selected', 'function', 3, 'pending', 1, :sm) RETURNING id::text"
++                ),
++                {
++                    "tt": tt,
++                    "oid": uuid.UUID(oid),
++                    "sm": json.dumps({"counts": {"pending": 1}}) if summary_counts else None,
++                },
++            )
++        ).scalar_one()
++        await s.execute(
++            text(
++                "INSERT INTO paper_evidence_task_items "
++                "(task_id, target_type, target_id, label, current_confidence, status) "
++                "VALUES (:tid, :tt, :oid, :lbl, :conf, 'pending')"
++            ),
++            {"tid": tid, "tt": tt, "oid": uuid.UUID(oid), "lbl": label, "conf": conf},
++        )
++        await s.commit()
++        return tid
++
++
++async def _insert_connection(oid, *, src_cn="杏仁核", src_en="Amygdala", tgt_cn="海马", tgt_en="Hippocampus", confidence=0.35):
++    async with AsyncSessionLocal() as s:
++        await s.execute(
++            text(
++                "INSERT INTO mirror_region_connections "
++                "(id, source_region_name_cn, source_region_name_en, target_region_name_cn, target_region_name_en, "
++                "connection_type, confidence, granularity_level, source_atlas) "
++                "VALUES (:id, :sc, :se, :tc, :te, 'projection', :conf, 'macro', 'AAL3')"
++            ),
++            {"id": uuid.UUID(oid), "sc": src_cn, "se": src_en, "tc": tgt_cn, "te": tgt_en, "conf": confidence},
++        )
++        await s.commit()
++
++
++async def _cleanup(task_ids, conn_ids):
++    async with AsyncSessionLocal() as s:
++        for tid in task_ids:
++            await s.execute(text("DELETE FROM paper_evidence_tasks WHERE id::text=:tid"), {"tid": tid})
++        for cid in conn_ids:
++            await s.execute(text("DELETE FROM mirror_region_connections WHERE id::text=:cid"), {"cid": cid})
++        await s.commit()
++
++
++def test_list_tasks_returns_cn_en_and_confidence():
++    oid = str(uuid.uuid4())
++    task_ids: list[str] = []
++    try:
++        _run(_insert_connection(oid, confidence=0.35))
++        task_ids.append(_run(_insert_task("connection", oid, label=str(uuid.uuid4()), conf=None)))
++
++        async def case():
++            async with AsyncSessionLocal() as s:
++                resp = await pes.list_paper_evidence_tasks(s, limit=10)
++                task = next(t for t in resp["items"] if t["id"] == task_ids[0])
++                assert task["target_id"] == oid
++                assert task["display_name_cn"] == "杏仁核 → 海马"
++                assert task["display_name_en"] == "Amygdala → Hippocampus"
++                assert task["display_confidence"] == 0.35
++                assert task["display_name_source"] == "mirror_live"
++                assert task["display_confidence_source"] == "mirror_live"
++        _run(case())
++    finally:
++        _run(_cleanup(task_ids, [oid]))
++
++
++def test_get_task_returns_display_fields():
++    oid = str(uuid.uuid4())
++    task_ids: list[str] = []
++    try:
++        _run(_insert_connection(oid, confidence=0.35))
++        task_ids.append(_run(_insert_task("connection", oid, label=str(uuid.uuid4()), conf=None)))
++
++        async def case():
++            async with AsyncSessionLocal() as s:
++                resp = await pes.get_batch_task(s, task_ids[0])
++                task = resp["task"]
++                assert task["display_name_cn"] == "杏仁核 → 海马"
++                assert task["display_confidence"] == 0.35
++        _run(case())
++    finally:
++        _run(_cleanup(task_ids, [oid]))
++
++
++def test_missing_mirror_row_falls_back_to_snapshot_then_short_id():
++    ghost = str(uuid.uuid4())
++    task_ids: list[str] = []
++    try:
++        # 快照 label 非 UUID → task_snapshot
++        task_ids.append(_run(_insert_task("connection", ghost, label="BLA → IL", conf=0.7)))
++        # 快照 label 为 UUID → 类型中文 #短ID
++        ghost2 = str(uuid.uuid4())
++        task_ids.append(_run(_insert_task("connection", ghost2, label=str(uuid.uuid4()), conf=None)))
++
++        async def case():
++            async with AsyncSessionLocal() as s:
++                resp = await pes.list_paper_evidence_tasks(s, limit=10)
++                t1 = next(t for t in resp["items"] if t["id"] == task_ids[0])
++                assert t1["display_name_cn"] == "BLA → IL"
++                assert t1["display_name_source"] == "task_snapshot"
++                assert t1["display_confidence"] == 0.7
++                assert t1["display_confidence_source"] == "task_snapshot"
++                t2 = next(t for t in resp["items"] if t["id"] == task_ids[1])
++                assert t2["display_name_cn"] == f"连接 #{ghost2[:8]}"
++                assert t2["display_name_source"] == "fallback"
++                assert t2["display_confidence"] is None
++                assert t2["display_confidence_source"] == "missing"
++        _run(case())
++    finally:
++        _run(_cleanup(task_ids, []))
++
++
++def test_list_tasks_no_n1():
++    conn_ids = []
++    task_ids: list[str] = []
++    try:
++        async def seed():
++            async with AsyncSessionLocal() as s:
++                # 填满 limit=10 窗口,避免库中既有旧任务(缺 summary.counts)触发兜底聚合多一次 SELECT
++                for _ in range(10):
++                    cid = str(uuid.uuid4())
++                    conn_ids.append(cid)
++                    await s.execute(
++                        text(
++                            "INSERT INTO mirror_region_connections "
++                            "(id, source_region_name_en, target_region_name_en, connection_type, confidence, "
++                            "granularity_level, source_atlas) "
++                            "VALUES (:id, 'A', 'B', 'projection', 0.1, 'macro', 'AAL3')"
++                        ),
++                        {"id": uuid.UUID(cid)},
++                    )
++                    tid = (
++                        await s.execute(
++                            text(
++                                "INSERT INTO paper_evidence_tasks "
++                                "(target_type, target_id, scope, mode, max_papers_per_object, status, total_items, summary) "
++                                "VALUES ('connection', :oid, 'selected', 'function', 3, 'pending', 1, :sm) RETURNING id::text"
++                            ),
++                            {"oid": uuid.UUID(cid), "sm": '{"counts":{"pending":1}}'},
++                        )
++                    ).scalar_one()
++                    task_ids.append(tid)
++                    await s.execute(
++                        text(
++                            "INSERT INTO paper_evidence_task_items "
++                            "(task_id, target_type, target_id, label, status) "
++                            "VALUES (:tid, 'connection', :oid, 'x', 'pending')"
++                        ),
++                        {"tid": tid, "oid": uuid.UUID(cid)},
++                    )
++                await s.commit()
++        _run(seed())
++
++        class CountingSession:
++            def __init__(self, inner):
++                self.inner = inner
++                self.selects = 0
++
++            async def execute(self, stmt, params=None):
++                if str(stmt).lstrip().upper().startswith("SELECT"):
++                    self.selects += 1
++                return await self.inner.execute(stmt, params)
++
++            def __getattr__(self, name):
++                return getattr(self.inner, name)
++
++        async def case():
++            async with AsyncSessionLocal() as s:
++                proxy = CountingSession(s)
++                await pes.list_paper_evidence_tasks(proxy, limit=10)
++                # 任务列表 + COUNT + 镜像表批量 JOIN(仅 1 种 target_type)= 3 次 SELECT
++                assert proxy.selects == 3, f"expected 3 SELECT, got {proxy.selects}"
++        _run(case())
++    finally:
++        _run(_cleanup(task_ids, conn_ids))

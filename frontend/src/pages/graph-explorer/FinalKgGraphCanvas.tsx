@@ -1,235 +1,130 @@
-import { useMemo, useCallback, useState, useRef, useEffect, type MouseEvent } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent } from 'react'
 import {
-  ReactFlow,
   Background,
+  BackgroundVariant,
+  BaseEdge,
   Controls,
+  MarkerType,
   MiniMap,
-  Handle,
-  Position,
-  useNodesState,
+  ReactFlow,
   useEdgesState,
-  type NodeProps,
+  useNodesState,
+  useReactFlow,
+  getStraightPath,
+  type Edge,
   type EdgeProps,
   type Node,
-  type Edge,
-  MarkerType,
-  BaseEdge,
-  getStraightPath,
+  type OnSelectionChangeParams,
 } from '@xyflow/react'
-import type { GraphExplorerNode, GraphExplorerEdge } from './useGraphData'
+import {
+  canExpandNode,
+  relationGroupOf,
+  type CanonicalEdge,
+  type CanonicalNode,
+  type CanonicalNodeType,
+} from './adapters/finalKgAdapter'
+import { canExpandMirrorNode } from './adapters/mirrorKgAdapter'
+import { canonicalEdgeOf, toXyflowEdges, toXyflowNodes } from './graphToXyflow'
+import { EDGE_FALLBACK_COLOR, EDGE_GROUP_COLORS, NODE_TYPE_COLORS } from './graphTheme'
+import { layoutCanonicalGraph } from './layout/dagreLayout'
+import { nodeTypes } from './nodeViews'
 
-// ── Colour palette ──────────────────────────────────────────────────────────────
-const COLORS: Record<string, string> = {
-  macro: '#3b82f6',
-  meso: '#22c55e',
-  sub: '#f97316',
-  fine: '#8b5cf6',
-  molecular: '#ec4899',
-}
-const DEFAULT_NODE_COLOR = '#6b7280'
+// ── 边渲染 ─────────────────────────────────────────────────────────────────────
 
-function nodeColor(nodeType?: string, metadata?: Record<string, unknown>): string {
-  const granularity =
-    (metadata?.granularity_family as string) ||
-    (metadata?.granularity_level as string) ||
-    ''
-  for (const [key, color] of Object.entries(COLORS)) {
-    if (granularity.includes(key)) return color
-  }
-  return DEFAULT_NODE_COLOR
-}
-
-// ── Custom Node Components ──────────────────────────────────────────────────────
-
-function BrainRegionNode({ data, selected }: NodeProps) {
-  const color = nodeColor(data.nodeType as string, data.metadata as Record<string, unknown>)
-  return (
-    <div
-      className="graph-node graph-node-region"
-      style={{
-        borderColor: selected ? '#1d4ed8' : color,
-        boxShadow: selected ? `0 0 0 2px ${color}40` : undefined,
-      }}
-      title={`${data.label as string} (${(data.nodeType as string) || 'brain_region'})`}
-    >
-      <Handle type="target" position={Position.Left} />
-      <div className="graph-node-shape" style={{ background: color }} />
-      <div className="graph-node-label">{data.label as string}</div>
-      <Handle type="source" position={Position.Right} />
-    </div>
-  )
-}
-
-function CircuitNode({ data, selected }: NodeProps) {
-  const color = nodeColor(data.nodeType as string, data.metadata as Record<string, unknown>)
-  return (
-    <div
-      className="graph-node graph-node-circuit"
-      style={{
-        borderColor: selected ? '#1d4ed8' : color,
-        boxShadow: selected ? `0 0 0 2px ${color}40` : undefined,
-      }}
-      title={`${data.label as string} (circuit)`}
-    >
-      <Handle type="target" position={Position.Top} />
-      <div className="graph-node-shape graph-node-shape-diamond" style={{ background: color }} />
-      <div className="graph-node-label">{data.label as string}</div>
-      <Handle type="source" position={Position.Bottom} />
-    </div>
-  )
-}
-
-function FunctionNode({ data, selected }: NodeProps) {
-  const color = nodeColor(data.nodeType as string, data.metadata as Record<string, unknown>)
-  return (
-    <div
-      className="graph-node graph-node-function"
-      style={{
-        borderColor: selected ? '#1d4ed8' : color,
-        boxShadow: selected ? `0 0 0 2px ${color}40` : undefined,
-      }}
-      title={`${data.label as string} (function)`}
-    >
-      <Handle type="target" position={Position.Top} />
-      <div className="graph-node-shape graph-node-shape-triangle" style={{ background: color }} />
-      <div className="graph-node-label">{data.label as string}</div>
-      <Handle type="source" position={Position.Bottom} />
-    </div>
-  )
-}
-
-function CircuitStepNode({ data, selected }: NodeProps) {
-  const color = nodeColor(data.nodeType as string, data.metadata as Record<string, unknown>)
-  return (
-    <div
-      className="graph-node graph-node-step"
-      style={{
-        borderColor: selected ? '#1d4ed8' : color,
-        boxShadow: selected ? `0 0 0 2px ${color}40` : undefined,
-      }}
-      title={`${data.label as string} (circuit_step)`}
-    >
-      <Handle type="target" position={Position.Left} />
-      <div className="graph-node-shape graph-node-shape-sm" style={{ background: color }} />
-      <div className="graph-node-label">{data.label as string}</div>
-      <Handle type="source" position={Position.Right} />
-    </div>
-  )
-}
-
-const nodeTypes = {
-  brain_region: BrainRegionNode,
-  circuit: CircuitNode,
-  function: FunctionNode,
-  circuit_step: CircuitStepNode,
-  default: BrainRegionNode,
-}
-
-// ── Edge Styles ─────────────────────────────────────────────────────────────────
-const EDGE_STYLES: Record<string, { stroke: string; strokeWidth: number; strokeDasharray?: string }> = {
-  structural_connection: { stroke: '#1e40af', strokeWidth: 2 },
-  functional_connection: { stroke: '#ea580c', strokeWidth: 2 },
-  has_function: { stroke: '#ca8a04', strokeWidth: 1, strokeDasharray: '5 5' },
-  default: { stroke: '#94a3b8', strokeWidth: 1 },
-}
-
-function CustomEdge({
-  id,
-  source,
-  target,
-  sourceX,
-  sourceY,
-  targetX,
-  targetY,
-  data,
-  selected,
-}: EdgeProps) {
-  const edgeType = (data?.edgeType as string) || 'default'
-  const style = EDGE_STYLES[edgeType] || EDGE_STYLES.default
-  const [edgePath] = getStraightPath({
-    sourceX,
-    sourceY,
-    targetX,
-    targetY,
-  })
-
+function CanonicalEdgeView({ id, sourceX, sourceY, targetX, targetY, data }: EdgeProps) {
+  const edge = canonicalEdgeOf(data as Record<string, unknown>)
+  const color = edge ? (EDGE_GROUP_COLORS[relationGroupOf(edge)] ?? EDGE_GROUP_COLORS.structural) : EDGE_FALLBACK_COLOR
+  const [path] = getStraightPath({ sourceX, sourceY, targetX, targetY })
   return (
     <BaseEdge
       id={id}
-      path={edgePath}
-      style={{
-        ...style,
-        stroke: selected ? '#f59e0b' : style.stroke,
-      }}
+      path={path}
+      style={{ stroke: color, strokeWidth: 1.5 }}
       markerEnd={MarkerType.ArrowClosed}
+      interactionWidth={16}
     />
   )
 }
 
-const edgeTypes = {
-  structural_connection: CustomEdge,
-  functional_connection: CustomEdge,
-  has_function: CustomEdge,
-  default: CustomEdge,
-}
+const edgeTypes = { canonical: CanonicalEdgeView }
 
-// ── Context Menu ────────────────────────────────────────────────────────────────
+// ── 上下文菜单 ─────────────────────────────────────────────────────────────────
+
 interface ContextMenuState {
   x: number
   y: number
   nodeId: string
 }
 
-// ── Canvas Component ────────────────────────────────────────────────────────────
 interface FinalKgGraphCanvasProps {
-  nodes: GraphExplorerNode[]
-  edges: GraphExplorerEdge[]
+  graph: {
+    nodes: CanonicalNode[]
+    edges: CanonicalEdge[]
+    centerNodeId: string | null
+    warnings: string[]
+  }
   loading: boolean
   error: string | null
-  onNodeClick: (node: GraphExplorerNode | null) => void
+  /** 每次成功加载 +1 → 触发 fitView */
+  fitKey: number
+  /** 当前选中节点 id（由页面持有；用于图重载后保持高亮） */
+  selectedNodeId: string | null
+  /** 数据源：mirror 模式仅 brain_region 可展开 */
+  dataSource?: 'mirror' | 'final'
+  onNodeClick: (nodeId: string | null) => void
   onExpandNode: (nodeId: string) => void
 }
 
 export function FinalKgGraphCanvas({
-  nodes: inputNodes,
-  edges: inputEdges,
+  graph,
   loading,
   error,
+  fitKey,
+  selectedNodeId,
+  dataSource = 'final',
   onNodeClick,
   onExpandNode,
 }: FinalKgGraphCanvasProps) {
-  const [rfNodes, setRfNodes, onNodesChange] = useNodesState(inputNodes as Node[])
-  const [rfEdges, setRfEdges, onEdgesChange] = useEdgesState(inputEdges as Edge[])
+  const [rfNodes, setRfNodes, onNodesChange] = useNodesState<Node>([])
+  const [rfEdges, setRfEdges, onEdgesChange] = useEdgesState<Edge>([])
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null)
-  const menuRef = useRef<HTMLDivElement>(null)
+  const { fitView } = useReactFlow()
+  const selectedRef = useRef(selectedNodeId)
+  selectedRef.current = selectedNodeId
 
-  // Sync external data changes
+  // 图数据变化 → 用确定性布局重置节点位置（加载时刻），保持先前选中态
+  const nodesForGraph = useMemo(() => {
+    const positions = layoutCanonicalGraph(graph.nodes, graph.edges, graph.centerNodeId)
+    return toXyflowNodes(graph, positions)
+  }, [graph])
+
   useEffect(() => {
-    setRfNodes(inputNodes as Node[])
-  }, [inputNodes, setRfNodes])
+    setRfNodes(nodesForGraph.map(n => ({ ...n, selected: n.id === selectedRef.current })))
+  }, [nodesForGraph, setRfNodes])
 
   useEffect(() => {
-    setRfEdges(inputEdges as Edge[])
-  }, [inputEdges, setRfEdges])
+    setRfEdges(toXyflowEdges(graph))
+  }, [graph, setRfEdges])
 
-  const onNodeClickHandler = useCallback(
-    (_event: React.MouseEvent, node: Node) => {
-      onNodeClick(node as unknown as GraphExplorerNode)
+  // 加载完成 → fitView（延迟一帧，等节点渲染）
+  useEffect(() => {
+    if (fitKey > 0 && rfNodes.length > 0) {
+      const timer = setTimeout(() => fitView({ padding: 0.15, duration: 400 }), 50)
+      return () => clearTimeout(timer)
+    }
+  }, [fitKey, rfNodes.length, fitView])
+
+  const onSelectionChange = useCallback(
+    ({ nodes }: OnSelectionChangeParams) => {
+      onNodeClick(nodes.length > 0 ? nodes[0].id : null)
     },
     [onNodeClick],
   )
 
-  const onPaneClick = useCallback(() => {
-    setContextMenu(null)
+  const onNodeContextMenu = useCallback((event: MouseEvent, node: Node) => {
+    event.preventDefault()
+    setContextMenu({ x: event.clientX, y: event.clientY, nodeId: node.id })
   }, [])
-
-  const onNodeContextMenu = useCallback(
-    (event: MouseEvent, node: Node) => {
-      event.preventDefault()
-      setContextMenu({ x: event.clientX, y: event.clientY, nodeId: node.id })
-    },
-    [],
-  )
 
   const handleExpand = useCallback(() => {
     if (contextMenu) {
@@ -243,30 +138,36 @@ export function FinalKgGraphCanvas({
     setContextMenu(null)
   }, [onNodeClick])
 
-  // Close context menu on click outside
+  // 点击空白处关闭菜单
   useEffect(() => {
-    const handleClick = () => setContextMenu(null)
-    if (contextMenu) {
-      document.addEventListener('click', handleClick)
-    }
-    return () => document.removeEventListener('click', handleClick)
+    if (!contextMenu) return
+    const close = () => setContextMenu(null)
+    document.addEventListener('click', close)
+    return () => document.removeEventListener('click', close)
   }, [contextMenu])
 
-  const defaultEdgeOptions = useMemo(
-    () => ({
-      style: { stroke: '#94a3b8', strokeWidth: 1 },
-      type: 'default',
-      markerEnd: { type: MarkerType.ArrowClosed } as const,
-    }),
-    [],
-  )
+  const menuNode = contextMenu
+    ? graph.nodes.find(n => n.id === contextMenu.nodeId)
+    : null
+  const menuExpandable = menuNode
+    ? dataSource === 'mirror'
+      ? canExpandMirrorNode(menuNode)
+      : canExpandNode(menuNode)
+    : false
+
+  // MiniMap 节点配色：由 graph 派生 id → 类型映射（不直接访问后端字段）
+  const nodeTypeById = useMemo(() => {
+    const map = new Map<string, CanonicalNodeType>()
+    for (const n of graph.nodes) map.set(n.id, n.type)
+    return map
+  }, [graph])
 
   if (loading) {
     return (
-      <div className="graph-canvas-container">
-        <div className="graph-loading-overlay">
-          <div className="graph-spinner" />
-          <span>Loading graph data...</span>
+      <div className="cg-canvas">
+        <div className="cg-canvas-overlay">
+          <div className="cg-spinner" />
+          <span>加载图谱数据…</span>
         </div>
       </div>
     )
@@ -274,19 +175,23 @@ export function FinalKgGraphCanvas({
 
   if (error) {
     return (
-      <div className="graph-canvas-container">
-        <div className="graph-error-banner">
-          <strong>Error:</strong> {error}
-          <button onClick={() => window.location.reload()} type="button" className="graph-error-retry">
-            Retry
-          </button>
+      <div className="cg-canvas">
+        <div className="cg-error-banner">
+          <strong>加载失败：</strong>
+          <span>{error}</span>
         </div>
       </div>
     )
   }
 
   return (
-    <div className="graph-canvas-container">
+    <div className="cg-canvas">
+      {rfNodes.length === 0 && (
+        <div className="cg-canvas-hint">
+          <p>暂无图谱数据</p>
+          <span>在左侧搜索脑区/回路/投射并加载，或右键节点增量展开。</span>
+        </div>
+      )}
       <ReactFlow
         nodes={rfNodes}
         edges={rfEdges}
@@ -294,36 +199,31 @@ export function FinalKgGraphCanvas({
         onEdgesChange={onEdgesChange}
         nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}
-        defaultEdgeOptions={defaultEdgeOptions}
-        onNodeClick={onNodeClickHandler}
+        onSelectionChange={onSelectionChange}
         onNodeContextMenu={onNodeContextMenu}
-        onPaneClick={onPaneClick}
+        onPaneClick={() => setContextMenu(null)}
+        minZoom={0.02}
         fitView
         attributionPosition="bottom-left"
       >
-        <Background variant={'dots' as any} gap={20} size={1} color="#e2e8f0" />
+        <Background variant={BackgroundVariant.Dots} gap={24} size={1} color="#e2e8f0" />
         <Controls showInteractive={false} />
         <MiniMap
           nodeStrokeWidth={3}
           nodeColor={n => {
-            const meta = (n as Node).data?.metadata as Record<string, unknown> | undefined
-            return nodeColor((n as Node).data?.nodeType as string, meta)
+            const type = nodeTypeById.get(n.id)
+            return type ? NODE_TYPE_COLORS[type] : EDGE_FALLBACK_COLOR
           }}
           maskColor="rgba(0,0,0,0.08)"
-          style={{ border: '1px solid #e2e8f0' }}
         />
       </ReactFlow>
 
       {contextMenu && (
-        <div
-          ref={menuRef}
-          className="graph-context-menu"
-          style={{ left: contextMenu.x, top: contextMenu.y }}
-        >
-          <button type="button" onClick={handleExpand} className="graph-context-item">
-            Expand
+        <div className="cg-context-menu" style={{ left: contextMenu.x, top: contextMenu.y }}>
+          <button type="button" className="cg-context-item" onClick={handleExpand} disabled={!menuExpandable}>
+            Expand（增量展开）
           </button>
-          <button type="button" onClick={handleHideDetails} className="graph-context-item">
+          <button type="button" className="cg-context-item" onClick={handleHideDetails}>
             Hide Details
           </button>
         </div>

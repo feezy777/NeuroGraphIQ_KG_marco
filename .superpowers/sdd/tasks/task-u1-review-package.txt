@@ -1,0 +1,797 @@
+f90d59e style(evidence-center): 骨架视觉重构(模块导航/ContextBar/Stepper/三栏背景)
+===STAT===
+ .superpowers/sdd/tasks/task-u1-report.md           | 61 +++++++++++++++
+ .../pages/evidence-center/EvidenceCenterHeader.tsx | 15 +---
+ .../evidence-center/EvidenceCenterPage.test.tsx    | 40 ++++++++++
+ .../pages/evidence-center/EvidenceCenterPage.tsx   |  9 ++-
+ .../evidence-center/components/ContextBar.test.tsx | 62 ++++++++++++++-
+ .../evidence-center/components/ContextBar.tsx      | 64 ++++++++++-----
+ .../components/EvidenceModuleNav.tsx               | 28 +++++++
+ .../evidence-center/components/StepPills.test.tsx  | 15 ++++
+ frontend/src/styles.css                            | 90 +++++++++++++---------
+ 9 files changed, 316 insertions(+), 68 deletions(-)
+===DIFF===
+diff --git a/.superpowers/sdd/tasks/task-u1-report.md b/.superpowers/sdd/tasks/task-u1-report.md
+new file mode 100644
+index 0000000..ccf7ce4
+--- /dev/null
++++ b/.superpowers/sdd/tasks/task-u1-report.md
+@@ -0,0 +1,61 @@
++# Task U1 Report: Evidence Center 页面骨架视觉重构
++
++> 实现时间:2026-08-11 · 分支:codex/ontology-evidence · 前端 working dir:`frontend/`
++
++## Status
++
++**完成** — 全量测试 176/176 通过,`npx tsc --noEmit` EXIT 0,`npm run build` 成功。仅前端改动,后端零改动。
++
++## 改动清单
++
++### 1. 三栏骨架 + 页面背景(`styles.css` + `EvidenceCenterPage.tsx`)
++
++- `:root` 新增 token `--evidence-bg: #f5f7fa`(视觉稿页面背景,放在现有 Evidence Center 视觉令牌块,命名规范)。
++- `.evidence-center` 加 `background: var(--evidence-bg)` + `border-radius: var(--radius-md)`(浅蓝灰底面板)。
++- `.evidence-center-layout` grid 改 `240px minmax(640px, 1fr) 340px`,gap 14px → 12px(紧凑)。
++- `.evidence-left/.evidence-main/.evidence-right` 保留白底 + 1px `--border` + `--card-radius`,新增 `box-shadow: var(--shadow)`(少阴影)。
++- **布局结构逻辑未动**:三栏高度 calc、`evidence-center-layout-full`(papers 全宽)、折叠行为、模块切换全部原样。
++
++### 2. 模块导航胶囊(新建 `EvidenceModuleNav.tsx`)
++
++- 从 `EvidenceCenterHeader.tsx` 拆出导航,新组件 `pages/evidence-center/components/EvidenceModuleNav.tsx`(含 `EVIDENCE_MODULES` 顺序常量)。
++- Header 变为白卡容器,只渲染 `<EvidenceModuleNav moduleTitles={...} />`。
++- 保留原 `data-testid="evidence-module-nav"` 与 `evidence-module-btn`(active)className 契约;新增 `aria-current="page"`。
++- CSS:选中 = 蓝实底白字(不变),未选 = `--bg` 浅灰底 + `--text` 深灰字,高 34px(32-36 区间),圆角 999px,紧凑 padding 0 16px。
++
++### 3. ContextBar 改造(`ContextBar.tsx` + `EvidenceCenterPage.tsx`)
++
++- 整行背景 `--info-bg`(#eff6ff 浅蓝灰)。
++- 左侧新结构:`[状态 Badge](evidence-context-badge)` + `[完整事实句](evidence-context-sentence)`;Badge = `taskStatus ?? '等待处理对象'`。
++- 事实句来源:新增可选 prop `claimSentence`,由页面从 `candidateClaim`(candidates 模块 DTO 推送)与 queue 当前项合成 —— 新增导出纯函数 `composeClaimSentence(claimText, components, fallbackLabel)`:组件齐全时拼装「需要验证:{source} 到 {target} {relation}(方向性:{direction})」,组件不齐回退 claimText,再回退队列 label,全空返回 null。
++- **不拆散字段**:props 接口原样保留,原有 label/类型/粒度/置信度/证据数/任务名/进度全部保留为紧凑 meta chips;仅原 taskStatus chip 由 Badge 取代(避免重复文本)。
++- 右侧 [刷新](btn 白底描边)[返回数据中心](btn-primary 蓝主)不变。
++
++### 4. StepPills 改造(`styles.css`,逻辑零改动)
++
++- `deriveStep` 逻辑与 `EVIDENCE_STEPS` 不动。
++- 视觉改为「圆形数字 + 文字 + 虚线连接」:pill 去掉胶囊底,`::after` 虚线连接(除末项);圆形 20px;当前 = 蓝圆白字(+ 光晕),完成 = 绿圆白字,未完成 = 浅灰圆。紧凑 padding。
++
++## 测试
++
++- 全量 `npx vitest run`:18 files / 176 tests 全过(evidence-center 15 files / 162 tests)。
++- 新增/扩展断言:
++  - 导航选中态:默认 tasks 胶囊 active、论文库非 active(`EvidenceCenterPage.test.tsx`)。
++  - ContextBar 事实句渲染:页面级 DTO 组件拼装句「需要验证:R1 到 R2 存在投射连接(方向性:directed)」;组件级 `claimSentence` 渲染 + Badge 两态;`composeClaimSentence` 5 个单元用例。
++  - Stepper 三态:done/active/无状态类 圆数字齐全(`StepPills.test.tsx`)。
++  - 三栏背景类:页面根 `.evidence-center` 存在断言(背景/圆角由 CSS 承担,jsdom 无法断言计算样式)。
++- 既有测试零修改(所有原文本/class 断言均保留语义)。
++
++## 约束遵守
++
++- 不改布局结构逻辑 / 不改功能逻辑 / 后端不动。
++- 既有 className/data-testid 全部保留,仅新增样式类。
++
++## Concerns
++
++- 事实句在 review/promotion/tasks 模块回退为「需要验证:{队列 label}」(candidateClaim 仅 candidates 模块推送),待后续 U 系列若有 claim 推送扩展可增强。
++- `.evidence-center` 新增圆角面板,`.main` 默认 padding(22/24)提供外距,视觉上为内嵌圆角面板,与三栏卡片层次一致。
++
++## Commits
++
++- `style(evidence-center): 骨架视觉重构(模块导航/ContextBar/Stepper/三栏背景)`
+diff --git a/frontend/src/pages/evidence-center/EvidenceCenterHeader.tsx b/frontend/src/pages/evidence-center/EvidenceCenterHeader.tsx
+index 60d9385..5402a1f 100644
+--- a/frontend/src/pages/evidence-center/EvidenceCenterHeader.tsx
++++ b/frontend/src/pages/evidence-center/EvidenceCenterHeader.tsx
+@@ -1,20 +1,11 @@
+ import type { ModuleKey } from './EvidenceCenterContext'
+-import { useEvidenceCenter } from './EvidenceCenterContext'
++import { EvidenceModuleNav } from './components/EvidenceModuleNav'
+ 
++/** 页面顶部白卡:承载五模块导航胶囊 */
+ export function EvidenceCenterHeader({ moduleTitles }: { moduleTitles: Record<ModuleKey, string> }) {
+-  const { state, gotoModule } = useEvidenceCenter()
+-  const MODULES: ModuleKey[] = ['tasks', 'papers', 'candidates', 'review', 'promotion']
+   return (
+     <div className="evidence-center-header">
+-      <div className="evidence-module-nav" data-testid="evidence-module-nav">
+-        {MODULES.map(m => (
+-          <button key={m} type="button"
+-            className={`evidence-module-btn${state.module === m ? ' active' : ''}`}
+-            onClick={() => gotoModule(m)}>
+-            {moduleTitles[m]}
+-          </button>
+-        ))}
+-      </div>
++      <EvidenceModuleNav moduleTitles={moduleTitles} />
+     </div>
+   )
+ }
+diff --git a/frontend/src/pages/evidence-center/EvidenceCenterPage.test.tsx b/frontend/src/pages/evidence-center/EvidenceCenterPage.test.tsx
+index 134f7a2..f20bb98 100644
+--- a/frontend/src/pages/evidence-center/EvidenceCenterPage.test.tsx
++++ b/frontend/src/pages/evidence-center/EvidenceCenterPage.test.tsx
+@@ -117,20 +117,23 @@ describe('EvidenceCenterPage', () => {
+ 
+   it('渲染五模块导航与默认说明句', () => {
+     window.location.hash = '#/evidence-center'
+     render(<EvidenceCenterPage />)
+     const nav = screen.getByTestId('evidence-module-nav')
+     expect(within(nav).getByText('佐证任务')).toBeTruthy()
+     expect(within(nav).getByText('论文库')).toBeTruthy()
+     expect(within(nav).getByText('证据候选')).toBeTruthy()
+     expect(within(nav).getByText('人工审核')).toBeTruthy()
+     expect(within(nav).getByText('证据晋升')).toBeTruthy()
++    // 导航选中态:默认模块 tasks 的胶囊为 active
++    expect(within(nav).getByRole('button', { name: '佐证任务' }).className).toContain('evidence-module-btn active')
++    expect(within(nav).getByRole('button', { name: '论文库' }).className).not.toContain('active')
+   })
+ 
+   it('模块导航切换更新 URL 与内容区', async () => {
+     window.location.hash = '#/evidence-center'
+     render(<EvidenceCenterPage />)
+     fireEvent.click(screen.getByText('论文库'))
+     await waitFor(() => expect(window.location.hash).toContain('module=papers'))
+     expect(screen.getByText('管理系统已经获取和解析的真实论文资源。')).toBeTruthy()
+     fireEvent.click(screen.getByText('返回数据中心'))
+     await waitFor(() => expect(window.location.hash).toContain('/data-center'))
+@@ -146,20 +149,22 @@ describe('EvidenceCenterPage', () => {
+     const { container } = render(<EvidenceCenterPage />)
+     await waitFor(() => expect(container.querySelector(selector)).toBeTruthy())
+     expect(screen.getByText(text)).toBeTruthy()
+   })
+ 
+   // ─── V2 三栏骨架 ───
+ 
+   it('渲染三栏骨架:candidates 左栏 Claim / 主内容 / 右栏队列', () => {
+     window.location.hash = '#/evidence-center?module=candidates'
+     const { container } = render(<EvidenceCenterPage />)
++    // 页面根:背景面板 + 三栏布局(背景类随 .evidence-center 生效)
++    expect(container.querySelector('.evidence-center')).toBeTruthy()
+     expect(container.querySelector('.evidence-center-layout')).toBeTruthy()
+     expect(container.querySelector('.evidence-left')).toBeTruthy()
+     expect(container.querySelector('.evidence-main')).toBeTruthy()
+     expect(container.querySelector('.evidence-right')).toBeTruthy()
+     // 候选模块:左栏 ClaimView,右栏 ObjectQueue(队列已从左侧移到右栏)
+     const left = container.querySelector('.evidence-left') as HTMLElement
+     expect(within(left).getByTestId('evidence-claim')).toBeTruthy()
+     expect(left.querySelector('.evidence-queue')).toBeNull()
+     expect(screen.getByTestId('evidence-queue')).toBeTruthy()
+     expect(screen.getByTestId('evidence-right-panel')).toBeTruthy()
+@@ -249,20 +254,55 @@ describe('EvidenceCenterPage', () => {
+       claim_text: 'R1 投射到 R2',
+       claim_components: [],
+       claim_version: 'v1',
+     })
+     window.location.hash = '#/evidence-center?module=candidates&task_id=t1'
+     render(<EvidenceCenterPage />)
+     const bar = await screen.findByTestId('evidence-context-bar')
+     await waitFor(() => expect(within(bar).getByText(/粒度 macro_clinical/)).toBeTruthy())
+   })
+ 
++  it('ContextBar 渲染完整事实句(candidates DTO claim 组件拼装,含方向)', async () => {
++    vi.mocked(listPaperEvidenceTaskItems).mockResolvedValue({ items: TASK_ITEMS })
++    const { getEvidenceTarget } = await import('../../api/endpoints')
++    vi.mocked(getEvidenceTarget).mockResolvedValue({
++      target_type: 'connection',
++      target_id: 'r1-r2',
++      granularity: 'macro_clinical',
++      display_name: 'R1→R2',
++      source_region: 'R1',
++      target_region: 'R2',
++      canonical_terms: [],
++      relation: 'projects_to',
++      directionality: '',
++      circuit_context: '',
++      function_context: '',
++      current_confidence: 0.85,
++      existing_evidence: 0,
++      structured_claim: {},
++      claim_text: 'R1 投射到 R2',
++      claim_components: [
++        { component_type: 'source_region', statement: 'R1', required: true, metadata: {} },
++        { component_type: 'target_region', statement: 'R2', required: true, metadata: {} },
++        { component_type: 'relation', statement: '存在投射连接', required: true, metadata: {} },
++        { component_type: 'direction', statement: 'directed', required: false, metadata: {} },
++      ],
++      claim_version: 'v1',
++    })
++    window.location.hash = '#/evidence-center?module=candidates&task_id=t1'
++    render(<EvidenceCenterPage />)
++    const bar = await screen.findByTestId('evidence-context-bar')
++    await waitFor(() =>
++      expect(within(bar).getByText('需要验证:R1 到 R2 存在投射连接(方向性:directed)')).toBeTruthy(),
++    )
++  })
++
+   it('candidates 左栏渲染 ClaimView(页面级):DTO 加载后显示 Claim 单行 + Component Chips;中栏不再渲染', async () => {
+     vi.mocked(listPaperEvidenceTaskItems).mockResolvedValue({ items: TASK_ITEMS })
+     const { getEvidenceTarget } = await import('../../api/endpoints')
+     vi.mocked(getEvidenceTarget).mockResolvedValue({
+       target_type: 'connection',
+       target_id: 'r1-r2',
+       granularity: 'macro_clinical',
+       display_name: 'R1→R2',
+       source_region: 'R1',
+       target_region: 'R2',
+diff --git a/frontend/src/pages/evidence-center/EvidenceCenterPage.tsx b/frontend/src/pages/evidence-center/EvidenceCenterPage.tsx
+index e0b1e4c..363b073 100644
+--- a/frontend/src/pages/evidence-center/EvidenceCenterPage.tsx
++++ b/frontend/src/pages/evidence-center/EvidenceCenterPage.tsx
+@@ -1,16 +1,16 @@
+ import { useEffect, useMemo, useState } from 'react'
+ import { listPaperEvidenceTasks } from '../../api/endpoints'
+ import { EvidenceCenterProvider, useEvidenceCenter, type ModuleKey } from './EvidenceCenterContext'
+ import { EvidenceCenterHeader } from './EvidenceCenterHeader'
+ import { ClaimView } from './components/ClaimView'
+-import { ContextBar } from './components/ContextBar'
++import { composeClaimSentence, ContextBar } from './components/ContextBar'
+ import { ObjectQueue } from './components/ObjectQueue'
+ import { RightPanel } from './components/RightPanel'
+ import { StepPills } from './components/StepPills'
+ import { QUEUE_STATUS_LABEL } from './components/types'
+ import { EvidenceCandidatesModule } from './modules/EvidenceCandidatesModule'
+ import { EvidencePromotionModule } from './modules/EvidencePromotionModule'
+ import { EvidenceReviewModule } from './modules/EvidenceReviewModule'
+ import { EvidenceTasksModule } from './modules/EvidenceTasksModule'
+ import { PaperLibraryModule } from './modules/PaperLibraryModule'
+ 
+@@ -51,32 +51,39 @@ function EvidenceCenterBody() {
+ 
+   const currentIndex = useMemo(() => {
+     if (queue.length === 0) return -1
+     const idx = queue.findIndex(q => q.target_type === state.targetType && q.target_id === state.targetId)
+     return idx >= 0 ? idx : 0
+   }, [queue, state.targetType, state.targetId])
+ 
+   const current = currentIndex >= 0 ? queue[currentIndex] : null
+   const isPapers = state.module === 'papers'
+ 
++  // ContextBar 完整事实句:优先候选模块推送的 claim(组件拼装),其余模块回退当前队列对象 label
++  const claimSentence = useMemo(
++    () => composeClaimSentence(candidateClaim?.claimText ?? '', candidateClaim?.components ?? [], current?.label ?? null),
++    [candidateClaim, current],
++  )
++
+   return (
+     <>
+       <ContextBar
+         targetLabel={current?.label ?? null}
+         targetType={current?.target_type ?? null}
+         granularity={current?.granularity ?? null}
+         confidence={current?.confidence ?? null}
+         evidenceCount={current?.evidenceCount ?? null}
+         taskName={taskName}
+         queueIndex={currentIndex}
+         queueTotal={queue.length}
+         taskStatus={current ? (QUEUE_STATUS_LABEL[current.status] ?? current.status) : null}
++        claimSentence={claimSentence}
+         onBackToDataCenter={() => { window.location.hash = '#/data-center' }}
+         onRefresh={() => { window.location.reload() }}
+       />
+       <StepPills module={state.module} progress={progress} />
+       <div className={`evidence-center-layout${isPapers ? ' evidence-center-layout-full' : ''}`} data-testid="evidence-center-layout">
+         {!isPapers && (
+           <aside className="evidence-left">
+             {state.module === 'candidates' ? (
+               // 候选模块左栏 = 当前对象验证事实(ClaimView);队列移到右栏
+               <ClaimView
+diff --git a/frontend/src/pages/evidence-center/components/ContextBar.test.tsx b/frontend/src/pages/evidence-center/components/ContextBar.test.tsx
+index 48f20bd..2f8f8fe 100644
+--- a/frontend/src/pages/evidence-center/components/ContextBar.test.tsx
++++ b/frontend/src/pages/evidence-center/components/ContextBar.test.tsx
+@@ -1,13 +1,13 @@
+ import { describe, expect, it, vi } from 'vitest'
+ import { fireEvent, render, screen } from '@testing-library/react'
+-import { ContextBar } from './ContextBar'
++import { composeClaimSentence, ContextBar } from './ContextBar'
+ 
+ const base = {
+   targetLabel: 'R1→R2',
+   targetType: 'connection',
+   granularity: 'macro_clinical',
+   confidence: 0.85,
+   evidenceCount: 3,
+   taskName: '佐证任务 A',
+   queueIndex: 0,
+   queueTotal: 5,
+@@ -20,20 +20,46 @@ describe('ContextBar', () => {
+     expect(screen.getByText('R1→R2')).toBeTruthy()
+     expect(screen.getByText('connection')).toBeTruthy()
+     expect(screen.getByText(/macro_clinical/)).toBeTruthy()
+     expect(screen.getByText(/置信度 85%/)).toBeTruthy()
+     expect(screen.getByText(/3 条证据/)).toBeTruthy()
+     expect(screen.getByText(/佐证任务 A/)).toBeTruthy()
+     expect(screen.getByText(/1\/5/)).toBeTruthy()
+     expect(screen.getByText('待审核')).toBeTruthy()
+   })
+ 
++  it('渲染完整事实句与状态 Badge(claimSentence 合成句)', () => {
++    render(
++      <ContextBar
++        {...base}
++        claimSentence="需要验证:R1 到 R2 存在投射连接(方向性:directed)"
++        onBackToDataCenter={() => {}}
++        onRefresh={() => {}}
++      />,
++    )
++    expect(screen.getByText('需要验证:R1 到 R2 存在投射连接(方向性:directed)')).toBeTruthy()
++    // 状态 Badge 优先展示 taskStatus
++    expect(screen.getByText('待审核')).toBeTruthy()
++  })
++
++  it('无任务状态时状态 Badge 显示「等待处理对象」', () => {
++    render(
++      <ContextBar
++        {...base}
++        taskStatus={null}
++        onBackToDataCenter={() => {}}
++        onRefresh={() => {}}
++      />,
++    )
++    expect(screen.getByText('等待处理对象')).toBeTruthy()
++  })
++
+   it('队列为空时显示占位,不显示进度', () => {
+     render(
+       <ContextBar
+         {...base}
+         targetLabel={null}
+         targetType={null}
+         confidence={null}
+         evidenceCount={null}
+         taskName={null}
+         taskStatus={null}
+@@ -51,10 +77,44 @@ describe('ContextBar', () => {
+   it('返回数据中心与刷新按钮触发回调', () => {
+     const onBack = vi.fn()
+     const onRefresh = vi.fn()
+     render(<ContextBar {...base} onBackToDataCenter={onBack} onRefresh={onRefresh} />)
+     fireEvent.click(screen.getByText('返回数据中心'))
+     fireEvent.click(screen.getByText('刷新'))
+     expect(onBack).toHaveBeenCalledTimes(1)
+     expect(onRefresh).toHaveBeenCalledTimes(1)
+   })
+ })
++
++describe('composeClaimSentence', () => {
++  it('组件齐全时拼装完整句(含方向)', () => {
++    expect(composeClaimSentence('R1 投射到 R2', [
++      { component_type: 'source_region', statement: 'right thalamus proper', required: true, metadata: {} },
++      { component_type: 'target_region', statement: 'right putamen', required: true, metadata: {} },
++      { component_type: 'relation', statement: '存在投射连接', required: true, metadata: {} },
++      { component_type: 'direction', statement: 'directed', required: false, metadata: {} },
++    ], null)).toBe('需要验证:right thalamus proper 到 right putamen 存在投射连接(方向性:directed)')
++  })
++
++  it('组件齐全但无方向时省略方向后缀', () => {
++    expect(composeClaimSentence('', [
++      { component_type: 'source_region', statement: 'R1', required: true, metadata: {} },
++      { component_type: 'target_region', statement: 'R2', required: true, metadata: {} },
++      { component_type: 'relation', statement: '存在投射连接', required: true, metadata: {} },
++    ], null)).toBe('需要验证:R1 到 R2 存在投射连接')
++  })
++
++  it('组件不齐时回退完整 claimText', () => {
++    expect(composeClaimSentence('R1 投射到 R2', [
++      { component_type: 'source_region', statement: 'R1', required: true, metadata: {} },
++      { component_type: 'relation', statement: '存在投射关系', required: true, metadata: {} },
++    ], null)).toBe('需要验证:R1 投射到 R2')
++  })
++
++  it('无候选事实时回退队列对象 label', () => {
++    expect(composeClaimSentence('', [], 'R1→R2')).toBe('需要验证:R1→R2')
++  })
++
++  it('全部缺失返回 null', () => {
++    expect(composeClaimSentence('', [], null)).toBeNull()
++  })
++})
+diff --git a/frontend/src/pages/evidence-center/components/ContextBar.tsx b/frontend/src/pages/evidence-center/components/ContextBar.tsx
+index aa6747a..cc72530 100644
+--- a/frontend/src/pages/evidence-center/components/ContextBar.tsx
++++ b/frontend/src/pages/evidence-center/components/ContextBar.tsx
+@@ -1,64 +1,92 @@
++import type { ClaimComponent } from './types'
++
+ interface ContextBarProps {
+   /** 当前队列对象名称;null 表示未选择 */
+   targetLabel: string | null
+   targetType: string | null
+   granularity: string | null
+   confidence: number | null
+   evidenceCount: number | null
+   taskName: string | null
+   /** 当前对象在队列中的下标(0 起);无匹配时为 -1 */
+   queueIndex: number
+   queueTotal: number
+   taskStatus: string | null
++  /** 完整事实句(页面从 candidateClaim/queue 合成,如「需要验证:R1 到 R2 存在投射连接」) */
++  claimSentence?: string | null
+   onBackToDataCenter: () => void
+   onRefresh: () => void
+ }
+ 
+ function formatConfidence(v: number | null): string {
+   return v == null ? '—' : `${Math.round(v * 100)}%`
+ }
+ 
+-/** 顶部信息条:当前对象 / 任务 / 队列进度,随 Context 数据实时推导 */
++/**
++ * 从候选事实(claimText + 组件)合成一句完整事实句;无候选事实时回退到队列对象 label。
++ * 优先组件拼装(source 到 target + relation + direction),组件不齐时回退完整 claimText。
++ */
++export function composeClaimSentence(
++  claimText: string,
++  components: ClaimComponent[],
++  fallbackLabel: string | null,
++): string | null {
++  const byType = new Map(components.map(c => [c.component_type, c.statement]))
++  const source = byType.get('source_region')
++  const target = byType.get('target_region')
++  const relation = byType.get('relation')
++  const direction = byType.get('direction')
++  if (source && target && relation) {
++    const dir = direction ? `(方向性:${direction})` : ''
++    return `需要验证:${source} 到 ${target} ${relation}${dir}`
++  }
++  if (claimText) return `需要验证:${claimText}`
++  if (fallbackLabel) return `需要验证:${fallbackLabel}`
++  return null
++}
++
++/**
++ * 顶部信息条:状态 Badge + 完整事实句 + 对象元信息(类型/粒度/置信度/证据数/任务进度),随 Context 数据实时推导。
++ * 左侧 [Badge + 事实句],右侧 [刷新][返回数据中心]。
++ */
+ export function ContextBar({
+   targetLabel,
+   targetType,
+   granularity,
+   confidence,
+   evidenceCount,
+   taskName,
+   queueIndex,
+   queueTotal,
+   taskStatus,
++  claimSentence = null,
+   onBackToDataCenter,
+   onRefresh,
+ }: ContextBarProps) {
+   const hasQueue = queueTotal > 0
+   const progress = hasQueue ? `${Math.max(queueIndex, 0) + 1}/${queueTotal}` : null
++  const badge = taskStatus ?? '等待处理对象'
+   return (
+     <div className="evidence-context-bar" data-testid="evidence-context-bar">
+-      <div className="evidence-context-object">
++      <span className="evidence-context-badge">{badge}</span>
++      <div className="evidence-context-fact">
+         <span className="evidence-context-label">{targetLabel ?? '未选择对象'}</span>
+-        {targetType && <span className="evidence-context-chip">{targetType}</span>}
+-        {granularity && <span className="evidence-context-chip">粒度 {granularity}</span>}
+-        {confidence != null && (
+-          <span className="evidence-context-chip">置信度 {formatConfidence(confidence)}</span>
+-        )}
+-        {evidenceCount != null && <span className="evidence-context-chip">{evidenceCount} 条证据</span>}
+-      </div>
+-      <div className="evidence-context-progress">
+-        {hasQueue ? (
+-          <span className="evidence-context-task">
+-            {taskName ?? '当前任务'} · 进度 {progress}
+-          </span>
+-        ) : (
+-          <span className="evidence-context-task">等待处理对象</span>
+-        )}
+-        {taskStatus && <span className="evidence-context-chip">{taskStatus}</span>}
++        {claimSentence && <span className="evidence-context-sentence">{claimSentence}</span>}
++        <div className="evidence-context-meta">
++          {targetType && <span className="evidence-context-chip">{targetType}</span>}
++          {granularity && <span className="evidence-context-chip">粒度 {granularity}</span>}
++          {confidence != null && (
++            <span className="evidence-context-chip">置信度 {formatConfidence(confidence)}</span>
++          )}
++          {evidenceCount != null && <span className="evidence-context-chip">{evidenceCount} 条证据</span>}
++          {taskName && <span className="evidence-context-chip">{taskName}</span>}
++          {progress && <span className="evidence-context-chip">进度 {progress}</span>}
++        </div>
+       </div>
+       <div className="evidence-context-actions">
+         <button type="button" className="btn btn-sm" onClick={onRefresh}>刷新</button>
+         <button type="button" className="btn btn-sm btn-primary" onClick={onBackToDataCenter}>返回数据中心</button>
+       </div>
+     </div>
+   )
+ }
+diff --git a/frontend/src/pages/evidence-center/components/EvidenceModuleNav.tsx b/frontend/src/pages/evidence-center/components/EvidenceModuleNav.tsx
+new file mode 100644
+index 0000000..d603c15
+--- /dev/null
++++ b/frontend/src/pages/evidence-center/components/EvidenceModuleNav.tsx
+@@ -0,0 +1,28 @@
++import type { ModuleKey } from '../EvidenceCenterContext'
++import { useEvidenceCenter } from '../EvidenceCenterContext'
++
++/** 五模块导航顺序(模块切换唯一入口) */
++export const EVIDENCE_MODULES: ModuleKey[] = ['tasks', 'papers', 'candidates', 'review', 'promotion']
++
++/**
++ * 模块导航胶囊:选中 = 蓝色实底白字,未选 = 浅灰底深灰字。
++ * 从 EvidenceCenterHeader 拆出,保持原 data-testid/className 契约。
++ */
++export function EvidenceModuleNav({ moduleTitles }: { moduleTitles: Record<ModuleKey, string> }) {
++  const { state, gotoModule } = useEvidenceCenter()
++  return (
++    <div className="evidence-module-nav" data-testid="evidence-module-nav">
++      {EVIDENCE_MODULES.map(m => (
++        <button
++          key={m}
++          type="button"
++          className={`evidence-module-btn${state.module === m ? ' active' : ''}`}
++          aria-current={state.module === m ? 'page' : undefined}
++          onClick={() => gotoModule(m)}
++        >
++          {moduleTitles[m]}
++        </button>
++      ))}
++    </div>
++  )
++}
+diff --git a/frontend/src/pages/evidence-center/components/StepPills.test.tsx b/frontend/src/pages/evidence-center/components/StepPills.test.tsx
+index e195fcb..0b67b14 100644
+--- a/frontend/src/pages/evidence-center/components/StepPills.test.tsx
++++ b/frontend/src/pages/evidence-center/components/StepPills.test.tsx
+@@ -69,11 +69,26 @@ describe('StepPills', () => {
+     expect(screen.getByTestId('evidence-step-pills').querySelector('.evidence-step-pill.active')).toBeNull()
+   })
+ 
+   it('当前步之前的步骤标记完成态 done', () => {
+     render(<StepPills module="candidates" progress={{ ...NO_PROGRESS, reviewed: true }} />)
+     const pills = screen.getByTestId('evidence-step-pills')
+     // 步骤4 人工审核为当前态,步骤 1-3 为完成态
+     expect(pills.querySelectorAll('.evidence-step-pill.done')).toHaveLength(3)
+     expect(pills.querySelector('.evidence-step-pill.done')?.textContent).toContain('确认对象')
+   })
++
++  it('三态渲染:当前 = active(蓝) / 完成 = done(绿) / 未到 = 无状态类(浅灰),圆形数字三态齐全', () => {
++    render(<StepPills module="candidates" progress={{ ...NO_PROGRESS, reviewed: true }} />)
++    const pills = screen.getByTestId('evidence-step-pills')
++    const items = Array.from(pills.querySelectorAll('.evidence-step-pill'))
++    expect(items).toHaveLength(5)
++    // 步骤 1-3 done(绿圆),步骤 4 active(蓝圆),步骤 5 无状态类(浅灰圆)
++    expect(items.slice(0, 3).every(p => p.classList.contains('done'))).toBe(true)
++    expect(items[3].classList.contains('active')).toBe(true)
++    expect(items[4].classList.contains('done') || items[4].classList.contains('active')).toBe(false)
++    // 每个 pill 都含圆形数字
++    for (const p of items) {
++      expect(p.querySelector('.evidence-step-num')).toBeTruthy()
++    }
++  })
+ })
+diff --git a/frontend/src/styles.css b/frontend/src/styles.css
+index 89d4f0c..508cb4d 100644
+--- a/frontend/src/styles.css
++++ b/frontend/src/styles.css
+@@ -31,20 +31,21 @@
+   --main-padding-y: 22px;   /* .main 垂直内边距(高度计算引用,勿单独改动) */
+   --bg-soft: #f8fafc;       /* 浅灰底:次级信息卡 / 悬停底 */
+   --selected-bg: #eef6ff;   /* 选中行底 */
+   --info-bg: #eff6ff;       /* 主色浅底 */
+   --success-bg: #dcfce7;
+   --success-fg: #15803d;
+   --warning-bg: #fef3c7;
+   --warning-fg: #b45309;
+   --danger-bg: #fff1f0;
+   --muted-bg: #f1f5f9;
++  --evidence-bg: #f5f7fa;   /* 证据中心页面背景(浅蓝灰,视觉稿) */
+ }
+ 
+ * { box-sizing: border-box; margin: 0; padding: 0; }
+ body {
+   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+   background: var(--bg);
+   color: var(--text);
+   font-size: 14px;
+   line-height: 1.5;
+ }
+@@ -11388,149 +11389,166 @@ input[type="range"]::-webkit-slider-thumb {
+ 
+ /* ═══════════════════════════════════════════════════════════════════════════
+    Evidence Center V2 三栏骨架
+    ═══════════════════════════════════════════════════════════════════════════ */
+ .evidence-center {
+   display: flex;
+   flex-direction: column;
+   gap: 12px;
+   height: calc(100vh - var(--topbar-h) - var(--log-console-actual-height, var(--log-console-height-collapsed)) - 2 * var(--main-padding-y));
+   min-height: 0;
++  /* 页面背景:浅蓝灰底 + 白色内容 Card(视觉稿) */
++  background: var(--evidence-bg);
++  border-radius: var(--radius-md);
+ }
+ .evidence-center-header {
+   display: flex;
+   align-items: center;
+   justify-content: space-between;
+   gap: 12px;
+   flex-wrap: wrap;
+   padding: 8px 14px;
+   background: var(--white);
+   border: 1px solid var(--border);
+   border-radius: var(--card-radius);
+   box-shadow: var(--shadow);
+ }
+ .evidence-center-layout {
+   flex: 1;
+   min-height: 0;
+   display: grid;
+-  grid-template-columns: 230px minmax(620px, 1fr) 370px;
+-  gap: 14px;
++  grid-template-columns: 240px minmax(640px, 1fr) 340px;
++  gap: 12px;
+ }
+ .evidence-center-layout-full { grid-template-columns: 1fr; }
+ .evidence-center-layout-full .evidence-left,
+ .evidence-center-layout-full .evidence-right { display: none; }
+ /* 论文库全宽:主区不再受 620px 最小宽限制;限制可读行长并居中 */
+ .evidence-center-layout-full .evidence-main { max-width: 1280px; width: 100%; margin: 0 auto; }
+-/* 三栏:页面灰底 + 白底栏 + 轻边框分隔 */
++/* 三栏:页面浅蓝灰底 + 白底栏 Card(1px 浅 border + 大圆角 + 少阴影) */
+ .evidence-left,
+ .evidence-main,
+ .evidence-right {
+   min-height: 0;
+   min-width: 0;
+   overflow-y: auto;
+   background: var(--white);
+   border: 1px solid var(--border);
+   border-radius: var(--card-radius);
++  box-shadow: var(--shadow);
+   padding: 12px 14px;
+ }
+ .evidence-main { display: flex; flex-direction: column; gap: 12px; }
+ .evidence-right-panel h4 { font-size: 14px; color: var(--text); margin-bottom: 6px; }
+ .evidence-module-hint { font-size: 12px; color: var(--text-muted); line-height: 1.6; }
+ 
+-/* ── 模块导航(顶部胶囊) ── */
+-.evidence-module-nav { display: flex; gap: 6px; flex-wrap: wrap; }
++/* ── 模块导航(顶部胶囊):选中 = 蓝实底白字;未选 = 浅灰底深灰字;高 34px 紧凑 ── */
++.evidence-module-nav { display: flex; gap: 8px; flex-wrap: wrap; }
+ .evidence-module-btn {
++  display: inline-flex;
++  align-items: center;
++  height: 34px;
++  padding: 0 16px;
+   border: 1px solid transparent;
+-  background: transparent;
+-  color: var(--text-muted);
++  background: var(--bg);
++  color: var(--text);
+   border-radius: 999px;
+-  padding: 6px 16px;
+   font-size: 13px;
+   font-weight: 500;
+   cursor: pointer;
+-  transition: color .15s ease, background .15s ease, border-color .15s ease;
++  transition: color .15s ease, background .15s ease, border-color .15s ease, box-shadow .15s ease;
+ }
+ .evidence-module-btn:hover { color: var(--primary); background: var(--info-bg); border-color: rgba(22, 119, 255, .35); }
+ .evidence-module-btn:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+ .evidence-module-btn.active {
+   background: var(--primary);
+   border-color: var(--primary);
+   color: #fff;
+   font-weight: 600;
+   box-shadow: 0 2px 8px rgba(22, 119, 255, .35);
+ }
+ 
+-/* ── 顶部信息条(ContextBar):主信息(对象)与上下文(任务/进度)分层 ── */
++/* ── 顶部信息条(ContextBar):整行浅蓝灰背景;左 [状态 Badge + 完整事实句],右 [刷新][返回数据中心] ── */
+ .evidence-context-bar {
+   display: flex;
+   align-items: center;
+   gap: 12px;
+   flex-wrap: wrap;
+   padding: 10px 14px;
+-  background: var(--white);
++  background: var(--info-bg);
+   border: 1px solid var(--border);
+   border-radius: var(--card-radius);
+   box-shadow: var(--shadow);
+ }
+-.evidence-context-object { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-width: 0; }
+-.evidence-context-label { font-size: 14px; font-weight: 700; color: var(--text); }
++.evidence-context-badge {
++  flex-shrink: 0;
++  font-size: 12px;
++  font-weight: 600;
++  color: var(--primary);
++  background: var(--selected-bg);
++  border: 1px solid rgba(22, 119, 255, .3);
++  border-radius: 999px;
++  padding: 3px 10px;
++  white-space: nowrap;
++}
++.evidence-context-fact { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-width: 0; }
++.evidence-context-label { font-size: 13px; font-weight: 700; color: var(--text); white-space: nowrap; }
++.evidence-context-sentence { font-size: 13px; font-weight: 500; color: var(--text); line-height: 1.5; }
++.evidence-context-meta { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+ .evidence-context-chip {
+   font-size: 11px;
+   font-weight: 600;
+   background: var(--bg-soft);
+   border: 1px solid var(--border);
+   color: var(--text-muted);
+   border-radius: 999px;
+   padding: 2px 10px;
+   white-space: nowrap;
+ }
+-.evidence-context-task { font-size: 12px; color: var(--text-muted); }
+-.evidence-context-progress {
+-  display: flex;
+-  align-items: center;
+-  gap: 8px;
+-  flex-wrap: wrap;
+-  border-left: 1px solid var(--border);
+-  padding-left: 12px;
+-}
+ .evidence-context-actions { margin-left: auto; display: flex; gap: 8px; }
+ 
+-/* ── 五步流程(StepPills):未到态 / 完成态(done) / 当前态(active) ── */
+-.evidence-step-pills { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
++/* ── 五步流程(StepPills):圆形数字 + 文字 + 虚线连接;当前 = 蓝 / 完成 = 绿 / 未完成 = 浅灰;紧凑 ── */
++.evidence-step-pills { display: flex; align-items: center; gap: 0; flex-wrap: wrap; }
+ .evidence-step-pill {
+   display: inline-flex;
+   align-items: center;
+   gap: 6px;
+   font-size: 12px;
+   font-weight: 500;
+   color: var(--text-muted);
+-  padding: 4px 10px;
+-  border-radius: 999px;
+-  background: var(--muted-bg);
+-  transition: all .15s ease;
++  padding: 2px 0;
++  transition: color .15s ease;
++}
++.evidence-step-pill:not(:last-child)::after {
++  content: '';
++  width: 18px;
++  border-top: 1px dashed var(--border);
++  margin: 0 8px;
++  flex-shrink: 0;
+ }
+ .evidence-step-num {
+-  width: 16px;
+-  height: 16px;
++  width: 20px;
++  height: 20px;
+   border-radius: 50%;
+-  background: rgba(134, 144, 156, .18);
++  background: var(--muted-bg);
+   color: var(--text-muted);
+-  font-size: 10px;
++  font-size: 11px;
+   font-weight: 700;
+   display: inline-flex;
+   align-items: center;
+   justify-content: center;
++  flex-shrink: 0;
+ }
+-.evidence-step-pill.done { background: var(--success-bg); color: var(--success-fg); }
+-.evidence-step-pill.done .evidence-step-num { background: rgba(21, 128, 61, .15); color: var(--success-fg); }
+-.evidence-step-pill.active { background: var(--primary); color: #fff; font-weight: 600; }
+-.evidence-step-pill.active .evidence-step-num { background: rgba(255, 255, 255, .25); color: #fff; }
++.evidence-step-pill.done { color: var(--success-fg); }
++.evidence-step-pill.done .evidence-step-num { background: var(--success); color: #fff; }
++.evidence-step-pill.active { color: var(--primary); font-weight: 600; }
++.evidence-step-pill.active .evidence-step-num { background: var(--primary); color: #fff; box-shadow: 0 0 0 3px rgba(22, 119, 255, .15); }
+ 
+ /* ── 统一对象队列(ObjectQueue) ── */
+ .evidence-queue { display: flex; flex-direction: column; gap: 8px; }
+ .evidence-queue-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+ .evidence-queue-title { font-size: 14px; font-weight: 700; color: var(--text); }
+ .evidence-queue-count { background: var(--info-bg); color: var(--primary); border-radius: 999px; padding: 1px 8px; font-size: 11px; font-weight: 600; }
+ .evidence-queue-stats { display: flex; gap: 6px; flex-wrap: wrap; }
+ .evidence-queue-stat { font-size: 11px; color: var(--text-muted); background: var(--bg-soft); border-radius: 6px; padding: 2px 8px; }
+ .evidence-queue-filter { font-size: 12px; color: var(--text-muted); display: flex; align-items: center; gap: 4px; cursor: pointer; user-select: none; }
+ .evidence-queue-list { display: flex; flex-direction: column; gap: 6px; }

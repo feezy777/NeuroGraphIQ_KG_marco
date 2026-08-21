@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 720" width="1280" height="720">
+  <g id="background"><rect width="1280" height="720" fill="#F7FAFC"/></g>
+  <g id="header">
+  <rect x="56" y="42" width="8" height="40" fill="#1F9FB5"/>
+  <text x="80" y="72" font-family="Microsoft YaHei, Arial, sans-serif" font-size="34" font-weight="700" fill="#17324D">八步溯源 Snake</text>
+  <text x="80" y="104" font-family="Microsoft YaHei, Arial, sans-serif" font-size="16" fill="#5A6A7A">从 Final 反向追到 Resource，保留证据链</text>
+  </g>
+  <g id="snake">
+  <rect x="56" y="200" width="260" height="100" rx="10" fill="#2F855A" stroke="#2F855A" stroke-width="2"/><text x="84" y="240" font-family="Arial, sans-serif" font-size="14" fill="#FFFFFF">01</text><text x="84" y="270" font-family="Microsoft YaHei, Arial, sans-serif" font-size="20" font-weight="700" fill="#FFFFFF">Final</text>
+  <line x1="316" y1="250" x2="396" y2="250" stroke="#1F9FB5" stroke-width="3"/>
+  <rect x="340" y="200" width="260" height="100" rx="10" fill="#FFFFFF" stroke="#CBD5E0" stroke-width="2"/><text x="368" y="240" font-family="Arial, sans-serif" font-size="14" fill="#1F9FB5">02</text><text x="368" y="270" font-family="Microsoft YaHei, Arial, sans-serif" font-size="20" font-weight="700" fill="#17324D">Promotion</text>
+  <line x1="600" y1="250" x2="680" y2="250" stroke="#1F9FB5" stroke-width="3"/>
+  <rect x="624" y="200" width="260" height="100" rx="10" fill="#FFFFFF" stroke="#CBD5E0" stroke-width="2"/><text x="652" y="240" font-family="Arial, sans-serif" font-size="14" fill="#1F9FB5">03</text><text x="652" y="270" font-family="Microsoft YaHei, Arial, sans-serif" font-size="20" font-weight="700" fill="#17324D">Review</text>
+  <line x1="884" y1="250" x2="964" y2="250" stroke="#1F9FB5" stroke-width="3"/>
+  <rect x="908" y="200" width="260" height="100" rx="10" fill="#FFFFFF" stroke="#CBD5E0" stroke-width="2"/><text x="936" y="240" font-family="Arial, sans-serif" font-size="14" fill="#1F9FB5">04</text><text x="936" y="270" font-family="Microsoft YaHei, Arial, sans-serif" font-size="20" font-weight="700" fill="#17324D">Validation</text>
+  <line x1="1038" y1="300" x2="1038" y2="420" stroke="#1F9FB5" stroke-width="3"/>
+  <rect x="908" y="420" width="260" height="100" rx="10" fill="#FFFFFF" stroke="#CBD5E0" stroke-width="2"/><text x="936" y="460" font-family="Arial, sans-serif" font-size="14" fill="#1F9FB5">05</text><text x="936" y="490" font-family="Microsoft YaHei, Arial, sans-serif" font-size="20" font-weight="700" fill="#17324D">Extraction</text>
+  <line x1="908" y1="470" x2="884" y2="470" stroke="#1F9FB5" stroke-width="3"/>
+  <rect x="624" y="420" width="260" height="100" rx="10" fill="#FFFFFF" stroke="#CBD5E0" stroke-width="2"/><text x="652" y="460" font-family="Arial, sans-serif" font-size="14" fill="#1F9FB5">06</text><text x="652" y="490" font-family="Microsoft YaHei, Arial, sans-serif" font-size="20" font-weight="700" fill="#17324D">Candidate</text>
+  <line x1="624" y1="470" x2="600" y2="470" stroke="#1F9FB5" stroke-width="3"/>
+  <rect x="340" y="420" width="260" height="100" rx="10" fill="#FFFFFF" stroke="#CBD5E0" stroke-width="2"/><text x="368" y="460" font-family="Arial, sans-serif" font-size="14" fill="#1F9FB5">07</text><text x="368" y="490" font-family="Microsoft YaHei, Arial, sans-serif" font-size="20" font-weight="700" fill="#17324D">Import</text>
+  <line x1="340" y1="470" x2="316" y2="470" stroke="#1F9FB5" stroke-width="3"/>
+  <rect x="56" y="420" width="260" height="100" rx="10" fill="#FFFFFF" stroke="#CBD5E0" stroke-width="2"/><text x="84" y="460" font-family="Arial, sans-serif" font-size="14" fill="#1F9FB5">08</text><text x="84" y="490" font-family="Microsoft YaHei, Arial, sans-serif" font-size="20" font-weight="700" fill="#17324D">Resource</text>
+  </g>
+  <text x="56" y="600" font-family="Microsoft YaHei, Arial, sans-serif" font-size="16" fill="#5A6A7A">证据链：原文、LLM 输出、规则日志、审核意见</text>
+  <g id="footer"><text x="1224" y="696" text-anchor="end" font-family="Arial, sans-serif" font-size="12" fill="#8492A0">13</text></g>
+</svg>

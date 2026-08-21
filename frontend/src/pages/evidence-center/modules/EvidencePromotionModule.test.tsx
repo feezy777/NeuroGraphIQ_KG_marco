@@ -289,44 +289,40 @@ describe('EvidencePromotionModule', () => {
     })
   })
 
-  // ─── V2-S4:待晋升来自 ReviewStatusStore(review_approved) ───
+  // ─── V2-S4:待晋升来自后端 listEvidenceReviews(新 UI:自动选中第一条,中栏直接渲染详情) ───
 
-  it('待晋升列表来自后端 listEvidenceReviews:渲染 approved + awaiting_promotion', async () => {
+  it('待晋升列表来自后端 listEvidenceReviews:自动选中并渲染审核详情', async () => {
     renderModule()
     // listEvidenceReviews 被调用
     await waitFor(() => expect(endpoints.listEvidenceReviews).toHaveBeenCalledWith(
       expect.objectContaining({ review_status: 'approved', promotion_status: 'awaiting_promotion' }),
     ))
-    await waitFor(() => expect(screen.getAllByTestId('promotion-pending-row')).toHaveLength(1))
-    // 待晋升行展示审核结果摘要(方向/等级/置信度/时间,来自 EvidenceReviewItem 映射)
-    expect(screen.getByText(/支持 · 直接证据 · 置信度 0\.8/)).toBeTruthy()
+    // 自动选中第一条 → 确认入库按钮 + 审核决策区(备注/方向/等级/置信度)渲染
+    await waitFor(() => expect(screen.getByTestId('promotion-confirm-btn')).toBeTruthy())
+    expect(screen.getAllByText(/支持/).length).toBeGreaterThan(0)
+    expect(screen.getAllByText(/直接证据/).length).toBeGreaterThan(0)
   })
 
-  it('待晋升列表:后端失败时降级为 sessionStorage', async () => {
+  it('待晋升列表:后端失败时降级为 sessionStorage(自动选中渲染详情)', async () => {
     vi.mocked(endpoints.listEvidenceReviews).mockRejectedValueOnce(new Error('后端不可用'))
     // 保留 sessionStorage 中的审核通过记录
     sessionStorage.setItem(REVIEW_KEY, JSON.stringify(REVIEW_RECORD))
     renderModule()
-    await waitFor(() => expect(screen.getAllByTestId('promotion-pending-row')).toHaveLength(1))
-    expect(screen.getByText(/支持 · 直接证据 · 置信度 0\.8/)).toBeTruthy()
+    await waitFor(() => expect(screen.getByTestId('promotion-confirm-btn')).toBeTruthy())
+    expect(screen.getAllByText(/支持/).length).toBeGreaterThan(0)
   })
 
-  it('选中待晋升项:中栏完整审核结果(Claim/论文/Coverage/Reviewer 决策/Confidence 预览)', async () => {
+  it('选中待晋升项:中栏完整审核结果(论文/Coverage/Reviewer 决策/Confidence 预览)', async () => {
     renderModule()
-    await waitFor(() => expect(screen.getByText('待晋升')).toBeTruthy())
-    // Claim(getEvidenceTarget 异步,需等待 dto 就绪)
-    await waitFor(() => expect(screen.getByText('R1 投射到 R2 且影响功能')).toBeTruthy())
-    // 论文(待晋升卡片 + 已晋升列表行可能同名,取首个匹配即可)
-    expect(screen.getAllByText('A Study of R1 to R2 Projection').length).toBeGreaterThan(0)
+    // 论文(草稿恢复)
+    await waitFor(() => expect(screen.getAllByText('A Study of R1 to R2 Projection').length).toBeGreaterThan(0))
     // Coverage(复用 CoveragePanel)
     expect(screen.getByTestId('ew-coverage-panel')).toBeTruthy()
     expect(screen.getByText('1 / 2 已覆盖')).toBeTruthy()
-    // Reviewer 决策(人工方向/等级/置信度/备注;行摘要与决策行都可能含「直接证据」)
-    expect(screen.getByText('人工核对通过，允许晋升')).toBeTruthy()
+    // Reviewer 决策(人工方向/等级/置信度/备注)
+    expect(screen.getAllByText(/支持/).length).toBeGreaterThan(0)
     expect(screen.getAllByText(/直接证据/).length).toBeGreaterThan(0)
-    // 当前 confidence(ClaimPanel 数据源 getEvidenceTarget)
-    expect(screen.getByText(/当前置信度 0\.7/)).toBeTruthy()
-    // 预计后 confidence(attachPaperEvidencePreview)
+    // Confidence 预览(attachPaperEvidencePreview)
     expect(endpoints.attachPaperEvidencePreview).toHaveBeenCalledWith(expect.objectContaining({
       target_type: 'connection',
       target_id: 'r1-r2',
@@ -338,7 +334,12 @@ describe('EvidencePromotionModule', () => {
         passage: PASSAGE_VERIFIED.passage,
       })]),
     }), expect.anything())
-    await waitFor(() => expect(screen.getByText(/预计晋升后置信度 0\.85/)).toBeTruthy())
+    // 预览区显示当前/建议/入库后预计
+    await waitFor(() => expect(screen.getByTestId('promotion-confidence-preview')).toBeTruthy())
+    const previewPanel = screen.getByTestId('promotion-confidence-preview')
+    expect(within(previewPanel).getByText('当前')).toBeTruthy()
+    expect(within(previewPanel).getByText('审核人建议')).toBeTruthy()
+    await waitFor(() => expect(within(previewPanel).getByText('0.85')).toBeTruthy())
   })
 
   it('右栏 PromotionImpact:KG 当前/晋升后/Evidence 新增/Passages 新增/状态', async () => {
@@ -376,7 +377,7 @@ describe('EvidencePromotionModule', () => {
     expect((panel.querySelector('[data-testid="pi-return-btn"]') as HTMLElement).className).not.toContain('btn-primary')
   })
 
-  it('多待晋升项:列表来自后端,点击行切换选中项(中栏与右栏跟随切换)', async () => {
+  it('多待晋升项:待晋升列表渲染两条,点击行切换选中项(中栏与右栏跟随切换)', async () => {
     // Mock 两个后端 Review
     const secondReview = {
       ...BACKEND_REVIEW,
@@ -396,11 +397,12 @@ describe('EvidencePromotionModule', () => {
       note: '第二篇也通过',
     }))
     renderModule()
+    // 待晋升列表两条 + 自动选中第一条
     await waitFor(() => expect(screen.getAllByTestId('promotion-pending-row')).toHaveLength(2))
-    // 切换到第二篇:中栏论文与备注切换
+    await waitFor(() => expect(screen.getAllByText('A Study of R1 to R2 Projection').length).toBeGreaterThan(0))
+    // 点击第二行切换:中栏论文与备注切换
     fireEvent.click(screen.getAllByTestId('promotion-pending-row')[1])
-    await waitFor(() => expect(screen.getByText('Second Projection Paper')).toBeTruthy())
-    expect(screen.getByText('第二篇也通过')).toBeTruthy()
+    await waitFor(() => expect(screen.getAllByText(/Second Projection Paper/).length).toBeGreaterThan(0))
     // 右栏预览针对切换后的目标
     await waitFor(() => expect(endpoints.attachPaperEvidencePreview).toHaveBeenLastCalledWith(
       expect.objectContaining({ target_id: 'x1-y1', pmid: '99998888' }),
@@ -415,8 +417,8 @@ describe('EvidencePromotionModule', () => {
     await waitFor(() => expect(endpoints.attachPaperEvidencePreview).toHaveBeenCalled())
     const confirmBtn = await openConfirmDialog()
     expect(screen.getByTestId('ew-attach-dialog')).toBeTruthy()
-    expect(confirmBtn.textContent).toContain('确认晋升')
-    expect(confirmBtn.textContent).not.toContain('确认入库')
+    expect(confirmBtn.textContent).toContain('确认入库')
+    expect(confirmBtn.textContent).not.toContain('确认晋升')
     fireEvent.click(confirmBtn)
     // Phase 2:调 promoteReview(reviewId) 而非 attachPaperEvidence
     await waitFor(() => expect(endpoints.promoteReview).toHaveBeenCalledWith('rev-r1-r2'))
@@ -436,12 +438,12 @@ describe('EvidencePromotionModule', () => {
     await waitFor(() => expect(endpoints.listEvidenceReviews).toHaveBeenCalledTimes(2))
     expect(sessionStorage.getItem(REVIEW_KEY)).toBeNull()
     expect(sessionStorage.getItem(DRAFT_KEY)).toBeNull()
-    // 待晋升组消失(记录已清除)
-    await waitFor(() => expect(screen.queryAllByTestId('promotion-pending-row')).toHaveLength(0))
+    // 待晋升清空 → 空态
+    await waitFor(() => expect(screen.getByText('暂无待晋升的审核通过证据')).toBeTruthy())
   })
 
   it('晋升成功:有 taskId 时调用 completePaperEvidenceTaskItem 标记后端完成', async () => {
-    // 标记接口失败不阻断主流程:先 mock reject,再断言列表仍刷新、成功消息仍出现
+    // 标记接口失败不阻断主流程:先 mock reject,再断言列表仍刷新、状态清理完成
     vi.mocked(endpoints.completePaperEvidenceTaskItem).mockRejectedValueOnce(new Error('boom'))
     window.location.hash = HASH
     render(
@@ -458,9 +460,8 @@ describe('EvidencePromotionModule', () => {
     await waitFor(() =>
       expect(endpoints.completePaperEvidenceTaskItem).toHaveBeenCalledWith('t1', 'item-1', 'ev-new'),
     )
-    // 尽管标记接口 reject,主流程仍完成:列表刷新 + 成功消息 + 状态清理
+    // 尽管标记接口 reject,主流程仍完成:列表刷新 + 状态清理
     await waitFor(() => expect(endpoints.listPaperEvidence).toHaveBeenCalledTimes(2))
-    expect(screen.getByText('证据已晋升并应用到知识对象')).toBeTruthy()
     expect(sessionStorage.getItem(REVIEW_KEY)).toBeNull()
     expect(sessionStorage.getItem(DRAFT_KEY)).toBeNull()
   })
@@ -498,7 +499,7 @@ describe('EvidencePromotionModule', () => {
 
   it('退回人工审核:调 returnReview(后端) + 清 status + draft + 跳转 review', async () => {
     renderModule()
-    await waitFor(() => expect(screen.getAllByTestId('promotion-pending-row')).toHaveLength(1))
+    await waitFor(() => expect(screen.getByTestId('pi-return-btn')).toBeTruthy())
     fireEvent.click(screen.getByTestId('pi-return-btn'))
     await waitFor(() => expect(endpoints.returnReview).toHaveBeenCalledWith('rev-r1-r2', '退回人工审核'))
     await waitFor(() => expect(window.location.hash).toContain('module=review'))
@@ -512,7 +513,7 @@ describe('EvidencePromotionModule', () => {
 
   it('已晋升:点击记录打开 EvidenceDetailDrawer;「回滚」→ ConfirmDialog 输入原因 → rollbackPaperEvidence', async () => {
     renderModule()
-    await waitFor(() => expect(screen.getByText('已晋升')).toBeTruthy())
+    await waitFor(() => expect(screen.getByText('已晋升证据')).toBeTruthy())
     fireEvent.click(screen.getAllByTestId('promotion-evidence-row')[0])
     await waitFor(() => expect(screen.getByTestId('evidence-detail-drawer')).toBeTruthy())
     // drawer 展示 reviewer 决策/备注/claim snapshot
@@ -540,12 +541,11 @@ describe('EvidencePromotionModule', () => {
     expect(screen.getAllByText(/人工撤销/).length).toBeGreaterThan(0)
   })
 
-  it('禁止项:无搜索控件 / 无 Europe PMC', async () => {
+  it('禁止项:无搜索控件 / 无 Europe PMC(新 UI 确认按钮即「确认入库」)', async () => {
     renderModule()
-    await waitFor(() => expect(screen.getByText('待晋升')).toBeTruthy())
+    await waitFor(() => expect(screen.getByTestId('promotion-confirm-btn')).toBeTruthy())
     expect(screen.queryByPlaceholderText(/检索/)).toBeNull()
     expect(screen.queryByPlaceholderText(/关键词/)).toBeNull()
     expect(screen.queryByText(/Europe PMC/)).toBeNull()
-    expect(screen.queryByText('确认入库')).toBeNull()
   })
 })

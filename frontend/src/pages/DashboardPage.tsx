@@ -11,6 +11,7 @@ import {
   fetchHealth,
   fetchImportBatches,
   getDatabaseStatus,
+  getPaperEvidenceStats,
   listDatabases,
   listResources,
   restartBackend,
@@ -18,6 +19,7 @@ import {
   type DatabaseListItem,
   type DatabaseSchemaStatus,
   type HealthResponse,
+  type PaperEvidenceStats,
 } from '../api/endpoints'
 import { ApiError } from '../api/client'
 import { SessionIdsPanel } from '../components/SessionIdsPanel'
@@ -52,6 +54,7 @@ export function DashboardPage() {
     batches: null as number | null,
     candidates: null as number | null,
   })
+  const [paperStats, setPaperStats] = useState<PaperEvidenceStats | null>(null)
 
   const quickLinks = useMemo(
     (): [string, string][] => [
@@ -67,7 +70,7 @@ export function DashboardPage() {
   const loadDashboard = useCallback(async () => {
     setDbLoading(true)
     try {
-      const [h, dbStatus, dbs, finalSum, resources, batches, candidates] = await Promise.all([
+      const [h, dbStatus, dbs, finalSum, resources, batches, candidates, pStats] = await Promise.all([
         fetchHealth(),
         getDatabaseStatus(),
         listDatabases(),
@@ -75,6 +78,7 @@ export function DashboardPage() {
         listResources({ limit: 1 }).catch(() => null),
         fetchImportBatches({ limit: 1 }).catch(() => null),
         fetchCandidateStatusSummary().catch(() => null),
+        getPaperEvidenceStats().catch(() => null),
       ])
       setHealth(h)
       setHealthErr(null)
@@ -89,6 +93,7 @@ export function DashboardPage() {
         batches: batches?.total ?? null,
         candidates: candidates?.total ?? null,
       })
+      setPaperStats(pStats)
     } catch (e) {
       const msg = e instanceof ApiError || e instanceof Error ? e.message : String(e)
       setHealthErr(msg)
@@ -279,6 +284,46 @@ export function DashboardPage() {
           <div className="stat-val">{stats.candidates ?? '—'}</div>
         </div>
       </div>
+
+      {paperStats && (
+        <div className="card">
+          <div className="card-title">📚 论文证据库</div>
+          <div className="dash-grid dash-stats-grid" style={{ marginBottom: 0 }}>
+            <div className="card dash-stat-card">
+              <div className="card-title">已佐证对象</div>
+              <div className="stat-val">{paperStats.objects_with_evidence}</div>
+            </div>
+            <div className="card dash-stat-card">
+              <div className="card-title">待人工复核</div>
+              <div className="stat-val">{paperStats.pending_human_review}</div>
+            </div>
+            <div className="card dash-stat-card">
+              <div className="card-title">已完成验证</div>
+              <div className="stat-val">{paperStats.completed_verifications}</div>
+            </div>
+            <div className="card dash-stat-card">
+              <div className="card-title">OA 全文命中率</div>
+              <div className="stat-val">{Math.round(paperStats.oa_fulltext_hit_rate * 100)}%</div>
+            </div>
+            <div className="card dash-stat-card">
+              <div className="card-title">平均置信度 Δ</div>
+              <div className="stat-val">{paperStats.avg_confidence_delta > 0 ? '+' : ''}{paperStats.avg_confidence_delta.toFixed(2)}</div>
+            </div>
+            <div className="card dash-stat-card">
+              <div className="card-title">已失效</div>
+              <div className="stat-val">{paperStats.invalidated_count}</div>
+            </div>
+          </div>
+          <div style={{ marginTop: 10, display: 'flex', gap: 8 }}>
+            <a href="#/validation-center?tab=paper_evidence" className="btn btn-sm btn-primary">
+              前往论文证据中心
+            </a>
+            <a href="#/validation-center?tab=paper_evidence&module=papers" className="btn btn-sm">
+              查看论文库
+            </a>
+          </div>
+        </div>
+      )}
 
       <details className="card dash-session-collapse" open={sessionOpen} onToggle={e => setSessionOpen((e.target as HTMLDetailsElement).open)}>
         <summary className="dash-session-summary">{t('dashboard.sessionIdsToggle')}</summary>

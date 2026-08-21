@@ -408,6 +408,16 @@ async def validate_promotion_eligibility(
     if await detect_final_duplicate(session, target_type, obj):
         return False, "DUPLICATE_FINAL_EXISTS", approve_record.id, val_summary
 
+    # P1.7: Final accepts only canonical active Function terms
+    if target_type in ("function", "region_function") and hasattr(obj, "term_id"):
+        from app.services.final_function_promotion_service import (
+            check_function_term_eligibility,
+        )
+
+        term_ok, term_reason, _term_res = await check_function_term_eligibility(session, obj)
+        if not term_ok:
+            return False, term_reason.upper(), approve_record.id, val_summary
+
     return True, None, approve_record.id, val_summary
 
 
@@ -840,6 +850,17 @@ async def promote_function(
     warnings: list[str],
 ) -> tuple[MirrorPromotionRecord, FinalRegionFunction]:
     before = mrs.object_to_json(obj)
+    # P1.7: canonical active Function term required for Final
+    from app.services.final_function_promotion_service import (
+        check_function_term_eligibility,
+        project_final_function_triple,
+    )
+
+    term_ok, term_reason, canonical = await check_function_term_eligibility(session, obj)
+    if not term_ok or canonical is None:
+        warnings.append(f"function {obj.id} blocked: {term_reason}")
+        return None, None
+
     final = FinalRegionFunction(
         source_mirror_function_id=obj.id,
         region_candidate_id=obj.region_candidate_id,
@@ -854,6 +875,7 @@ async def promote_function(
         source_atlas=obj.source_atlas,
         source_version=obj.source_version,
         function_term=obj.function_term,
+        term_id=canonical.term_id,
         function_category=obj.function_category,
         relation_type=obj.relation_type,
         confidence=obj.confidence,
@@ -896,6 +918,21 @@ async def promote_function(
         promotion_record_id=record.id,
         warnings=warnings,
     )
+    # P1.7: Final Function Triple from the Final relation
+    subject_id = obj.region_final_id or obj.region_candidate_id
+    subject_type = "region_final" if obj.region_final_id else "region_candidate"
+    if subject_id is not None:
+        await project_final_function_triple(
+            session,
+            mirror_relation=obj,
+            final_relation=final,
+            canonical=canonical,
+            subject_type=subject_type,
+            subject_id=subject_id,
+            subject_label=obj.function_term or "",
+            review_record_id=review_record_id,
+            promotion_record_id=record.id,
+        )
     return record, final
 
 
@@ -1128,6 +1165,7 @@ async def run_mirror_promotion(
     promoted = 0
     skipped_dup = 0
     skipped_inelig = 0
+    blocked = 0
     failed = 0
 
     try:
@@ -1173,6 +1211,10 @@ async def run_mirror_promotion(
                     rec, final = await promote_function(
                         session, obj=obj, run=run, review_record_id=review_id, warnings=warnings
                     )
+                    if rec is None or final is None:
+                        # P1.7: blocked by function-term eligibility — skip
+                        blocked += 1
+                        continue
                     final_object_ids["final_function"].append(final.id)
                 elif target_type == "circuit":
                     rec, final = await promote_circuit(

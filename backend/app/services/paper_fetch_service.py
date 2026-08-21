@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import html
 import logging
 import re
 import uuid
@@ -49,12 +50,41 @@ async def _get_with_retry(client: httpx.AsyncClient, url: str, params: dict) -> 
     raise last_exc or RuntimeError("Europe PMC request failed")
 
 
+async def _get_json_with_retry(client: httpx.AsyncClient, url: str, params: dict) -> dict:
+    """GET JSON with retries on HTTP errors AND on silent empty responses.
+
+    Europe PMC intermittently answers 200 with only {"version":"6.9"} (no
+    resultList) under load; treating that as success produces bogus "paper not
+    found" errors downstream, so empty payloads are retried.
+    """
+    last_payload: dict = {}
+    for attempt in range(3):
+        resp = await _get_with_retry(client, url, params)
+        payload = resp.json()
+        if "resultList" in payload:
+            return payload
+        last_payload = payload
+        await asyncio.sleep(RETRY_TIMEOUTS[min(attempt, len(RETRY_TIMEOUTS) - 1)])
+    return last_payload
+
+
 def normalize_doi(doi: str) -> str:
     value = (doi or "").strip().lower()
     for prefix in ("https://doi.org/", "http://doi.org/", "http://dx.doi.org/", "https://dx.doi.org/", "doi:"):
         if value.startswith(prefix):
             value = value[len(prefix):]
     return value.strip()
+
+
+def clean_html_text(text: str | None) -> str:
+    """Strip HTML tags, decode HTML entities, collapse whitespace.
+
+    Europe PMC abstractText carries tags/entities; DeepSeek copies the decoded
+    plain text, so the verification source must be cleaned the same way.
+    """
+    t = re.sub(r"<[^>]+>", " ", text or "")
+    t = html.unescape(t)
+    return re.sub(r"\s+", " ", t).strip()
 
 
 async def fetch_paper_metadata(
@@ -75,12 +105,11 @@ async def fetch_paper_metadata(
     else:
         raise ValueError("paper identifier required (pmid / pmcid / doi)")
     async with httpx.AsyncClient(trust_env=False, timeout=SEARCH_TIMEOUT) as client:
-        resp = await _get_with_retry(
+        payload = await _get_json_with_retry(
             client,
             EUROPE_PMC_SEARCH,
-            {"query": query, "format": "json", "pageSize": 1},
+            {"query": query, "format": "json", "pageSize": 1, "resultType": "core"},
         )
-        payload = resp.json()
     results = payload.get("resultList", {}).get("result", [])
     if not results:
         return None
@@ -93,15 +122,40 @@ async def fetch_paper_metadata(
         "journal": item.get("journalTitle") or "",
         "year": item.get("pubYear") or "",
         "authors": item.get("authorString") or "",
-        "abstract": (item.get("abstractText") or "")[:2000],
+        "abstract": clean_html_text(item.get("abstractText") or "")[:2000],
         "is_open_access": str(item.get("isOpenAccess") or "").lower() == "y",
         "source": "europepmc",
     }
 
 
+async def _fetch_ncbi_efetch_xml(
+    client: httpx.AsyncClient, clean_pmcid: str, pmid: str | None
+) -> str:
+    """Fallback full-text XML via NCBI eutils efetch (db=pmc, OA articles)."""
+    if not clean_pmcid:
+        return ""
+    url = (
+        "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi"
+        f"?db=pmc&id=PMC{clean_pmcid}&rettype=xml&retmode=xml"
+    )
+    try:
+        resp = await client.get(url, timeout=45)
+        if resp.status_code != 200:
+            return ""
+        text = (resp.text or "").strip()
+        # efetch answers with an error element for articles without XML full text
+        if not text or "<error" in text.lower():
+            return ""
+        return text
+    except (httpx.HTTPStatusError, httpx.TransportError) as exc:
+        _log.warning("[eutils] efetch fulltext failed pmcid=PMC%s err=%s", clean_pmcid, exc)
+        return ""
+
+
 async def fetch_oa_fulltext_xml(*, pmid: str | None = None, pmcid: str | None = None) -> str:
-    """Fetch OA full text XML. Prefers PMCID endpoint."""
+    """Fetch OA full text XML. Prefers Europe PMC PMCID endpoint, falls back to NCBI efetch."""
     url = None
+    clean_pmcid = ""
     if pmcid:
         clean_pmcid = re.sub(r"^PMC", "", pmcid or "").upper()
         url = f"{EUROPE_PMC_FULLTEXT}/PMC{clean_pmcid}/fullTextXML"
@@ -113,12 +167,12 @@ async def fetch_oa_fulltext_xml(*, pmid: str | None = None, pmcid: str | None = 
         try:
             resp = await client.get(url)
             if resp.status_code == 404:
-                return ""
+                return await _fetch_ncbi_efetch_xml(client, clean_pmcid, pmid)
             resp.raise_for_status()
             return resp.text
         except (httpx.HTTPStatusError, httpx.TransportError) as exc:
             _log.warning("[europepmc] fulltext fetch failed url=%s err=%s", url, exc)
-            return ""
+            return await _fetch_ncbi_efetch_xml(client, clean_pmcid, pmid)
 
 
 async def fetch_plain_fulltext(*, pmid: str | None = None, pmcid: str | None = None) -> str:

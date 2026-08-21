@@ -31,22 +31,39 @@ def compute_adjustment(
     current = current_confidence if current_confidence is not None else 0.0
     reviewer = max(0.0, min(1.0, float(reviewer_confidence)))
     if direction == "supports":
-        final = min(SUPPORT_CAP, max(current, reviewer))
+        if reviewer >= current:
+            final = min(SUPPORT_CAP, reviewer)
+            return AdjustmentResult(
+                final_confidence=final,
+                adjustment_status="applied",
+                formula_version=FORMULA_VERSION,
+                apply=True,
+                reason=f"supports: min({SUPPORT_CAP}, max(current, reviewer))",
+            )
+        # weak / indirect evidence (reviewer below current) must not raise confidence
         return AdjustmentResult(
-            final_confidence=final,
-            adjustment_status="applied",
+            final_confidence=current,
+            adjustment_status="no_change_weak_evidence",
             formula_version=FORMULA_VERSION,
-            apply=True,
-            reason=f"supports: min({SUPPORT_CAP}, max(current, reviewer))",
+            apply=False,
+            reason="weak evidence: reviewer confidence below current; confidence unchanged",
         )
     if direction == "partial":
-        final = min(PARTIAL_CAP, max(current, reviewer))
+        if reviewer >= current:
+            final = min(PARTIAL_CAP, reviewer)
+            return AdjustmentResult(
+                final_confidence=final,
+                adjustment_status="applied",
+                formula_version=FORMULA_VERSION,
+                apply=True,
+                reason=f"partial: min({PARTIAL_CAP}, max(current, reviewer))",
+            )
         return AdjustmentResult(
-            final_confidence=final,
-            adjustment_status="applied",
+            final_confidence=current,
+            adjustment_status="no_change_weak_evidence",
             formula_version=FORMULA_VERSION,
-            apply=True,
-            reason=f"partial: min({PARTIAL_CAP}, max(current, reviewer))",
+            apply=False,
+            reason="weak evidence: reviewer confidence below current; confidence unchanged",
         )
     if direction in ("contradicts", "mixed"):
         return AdjustmentResult(

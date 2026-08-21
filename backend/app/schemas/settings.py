@@ -48,11 +48,23 @@ class BasicRuntimeSettings(BaseModel):
         return self
 
 
+class OntologyQueryRuntimeSettings(BaseModel):
+    """Phase Q4 — Ontology Query LLM 解释层模型配置（不硬编码，低温度保证医学回答稳定）。"""
+
+    enabled: bool = True
+    provider: str = "deepseek"
+    model: str = "deepseek-v4"
+    temperature: float = Field(default=0.1, ge=0.0, le=1.0)
+
+
 class RuntimeSettings(BaseModel):
     api_providers: ApiProviderRuntimeSettings = Field(
         default_factory=ApiProviderRuntimeSettings
     )
     basic: BasicRuntimeSettings = Field(default_factory=BasicRuntimeSettings)
+    ontology_query: OntologyQueryRuntimeSettings = Field(
+        default_factory=OntologyQueryRuntimeSettings
+    )
 
 
 class PublicDeepSeekRuntimeSettings(BaseModel):
@@ -87,6 +99,7 @@ class PublicApiProviderRuntimeSettings(BaseModel):
 class PublicRuntimeSettings(BaseModel):
     api_providers: PublicApiProviderRuntimeSettings
     basic: BasicRuntimeSettings
+    ontology_query: OntologyQueryRuntimeSettings
 
 
 class DeepSeekRuntimeSettingsPatch(BaseModel):
@@ -124,9 +137,17 @@ class BasicRuntimeSettingsPatch(BaseModel):
     show_debug_panels: bool | None = None
 
 
+class OntologyQueryRuntimeSettingsPatch(BaseModel):
+    enabled: bool | None = None
+    provider: str | None = None
+    model: str | None = None
+    temperature: float | None = Field(default=None, ge=0.0, le=1.0)
+
+
 class RuntimeSettingsPatch(BaseModel):
     api_providers: ApiProviderRuntimeSettingsPatch | None = None
     basic: BasicRuntimeSettingsPatch | None = None
+    ontology_query: OntologyQueryRuntimeSettingsPatch | None = None
 
 
 class SettingsLanguageOption(BaseModel):

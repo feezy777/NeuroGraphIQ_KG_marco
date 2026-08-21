@@ -1,0 +1,123 @@
+# Image Generation Prompts
+
+> Auto-generated from `image_prompts.json` by `image_gen.py --render-md`.
+> Do not hand-edit — re-run the command to refresh.
+
+> Project: neurographiq-kg-v3-construction
+> Generated: 2026-08-03T14:42:00+08:00
+> Color scheme: Primary #1A365D | Secondary #FFFFFF | Accent #3182CE | Review #DD6B20 | Success #38A169
+
+---
+
+### Image 1: cover_neural_graph.png
+
+| Attribute | Value |
+|---|---|
+| Purpose | Cover background for Slide 01 |
+| Aspect ratio | 16:9 |
+| Image size | 2K |
+| Status | Generated |
+
+**Prompt**:
+
+Create a clean flat vector illustration backdrop with bold geometric shapes, crisp uniform outlines equivalent to 2px, flat solid fills, no gradients inside shapes, no texture, and only a subtle 8% soft shadow where depth is necessary. Use a restrained corporate color behavior: white #FFFFFF carries about 65% of the canvas as calm breathing space, deep navy #1A365D anchors about 25%, bright blue #3182CE carries about 8%, and orange #DD6B20 plus green #38A169 appear only as tiny semantic accents. Depict an abstract multi-granularity brain-region knowledge network: a simplified brain silhouette assembled from nested node clusters, with larger macro-region nodes surrounding smaller meso and micro nodes, all linked by disciplined curved and straight connectors. Place the denser network toward the right half and lower-right edge, while keeping the left-center and upper-left substantially calm for an SVG title. The composition should suggest scientific rigor, data lineage, and graph connectivity rather than medical realism. No anatomy labels, no literal database text, no brand marks. Compose as a 1280×720 full-bleed PPT background with generous negative space and a single dominant visual system. NO text of any kind anywhere in the image — no letters, numbers, signs, labels, captions, watermarks, or written symbols. Color values and color names are rendering guidance only and must never appear visibly.
+
+**Alt Text**:
+> Abstract multi-granularity brain-region network on a restrained white and blue background
+
+---
+
+### Image 2: global_architecture_atmosphere.png
+
+| Attribute | Value |
+|---|---|
+| Purpose | Global knowledge construction architecture backdrop for Slide 04 |
+| Type | flowchart |
+| Aspect ratio | 16:9 |
+| Image size | 2K |
+| Status | Generated |
+
+**Prompt**:
+
+Create a clean flat vector illustration with bold geometric shapes, crisp uniform outlines equivalent to 2px, flat solid fills, no gradients inside shapes, no visual noise, and at most a subtle 8% soft shadow. Use restrained corporate color behavior: white #FFFFFF dominates about 65%, deep navy #1A365D defines the major system boundaries, bright blue #3182CE expresses trusted data movement, orange #DD6B20 marks review or risk checkpoints, and green #38A169 appears only at the trusted output. Build a wide left-to-right engineering flow with six visually distinct but unlabeled zones. The left begins with heterogeneous source artifacts represented by a map sheet, spreadsheet grid, XML-like brackets shown only as abstract geometry, and atlas volumes. These feed a batch container, then a candidate pool, then an intelligent extraction zone, then a protected mirror knowledge store, then a sequence of governance gates, and finally a trusted graph repository with small exploration endpoints. Use consistent block proportions and clean directional connectors. The mirror store should read as a protective buffer separating automated extraction from the final repository. Keep all semantic labels and exact arrows absent because native SVG overlays will provide them. Compose as a 1280×720 wide architecture field with sufficient separation between the six zones and no element touching the edges. NO text, letters, numbers, symbols resembling words, signs, labels, captions, or watermarks. Color values and color names are rendering guidance only and must not appear visibly.
+
+**Alt Text**:
+> Unlabeled six-stage knowledge construction architecture from source resources to trusted graph
+
+---
+
+### Image 3: llm_capability_backdrop.png
+
+| Attribute | Value |
+|---|---|
+| Purpose | Dual-LLM capability framework backdrop for Slide 07 |
+| Type | framework |
+| Aspect ratio | 16:9 |
+| Image size | 2K |
+| Status | Generated |
+
+**Prompt**:
+
+Create a clean flat vector framework illustration with bold geometric shapes, crisp 2px-equivalent outlines, flat solid fills, no gradients, no texture, and optional soft shadow limited to 8% opacity. Apply restrained corporate color behavior: white #FFFFFF fills roughly 65% as negative space, deep navy #1A365D forms the central anchor and principal nodes, bright blue #3182CE distinguishes active extraction paths, orange #DD6B20 appears only on one review-sensitive branch, and green #38A169 marks deterministic consolidation. Build a hub-and-spokes structure centered on one abstract candidate brain-region object: a simplified nested brain-node icon inside a rounded square. Arrange seven evenly spaced peripheral anchor modules around the center, each using only a distinct symbolic icon shape to suggest connection, function, circuit, projection, circuit function, ordered steps, and graph consolidation without any labels. Add two small symmetrical model-orchestrator shapes above the hub, visually independent yet feeding the same provider boundary, to imply dual language-model providers without logos. Connecting lines must be clean, evenly weighted, and non-crossing wherever possible. Preserve generous radial breathing room so native SVG labels can be placed adjacent to every satellite. Compose as a 1280×720 framework with the hub centered slightly left of true center to leave a narrow explanation zone on the right. NO text, letters, numbers, labels, captions, watermarks, or brand marks. Color values and names are guidance only and must not appear visibly.
+
+**Alt Text**:
+> Unlabeled hub-and-spoke framework for seven LLM extraction capabilities
+
+---
+
+### Image 4: mirror_write_backdrop.png
+
+| Attribute | Value |
+|---|---|
+| Purpose | Composite workflow and Mirror KG write-chain backdrop for Slide 08 |
+| Type | flowchart |
+| Aspect ratio | 16:9 |
+| Image size | 2K |
+| Status | Generated |
+
+**Prompt**:
+
+Create a clean flat vector process illustration with crisp 2px-equivalent outlines, flat geometric fills, no gradients, no texture, and only restrained 8% soft shadows beneath elevated packets. Use white #FFFFFF for roughly 65% of the canvas, deep navy #1A365D for the stable orchestration backbone and protected repository, bright blue #3182CE for moving work packets, orange #DD6B20 for raw model output awaiting governance, and green #38A169 sparingly for deterministic completion. Depict a four-stage horizontal orchestration lane. Each stage is an unlabeled modular workstation with a different iconic motif: paired nodes, a circuit loop with ordered dots, a projection arrow fan, and a deterministic merge into triples. Show small repeated packet tiles moving through each stage to communicate pack-based batching, while a thin secondary control rail beneath the lane suggests dry run, skip existing, pause, cancel, and resume through generic control shapes rather than text. After the four stages, route the output downward through a narrow deterministic conversion boundary into a protected cylindrical mirror knowledge store divided into eight subtle table compartments. The raw response archive should remain visibly linked to the transformation path. Keep the flow unambiguous and all modules sufficiently separated for native SVG labels. Compose at 1280×720 with generous edge padding. NO text, letters, numbers, signs, labels, captions, watermarks, brand marks, or visible code. Color values and names are rendering guidance only.
+
+**Alt Text**:
+> Unlabeled four-stage pack workflow feeding a protected Mirror KG store
+
+---
+
+### Image 5: validation_gates_backdrop.png
+
+| Attribute | Value |
+|---|---|
+| Purpose | Three validation gates backdrop for Slide 10 |
+| Type | flowchart |
+| Aspect ratio | 16:9 |
+| Image size | 2K |
+| Status | Generated |
+
+**Prompt**:
+
+Create a clean flat vector governance flow with bold but restrained geometry, crisp 2px-equivalent outlines, flat solid fills, no gradients inside shapes, no texture, and only subtle 8% soft shadows. Use white #FFFFFF as roughly 65% breathing field, deep navy #1A365D for the trusted pathway and structural outlines, bright blue #3182CE for automated validation flow, orange #DD6B20 for blockers and conflicts, and green #38A169 only for approved passage and the final trusted repository. Depict three large sequential gates from left to right, each clearly different through symbolic motifs but without labels. The first gate uses a shield with a structured checklist pattern and a small repair branch. The second gate contains two independent abstract robot heads or model tokens facing the same evidence object, with paths converging when they agree and separating toward an orange conflict marker when they differ. The third gate uses a simplified human expert silhouette with a review lens and three generic outcome branches. After all gates, the green path converges on a final graph repository; rejected and change-request paths loop downward and backward without crossing the main route. Maintain clear directional flow, generous spacing, and open areas around each gate for native SVG titles and explanations. Compose as 1280×720. NO text, letters, numbers, labels, captions, watermarks, logos, or written symbols. Color values and color names are guidance only and must not be visible.
+
+**Alt Text**:
+> Unlabeled rule, dual-model, and human-review gates leading to trusted knowledge
+
+---
+
+### Image 6: final_kg_layers_backdrop.png
+
+| Attribute | Value |
+|---|---|
+| Purpose | Final KG layered architecture backdrop for Slide 11 |
+| Type | framework |
+| Aspect ratio | 16:9 |
+| Image size | 2K |
+| Status | Generated |
+
+**Prompt**:
+
+Create a clean flat vector layered-system illustration with bold geometric forms, crisp consistent outlines equivalent to 2px, flat solid fills, no gradients, no texture, and only minimal 8% soft shadows. Use white #FFFFFF for roughly 65% negative space, deep navy #1A365D for formal architecture boundaries, bright blue #3182CE for relationship and query movement, orange #DD6B20 only on the controlled promotion gateway, and green #38A169 for the trusted final knowledge state. Construct a vertical architecture stack with four primary horizontal bands. The upper band presents five symbolic entity shapes: brain region, function spark, circuit loop, ordered step markers, and projection arrow. The second band shows a disciplined relation mesh connecting those entities. The third band shows a triple-query surface feeding graph exploration and export endpoints. The bottom band is a database foundation divided into five strongly separated vertical partitions of equal weight, each containing distinct but unlabeled granularity motifs from coarse to fine. Place a single narrow promotion gateway on the left entering the stack, with a preview pane and confirmation lock motif before the final write boundary. Preserve exact empty regions inside and beside each band so native SVG labels can be overlaid. The structure must communicate schema-level isolation and explicit cross-partition mapping rather than automatic merging. Compose as a 1280×720 architecture field. NO text, letters, numbers, labels, captions, watermarks, brand marks, or code. Color values and names are rendering guidance only.
+
+**Alt Text**:
+> Unlabeled layered Final KG architecture with five isolated database partitions
+
+---

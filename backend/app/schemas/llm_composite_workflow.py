@@ -74,6 +74,7 @@ class CompositeWorkflowRunRequest(BaseModel):
     explicit_batching_enabled: bool = False
     batch_strategy: str | None = None
     batch_size: int | None = None
+    pairs_per_pack: int | None = Field(default=None, ge=1, le=500)
     notes: str | None = None
     debug_max_packs: int | None = Field(default=None, ge=1, le=500)
     debug_single_pack: bool = False

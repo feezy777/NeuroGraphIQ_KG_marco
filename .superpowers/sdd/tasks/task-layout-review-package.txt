@@ -1,0 +1,1077 @@
+8d02044 feat(evidence-center): candidates 模块三栏重排 — 左栏 ClaimView/右栏 ObjectQueue/中栏统计条
+===STAT===
+ .../evidence-center/EvidenceCenterContext.tsx      |  20 +++-
+ .../evidence-center/EvidenceCenterPage.test.tsx    |  81 ++++++++++++--
+ .../pages/evidence-center/EvidenceCenterPage.tsx   |  32 ++++--
+ .../components/CandidateStatsBar.tsx               |  78 ++++++++++++++
+ .../evidence-center/components/RightPanel.tsx      |  26 +++--
+ .../modules/EvidenceCandidatesModule.test.tsx      |  98 +++++++++++++++--
+ .../modules/EvidenceCandidatesModule.tsx           | 118 +++++++++++++++------
+ frontend/src/styles.css                            |  34 ++++++
+ 8 files changed, 410 insertions(+), 77 deletions(-)
+===DIFF===
+diff --git a/frontend/src/pages/evidence-center/EvidenceCenterContext.tsx b/frontend/src/pages/evidence-center/EvidenceCenterContext.tsx
+index 9f0cf17..edbe2eb 100644
+--- a/frontend/src/pages/evidence-center/EvidenceCenterContext.tsx
++++ b/frontend/src/pages/evidence-center/EvidenceCenterContext.tsx
+@@ -1,16 +1,16 @@
+ import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
+ import type { CandidateSummaryData } from './components/CandidateSummary'
+ import type { PromotionImpactState } from './components/PromotionImpact'
+ import type { ReviewDecisionState } from './components/ReviewerDecisionPanel'
+ import type { TaskSummaryActions, TaskSummaryData } from './components/TaskSummary'
+-import type { QueueEntry } from './components/types'
++import type { ClaimComponent, QueueEntry } from './components/types'
+ import { buildEvidenceUrl, parseEvidenceUrl, type EvidenceCenterState } from './evidenceCenterUrl'
+ 
+ export type ModuleKey = 'tasks' | 'papers' | 'candidates' | 'review' | 'promotion'
+ 
+ /** 对象实际处理进度(StepPills 数据源;对象级,openTask/openTarget 切换对象时重置为全 false) */
+ export interface ObjectProgress {
+   searched: boolean
+   extracted: boolean
+   reviewed: boolean
+   promoted: boolean
+@@ -31,20 +31,28 @@ interface EvidenceCenterContextValue {
+   progress: ObjectProgress
+   /** 推进当前对象进度(仅置位,永不回退;切换对象时由 openTask/openTarget 重置) */
+   setProgress: (patch: Partial<ObjectProgress>) => void
+   gotoModule: (m: ModuleKey) => void
+   openTask: (taskId: string) => void
+   openTarget: (targetType: string, targetId: string, module?: ModuleKey) => void
+   selectPaper: (paperId: string | null) => void
+   /** 候选模块推送的右栏摘要(仅 candidates 模块使用) */
+   candidateSummary: CandidateSummaryData | null
+   setCandidateSummary: (s: CandidateSummaryData | null) => void
++  /** 候选模块推送的当前对象验证事实(仅 candidates 模块使用,页面左栏渲染 ClaimView) */
++  candidateClaim: {
++    claimText: string
++    components: ClaimComponent[]
++    granularity: string | null
++    targetType: string
++  } | null
++  setCandidateClaim: (c: { claimText: string; components: ClaimComponent[]; granularity: string | null; targetType: string } | null) => void
+   /** 审核模块推送的人工审核决策状态(仅 review 模块使用,RightPanel 渲染 ReviewerDecisionPanel) */
+   reviewDecision: ReviewDecisionState | null
+   setReviewDecision: (s: ReviewDecisionState | null) => void
+   /** 晋升模块推送的晋升影响状态(仅 promotion 模块使用,RightPanel 渲染 PromotionImpact) */
+   promotionImpact: PromotionImpactState | null
+   setPromotionImpact: (s: PromotionImpactState | null) => void
+   /** 佐证任务模块推送的选中任务摘要(仅 tasks 模块使用,RightPanel 渲染 TaskSummary) */
+   taskSummary: TaskSummaryData | null
+   setTaskSummary: (s: TaskSummaryData | null) => void
+   /** 佐证任务模块注册的右栏操作(创建批量预处理/刷新;对话框与列表都在模块内) */
+@@ -52,20 +60,26 @@ interface EvidenceCenterContextValue {
+   setTaskSummaryActions: (a: TaskSummaryActions) => void
+ }
+ 
+ const EvidenceCenterContext = createContext<EvidenceCenterContextValue | null>(null)
+ 
+ export function EvidenceCenterProvider({ children }: { children: ReactNode }) {
+   const [state, setState] = useState<EvidenceCenterState>(() => parseEvidenceUrl(window.location.hash))
+   const [queue, setQueue] = useState<QueueEntry[]>([])
+   const [progress, setProgressState] = useState<ObjectProgress>(INITIAL_OBJECT_PROGRESS)
+   const [candidateSummary, setCandidateSummary] = useState<CandidateSummaryData | null>(null)
++  const [candidateClaim, setCandidateClaim] = useState<{
++    claimText: string
++    components: ClaimComponent[]
++    granularity: string | null
++    targetType: string
++  } | null>(null)
+   const [reviewDecision, setReviewDecision] = useState<ReviewDecisionState | null>(null)
+   const [promotionImpact, setPromotionImpact] = useState<PromotionImpactState | null>(null)
+   const [taskSummary, setTaskSummary] = useState<TaskSummaryData | null>(null)
+   const [taskSummaryActions, setTaskSummaryActions] = useState<TaskSummaryActions>({
+     onCreateBatch: () => {},
+     onRefresh: () => {},
+   })
+ 
+   useEffect(() => {
+     const handler = () => setState(parseEvidenceUrl(window.location.hash))
+@@ -111,28 +125,30 @@ export function EvidenceCenterProvider({ children }: { children: ReactNode }) {
+     queue,
+     setQueue,
+     progress,
+     setProgress,
+     gotoModule,
+     openTask,
+     openTarget,
+     selectPaper,
+     candidateSummary,
+     setCandidateSummary,
++    candidateClaim,
++    setCandidateClaim,
+     reviewDecision,
+     setReviewDecision,
+     promotionImpact,
+     setPromotionImpact,
+     taskSummary,
+     setTaskSummary,
+     taskSummaryActions,
+     setTaskSummaryActions,
+-  }), [state, queue, progress, setProgress, gotoModule, openTask, openTarget, selectPaper, candidateSummary, reviewDecision, promotionImpact, taskSummary, taskSummaryActions])
++  }), [state, queue, progress, setProgress, gotoModule, openTask, openTarget, selectPaper, candidateSummary, candidateClaim, reviewDecision, promotionImpact, taskSummary, taskSummaryActions])
+ 
+   return <EvidenceCenterContext.Provider value={value}>{children}</EvidenceCenterContext.Provider>
+ }
+ 
+ export function useEvidenceCenter(): EvidenceCenterContextValue {
+   const ctx = useContext(EvidenceCenterContext)
+   if (!ctx) throw new Error('useEvidenceCenter must be used within EvidenceCenterProvider')
+   return ctx
+ }
+diff --git a/frontend/src/pages/evidence-center/EvidenceCenterPage.test.tsx b/frontend/src/pages/evidence-center/EvidenceCenterPage.test.tsx
+index d69405f..134f7a2 100644
+--- a/frontend/src/pages/evidence-center/EvidenceCenterPage.test.tsx
++++ b/frontend/src/pages/evidence-center/EvidenceCenterPage.test.tsx
+@@ -143,77 +143,93 @@ describe('EvidenceCenterPage', () => {
+     { module: 'promotion', selector: '.evidence-promotion', text: /请先从「佐证任务」或「证据候选」进入一个目标对象/ },
+   ])('五模块接线:module=$module 渲染对应模块', async ({ module, selector, text }) => {
+     window.location.hash = `#/evidence-center?module=${module}`
+     const { container } = render(<EvidenceCenterPage />)
+     await waitFor(() => expect(container.querySelector(selector)).toBeTruthy())
+     expect(screen.getByText(text)).toBeTruthy()
+   })
+ 
+   // ─── V2 三栏骨架 ───
+ 
+-  it('渲染三栏骨架:左队列 / 主内容 / 右栏', () => {
++  it('渲染三栏骨架:candidates 左栏 Claim / 主内容 / 右栏队列', () => {
+     window.location.hash = '#/evidence-center?module=candidates'
+     const { container } = render(<EvidenceCenterPage />)
+     expect(container.querySelector('.evidence-center-layout')).toBeTruthy()
+     expect(container.querySelector('.evidence-left')).toBeTruthy()
+     expect(container.querySelector('.evidence-main')).toBeTruthy()
+     expect(container.querySelector('.evidence-right')).toBeTruthy()
++    // 候选模块:左栏 ClaimView,右栏 ObjectQueue(队列已从左侧移到右栏)
++    const left = container.querySelector('.evidence-left') as HTMLElement
++    expect(within(left).getByTestId('evidence-claim')).toBeTruthy()
++    expect(left.querySelector('.evidence-queue')).toBeNull()
+     expect(screen.getByTestId('evidence-queue')).toBeTruthy()
+     expect(screen.getByTestId('evidence-right-panel')).toBeTruthy()
+   })
+ 
++  it('其他模块左栏仍渲染 ObjectQueue(review/promotion/tasks 布局不变)', () => {
++    window.location.hash = '#/evidence-center?module=review'
++    const { container } = render(<EvidenceCenterPage />)
++    const left = container.querySelector('.evidence-left') as HTMLElement
++    expect(within(left).getByTestId('evidence-queue')).toBeTruthy()
++    expect(left.querySelector('.evidence-claim')).toBeNull()
++  })
++
+   it('papers 模块例外:全宽渲染并隐藏左右栏,论文库主区布局完整', async () => {
+     window.location.hash = '#/evidence-center?module=papers'
+     const { container } = render(<EvidenceCenterPage />)
+     await waitFor(() => expect(container.querySelector('.evidence-center-layout-full')).toBeTruthy())
+     expect(container.querySelector('.evidence-left')).toBeNull()
+     expect(container.querySelector('.evidence-right')).toBeNull()
+     // 全宽下论文库完整渲染:搜索条 + 空态(不受 620px 主区限制影响)
+     expect(container.querySelector('.paper-module')).toBeTruthy()
+     expect(container.querySelector('.paper-search-bar')).toBeTruthy()
+     await waitFor(() => expect(screen.getByText(/暂无论文/)).toBeTruthy())
+   })
+ 
+-  it('右栏随 module 切换:占位标题(任务/审核)与候选摘要(candidates)', () => {
++  it('右栏随 module 切换:占位标题(任务/审核)与队列(candidates)', () => {
+     window.location.hash = '#/evidence-center?module=tasks'
+     const { container } = render(<EvidenceCenterPage />)
+     const title = () => container.querySelector('.evidence-right-panel h4')?.textContent ?? ''
+     expect(title()).toContain('任务')
+     fireEvent.click(screen.getByText('证据候选'))
+-    expect(title()).toContain('候选摘要')
++    // 候选模块右栏 = 待处理对象队列
++    expect(title()).toContain('待处理对象')
+     fireEvent.click(screen.getAllByText('人工审核')[0])
+     expect(title()).toContain('审核')
+   })
+ 
+-  it('candidates 右栏渲染 CandidateSummary,勾选片段后点击 [进入人工审核] 跳转 review', async () => {
++  it('candidates 右栏渲染对象队列;中栏统计条 [进入人工审核] 勾选后可用并跳转 review', async () => {
+     vi.mocked(listPaperEvidenceTaskItems).mockResolvedValue({ items: TASK_ITEMS })
+     window.location.hash = '#/evidence-center?module=candidates&task_id=t1'
+     render(<EvidenceCenterPage />)
+-    await waitFor(() => expect(screen.getByTestId('evidence-candidate-summary')).toBeTruthy())
+-    // 零选中时 [进入人工审核] 禁用
++    // 右栏 = 待处理对象队列(队列条目在右栏)
++    await waitFor(() => expect(screen.getByTestId('evidence-queue')).toBeTruthy())
++    expect(screen.queryByTestId('evidence-candidate-summary')).toBeNull()
++    // 中栏统计条零选中时 [进入人工审核] 禁用
++    expect(screen.getByTestId('evidence-stats-bar')).toBeTruthy()
+     expect((screen.getByRole('button', { name: /进入人工审核/ }) as HTMLButtonElement).disabled).toBe(true)
+-    // 勾选已核验片段后启用(左栏 ObjectQueue 也有 checkbox,需限定在证据视图内)
++    // 勾选已核验片段后启用(限定在证据视图内)
+     fireEvent.click(screen.getByRole('button', { name: /查看证据候选/ }))
+     fireEvent.click(within(screen.getByTestId('evidence-paper-view')).getByLabelText('选择片段'))
+     await waitFor(() =>
+       expect((screen.getByRole('button', { name: /进入人工审核/ }) as HTMLButtonElement).disabled).toBe(false),
+     )
+     fireEvent.click(screen.getByRole('button', { name: /进入人工审核/ }))
+     await waitFor(() => expect(window.location.hash).toContain('module=review'))
+     expect(window.location.hash).toContain('target_id=r1-r2')
+   })
+ 
+-  it('候选摘要禁止项:无 Reviewer Confidence / Direction 控件', async () => {
++  it('候选统计条禁止项:无 Reviewer Confidence / Direction 控件', async () => {
+     vi.mocked(listPaperEvidenceTaskItems).mockResolvedValue({ items: TASK_ITEMS })
+     window.location.hash = '#/evidence-center?module=candidates&task_id=t1'
+     render(<EvidenceCenterPage />)
+-    await waitFor(() => expect(screen.getByTestId('evidence-candidate-summary')).toBeTruthy())
++    await waitFor(() => expect(screen.getByTestId('evidence-stats-bar')).toBeTruthy())
+     expect(screen.queryByText(/Reviewer Confidence/i)).toBeNull()
+     expect(screen.queryByText(/Reviewer Direction/i)).toBeNull()
+     expect(screen.queryByRole('slider')).toBeNull()
+   })
+ 
+   it('granularity 从候选模块 DTO 填充队列并显示在 ContextBar', async () => {
+     vi.mocked(listPaperEvidenceTaskItems).mockResolvedValue({ items: TASK_ITEMS })
+     const { getEvidenceTarget } = await import('../../api/endpoints')
+     vi.mocked(getEvidenceTarget).mockResolvedValue({
+       target_type: 'connection',
+@@ -233,35 +249,78 @@ describe('EvidenceCenterPage', () => {
+       claim_text: 'R1 投射到 R2',
+       claim_components: [],
+       claim_version: 'v1',
+     })
+     window.location.hash = '#/evidence-center?module=candidates&task_id=t1'
+     render(<EvidenceCenterPage />)
+     const bar = await screen.findByTestId('evidence-context-bar')
+     await waitFor(() => expect(within(bar).getByText(/粒度 macro_clinical/)).toBeTruthy())
+   })
+ 
+-  it('无任务时 initial-queue 恢复的条目渲染在页面级左栏 ObjectQueue', async () => {
++  it('candidates 左栏渲染 ClaimView(页面级):DTO 加载后显示 Claim 单行 + Component Chips;中栏不再渲染', async () => {
++    vi.mocked(listPaperEvidenceTaskItems).mockResolvedValue({ items: TASK_ITEMS })
++    const { getEvidenceTarget } = await import('../../api/endpoints')
++    vi.mocked(getEvidenceTarget).mockResolvedValue({
++      target_type: 'connection',
++      target_id: 'r1-r2',
++      granularity: 'macro_clinical',
++      display_name: 'R1→R2',
++      source_region: 'R1',
++      target_region: 'R2',
++      canonical_terms: [],
++      relation: 'projects_to',
++      directionality: '',
++      circuit_context: '',
++      function_context: '',
++      current_confidence: 0.85,
++      existing_evidence: 0,
++      structured_claim: {},
++      claim_text: 'R1 投射到 R2',
++      claim_components: [
++        { component_type: 'source_region', statement: 'R1', required: true, metadata: {} },
++        { component_type: 'relation', statement: '存在投射关系', required: true, metadata: {} },
++      ],
++      claim_version: 'v1',
++    })
++    window.location.hash = '#/evidence-center?module=candidates&task_id=t1'
++    const { container } = render(<EvidenceCenterPage />)
++    await waitFor(() => expect(screen.getByText('R1 投射到 R2')).toBeTruthy())
++    // 左栏:Claim 单行 + Component Chips
++    const left = container.querySelector('.evidence-left') as HTMLElement
++    expect(within(left).getByTestId('evidence-claim')).toBeTruthy()
++    expect(within(left).getByText('当前需要验证的事实')).toBeTruthy()
++    const chips = within(left).getAllByTestId('evidence-claim-chip')
++    expect(chips).toHaveLength(2)
++    expect(chips[0].textContent).toContain('源脑区')
++    expect(chips[0].textContent).toContain('R1')
++    expect(chips[1].textContent).toContain('连接关系')
++    expect(chips[1].textContent).toContain('存在投射关系')
++    // 中栏不再渲染 ClaimView
++    const main = container.querySelector('.evidence-main') as HTMLElement
++    expect(main.querySelector('.evidence-claim')).toBeNull()
++  })
++
++  it('无任务时 initial-queue 恢复的条目渲染在页面级右栏 ObjectQueue(candidates)', async () => {
+     sessionStorage.setItem(
+       'evidence-center.initial-queue',
+       JSON.stringify({
+         items: [
+           { target_type: 'connection', target_id: 'r1-r2', label: 'R1 → R2 连接', confidence: 0.7 },
+           { target_type: 'region_function', target_id: 'f-1', label: 'R1 功能', confidence: 0.5 },
+         ],
+         taskId: null,
+       }),
+     )
+     window.location.hash = '#/evidence-center?module=candidates&target_type=connection&target_id=r1-r2'
+     render(<EvidenceCenterPage />)
+     await waitFor(() => expect(screen.getByText('R1 功能')).toBeTruthy())
+-    // 队列条目渲染在页面级左栏 ObjectQueue(上下文条中也出现 label,需在队列内断言)
++    // 队列条目渲染在页面级右栏 ObjectQueue(上下文条中也出现 label,需在队列内断言)
+     expect(within(screen.getByTestId('evidence-queue')).getByText('R1 → R2 连接')).toBeTruthy()
+     expect(screen.getByText(/已从数据中心恢复 2 个待处理对象/)).toBeTruthy()
+   })
+ 
+   it('ContextBar 显示当前对象、类型、置信度、证据数与队列进度', async () => {
+     vi.mocked(listPaperEvidenceTaskItems).mockResolvedValue({ items: TASK_ITEMS })
+     window.location.hash = '#/evidence-center?module=candidates&task_id=t1'
+     render(<EvidenceCenterPage />)
+     const bar = await screen.findByTestId('evidence-context-bar')
+     await waitFor(() => expect(within(bar).getByText('R1→R2')).toBeTruthy())
+diff --git a/frontend/src/pages/evidence-center/EvidenceCenterPage.tsx b/frontend/src/pages/evidence-center/EvidenceCenterPage.tsx
+index 5fddcba..e0b1e4c 100644
+--- a/frontend/src/pages/evidence-center/EvidenceCenterPage.tsx
++++ b/frontend/src/pages/evidence-center/EvidenceCenterPage.tsx
+@@ -1,14 +1,15 @@
+ import { useEffect, useMemo, useState } from 'react'
+ import { listPaperEvidenceTasks } from '../../api/endpoints'
+ import { EvidenceCenterProvider, useEvidenceCenter, type ModuleKey } from './EvidenceCenterContext'
+ import { EvidenceCenterHeader } from './EvidenceCenterHeader'
++import { ClaimView } from './components/ClaimView'
+ import { ContextBar } from './components/ContextBar'
+ import { ObjectQueue } from './components/ObjectQueue'
+ import { RightPanel } from './components/RightPanel'
+ import { StepPills } from './components/StepPills'
+ import { QUEUE_STATUS_LABEL } from './components/types'
+ import { EvidenceCandidatesModule } from './modules/EvidenceCandidatesModule'
+ import { EvidencePromotionModule } from './modules/EvidencePromotionModule'
+ import { EvidenceReviewModule } from './modules/EvidenceReviewModule'
+ import { EvidenceTasksModule } from './modules/EvidenceTasksModule'
+ import { PaperLibraryModule } from './modules/PaperLibraryModule'
+@@ -22,21 +23,21 @@ const MODULE_TITLE: Record<ModuleKey, string> = {
+ }
+ const MODULE_HINT: Record<ModuleKey, string> = {
+   tasks: '哪些知识对象需要论文佐证，以及任务处理到哪里。',
+   papers: '管理系统已经获取和解析的真实论文资源。',
+   candidates: '查看 DeepSeek 从论文中提取出的候选佐证原文。',
+   review: '人工确认候选原文是否足以证明当前知识事实。',
+   promotion: '将审核通过的论文证据正式应用到知识图谱。',
+ }
+ 
+ function EvidenceCenterBody() {
+-  const { state, queue, openTarget, progress } = useEvidenceCenter()
++  const { state, queue, openTarget, progress, candidateClaim } = useEvidenceCenter()
+   const [taskName, setTaskName] = useState<string | null>(null)
+ 
+   // 任务名:从 tasks 列表按 state.taskId 推导(ContextBar 展示用)
+   useEffect(() => {
+     if (!state.taskId) {
+       setTaskName(null)
+       return
+     }
+     let cancelled = false
+     listPaperEvidenceTasks({ limit: 50 })
+@@ -69,30 +70,39 @@ function EvidenceCenterBody() {
+         queueIndex={currentIndex}
+         queueTotal={queue.length}
+         taskStatus={current ? (QUEUE_STATUS_LABEL[current.status] ?? current.status) : null}
+         onBackToDataCenter={() => { window.location.hash = '#/data-center' }}
+         onRefresh={() => { window.location.reload() }}
+       />
+       <StepPills module={state.module} progress={progress} />
+       <div className={`evidence-center-layout${isPapers ? ' evidence-center-layout-full' : ''}`} data-testid="evidence-center-layout">
+         {!isPapers && (
+           <aside className="evidence-left">
+-            <ObjectQueue
+-              queue={queue}
+-              currentIndex={currentIndex}
+-              onSelect={e => openTarget(
+-                e.target_type,
+-                e.target_id,
+-                // 审核/晋升模块内切换队列项时留在当前模块,其余模块统一回候选视图
+-                state.module === 'review' || state.module === 'promotion' ? state.module : 'candidates',
+-              )}
+-            />
++            {state.module === 'candidates' ? (
++              // 候选模块左栏 = 当前对象验证事实(ClaimView);队列移到右栏
++              <ClaimView
++                claimText={candidateClaim?.claimText ?? ''}
++                components={candidateClaim?.components ?? []}
++                targetType={candidateClaim?.targetType ?? ''}
++              />
++            ) : (
++              <ObjectQueue
++                queue={queue}
++                currentIndex={currentIndex}
++                onSelect={e => openTarget(
++                  e.target_type,
++                  e.target_id,
++                  // 审核/晋升模块内切换队列项时留在当前模块,其余模块统一回候选视图
++                  state.module === 'review' || state.module === 'promotion' ? state.module : 'candidates',
++                )}
++              />
++            )}
+           </aside>
+         )}
+         <main className="evidence-main">
+           <div className="evidence-module-hint">{MODULE_HINT[state.module]}</div>
+           {state.module === 'tasks' && <EvidenceTasksModule />}
+           {state.module === 'papers' && <PaperLibraryModule />}
+           {state.module === 'candidates' && <EvidenceCandidatesModule />}
+           {state.module === 'review' && <EvidenceReviewModule />}
+           {state.module === 'promotion' && <EvidencePromotionModule />}
+         </main>
+diff --git a/frontend/src/pages/evidence-center/components/CandidateStatsBar.tsx b/frontend/src/pages/evidence-center/components/CandidateStatsBar.tsx
+new file mode 100644
+index 0000000..02336b7
+--- /dev/null
++++ b/frontend/src/pages/evidence-center/components/CandidateStatsBar.tsx
+@@ -0,0 +1,78 @@
++import { DIRECTION_LABEL, type Direction } from './types'
++
++/** 候选模块中栏统计条数据(模块内从现有状态推导,页面级测试经模块渲染断言) */
++export interface CandidateStats {
++  /** 找到论文总数(已提取候选 + 手动检索结果) */
++  foundPapers: number
++  /** AI 已提取论文数 */
++  extractedPapers: number
++  /** 已核验片段数 */
++  verifiedPassages: number
++  /** 当前已勾选的候选片段数(零时禁止进入人工审核) */
++  selectedPassages: number
++  /** 0-1;null 表示无可计算覆盖 */
++  coverageRatio: number | null
++  /** Coverage 已覆盖组件数(如 1/3) */
++  coverageSupported: number
++  /** Coverage 必需组件总数(无组件时为 0) */
++  coverageRequired: number
++  direction: Direction | null
++  modelAssessment: string | null
++}
++
++interface Props {
++  stats: CandidateStats | null
++  onEnterReview: () => void
++}
++
++function formatCoverage(stats: CandidateStats | null): string {
++  if (!stats) return '—'
++  if (stats.coverageRequired === 0) return stats.coverageRatio == null ? '—' : `${Math.round(stats.coverageRatio * 100)}%`
++  return `${stats.coverageSupported}/${stats.coverageRequired}`
++}
++
++/** 中栏统计信息条:找到论文 / AI 提取论文 / 已核验片段 / Coverage / 模型判断 + [进入人工审核] */
++export function CandidateStatsBar({ stats, onEnterReview }: Props) {
++  return (
++    <div className="evidence-stats-bar" data-testid="evidence-stats-bar">
++      <div className="evidence-stats-item">
++        <span className="evidence-stats-label">找到论文</span>
++        <span className="evidence-stats-value" data-testid="evidence-stats-found">{stats?.foundPapers ?? 0}</span>
++      </div>
++      <div className="evidence-stats-item">
++        <span className="evidence-stats-label">AI 提取论文</span>
++        <span className="evidence-stats-value" data-testid="evidence-stats-extracted">{stats?.extractedPapers ?? 0}</span>
++      </div>
++      <div className="evidence-stats-item">
++        <span className="evidence-stats-label">已核验片段</span>
++        <span className="evidence-stats-value" data-testid="evidence-stats-verified">{stats?.verifiedPassages ?? 0}</span>
++      </div>
++      <div className="evidence-stats-item">
++        <span className="evidence-stats-label">Coverage</span>
++        <span className="evidence-stats-value" data-testid="evidence-stats-coverage">{formatCoverage(stats)}</span>
++      </div>
++      {(stats?.direction || stats?.modelAssessment) && (
++        <div className="evidence-stats-model" data-testid="evidence-stats-model">
++          <span className="evidence-stats-label">模型判断</span>
++          {stats.direction && (
++            <span className="evidence-stats-direction" data-testid="evidence-stats-direction">
++              {DIRECTION_LABEL[stats.direction] ?? stats.direction}
++            </span>
++          )}
++          {stats.modelAssessment && <span className="evidence-stats-assessment">{stats.modelAssessment}</span>}
++        </div>
++      )}
++      <div className="evidence-stats-actions">
++        <button
++          type="button"
++          className="btn btn-sm btn-primary"
++          disabled={!stats || stats.selectedPassages === 0}
++          title={!stats || stats.selectedPassages === 0 ? '请先勾选已核验的候选片段' : '进入人工审核'}
++          onClick={onEnterReview}
++        >
++          进入人工审核{stats && stats.selectedPassages > 0 ? `（${stats.selectedPassages}）` : ''}
++        </button>
++      </div>
++    </div>
++  )
++}
+diff --git a/frontend/src/pages/evidence-center/components/RightPanel.tsx b/frontend/src/pages/evidence-center/components/RightPanel.tsx
+index d1d9cd1..21ace90 100644
+--- a/frontend/src/pages/evidence-center/components/RightPanel.tsx
++++ b/frontend/src/pages/evidence-center/components/RightPanel.tsx
+@@ -1,60 +1,68 @@
++import { useMemo } from 'react'
+ import { useEvidenceCenter, type ModuleKey } from '../EvidenceCenterContext'
+-import { CandidateSummary } from './CandidateSummary'
++import { ObjectQueue } from './ObjectQueue'
+ import { PromotionImpact } from './PromotionImpact'
+ import { ReviewerDecisionPanel } from './ReviewerDecisionPanel'
+ import { TaskSummary } from './TaskSummary'
+ 
+ const RIGHT_TITLES: Record<ModuleKey, string> = {
+   tasks: '任务与队列概览',
+   papers: '论文详情',
+-  candidates: '检索与候选',
++  candidates: '待处理对象队列',
+   review: '人工审核',
+   promotion: '晋升确认',
+ }
+ 
+-/** 右栏插槽:佐证任务渲染 TaskSummary,候选模块渲染 CandidateSummary,审核模块渲染 ReviewerDecisionPanel,晋升模块渲染 PromotionImpact */
++/** 右栏插槽:佐证任务渲染 TaskSummary,候选模块渲染 ObjectQueue(队列),审核模块渲染 ReviewerDecisionPanel,晋升模块渲染 PromotionImpact */
+ export function RightPanel({ module }: { module: ModuleKey }) {
+   const {
+     state,
++    queue,
+     taskSummary,
+     taskSummaryActions,
+-    candidateSummary,
+     reviewDecision,
+     promotionImpact,
+     openTarget,
+     openTask,
+   } = useEvidenceCenter()
+ 
++  // 候选模块右栏队列的当前对象下标(与页面左栏队列同逻辑;仅 candidates 分支使用)
++  const candidateQueueIndex = useMemo(() => {
++    if (queue.length === 0) return -1
++    const idx = queue.findIndex(q => q.target_type === state.targetType && q.target_id === state.targetId)
++    return idx >= 0 ? idx : 0
++  }, [queue, state.targetType, state.targetId])
++
+   if (module === 'tasks') {
+     return (
+       <aside className="evidence-right-panel" data-testid="evidence-right-panel">
+         <TaskSummary
+           data={taskSummary}
+           onStartReview={() => {
+             if (taskSummary) openTask(taskSummary.id)
+           }}
+           onCreateBatch={taskSummaryActions.onCreateBatch}
+           onRefresh={taskSummaryActions.onRefresh}
+         />
+       </aside>
+     )
+   }
+ 
+   if (module === 'candidates') {
++    // 候选模块右栏 = 待处理对象队列(队列已从页面左栏移到右栏;左栏改渲染 ClaimView)
+     return (
+       <aside className="evidence-right-panel" data-testid="evidence-right-panel">
+-        <CandidateSummary
+-          data={candidateSummary}
+-          onEnterReview={() => {
+-            if (state.targetType && state.targetId) openTarget(state.targetType, state.targetId, 'review')
+-          }}
++        <ObjectQueue
++          queue={queue}
++          currentIndex={candidateQueueIndex}
++          onSelect={e => openTarget(e.target_type, e.target_id, 'candidates')}
+         />
+       </aside>
+     )
+   }
+ 
+   if (module === 'review') {
+     return (
+       <aside className="evidence-right-panel" data-testid="evidence-right-panel">
+         {reviewDecision ? (
+           <ReviewerDecisionPanel {...reviewDecision} />
+diff --git a/frontend/src/pages/evidence-center/modules/EvidenceCandidatesModule.test.tsx b/frontend/src/pages/evidence-center/modules/EvidenceCandidatesModule.test.tsx
+index 07a3d1f..d5da86d 100644
+--- a/frontend/src/pages/evidence-center/modules/EvidenceCandidatesModule.test.tsx
++++ b/frontend/src/pages/evidence-center/modules/EvidenceCandidatesModule.test.tsx
+@@ -171,30 +171,38 @@ describe('EvidenceCandidatesModule', () => {
+     })
+   })
+ 
+   it('不再自渲染左队列(队列由页面级 ObjectQueue 渲染)', async () => {
+     renderModule()
+     await waitFor(() => expect(endpoints.listPaperEvidenceTaskItems).toHaveBeenCalledWith('t1', { limit: 100 }))
+     expect(screen.queryByTestId('candidates-queue')).toBeNull()
+     expect(screen.queryByTestId('candidates-queue-item')).toBeNull()
+   })
+ 
+-  it('Claim 区重排:当前需要验证的事实 + Claim 单行 + Component Chips(标签 + 值)', async () => {
++  it('不再自渲染 ClaimView(已移至页面左栏;模块中栏仅保留检索/统计条/候选列表)', async () => {
+     renderModule()
+-    await waitFor(() => expect(screen.getByText('R1 投射到 R2 且影响功能')).toBeTruthy())
+-    expect(screen.getByText('当前需要验证的事实')).toBeTruthy()
+-    const chips = screen.getAllByTestId('evidence-claim-chip')
+-    expect(chips).toHaveLength(2)
+-    expect(chips[0].textContent).toContain('源脑区')
+-    expect(chips[0].textContent).toContain('R1')
+-    expect(chips[1].textContent).toContain('连接关系')
+-    expect(chips[1].textContent).toContain('存在投射关系')
++    await waitFor(() => expect(screen.getByText('A Study of R1 to R2 Projection')).toBeTruthy())
++    expect(screen.queryByTestId('evidence-claim')).toBeNull()
++    expect(screen.queryByText('当前需要验证的事实')).toBeNull()
++  })
++
++  it('中栏统计条:找到论文 / AI 提取论文 / 已核验片段 / Coverage(N/M) / 模型判断', async () => {
++    renderModule()
++    await waitFor(() => expect(screen.getByTestId('evidence-stats-bar')).toBeTruthy())
++    const bar = screen.getByTestId('evidence-stats-bar')
++    // ITEM 固定装置:1 篇已提取论文(2 片段,1 已核验);DTO 必需组件 2(源脑区/连接关系),已覆盖 1(连接关系)
++    expect(within(bar).getByTestId('evidence-stats-found').textContent).toBe('1')
++    expect(within(bar).getByTestId('evidence-stats-extracted').textContent).toBe('1')
++    expect(within(bar).getByTestId('evidence-stats-verified').textContent).toBe('1')
++    expect(within(bar).getByTestId('evidence-stats-coverage').textContent).toBe('1/2')
++    expect(within(bar).getByTestId('evidence-stats-direction').textContent).toBe('部分支持')
++    expect(within(bar).getByText('支持连接存在')).toBeTruthy()
+   })
+ 
+   it('PaperCard 分层:标题粗体 / 作者·期刊·年份 / 标签(PMID/DOI/摘要/OA 全文) / 提取结果行', async () => {
+     renderModule()
+     await waitFor(() => expect(screen.getByText('A Study of R1 to R2 Projection')).toBeTruthy())
+     // 引用行
+     expect(screen.getByText(/Brain Journal · 2024/)).toBeTruthy()
+     // 标签行
+     expect(screen.getByText('PMID 12345678')).toBeTruthy()
+     expect(screen.getByText('DOI 10.1234/test')).toBeTruthy()
+@@ -502,20 +510,92 @@ describe('EvidenceCandidatesModule', () => {
+     expect(screen.getByText('批量操作')).toBeTruthy()
+     fireEvent.click(screen.getByRole('button', { name: /收起检索/ }))
+     expect(screen.getByTestId('evidence-search-collapsed')).toBeTruthy()
+     // 折叠条 [重新搜索] 直接执行(无需展开)
+     fireEvent.click(within(screen.getByTestId('evidence-search-collapsed')).getByRole('button', { name: /重新搜索/ }))
+     await waitFor(() => expect(endpoints.searchPaperEvidence).toHaveBeenCalledTimes(2))
+     // 结果卡仍在候选列表区
+     expect(screen.getByText('Found Paper')).toBeTruthy()
+   })
+ 
++  it('折叠条 [提取所选论文(N)]:检索折叠后从候选列表勾选论文可直接批量提取(零选中禁用)', async () => {
++    vi.mocked(endpoints.listPaperEvidenceTaskItems).mockResolvedValue({ items: [] })
++    vi.mocked(endpoints.searchPaperEvidence).mockResolvedValue({
++      target_info: { target_type: 'connection', target_id: 'r1-r2', function_term: '', mode: 'existence', query: '', info: {} },
++      papers: [{
++        pmid: '99999999',
++        doi: '10.9999/abc',
++        title: 'Found Paper',
++        journal: 'Nature',
++        year: '2025',
++        authors: '',
++        abstract: '',
++        source: 'europepmc',
++        is_open_access: true,
++      }],
++    })
++    vi.mocked(endpoints.extractSelectedPaperEvidence).mockResolvedValueOnce({
++      claim: '',
++      claim_components: [],
++      results: [{
++        paper_id: 'paper-2',
++        pmid: '99999999',
++        doi: '10.9999/abc',
++        pmcid: null,
++        title: 'Found Paper',
++        journal: 'Nature',
++        year: '2025',
++        is_oa: true,
++        fulltext_fetched: true,
++        model_direction: 'supports',
++        model_assessment: '支持连接存在',
++        coverage_summary: null,
++        passages: [{
++          passage: 'Evidence from the collapsed-bar extraction.',
++          source_scope: 'abstract',
++          section_title: null,
++          direction: 'supports',
++          evidence_level: 'direct',
++          source_verified: true,
++          supported_components: ['relation'],
++        }],
++      }],
++      llm_model: null,
++    })
++    window.location.hash = '#/evidence-center?module=candidates&task_id=t1&target_type=connection&target_id=r1-r2'
++    render(
++      <EvidenceCenterProvider>
++        <EvidenceCandidatesModule />
++      </EvidenceCenterProvider>,
++    )
++    await waitFor(() => expect(screen.getByText('查找相关论文')).toBeTruthy())
++    fireEvent.click(screen.getByRole('button', { name: /重新搜索/ }))
++    // 检索成功 → 折叠条出现;未勾选论文时 [提取所选论文] 禁用
++    await waitFor(() => expect(screen.getByTestId('evidence-search-collapsed')).toBeTruthy())
++    expect((screen.getByTestId('evidence-collapsed-extract') as HTMLButtonElement).disabled).toBe(true)
++    // 从候选列表勾选检索结果卡(无需展开检索)→ 按钮可用且计数更新
++    fireEvent.click(screen.getByTestId('paper-card-select'))
++    await waitFor(() =>
++      expect((screen.getByTestId('evidence-collapsed-extract') as HTMLButtonElement).disabled).toBe(false),
++    )
++    expect(screen.getByTestId('evidence-collapsed-extract').textContent).toContain('提取所选论文（1）')
++    // 点击 → 批量提取
++    fireEvent.click(screen.getByTestId('evidence-collapsed-extract'))
++    await waitFor(() =>
++      expect(endpoints.extractSelectedPaperEvidence).toHaveBeenCalledWith(expect.objectContaining({
++        target_type: 'connection',
++        target_id: 'r1-r2',
++        papers: [expect.objectContaining({ pmid: '99999999' })],
++      })),
++    )
++  })
++
+   it('恢复系统推荐:清空 Query 并以无 query_override 重新检索', async () => {
+     vi.mocked(endpoints.listPaperEvidenceTaskItems).mockResolvedValue({ items: [] })
+     window.location.hash = '#/evidence-center?module=candidates&task_id=t1&target_type=connection&target_id=r1-r2'
+     render(
+       <EvidenceCenterProvider>
+         <EvidenceCandidatesModule />
+       </EvidenceCenterProvider>,
+     )
+     await waitFor(() => expect(screen.getByText('查找相关论文')).toBeTruthy())
+     fireEvent.change(screen.getByTestId('evidence-search-query'), { target: { value: 'my query' } })
+diff --git a/frontend/src/pages/evidence-center/modules/EvidenceCandidatesModule.tsx b/frontend/src/pages/evidence-center/modules/EvidenceCandidatesModule.tsx
+index 1755cef..d9de795 100644
+--- a/frontend/src/pages/evidence-center/modules/EvidenceCandidatesModule.tsx
++++ b/frontend/src/pages/evidence-center/modules/EvidenceCandidatesModule.tsx
+@@ -6,22 +6,22 @@ import {
+   searchPaperEvidence,
+   type EvidenceTargetDto,
+   type PaperEvidenceTaskItem,
+   type PaperSearchResponse,
+ } from '../../../api/endpoints'
+ import { useEvidenceCenter } from '../EvidenceCenterContext'
+ import { INITIAL_QUEUE_KEY } from '../evidenceCenterUrl'
+ import { candidatePassagesToWorkbench } from '../components/candidatePassages'
+ import { aggregateTmpDirection, computeTmpCoverage } from '../components/claimCoverage'
+ import { CandidatePaperCard, type CandidatePaperData } from '../components/PaperCard'
++import { CandidateStatsBar, type CandidateStats } from '../components/CandidateStatsBar'
+ import { CandidateSummaryData } from '../components/CandidateSummary'
+-import { ClaimView } from '../components/ClaimView'
+ import { PaperDetailDrawer } from '../components/PaperDetailDrawer'
+ import { PaperEvidenceView } from '../components/PaperEvidenceView'
+ import { loadReviewStatus } from '../components/ReviewStatusStore'
+ import type { QueueEntry, QueueStatus, WorkbenchPassage } from '../components/types'
+ 
+ const DRAFT_PREFIX = 'evidence-center.review-draft.'
+ 
+ type EvidenceMode = 'auto' | 'function' | 'existence'
+ 
+ /** 候选论文(任务 item 的 candidate_papers 与手动提取的 ExtractedPaperCandidate 的公共子集) */
+@@ -109,21 +109,21 @@ function searchToCardData(p: PaperSearchResponse['papers'][number]): CandidatePa
+     extracted: false,
+     modelDirection: null,
+     modelAssessment: null,
+     coverageSummary: null,
+     passageCount: 0,
+     verifiedCount: 0,
+   }
+ }
+ 
+ export function EvidenceCandidatesModule() {
+-  const { state, queue, setQueue, openTarget, setCandidateSummary, setProgress } = useEvidenceCenter()
++  const { state, queue, setQueue, openTarget, setCandidateSummary, setCandidateClaim, setProgress } = useEvidenceCenter()
+   const [items, setItems] = useState<PaperEvidenceTaskItem[]>([])
+   const [loading, setLoading] = useState(true)
+   const [error, setError] = useState<string | null>(null)
+   const [message, setMessage] = useState<string | null>(null)
+   const [dto, setDto] = useState<EvidenceTargetDto | null>(null)
+   const [excludedPaperIds, setExcludedPaperIds] = useState<Set<string>>(new Set())
+   const [selectedHashes, setSelectedHashes] = useState<Set<string>>(new Set())
+   const [reExtractBusy, setReExtractBusy] = useState<string | null>(null)
+   const [manualQuery, setManualQuery] = useState('')
+   const [manualResult, setManualResult] = useState<PaperSearchResponse | null>(null)
+@@ -217,20 +217,36 @@ export function EvidenceCandidatesModule() {
+       return
+     }
+     let cancelled = false
+     setDto(null)
+     getEvidenceTarget(t, id)
+       .then(d => { if (!cancelled) setDto(d) })
+       .catch(() => { if (!cancelled) setDto(null) })
+     return () => { cancelled = true }
+   }, [current?.target_type, current?.target_id])
+ 
++  // 左栏 ClaimView 数据源:DTO 加载后推送当前对象验证事实到 Context(页面左栏渲染);卸载/切对象清空
++  useEffect(() => {
++    if (!dto) {
++      setCandidateClaim(null)
++      return
++    }
++    setCandidateClaim({
++      claimText: dto.claim_text ?? '',
++      components: dto.claim_components ?? [],
++      granularity: dto.granularity ?? null,
++      targetType: dto.target_type,
++    })
++  }, [dto, setCandidateClaim])
++
++  useEffect(() => () => { setCandidateClaim(null) }, [setCandidateClaim])
++
+   // granularity 兑现:DTO 加载后填充队列条目,页面 ContextBar 读取(仅实际变更时 setQueue,避免重渲染循环)
+   useEffect(() => {
+     if (!dto?.granularity) return
+     const next = queue.map(e =>
+       e.target_type === dto.target_type && e.target_id === dto.target_id && e.granularity !== dto.granularity
+         ? { ...e, granularity: dto.granularity }
+         : e,
+     )
+     if (next.some((e, i) => e !== queue[i])) setQueue(next)
+   }, [dto, queue, setQueue])
+@@ -473,38 +489,48 @@ export function EvidenceCandidatesModule() {
+       passages: selected,
+       modelDirection: metaPaper?.model_direction ?? null,
+       modelAssessment: metaPaper?.model_assessment ?? null,
+       paperTitle: metaPaper?.title ?? '',
+       pmid: metaPaper?.pmid ?? '',
+     }
+     sessionStorage.setItem(key, JSON.stringify(draft))
+     draftWrittenRef.current = { key }
+   }, [current, candidates, manualResults, selectedHashes])
+ 
+-  // ─── 右栏候选摘要(Context → RightPanel) ───
+-  const summary = useMemo<CandidateSummaryData | null>(() => {
++  // ─── 中栏统计条数据(候选/已提取/已核验/覆盖/模型判断;右栏摘要 Context 推送同源) ───
++  const stats = useMemo<CandidateStats | null>(() => {
+     if (!current) return null
+     const all = [...candidates, ...manualResults]
+     const passages = all.flatMap(c => candidatePassagesToWorkbench(c.passages ?? [], c.paper_id))
+     const verified = passages.filter(p => p.source_verified)
+     const coverage = computeTmpCoverage(claimComponents, verified)
+     return {
+-      claimText: dto?.claim_text ?? current.label ?? '',
+       foundPapers: all.length + (manualResult?.papers.length ?? 0),
+       extractedPapers: all.length,
+       verifiedPassages: verified.length,
+       selectedPassages: selectedHashes.size,
+       coverageRatio: coverage.coverage_ratio,
++      coverageSupported: coverage.supported_components.length,
++      coverageRequired: coverage.required_components.length,
+       direction: aggregateTmpDirection(coverage, verified),
+       modelAssessment: all[0]?.model_assessment ?? null,
+     }
+-  }, [current, dto, candidates, manualResults, manualResult, claimComponents, selectedHashes])
++  }, [current, candidates, manualResults, manualResult, claimComponents, selectedHashes])
++
++  // 右栏候选摘要(Context → RightPanel;当前无消费者,保留推送与既有模式一致)
++  const summary = useMemo<CandidateSummaryData | null>(() => {
++    if (!current || !stats) return null
++    return {
++      claimText: dto?.claim_text ?? current.label ?? '',
++      ...stats,
++    }
++  }, [current, dto, stats])
+ 
+   useEffect(() => { setCandidateSummary(summary) }, [summary, setCandidateSummary])
+   useEffect(() => () => { setCandidateSummary(null) }, [setCandidateSummary])
+ 
+   const totalPapers = candidates.length + manualResults.length + visibleSearchPapers.length
+ 
+   return (
+     <div className="evidence-candidates">
+       <div className="evidence-candidates-main">
+         {loading && <div className="evidence-task-loading">加载中…</div>}
+@@ -514,64 +540,78 @@ export function EvidenceCandidatesModule() {
+             <button type="button" className="btn btn-sm" onClick={() => void loadItems()}>重试</button>
+           </div>
+         )}
+         {!loading && !error && !current && (
+           <div className="evidence-candidates-empty">
+             请先在「佐证任务」中打开一个任务，或从上方任务列表进入。
+           </div>
+         )}
+         {!loading && !error && current && (
+           <>
+-            <ClaimView
+-              claimText={dto?.claim_text ?? ''}
+-              components={claimComponents}
+-              targetType={current.target_type}
+-            />
+-
+             {message && <div className="ontology-page-message">{message}</div>}
+ 
+             {evidencePaper ? (
+-              <PaperEvidenceView
+-                paper={{
+-                  paperId: evidencePaper.paper_id,
+-                  pmid: evidencePaper.pmid,
+-                  doi: evidencePaper.doi ?? null,
+-                  title: evidencePaper.title,
+-                  journal: evidencePaper.journal,
+-                  year: evidencePaper.year,
+-                }}
+-                components={claimComponents}
+-                passages={evidencePassages}
+-                selectedHashes={selectedHashes}
+-                onTogglePassage={handleTogglePassage}
+-                onBack={() => setEvidenceViewPaperId(null)}
+-              />
++              <>
++                {/* 证据视图态:统计条保留在上方,[进入人工审核] 随勾选实时可用 */}
++                <CandidateStatsBar
++                  stats={stats}
++                  onEnterReview={() => {
++                    if (state.targetType && state.targetId) openTarget(state.targetType, state.targetId, 'review')
++                  }}
++                />
++                <PaperEvidenceView
++                  paper={{
++                    paperId: evidencePaper.paper_id,
++                    pmid: evidencePaper.pmid,
++                    doi: evidencePaper.doi ?? null,
++                    title: evidencePaper.title,
++                    journal: evidencePaper.journal,
++                    year: evidencePaper.year,
++                  }}
++                  components={claimComponents}
++                  passages={evidencePassages}
++                  selectedHashes={selectedHashes}
++                  onTogglePassage={handleTogglePassage}
++                  onBack={() => setEvidenceViewPaperId(null)}
++                />
++              </>
+             ) : (
+               <>
+                 {manualTarget && (
+                   hasSearchResults && !searchExpanded ? (
+-                    // 有检索结果 → 默认折叠为一条:Query 摘要 + [重新搜索](直接执行) + [展开检索]
++                    // 有检索结果 → 默认折叠为一条:Query 摘要 + [重新搜索](直接执行) + [展开检索] + [提取所选论文(N)](primary)
+                     <div className="evidence-search evidence-search-collapsed" data-testid="evidence-search-collapsed">
+                       <span className="evidence-search-collapsed-label">已检索</span>
+                       <span
+                         className="evidence-search-collapsed-query"
+                         data-testid="evidence-search-collapsed-query"
+                         title={querySummary}
+                       >
+                         {querySummary}
+                       </span>
+-                      <button type="button" className="btn btn-sm" disabled={manualBusy} onClick={() => void handleManualSearch()}>
+-                        {manualBusy ? '检索中…' : '重新搜索'}
+-                      </button>
+-                      <button type="button" className="btn btn-sm" onClick={() => setSearchExpanded(true)}>
+-                        展开检索
+-                      </button>
++                      <span className="evidence-search-collapsed-actions">
++                        <button type="button" className="btn btn-sm" disabled={manualBusy} onClick={() => void handleManualSearch()}>
++                          {manualBusy ? '检索中…' : '重新搜索'}
++                        </button>
++                        <button type="button" className="btn btn-sm" onClick={() => setSearchExpanded(true)}>
++                          展开检索
++                        </button>
++                        <button
++                          type="button"
++                          className="btn btn-sm btn-primary"
++                          data-testid="evidence-collapsed-extract"
++                          disabled={manualBusy || manualSelected.size === 0}
++                          onClick={() => void handleManualExtract()}
++                        >
++                          提取所选论文（{manualSelected.size}）
++                        </button>
++                      </span>
+                     </div>
+                   ) : (
+                     <div className="evidence-search" data-testid="evidence-search">
+                       <div className="evidence-search-layer">
+                         <h4 className="evidence-search-title">查找相关论文</h4>
+                         <div className="evidence-search-row">
+                           <input
+                             className="filter-input evidence-search-query"
+                             data-testid="evidence-search-query"
+                             value={manualQuery}
+@@ -646,25 +686,33 @@ export function EvidenceCandidatesModule() {
+                             <button type="button" className="btn btn-xs" onClick={() => setSearchExpanded(false)}>
+                               收起检索
+                             </button>
+                           )}
+                         </div>
+                       </div>
+                     </div>
+                   )
+                 )}
+ 
++                {/* 中栏统计条:检索区下方、候选论文列表上方;Claim 事实在页面左栏 */}
++                <CandidateStatsBar
++                  stats={stats}
++                  onEnterReview={() => {
++                    if (state.targetType && state.targetId) openTarget(state.targetType, state.targetId, 'review')
++                  }}
++                />
++
+                 <div className="evidence-candidates-papers">
+                   <div className="evidence-candidates-papers-head">
+                     <h4>候选论文（{totalPapers}）</h4>
+                     <span className="evidence-module-hint">
+-                      勾选已核验片段后可从右栏「进入人工审核」；排除的论文可用「恢复排除」找回。
++                      勾选已核验片段后可从中栏统计条「进入人工审核」；排除的论文可用「恢复排除」找回。
+                     </span>
+                   </div>
+                   {totalPapers === 0 && (
+                     <div className="evidence-candidates-empty">
+                       {manualTarget
+                         ? '没有找到候选论文，可先在上方检索相关论文或切换其他对象。'
+                         : '当前对象暂无候选证据，可尝试重新提取或切换其他对象。'}
+                     </div>
+                   )}
+                   {visibleSearchPapers.map(p => (
+diff --git a/frontend/src/styles.css b/frontend/src/styles.css
+index 783917d..1e0d604 100644
+--- a/frontend/src/styles.css
++++ b/frontend/src/styles.css
+@@ -11809,20 +11809,27 @@ input[type="range"]::-webkit-slider-thumb {
+   color: var(--text);
+   background: #eff6ff;
+   border: 1px solid #dbeafe;
+   border-radius: 999px;
+   padding: 3px 10px;
+ }
+ .evidence-claim-chip b { color: var(--primary); font-weight: 600; white-space: nowrap; }
+ .evidence-claim-chip span { white-space: nowrap; }
+ .evidence-claim-chip-optional { background: #f8fafc; border-color: var(--border); }
+ .evidence-claim-chip-optional b { color: var(--text-muted); }
++/* 候选模块左栏窄面板(230px):Claim 紧凑排布,chips 内容允许换行 */
++.evidence-left .evidence-claim { padding: 8px 10px; gap: 5px; }
++.evidence-left .evidence-claim-head h4 { font-size: 13px; }
++.evidence-left .evidence-claim-text { font-size: 13px; padding: 6px 8px; }
++.evidence-left .evidence-claim-chip { font-size: 11px; padding: 2px 8px; max-width: 100%; }
++.evidence-left .evidence-claim-chip b,
++.evidence-left .evidence-claim-chip span { white-space: normal; word-break: break-word; }
+ 
+ /* 搜索区三层 */
+ .evidence-search {
+   background: var(--white);
+   border: 1px solid var(--border);
+   border-radius: var(--card-radius);
+   box-shadow: var(--shadow);
+   padding: 12px 14px;
+   display: flex;
+   flex-direction: column;
+@@ -11864,20 +11871,47 @@ input[type="range"]::-webkit-slider-thumb {
+ }
+ .evidence-search-collapsed-query {
+   flex: 1;
+   min-width: 120px;
+   font-size: 12px;
+   color: var(--text-muted);
+   white-space: nowrap;
+   overflow: hidden;
+   text-overflow: ellipsis;
+ }
++/* 折叠条按钮组(重新搜索 / 展开检索 / 提取所选论文)右对齐 */
++.evidence-search-collapsed-actions {
++  display: flex;
++  align-items: center;
++  gap: 8px;
++  margin-left: auto;
++}
++
++/* 中栏统计信息条(候选模块):找到论文 / AI 提取论文 / 已核验片段 / Coverage / 模型判断 + 进入人工审核 */
++.evidence-stats-bar {
++  display: flex;
++  align-items: center;
++  gap: 16px;
++  flex-wrap: wrap;
++  background: var(--white);
++  border: 1px solid var(--border);
++  border-radius: var(--card-radius);
++  box-shadow: var(--shadow);
++  padding: 8px 14px;
++}
++.evidence-stats-item { display: flex; align-items: baseline; gap: 6px; }
++.evidence-stats-label { font-size: 12px; color: var(--text-muted); white-space: nowrap; }
++.evidence-stats-value { font-size: 15px; font-weight: 700; color: var(--text); white-space: nowrap; }
++.evidence-stats-model { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
++.evidence-stats-direction { font-size: 12px; font-weight: 700; color: var(--primary); white-space: nowrap; }
++.evidence-stats-assessment { font-size: 12px; color: var(--text-muted); }
++.evidence-stats-actions { margin-left: auto; display: flex; align-items: center; }
+ 
+ /* PaperCard 分层(候选) */
+ .paper-card-candidate {
+   background: var(--white);
+   border: 1px solid var(--border);
+   border-radius: var(--card-radius);
+   box-shadow: var(--shadow);
+   padding: 10px 14px;
+   display: flex;
+   flex-direction: column;

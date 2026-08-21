@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 720" width="1280" height="720">
+  <g id="background"><rect width="1280" height="720" fill="#F7FAFC" /></g>
+  <g id="header">
+  <rect x="56" y="42" width="8" height="40" fill="#1F9FB5" />
+  <text x="80" y="72" font-family="Microsoft YaHei, Arial, sans-serif" font-size="34" font-weight="700" fill="#17324D">三道闸门与晋升</text>
+  <text x="80" y="104" font-family="Microsoft YaHei, Arial, sans-serif" font-size="16" fill="#5A6A7A">通过后才写入标准三元组</text>
+  </g>
+  <g id="chevrons">
+  <polygon points="56,200 356,200 396,270 356,340 56,340 96,270" fill="#1F9FB5" />
+  <g transform="translate(176.0, 230.0) scale(1.3333333333333333)" fill="none" stroke="none" stroke-width="2">
+    <path d="M11.46 20.846a12 12 0 0 1 -7.96 -14.846a12 12 0 0 0 8.5 -3a12 12 0 0 0 8.5 3a12 12 0 0 1 -.09 7.06" />
+    <path d="M15 19l2 2l4 -4" />
+  </g><text x="226" y="300" text-anchor="middle" font-family="Microsoft YaHei, Arial, sans-serif" font-size="18" font-weight="700" fill="#FFFFFF">规则校验</text>
+  <polygon points="416,200 716,200 756,270 716,340 416,340 456,270" fill="#1F9FB5" />
+  <g transform="translate(536.0, 230.0) scale(1.3333333333333333)" fill="none" stroke="none" stroke-width="2">
+    <path d="M6 6a2 2 0 0 1 2 -2h8a2 2 0 0 1 2 2v4a2 2 0 0 1 -2 2h-8a2 2 0 0 1 -2 -2l0 -4" />
+    <path d="M12 2v2" />
+    <path d="M9 12v9" />
+    <path d="M15 12v9" />
+    <path d="M5 16l4 -2" />
+    <path d="M15 14l4 2" />
+    <path d="M9 18h6" />
+    <path d="M10 8v.01" />
+    <path d="M14 8v.01" />
+  </g><text x="586" y="300" text-anchor="middle" font-family="Microsoft YaHei, Arial, sans-serif" font-size="18" font-weight="700" fill="#FFFFFF">模型盲审</text>
+  <polygon points="776,200 1076,200 1116,270 1076,340 776,340 816,270" fill="#2F855A" />
+  <g transform="translate(896.0, 230.0) scale(1.3333333333333333)" fill="none" stroke="none" stroke-width="2">
+    <path d="M8 7a4 4 0 1 0 8 0a4 4 0 0 0 -8 0" />
+    <path d="M6 21v-2a4 4 0 0 1 4 -4h4" />
+    <path d="M15 19l2 2l4 -4" />
+  </g><text x="946" y="300" text-anchor="middle" font-family="Microsoft YaHei, Arial, sans-serif" font-size="18" font-weight="700" fill="#FFFFFF">专家终审</text>
+  </g>
+  <g id="promo"><text x="56" y="420" font-family="Microsoft YaHei, Arial, sans-serif" font-size="18" font-weight="700" fill="#17324D">晋升三步骤</text>
+  <path fill="#FFFFFF" stroke="#CBD5E0" d="M66,450 H326 A10,10 0 0 1 336,460 V530 A10,10 0 0 1 326,540 H66 A10,10 0 0 1 56,530 V460 A10,10 0 0 1 66,450 Z" /><text x="80" y="505" font-family="Arial, sans-serif" font-size="20" font-weight="700" fill="#1F9FB5">01</text><text x="126" y="505" font-family="Microsoft YaHei, Arial, sans-serif" font-size="20" fill="#243447">预览变更</text>
+  <path fill="#FFFFFF" stroke="#CBD5E0" d="M376,450 H636 A10,10 0 0 1 646,460 V530 A10,10 0 0 1 636,540 H376 A10,10 0 0 1 366,530 V460 A10,10 0 0 1 376,450 Z" /><text x="390" y="505" font-family="Arial, sans-serif" font-size="20" font-weight="700" fill="#1F9FB5">02</text><text x="436" y="505" font-family="Microsoft YaHei, Arial, sans-serif" font-size="20" fill="#243447">人工确认</text>
+  <path fill="#FFFFFF" stroke="#CBD5E0" d="M686,450 H946 A10,10 0 0 1 956,460 V530 A10,10 0 0 1 946,540 H686 A10,10 0 0 1 676,530 V460 A10,10 0 0 1 686,450 Z" /><text x="700" y="505" font-family="Arial, sans-serif" font-size="20" font-weight="700" fill="#1F9FB5">03</text><text x="746" y="505" font-family="Microsoft YaHei, Arial, sans-serif" font-size="20" fill="#243447">系统执行</text>
+  </g>
+  <path fill="#EDF2F7" d="M66,570 H1214 A10,10 0 0 1 1224,580 V630 A10,10 0 0 1 1214,640 H66 A10,10 0 0 1 56,630 V580 A10,10 0 0 1 66,570 Z" /><text x="640" y="615" text-anchor="middle" font-family="Microsoft YaHei, Arial, sans-serif" font-size="18" fill="#243447">三元组 + 12 种谓词</text>
+  <g id="footer"><text x="1224" y="696" text-anchor="end" font-family="Arial, sans-serif" font-size="12" fill="#8492A0">11</text></g>
+</svg>

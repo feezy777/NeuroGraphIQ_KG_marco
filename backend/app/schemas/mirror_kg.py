@@ -283,6 +283,11 @@ class MirrorRegionConnectionListResponse(BaseModel):
     offset: int
 
 
+class MirrorRegionConnectionIdsResponse(BaseModel):
+    ids: list[uuid.UUID]
+    total: int
+
+
 class MirrorRegionFunctionCreate(BaseModel):
     region_candidate_id: uuid.UUID | None = None
     region_final_id: uuid.UUID | None = None

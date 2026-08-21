@@ -20,6 +20,7 @@ from app.schemas.settings import (
     DeepSeekRuntimeConfig,
     KimiRuntimeConfig,
     KimiRuntimeSettings,
+    OntologyQueryRuntimeSettings,
     PublicApiProviderRuntimeSettings,
     PublicDeepSeekRuntimeSettings,
     PublicKimiRuntimeSettings,
@@ -101,6 +102,7 @@ def to_public_runtime_settings(settings: RuntimeSettings) -> PublicRuntimeSettin
             ),
         ),
         basic=settings.basic,
+        ontology_query=settings.ontology_query,
     )
 
 
@@ -141,6 +143,10 @@ def update_runtime_settings(payload: dict[str, Any] | RuntimeSettingsPatch) -> P
         elif kimi_patch.api_key is not None and kimi_patch.api_key.strip():
             data["api_providers"]["kimi"]["api_key"] = kimi_patch.api_key.strip()
 
+    if patch.ontology_query is not None:
+        ontology_query_data = patch.ontology_query.model_dump(exclude_none=True)
+        data["ontology_query"].update(ontology_query_data)
+
     updated = RuntimeSettings.model_validate(data)
     _write_runtime_settings(updated)
     return to_public_runtime_settings(updated)
@@ -159,6 +165,11 @@ def get_deepseek_runtime_config() -> DeepSeekRuntimeConfig:
         temperature=runtime.temperature,
         max_tokens=runtime.max_tokens,
     )
+
+
+def get_ontology_query_runtime_config() -> OntologyQueryRuntimeSettings:
+    """Phase Q4 — Ontology Query LLM 解释层配置（默认 deepseek / deepseek-v4 / 0.1）。"""
+    return load_runtime_settings().ontology_query
 
 
 def get_kimi_runtime_config() -> KimiRuntimeConfig:

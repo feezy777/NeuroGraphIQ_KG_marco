@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 720" data-pptx-page-role="content"><defs><filter id="g"><feGaussianBlur stdDeviation="2" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs><g id="bg" data-pptx-bounds="0 0 1280 720" data-pptx-role="background"><rect width="1280" height="720" fill="#0D1117"/><line x1="0" y1="108" x2="1280" y2="108" stroke="#212D40" stroke-width="0.5"/><text x="80" y="700" font-family="Microsoft YaHei" font-size="14" fill="#586069">NeuroGraphIQ KG V3</text></g><g id="c" data-pptx-bounds="40 120 1200 560">
+<rect x="40" y="120" width="4" height="48" fill="#58A6FF" /><text x="60" y="155" font-family="Microsoft YaHei" font-weight="bold" font-size="40" fill="#FFFFFF">核心创新点</text>
+<rect x="40" y="190" width="370" height="160" rx="2" fill="#161B22" stroke="#30363D" stroke-width="0.5"/>
+<rect x="40" y="190" width="370" height="4" fill="#1A365D"/>
+<text x="60" y="230" font-family="Microsoft YaHei" font-weight="bold" font-size="22" fill="#1A365D">1. 分层漏斗治理</text>
+<text x="60" y="265" font-family="Microsoft YaHei" font-size="17" fill="#C9D1D9">6 阶段流水线</text>
+<text x="60" y="293" font-family="Microsoft YaHei" font-size="17" fill="#C9D1D9">候选→校验→LLM→Mirror</text>
+<text x="60" y="321" font-family="Microsoft YaHei" font-size="17" fill="#C9D1D9">→Review→Final</text>
+<text x="60" y="349" font-family="Microsoft YaHei" font-size="17" fill="#C9D1D9">每层明确写边界</text>
+<rect x="430" y="190" width="370" height="160" rx="2" fill="#161B22" stroke="#30363D" stroke-width="0.5"/>
+<rect x="430" y="190" width="370" height="4" fill="#3068B0"/>
+<text x="450" y="230" font-family="Microsoft YaHei" font-weight="bold" font-size="22" fill="#3068B0">2. Mirror KG 中转层</text>
+<text x="450" y="265" font-family="Microsoft YaHei" font-size="17" fill="#C9D1D9">写入时去重合并</text>
+<text x="450" y="293" font-family="Microsoft YaHei" font-size="17" fill="#C9D1D9">Canonical Key 体系</text>
+<text x="450" y="321" font-family="Microsoft YaHei" font-size="17" fill="#C9D1D9">双溯源保留</text>
+<text x="450" y="349" font-family="Microsoft YaHei" font-size="17" fill="#C9D1D9">永不自动合并已审核数据</text>
+<rect x="820" y="190" width="370" height="160" rx="2" fill="#161B22" stroke="#30363D" stroke-width="0.5"/>
+<rect x="820" y="190" width="370" height="4" fill="#3878C0"/>
+<text x="840" y="230" font-family="Microsoft YaHei" font-weight="bold" font-size="22" fill="#3878C0">3. 双模型盲审</text>
+<text x="840" y="265" font-family="Microsoft YaHei" font-size="17" fill="#C9D1D9">DeepSeek + Kimi</text>
+<text x="840" y="293" font-family="Microsoft YaHei" font-size="17" fill="#C9D1D9">独立审核同一数据</text>
+<text x="840" y="321" font-family="Microsoft YaHei" font-size="17" fill="#C9D1D9">互不可见结果</text>
+<text x="840" y="349" font-family="Microsoft YaHei" font-size="17" fill="#C9D1D9">冲突人工裁决</text>
+<rect x="40" y="375" width="370" height="160" rx="2" fill="#161B22" stroke="#30363D" stroke-width="0.5"/>
+<rect x="40" y="375" width="370" height="4" fill="#38A169"/>
+<text x="60" y="415" font-family="Microsoft YaHei" font-weight="bold" font-size="22" fill="#38A169">4. 数据增强引擎</text>
+<text x="60" y="450" font-family="Microsoft YaHei" font-size="17" fill="#C9D1D9">Tier 1 确定性修复(零成本)</text>
+<text x="60" y="478" font-family="Microsoft YaHei" font-size="17" fill="#C9D1D9">Tier 2 LLM 增强</text>
+<text x="60" y="506" font-family="Microsoft YaHei" font-size="17" fill="#C9D1D9">Quality Score 0-100</text>
+<text x="60" y="534" font-family="Microsoft YaHei" font-size="17" fill="#C9D1D9">自动评分与分层修复</text>
+<rect x="430" y="375" width="370" height="160" rx="2" fill="#161B22" stroke="#30363D" stroke-width="0.5"/>
+<rect x="430" y="375" width="370" height="4" fill="#FFA657"/>
+<text x="450" y="415" font-family="Microsoft YaHei" font-weight="bold" font-size="22" fill="#FFA657">5. 全链路溯源</text>
+<text x="450" y="450" font-family="Microsoft YaHei" font-size="17" fill="#C9D1D9">7 步回溯到原始出处</text>
+<text x="450" y="478" font-family="Microsoft YaHei" font-size="17" fill="#C9D1D9">所有 provenance 不可变</text>
+<text x="450" y="506" font-family="Microsoft YaHei" font-size="17" fill="#C9D1D9">晋升硬性前提</text>
+<text x="450" y="534" font-family="Microsoft YaHei" font-size="17" fill="#C9D1D9">证据层完整记录</text>
+<rect x="820" y="375" width="370" height="160" rx="2" fill="#161B22" stroke="#30363D" stroke-width="0.5"/>
+<rect x="820" y="375" width="370" height="4" fill="#FF7B72"/>
+<text x="840" y="415" font-family="Microsoft YaHei" font-weight="bold" font-size="22" fill="#FF7B72">6. 五层粒度隔离</text>
+<text x="840" y="450" font-family="Microsoft YaHei" font-size="17" fill="#C9D1D9">PostgreSQL schema 级</text>
+<text x="840" y="478" font-family="Microsoft YaHei" font-size="17" fill="#C9D1D9">物理隔离</text>
+<text x="840" y="506" font-family="Microsoft YaHei" font-size="17" fill="#C9D1D9">跨粒度显式 Mapping</text>
+<text x="840" y="534" font-family="Microsoft YaHei" font-size="17" fill="#C9D1D9">禁止名称相似度合并</text>
+</g></svg>

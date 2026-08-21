@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { PaperEvidenceTaskItem } from '../../../api/endpoints'
 import { groupOf, isUnfinishedItem, sortByConfidenceAsc, TARGET_TYPE_GROUPS, UNFINISHED_ITEM_STATUSES } from './taskItemQueueUtils'
-import { taskSortRank } from './taskStatus'
+import { workStatusRank } from './taskStatus'
 
 function makeItem(overrides: Partial<PaperEvidenceTaskItem>): PaperEvidenceTaskItem {
   return {
@@ -51,11 +51,14 @@ describe('taskItemQueueUtils', () => {
     expect(TARGET_TYPE_GROUPS.map(g => g.label)).toEqual(['回路', '连接', '功能'])
   })
 
-  it('任务列表排序秩:进行中 < 有等待审核 < 其他', () => {
-    expect(taskSortRank({ status: 'running', awaiting_review_items: 0 })).toBe(0)
-    expect(taskSortRank({ status: 'paused', awaiting_review_items: 2 })).toBe(0)
-    expect(taskSortRank({ status: 'completed', awaiting_review_items: 3 })).toBe(1)
-    expect(taskSortRank({ status: 'completed', awaiting_review_items: 0 })).toBe(2)
-    expect(taskSortRank({ status: 'failed', awaiting_review_items: 0 })).toBe(2)
+  it('任务工作状态排序秩:处理中 → 待验证 → 已暂停 → 部分失败 → 失败 → 已完成 → 空 → 已取消', () => {
+    expect(workStatusRank('processing')).toBeLessThan(workStatusRank('awaiting_review'))
+    expect(workStatusRank('awaiting_review')).toBeLessThan(workStatusRank('paused'))
+    expect(workStatusRank('paused')).toBeLessThan(workStatusRank('partially_failed'))
+    expect(workStatusRank('partially_failed')).toBeLessThan(workStatusRank('failed'))
+    expect(workStatusRank('failed')).toBeLessThan(workStatusRank('completed'))
+    expect(workStatusRank('completed')).toBeLessThan(workStatusRank('empty'))
+    expect(workStatusRank('empty')).toBeLessThan(workStatusRank('cancelled'))
+    expect(workStatusRank('unknown_status')).toBe(9)
   })
 })

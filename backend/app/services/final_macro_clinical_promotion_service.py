@@ -567,6 +567,16 @@ async def check_promotion_eligibility(
         if not reason:
             return "risk_requires_confirmation", "risk flags require reviewer_note reason", risk_flags, validation_summary, review_summary, cross_summary, dual_summary
 
+    # P1.7: Final accepts only canonical active Function terms
+    if target_type in FINAL_FUNCTION_TARGETS and hasattr(obj, "term_id"):
+        from app.services.final_function_promotion_service import (
+            check_function_term_eligibility,
+        )
+
+        term_ok, term_reason, _term_res = await check_function_term_eligibility(session, obj)
+        if not term_ok:
+            return "blocked_function_term", term_reason, risk_flags, validation_summary, review_summary, cross_summary, dual_summary
+
     return "eligible", None, risk_flags, validation_summary, review_summary, cross_summary, dual_summary
 
 
@@ -1028,7 +1038,23 @@ async def promote_region_function(
     obj: MirrorRegionFunction,
     *,
     review_record_id: uuid.UUID | None,
-) -> FinalRegionFunction:
+) -> FinalRegionFunction | None:
+    from app.services.final_function_promotion_service import (
+        check_function_term_eligibility,
+        project_final_function_triple,
+    )
+
+    ok, reason, canonical = await check_function_term_eligibility(ctx.session, obj)
+    if not ok or canonical is None:
+        if ctx.warnings is not None:
+            ctx.warnings.append(f"region_function {obj.id} skipped: {reason}")
+        return None
+    # idempotent: same mirror source already promoted
+    dup_id, _dup_reason = await find_duplicate_final_object(ctx.session, "region_function", obj)
+    if dup_id is not None:
+        existing = await ctx.session.get(FinalRegionFunction, dup_id)
+        if existing is not None:
+            return existing
     final = FinalRegionFunction(
         source_mirror_function_id=obj.id,
         region_candidate_id=obj.region_candidate_id,
@@ -1044,6 +1070,7 @@ async def promote_region_function(
         source_atlas=obj.source_atlas,
         source_version=obj.source_version,
         function_term=obj.function_term,
+        term_id=canonical.term_id,
         function_category=obj.function_category,
         relation_type=obj.relation_type,
         confidence=obj.confidence,
@@ -1055,6 +1082,20 @@ async def promote_region_function(
     )
     ctx.session.add(final)
     await ctx.session.flush()
+    # P1.7: Final Function Triple from the Final relation (same canonical term)
+    subject_id = obj.region_final_id or obj.region_candidate_id
+    subject_type = "region_final" if obj.region_final_id else "region_candidate"
+    if subject_id is not None:
+        await project_final_function_triple(
+            ctx.session,
+            mirror_relation=obj,
+            final_relation=final,
+            canonical=canonical,
+            subject_type=subject_type,
+            subject_id=subject_id,
+            subject_label=obj.function_term or "",
+            review_record_id=review_record_id,
+        )
     return final
 
 
@@ -1070,8 +1111,20 @@ async def promote_projection_function(
         if not ok:
             return None
     if not final_projection_id:
+        if ctx.warnings is not None:
+            ctx.warnings.append(f"projection_function {obj.id} skipped: parent_not_promoted")
         return None
 
+    from app.services.final_function_promotion_service import (
+        check_function_term_eligibility,
+        project_final_function_triple,
+    )
+
+    ok, reason, canonical = await check_function_term_eligibility(ctx.session, obj)
+    if not ok or canonical is None:
+        if ctx.warnings is not None:
+            ctx.warnings.append(f"projection_function {obj.id} skipped: {reason}")
+        return None
     final = FinalProjectionFunction(
         final_uid=_build_final_uid("projection_function", obj.id),
         source_mirror_type="projection_function",
@@ -1087,6 +1140,7 @@ async def promote_projection_function(
         granularity_level=obj.granularity_level,
         granularity_family=obj.granularity_family,
         function_term=obj.function_term,
+        term_id=canonical.term_id,
         function_category=obj.function_category,
         relation_type=obj.relation_type,
         confidence=obj.confidence,
@@ -1095,11 +1149,28 @@ async def promote_projection_function(
         validation_summary_json={},
         review_summary_json={},
         dual_model_summary_json={},
-        provenance_json={"source_table": "mirror_projection_functions", "source_id": str(obj.id)},
+        provenance_json={
+            "source_table": "mirror_projection_functions",
+            "source_id": str(obj.id),
+            "function_domain": getattr(obj, "function_domain", None),
+            "function_role": getattr(obj, "function_role", None),
+            "effect_type": getattr(obj, "effect_type", None),
+        },
         final_status="active",
     )
     ctx.session.add(final)
     await ctx.session.flush()
+    # P1.7: Final Function Triple (subject = Final projection)
+    await project_final_function_triple(
+        ctx.session,
+        mirror_relation=obj,
+        final_relation=final,
+        canonical=canonical,
+        subject_type="final_projection",
+        subject_id=final_projection_id,
+        subject_label=obj.function_term or "",
+        review_record_id=review_record_id,
+    )
     return final
 
 
@@ -1109,12 +1180,87 @@ async def promote_circuit_function(
     *,
     review_record_id: uuid.UUID | None,
 ) -> FinalCircuitFunction | None:
-    # Step 10.6.6: candidate preview only — no final/macro_clinical writes yet.
-    if ctx.warnings is not None:
-        ctx.warnings.append(
-            "circuit_function promotion is preview-only in Step 10.6.6 — use promotion-candidates preview API"
-        )
-    return None
+    """P1.7: circuit functions are no longer preview-only — they land in
+    FinalCircuitFunction with their canonical term_id, projected from
+    mirror_circuit_functions (never from function_association)."""
+    from app.services.final_function_promotion_service import (
+        check_function_term_eligibility,
+        project_final_function_triple,
+    )
+
+    ok, reason, canonical = await check_function_term_eligibility(ctx.session, obj)
+    if not ok or canonical is None:
+        if ctx.warnings is not None:
+            ctx.warnings.append(f"circuit_function {obj.id} skipped: {reason}")
+        return None
+
+    # parent Final circuit must exist (no orphan Final function relations)
+    final_circuit_id = await _find_final_circuit_id_for_mirror(ctx.session, obj.circuit_id)
+    if not final_circuit_id and ctx.request.promote_dependencies:
+        ok_dep, final_circuit_id = await _promote_dependency_if_missing(ctx, "circuit", obj.circuit_id)
+        if not ok_dep:
+            return None
+    if not final_circuit_id:
+        if ctx.warnings is not None:
+            ctx.warnings.append(f"circuit_function {obj.id} skipped: parent_not_promoted")
+        return None
+
+    # idempotent: same mirror source already promoted
+    dup_id, _dup_reason = await find_duplicate_final_object(ctx.session, "circuit_function", obj)
+    if dup_id is not None:
+        existing = await ctx.session.get(FinalCircuitFunction, dup_id)
+        if existing is not None:
+            return existing
+
+    final = FinalCircuitFunction(
+        final_uid=_build_final_uid("circuit_function", obj.id),
+        source_mirror_type="circuit_function",
+        source_mirror_id=obj.id,
+        promotion_run_id=ctx.run.id if ctx.run else None,
+        promotion_record_id=None,
+        final_circuit_id=final_circuit_id,
+        mirror_circuit_id=obj.circuit_id,
+        resource_id=obj.resource_id,
+        batch_id=obj.batch_id,
+        source_atlas=obj.source_atlas,
+        source_version=obj.source_version,
+        granularity_level=obj.granularity_level,
+        granularity_family=obj.granularity_family,
+        function_term=obj.function_term_en or obj.function_term_cn or "",
+        term_id=canonical.term_id,
+        function_category="unknown",
+        relation_type="associated_with",
+        confidence=obj.confidence,
+        evidence_text=obj.evidence_text,
+        uncertainty_reason=obj.uncertainty_reason,
+        validation_summary_json={},
+        review_summary_json={},
+        dual_model_summary_json={},
+        provenance_json={
+            "source_table": "mirror_circuit_functions",
+            "source_id": str(obj.id),
+            "function_domain": getattr(obj, "function_domain", None),
+            "function_role": getattr(obj, "function_role", None),
+            "effect_type": getattr(obj, "effect_type", None),
+            "source_text_en": obj.function_term_en,
+            "source_text_cn": obj.function_term_cn,
+        },
+        final_status="active",
+    )
+    ctx.session.add(final)
+    await ctx.session.flush()
+    # P1.7: Final Function Triple (subject = Final circuit)
+    await project_final_function_triple(
+        ctx.session,
+        mirror_relation=obj,
+        final_relation=final,
+        canonical=canonical,
+        subject_type="final_circuit",
+        subject_id=final_circuit_id,
+        subject_label=obj.function_term_en or "",
+        review_record_id=review_record_id,
+    )
+    return final
 
 
 async def promote_triple(

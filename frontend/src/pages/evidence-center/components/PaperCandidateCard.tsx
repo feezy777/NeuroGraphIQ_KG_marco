@@ -10,6 +10,8 @@ export interface CandidatePaperData {
   journal: string
   year: string
   authors: string | null
+  source: string | null
+  abstract: string | null
   isOa: boolean
   abstractAvailable: boolean
   fulltextAvailable: boolean
@@ -71,20 +73,38 @@ export function PaperCandidateCard({
   return (
     <div className="paper-card-candidate" data-testid="paper-card-candidate">
       <div className="paper-card-title-row">
-        <strong className="paper-card-title">{paper.title || '(无标题)'}</strong>
+        <a
+          className="paper-card-title"
+          href={paper.doi ? `https://doi.org/${paper.doi}` : paper.pmid ? `https://pubmed.ncbi.nlm.nih.gov/${paper.pmid}/` : undefined}
+          target="_blank" rel="noopener noreferrer"
+          style={!(paper.doi || paper.pmid) ? { cursor: 'default', color: 'inherit', textDecoration: 'none' } : undefined}
+          onClick={e => { if (!(paper.doi || paper.pmid)) e.preventDefault() }}
+        >
+          {paper.title || '(无标题)'}
+        </a>
       </div>
       <div className="paper-card-cite-row">
         <span className="paper-card-meta">{citeParts || '—'}</span>
       </div>
       {(paper.matchScore != null || paper.matchReason) && (
         <div className="paper-card-match-row" data-testid="paper-card-match">
-          {paper.matchScore != null && <span className="paper-card-match-score">匹配 {Math.round(paper.matchScore * 100)}%</span>}
+          {paper.matchScore != null && <span className="paper-card-match-score">匹配 {Math.round(paper.matchScore)}%</span>}
           {paper.matchReason && <span className="paper-card-match-reason">{paper.matchReason}</span>}
         </div>
       )}
+{paper.abstract && (
+        <div className="paper-card-abstract">{paper.abstract.slice(0, 200)}{paper.abstract.length > 200 ? '…' : ''}</div>
+      )}
       <div className="paper-card-tags-row">
-        {paper.pmid && <span className="paper-card-tag">PMID {paper.pmid}</span>}
-        {paper.doi && <span className="paper-card-tag">DOI {paper.doi}</span>}
+        {paper.source && (
+          <span className={`paper-card-tag paper-card-tag-src paper-card-tag-src-${paper.source}`}>{paper.source}</span>
+        )}
+        {paper.pmid && (
+          <a className="paper-card-tag paper-card-tag-link" href={`https://pubmed.ncbi.nlm.nih.gov/${paper.pmid}/`} target="_blank" rel="noopener noreferrer">PMID {paper.pmid}</a>
+        )}
+        {paper.doi && (
+          <a className="paper-card-tag paper-card-tag-link" href={`https://doi.org/${paper.doi}`} target="_blank" rel="noopener noreferrer">DOI</a>
+        )}
         {paper.abstractAvailable && <span className="paper-card-tag paper-card-tag-ok">摘要</span>}
         {paper.isOa && paper.fulltextAvailable && <span className="paper-card-tag paper-card-tag-oa">OA 全文</span>}
       </div>

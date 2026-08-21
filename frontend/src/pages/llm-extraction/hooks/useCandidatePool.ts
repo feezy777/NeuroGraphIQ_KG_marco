@@ -46,6 +46,8 @@ export function useCandidatePool(scope: PoolScope | null) {
   const [isLoading, setIsLoading] = useState(false)
   const mountedRef = useRef(true)
   const fetchGenRef = useRef(0)
+  const addBusyRef = useRef(false)
+  const replaceInFlightRef = useRef<Promise<CandidatePool> | null>(null)
   const currentKey = scope ? scopeKey(scope) : null
 
   const listScopePools = useCallback(async () => {
@@ -111,10 +113,12 @@ export function useCandidatePool(scope: PoolScope | null) {
 
   const addCandidates = useCallback(async (candidateIds: string[]) => {
     if (!scope || candidateIds.length === 0) return
+    if (addBusyRef.current) return
 
     const newIds = candidateIds.filter(id => !pooledCandidateIds.has(id))
     if (newIds.length === 0) return
 
+    addBusyRef.current = true
     try {
       let currentPool = pool
       if (!currentPool) {
@@ -127,12 +131,28 @@ export function useCandidatePool(scope: PoolScope | null) {
       } else {
         currentPool = await addPoolMembers(currentPool.id, { candidate_ids: newIds })
       }
-      if (mountedRef.current) {
+      // Mutation responses already include full memberships — use them immediately
+      // so a transient/refetch 404 never makes the pool look empty.
+      if (mountedRef.current) setPool(currentPool)
+      try {
         const full = await getCandidatePool(currentPool.id)
         if (mountedRef.current) setPool(full)
+      } catch {
+        // Best-effort refresh only; keep the mutation response on failure.
       }
     } catch (err) {
       console.error('[useCandidatePool] add failed:', err)
+      // Refresh pool state after a failure so retries don't resend duplicates.
+      if (mountedRef.current && pool?.id) {
+        try {
+          const full = await getCandidatePool(pool.id)
+          if (mountedRef.current) setPool(full)
+        } catch {
+          if (mountedRef.current) setPool(null)
+        }
+      }
+    } finally {
+      addBusyRef.current = false
     }
   }, [scope, pool?.id, pooledCandidateIds, currentKey])
 
@@ -158,6 +178,9 @@ export function useCandidatePool(scope: PoolScope | null) {
       granularity_family: effectiveScope.granularityFamily,
     }
 
+    // Deduplicate concurrent replace calls (e.g. double-click / multi-trigger).
+    if (replaceInFlightRef.current) return replaceInFlightRef.current
+
     logPoolDebug('setPoolCandidates request', {
       selectedIdsLength: uniqueIds.length,
       atlas: payload.source_atlas,
@@ -167,30 +190,41 @@ export function useCandidatePool(scope: PoolScope | null) {
     })
 
     ++fetchGenRef.current
+    const task = (async () => {
+      try {
+        const created = await replaceCandidatePool(payload)
+        if (mountedRef.current) setPool(created)
+        logPoolDebug('setPoolCandidates response', {
+          status: 'ok',
+          poolId: created.id,
+          candidateCount: created.candidate_count,
+        })
+        try {
+          const full = await getCandidatePool(created.id)
+          if (mountedRef.current) setPool(full)
+          return full
+        } catch {
+          // Best-effort refresh only; replace already returns full memberships.
+          return created
+        }
+      } catch (err) {
+        console.error('[useCandidatePool] setPoolCandidates failed:', err)
+        throw err
+      }
+    })()
+    replaceInFlightRef.current = task
     try {
-      const created = await replaceCandidatePool(payload)
-      const full = await getCandidatePool(created.id)
-      logPoolDebug('setPoolCandidates response', {
-        status: 'ok',
-        poolId: full.id,
-        candidateCount: full.candidate_count,
-      })
-      if (mountedRef.current) setPool(full)
-      return full
-    } catch (err) {
-      console.error('[useCandidatePool] setPoolCandidates failed:', err)
-      throw err
+      return await task
+    } finally {
+      replaceInFlightRef.current = null
     }
   }, [scope, currentKey])
 
   const removeCandidate = useCallback(async (candidateId: string) => {
     if (!pool) return
     try {
-      await removePoolMembers(pool.id, { candidate_ids: [candidateId] })
-      if (mountedRef.current) {
-        const full = await getCandidatePool(pool.id)
-        if (mountedRef.current) setPool(full.candidate_count > 0 ? full : null)
-      }
+      const updated = await removePoolMembers(pool.id, { candidate_ids: [candidateId] })
+      if (mountedRef.current) setPool(updated.candidate_count > 0 ? updated : null)
     } catch (err) {
       if (isPoolNotFoundError(err)) {
         if (mountedRef.current) setPool(null)
@@ -203,16 +237,8 @@ export function useCandidatePool(scope: PoolScope | null) {
   const batchRemove = useCallback(async (candidateIds: string[]) => {
     if (!pool || candidateIds.length === 0) return
     try {
-      await removePoolMembers(pool.id, { candidate_ids: candidateIds })
-      if (mountedRef.current) {
-        const remaining = pool.candidate_count - candidateIds.length
-        if (remaining <= 0) {
-          setPool(null)
-        } else {
-          const full = await getCandidatePool(pool.id)
-          if (mountedRef.current) setPool(full)
-        }
-      }
+      const updated = await removePoolMembers(pool.id, { candidate_ids: candidateIds })
+      if (mountedRef.current) setPool(updated.candidate_count > 0 ? updated : null)
     } catch (err) {
       if (isPoolNotFoundError(err)) {
         if (mountedRef.current) setPool(null)

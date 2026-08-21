@@ -16,7 +16,13 @@ import { ValidationCenterPage } from './pages/validation-center/ValidationCenter
 import { SettingsPage } from './pages/SettingsPage'
 import { MirrorKgPage } from './pages/MirrorKgPage'
 import { OntologyCenterPage } from './pages/ontology-center/OntologyCenterPage'
-import { EvidenceCenterPage } from './pages/evidence-center/EvidenceCenterPage'
+/** Legacy evidence-center redirects to validation center paper_evidence tab. */
+function EvidenceCenterRedirect() {
+  useEffect(() => {
+    window.location.hash = '#/validation-center?tab=paper_evidence'
+  }, [])
+  return null
+}
 import { BackgroundTaskCenterPage } from './pages/BackgroundTaskCenter'
 import { GraphExplorerPage } from './pages/GraphExplorerPage'
 import './components/brain-3d/brain3d.css'
@@ -31,7 +37,7 @@ const ROUTES: Record<string, ComponentType> = {
   '/import-batches': ImportBatchesPage,
   '/import-pipeline': ImportPipelinePage,
   '/data-center': DataCenterPage,
-  '/evidence-center': EvidenceCenterPage,
+  '/evidence-center': EvidenceCenterRedirect,
   '/ontology-center': OntologyCenterPage,
   '/llm-extraction': LlmExtractionPage,
   '/mirror-kg': MirrorKgPage,

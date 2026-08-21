@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 720" width="1280" height="720">
+  <g id="background"><rect width="1280" height="720" fill="#F7FAFC"/></g>
+  <g id="header">
+  <rect x="56" y="42" width="8" height="40" fill="#1F9FB5"/>
+  <text x="80" y="72" font-family="Microsoft YaHei, Arial, sans-serif" font-size="34" font-weight="700" fill="#17324D">构建漏斗：五阶段</text>
+  <text x="80" y="104" font-family="Microsoft YaHei, Arial, sans-serif" font-size="16" fill="#5A6A7A">自动化解决规模，人工把关解决可信</text>
+  </g>
+  <g id="funnel">
+  <rect x="150" y="150" width="980" height="80" rx="10" fill="#1F9FB5"/><use data-icon="tabler-outline/database-import" x="178" y="174" width="32" height="32" stroke="#FFFFFF" fill="none" stroke-width="2"/><text x="640" y="200" text-anchor="middle" font-family="Microsoft YaHei, Arial, sans-serif" font-size="22" font-weight="700" fill="#FFFFFF">导入解析</text>
+  <rect x="210" y="246" width="860" height="80" rx="10" fill="#1F9FB5"/><use data-icon="tabler-outline/filter" x="238" y="270" width="32" height="32" stroke="#FFFFFF" fill="none" stroke-width="2"/><text x="640" y="296" text-anchor="middle" font-family="Microsoft YaHei, Arial, sans-serif" font-size="22" font-weight="700" fill="#FFFFFF">候选生成</text>
+  <rect x="270" y="342" width="740" height="80" rx="10" fill="#1F9FB5"/><use data-icon="tabler-outline/shield-check" x="298" y="366" width="32" height="32" stroke="#FFFFFF" fill="none" stroke-width="2"/><text x="640" y="392" text-anchor="middle" font-family="Microsoft YaHei, Arial, sans-serif" font-size="22" font-weight="700" fill="#FFFFFF">校验增强</text>
+  <rect x="330" y="438" width="620" height="80" rx="10" fill="#17324D"/><use data-icon="tabler-outline/robot" x="358" y="462" width="32" height="32" stroke="#FFFFFF" fill="none" stroke-width="2"/><text x="640" y="488" text-anchor="middle" font-family="Microsoft YaHei, Arial, sans-serif" font-size="22" font-weight="700" fill="#FFFFFF">LLM 提取</text>
+  <rect x="390" y="534" width="500" height="80" rx="10" fill="#2F855A"/><use data-icon="tabler-outline/user-check" x="418" y="558" width="32" height="32" stroke="#FFFFFF" fill="none" stroke-width="2"/><text x="640" y="584" text-anchor="middle" font-family="Microsoft YaHei, Arial, sans-serif" font-size="22" font-weight="700" fill="#FFFFFF">审核晋升</text>
+  </g>
+  <g id="footer"><text x="1224" y="696" text-anchor="end" font-family="Arial, sans-serif" font-size="12" fill="#8492A0">6</text></g>
+</svg>

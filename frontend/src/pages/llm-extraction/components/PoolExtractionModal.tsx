@@ -883,6 +883,7 @@ export function PoolExtractionModal({
         source_atlas: scope.source_atlas,
         granularity_level: scope.granularity_level,
         granularity_family: scope.granularity_family,
+        pairs_per_pack: pairsPerPack,
         create_mirror_records: !dryRun,
         create_evidence: !dryRun,
         temperature: temperature !== 0.7 ? temperature : undefined,
@@ -896,7 +897,7 @@ export function PoolExtractionModal({
       const response: CompositeWorkflowStartResponse = await startCompositeWorkflow(payload)
 
       const packCountFromResponse = ((response as any).pack_count as number | undefined)
-        ?? (response.pair_count ? Math.ceil(response.pair_count / 30) : 0)
+        ?? (response.pair_count ? Math.ceil(response.pair_count / (pairsPerPack || 1)) : 0)
       const totalPacks = packCountFromResponse || selectedPackEstimate || estimatePackCount(computePairCount(candidateIds.length))
 
       const startedAt = new Date().toISOString()
@@ -1552,6 +1553,7 @@ export function PoolExtractionModal({
   const [llmProvider, setLlmProvider] = useState('deepseek')
   const [llmModel, setLlmModel] = useState('deepseek-chat')
   const [packConcurrency, setPackConcurrency] = useState(1)
+  const [pairsPerPack, setPairsPerPack] = useState(40)
   const [skipExisting, setSkipExisting] = useState(false)
   const [budgetCny, setBudgetCny] = useState('')
   const [runInstructionOverlay, setRunInstructionOverlay] = useState('')
@@ -1564,6 +1566,7 @@ export function PoolExtractionModal({
   const LLM_MODELS: Record<string, Array<{ value: string; label: string }>> = {
     deepseek: [
       { value: 'deepseek-chat', label: 'deepseek-chat (V3)' },
+      { value: 'deepseek-v4-flash', label: 'deepseek-v4-flash (V4 Flash)' },
       { value: 'deepseek-v4-pro', label: 'deepseek-v4-pro (V4 Pro)' },
       { value: 'deepseek-reasoner', label: 'deepseek-reasoner (R1)' },
     ],
@@ -2012,6 +2015,15 @@ export function PoolExtractionModal({
               onChange={e => setPackConcurrency(Math.max(1, Math.min(8, Number(e.target.value) || 1)))}
             />
             <span style={{ fontSize: 11, color: '#888', marginLeft: 8 }}>建议 1，避免 session 并发风险</span>
+          </div>
+
+          <div className="modal-section-row" style={{ alignItems: 'center', marginTop: 8 }}>
+            <span className="label">每包连接对数</span>
+            <input type="number" className="llm-input" style={{ width: 70, textAlign: 'center' }}
+              min={1} max={500} value={pairsPerPack}
+              onChange={e => setPairsPerPack(Math.max(1, Math.min(500, Number(e.target.value) || 1)))}
+            />
+            <span style={{ fontSize: 11, color: '#888', marginLeft: 8 }}>每包越大调用越少越快；1 = 一个连接一包（最慢）</span>
           </div>
 
           <div style={{ marginTop: 8 }}>
@@ -2691,6 +2703,7 @@ export function PoolExtractionModal({
                     max_tokens: body.max_tokens,
                     create_mirror_records: true,
                     create_evidence: true,
+                    pairs_per_pack: pairsPerPack,
                     prompt_template_key: preset?.prompt_template_key || undefined,
                     prompt_overrides: editingPrompt && primaryTemplateKey ? { [primaryTemplateKey]: customUserPrompt } : undefined,
                   })

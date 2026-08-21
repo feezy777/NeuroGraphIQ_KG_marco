@@ -717,6 +717,8 @@ PROJECTION_TO_FUNCTIONS_V1 = PromptTemplateDefaults(
         '      "function_term_cn": "...",\n'
         '      "function_domain": "...",\n'
         '      "function_role": "...",\n'
+        '      "function_category": "motor|sensory|visual|auditory|language|memory|emotion|executive_control|attention|autonomic|default_mode|salience|reward|cognitive|unknown",\n'
+        '      "relation_type": "involved_in|associated_with|necessary_for|modulates|participates_in|uncertain_association|unknown",\n'
         '      "effect_type": "...",\n'
         '      "confidence_score": 0.0,\n'
         '      "evidence_level": "low|moderate|high|insufficient",\n'
@@ -726,7 +728,10 @@ PROJECTION_TO_FUNCTIONS_V1 = PromptTemplateDefaults(
         "    }\n"
         "  ],\n"
         '  "warnings": []\n'
-        "}"
+        "}\n\n"
+        "Note: If a plausible function can be inferred even with weak evidence, "
+        "output it with low confidence (0.05-0.3) and an uncertainty_reason. "
+        "Only omit functions when there is no plausible basis at all."
     ),
     output_schema_json={
         "projection_functions": [{
@@ -735,6 +740,8 @@ PROJECTION_TO_FUNCTIONS_V1 = PromptTemplateDefaults(
             "function_term_cn": "string",
             "function_domain": "string",
             "function_role": "string",
+            "function_category": "motor|sensory|visual|auditory|language|memory|emotion|executive_control|attention|autonomic|default_mode|salience|reward|cognitive|unknown",
+            "relation_type": "involved_in|associated_with|necessary_for|modulates|participates_in|uncertain_association|unknown",
             "effect_type": "string",
             "confidence_score": 0.0,
             "evidence_level": "low",

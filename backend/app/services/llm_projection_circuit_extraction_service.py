@@ -683,22 +683,9 @@ async def create_inferred_circuit_triples(
             await mirror_kg_service.create_mirror_triple(session, tp)
             count += 1
 
-    func_assoc = str(circ.get("function_association") or "").strip()
-    if func_assoc:
-        tp = MirrorKgTripleCreate(
-            subject_type=TripleSubjectType.circuit,
-            subject_id=circuit.id,
-            subject_label=circuit.circuit_name,
-            predicate="associated_with_function",
-            object_type=TripleObjectType.function,
-            object_id=None,
-            object_label=func_assoc,
-            raw_payload_json={"function_association": func_assoc},
-            normalized_payload_json={"predicate": "associated_with_function"},
-            **common,
-        )
-        await mirror_kg_service.create_mirror_triple(session, tp)
-        count += 1
+    # P1.4: no direct circuit→function triples from function_association —
+    # the formal relation is materialized in mirror_circuit_functions (sync in
+    # the create branch above) and triples are consolidated from that table.
     return count
 
 
@@ -840,6 +827,14 @@ async def persist_inferred_circuits_steps_memberships(
                     session_seen.add(key)
                 except Exception as exc:
                     raise MirrorPersistError(f"circuit persist failed: {exc}") from exc
+                # P1.4: function_association is a snapshot only — formal
+                # circuit function relations live in mirror_circuit_functions.
+                await mirror_macro_clinical_service.sync_circuit_function_from_association(
+                    session,
+                    circuit=circuit_row,
+                    function_association=circ.get("function_association"),
+                    created_by=f"projection_circuit_extraction:{run.id}",
+                )
         elif circuit_row is None:
             warnings.append(f"circuit {circ['circuit_name']} skipped: no circuit_id and create_mirror_circuits=false")
             continue

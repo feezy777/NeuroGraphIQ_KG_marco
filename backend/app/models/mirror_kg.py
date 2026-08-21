@@ -247,6 +247,7 @@ class MirrorKgTriple(Base):
     confidence: Mapped[float | None] = mapped_column(Numeric, nullable=True)
     evidence_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     uncertainty_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    projection_version: Mapped[str | None] = mapped_column(String(64), nullable=True)
     mirror_status: Mapped[str] = mapped_column(String(64), nullable=False, default="llm_suggested")
     review_status: Mapped[str] = mapped_column(String(64), nullable=False, default="pending")
     promotion_status: Mapped[str] = mapped_column(String(64), nullable=False, default="not_promoted")

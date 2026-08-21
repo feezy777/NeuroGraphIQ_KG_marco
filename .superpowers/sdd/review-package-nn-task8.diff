@@ -1,0 +1,31 @@
+89daa8eb0aeaf8d4bb7f4304f92ee1f0e18c824c fix(evidence): smoke-test fixes
+---DIFF---
+diff --git a/backend/app/services/paper_evidence_service.py b/backend/app/services/paper_evidence_service.py
+index 843df92..b74143f 100644
+--- a/backend/app/services/paper_evidence_service.py
++++ b/backend/app/services/paper_evidence_service.py
+@@ -5194,20 +5194,24 @@ async def _process_batch_item_v2(
+                     if papers:
+                         query = wide_query
+             if not papers:
+                 # 反向验证:正向无结果时用否定向查询再搜一轮,区分「证据否定」与「无证据」
+                 negative_query = await build_search_query(
+                     session, target_type, uuid.UUID(target_id), mode=mode, abstract_only=False, negative=True
+                 )
+                 if negative_query and negative_query != query:
+                     async with sem_search:
+                         papers = await _search_with_retry(negative_query, limit=max(10, max_papers * 3))
++                    logging.getLogger("uvicorn.error").info(
++                        "[evidence] negative round: item=%s target=%s hits=%d query=%s",
++                        item_id, target_id, len(papers), negative_query,
++                    )
+                     if papers:
+                         query = negative_query
+                         query_is_negative = True
+             if not papers:
+                 await _set_item_stage(
+                     session, item_id, "awaiting_review",
+                     preprocess_outcome="no_evidence_found",
+                     last_error_code="EUROPE_PMC_NO_RESULT",
+                     last_error_message="no papers matched the query",
+                     last_error_at="SQL:now()",

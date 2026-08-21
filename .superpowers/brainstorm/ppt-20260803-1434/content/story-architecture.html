@@ -1,0 +1,62 @@
+<h2>选择内容叙事与架构图组织方式</h2>
+<p class="subtitle">面向学术答辩、约 15 页。三种方案的差异主要在“全局图与局部图如何串联”。</p>
+
+<div class="cards">
+  <div class="card" data-choice="hybrid" onclick="toggleSelect(this)">
+    <div class="card-image" style="background:#fff;padding:18px;min-height:270px;border-top:6px solid #245b8a">
+      <div style="font-size:11px;color:#245b8a;font-weight:700">RECOMMENDED · 总—分—总</div>
+      <div style="display:grid;grid-template-columns:1fr 2fr 1fr;gap:9px;margin-top:18px;align-items:center">
+        <div style="border:1px solid #aebdca;padding:14px 7px;text-align:center;color:#24435c;font-size:11px">问题与<br>数据资源</div>
+        <div style="border:2px solid #245b8a;padding:14px 7px;text-align:center;color:#245b8a;font-weight:700">全局构建架构<br><span style="font-size:10px;font-weight:400;color:#6b7280">七层知识体系 + 六阶段治理漏斗</span></div>
+        <div style="border:1px solid #7baa8b;padding:14px 7px;text-align:center;color:#35664a;font-size:11px">Final KG<br>消费与溯源</div>
+      </div>
+      <div style="height:28px;border-left:2px solid #245b8a;margin-left:50%;"></div>
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:7px">
+        <div style="background:#edf3f7;padding:12px 5px;text-align:center;font-size:10px">导入与候选</div>
+        <div style="background:#edf3f7;padding:12px 5px;text-align:center;font-size:10px">LLM 工作流</div>
+        <div style="background:#f8f0e8;padding:12px 5px;text-align:center;font-size:10px">三道闸门</div>
+        <div style="background:#edf6f0;padding:12px 5px;text-align:center;font-size:10px">晋升与溯源</div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>A. 混合式：总—分—总</h3>
+      <p>先用一张全局架构建立认知，再用 4–5 张局部架构逐层放大，最后回到创新点与成果。最适合答辩问答。</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="pipeline" onclick="toggleSelect(this)">
+    <div class="card-image" style="background:#fff;padding:18px;min-height:270px;border-top:6px solid #566f82">
+      <div style="font-size:11px;color:#566f82;font-weight:700">PROCESS FIRST · 单线推进</div>
+      <div style="margin-top:28px;display:flex;align-items:center;gap:5px">
+        <div style="border:1px solid #9aa8b3;padding:12px 7px;font-size:10px">资源</div><span>→</span>
+        <div style="border:1px solid #9aa8b3;padding:12px 7px;font-size:10px">候选</div><span>→</span>
+        <div style="border:1px solid #9aa8b3;padding:12px 7px;font-size:10px">校验</div><span>→</span>
+        <div style="border:1px solid #9aa8b3;padding:12px 7px;font-size:10px">提取</div><span>→</span>
+        <div style="border:1px solid #9aa8b3;padding:12px 7px;font-size:10px">审核</div><span>→</span>
+        <div style="border:1px solid #7baa8b;padding:12px 7px;font-size:10px">Final</div>
+      </div>
+      <div style="margin-top:34px;color:#6b7280;font-size:11px;line-height:1.8">每一页沿主流程向右推进<br>结构简单，叙述连贯，但系统分层与治理边界不够突出</div>
+    </div>
+    <div class="card-body">
+      <h3>B. 流水线式：从输入到输出</h3>
+      <p>严格按构建顺序讲述，易于跟随。缺点是局部机制容易变成连续流程图，架构层次感较弱。</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="layers" onclick="toggleSelect(this)">
+    <div class="card-image" style="background:#fff;padding:18px;min-height:270px;border-top:6px solid #7a6784">
+      <div style="font-size:11px;color:#7a6784;font-weight:700">ARCHITECTURE FIRST · 分层剖面</div>
+      <div style="margin-top:18px;display:flex;flex-direction:column;gap:7px">
+        <div style="background:#eef2f5;padding:10px;text-align:center;font-size:10px">消费层 · 图谱探索 / 症状查询 / 导出</div>
+        <div style="background:#edf6f0;padding:10px;text-align:center;font-size:10px">Final KG · 三元组与五层粒度</div>
+        <div style="background:#f8f0e8;padding:10px;text-align:center;font-size:10px">治理层 · Mirror / 校验 / 审核 / 晋升</div>
+        <div style="background:#f0edf4;padding:10px;text-align:center;font-size:10px">智能层 · DeepSeek / Kimi / 工作流</div>
+        <div style="background:#edf3f7;padding:10px;text-align:center;font-size:10px">数据层 · Atlas / Import / Candidate</div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>C. 分层式：系统剖面</h3>
+      <p>突出软件与数据架构，适合架构评审。学术叙事中的“问题—方法—验证”主线会相对弱一些。</p>
+    </div>
+  </div>
+</div>

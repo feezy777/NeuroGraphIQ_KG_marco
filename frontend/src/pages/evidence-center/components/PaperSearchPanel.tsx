@@ -22,8 +22,11 @@ interface Props {
   onExtractSelected: () => void
   /** 检索过滤层(PaperSearchFilters) */
   filters?: ReactNode
-  /** 批量操作层(PaperBatchActions) */
+  /** 批量操作层(PaperBatchActions，展开态渲染；折叠态仅显示"全选"按钮) */
   batchActions?: ReactNode
+  onSelectAll?: (checked: boolean) => void
+  /** 搜索结果总数(折叠态 [全选(N)] 的 N) */
+  totalResults?: number
 }
 
 /**
@@ -46,6 +49,8 @@ export function PaperSearchPanel({
   onExtractSelected,
   filters,
   batchActions,
+  onSelectAll,
+  totalResults = 0,
 }: Props) {
   if (collapsed) {
     return (
@@ -65,6 +70,17 @@ export function PaperSearchPanel({
           <button type="button" className="btn btn-sm" onClick={onExpand}>
             展开检索
           </button>
+          {onSelectAll && totalResults > 0 && (
+            <button
+              type="button"
+              className="btn btn-sm"
+              data-testid="evidence-collapsed-selectall"
+              disabled={busy}
+              onClick={() => onSelectAll(true)}
+            >
+              全选（{totalResults}）
+            </button>
+          )}
           <button
             type="button"
             className="btn btn-sm btn-primary"

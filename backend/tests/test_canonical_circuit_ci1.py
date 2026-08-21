@@ -1,0 +1,533 @@
+"""CI1.1: Canonical Circuit entity tests.
+
+Acceptance: circuit creation with auto-generated ng:ci:* code; region /
+connection / function member binding; duplicate protection (member + code);
+species consistency at bind time; merge redirect via replaced_by_circuit_id;
+integrity checker (orphan/memberless/deprecated-reference/species mismatch);
+mirror circuit tables never touched (53,562 rows).
+"""
+
+from __future__ import annotations
+
+import asyncio
+
+import pytest
+from pydantic import ValidationError
+from sqlalchemy import text
+
+from app.database import AsyncSessionLocal
+from app.schemas.canonical_circuit import (
+    CanonicalCircuitConnectionCreate,
+    CanonicalCircuitCreate,
+    CanonicalCircuitFunctionCreate,
+    CanonicalCircuitRegionCreate,
+)
+from app.schemas.canonical_connection import CanonicalConnectionCreate
+from app.schemas.canonical_region import CanonicalRegionCreate
+from app.services import canonical_circuit_service as cis
+from app.services import canonical_connection_service as ccs
+from app.services import canonical_region_service as crs
+
+TEST_PREFIX = "ci1_test_"
+
+pytestmark = pytest.mark.function_term_real
+
+
+def _run(coro):
+    try:
+        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+    except Exception:
+        pass
+    return asyncio.run(coro)
+
+
+@pytest.fixture()
+def db():
+    """Delete CI1 test circuits/members/connections/regions before and after each test."""
+
+    async def _cleanup() -> None:
+        async with AsyncSessionLocal() as s:
+            await s.execute(
+                text(
+                    "DELETE FROM canonical_circuit_regions WHERE circuit_id IN "
+                    "(SELECT id FROM canonical_circuits WHERE circuit_code LIKE 'ng:ci:ci1_test_%')"
+                )
+            )
+            await s.execute(
+                text(
+                    "DELETE FROM canonical_circuit_connections WHERE circuit_id IN "
+                    "(SELECT id FROM canonical_circuits WHERE circuit_code LIKE 'ng:ci:ci1_test_%')"
+                )
+            )
+            await s.execute(
+                text(
+                    "DELETE FROM canonical_circuit_functions WHERE circuit_id IN "
+                    "(SELECT id FROM canonical_circuits WHERE circuit_code LIKE 'ng:ci:ci1_test_%')"
+                )
+            )
+            await s.execute(
+                text(
+                    "DELETE FROM canonical_circuits WHERE circuit_code LIKE 'ng:ci:ci1_test_%'"
+                )
+            )
+            await s.execute(
+                text(
+                    "DELETE FROM canonical_connections WHERE "
+                    "source_region_id IN (SELECT id FROM canonical_brain_regions "
+                    "WHERE region_code LIKE 'ng:br:cn1_test_%') "
+                    "OR target_region_id IN (SELECT id FROM canonical_brain_regions "
+                    "WHERE region_code LIKE 'ng:br:cn1_test_%')"
+                )
+            )
+            await s.execute(
+                text("DELETE FROM canonical_brain_regions WHERE region_code LIKE 'ng:br:cn1_test_%'")
+            )
+            await s.commit()
+
+    _run(_cleanup())
+    yield
+    _run(_cleanup())
+
+
+async def _mk_region(session, code: str, species: str = "human", status: str = "active"):
+    return await crs.create_canonical_region(
+        session,
+        CanonicalRegionCreate(
+            region_code=f"ng:br:cn1_test_{code}",
+            canonical_name_en=f"ci1 test {code}",
+            species=species,
+            granularity_level="clinical",
+            hemisphere_policy="lateralized",
+            status=status,
+            confidence=0.9,
+            created_by="ci1_test",
+        ),
+    )
+
+
+async def _mk_connection(session, src, tgt, ctype: str = "structural", status: str = "proposed"):
+    return await ccs.create_canonical_connection(
+        session,
+        CanonicalConnectionCreate(
+            source_region_id=src.id,
+            target_region_id=tgt.id,
+            connection_type=ctype,
+            directionality_policy="directed",
+            species="human",
+            status=status,
+            confidence=0.8,
+        ),
+    )
+
+
+async def _mk_circuit(session, name: str = "CI1 Test Circuit", **overrides):
+    payload = dict(
+        canonical_name_en=name,
+        circuit_type="network",
+        species="human",
+        granularity_level="clinical",
+        created_by="ci1_test",
+    )
+    payload.update(overrides)
+    return await cis.create_canonical_circuit(session, CanonicalCircuitCreate(**payload))
+
+
+async def _get_term_id(session):
+    return (
+        await session.execute(text("SELECT id FROM ontology_terms ORDER BY id LIMIT 1"))
+    ).scalar_one()
+
+
+# --------------------------------------------------------------------------- #
+# circuit creation + code generation
+# --------------------------------------------------------------------------- #
+
+
+def test_circuit_created_with_autogenerated_code(db):
+    async def _t():
+        async with AsyncSessionLocal() as s:
+            circuit = await _mk_circuit(s, "CI1 Test Alpha Circuit")
+            await s.commit()
+            row = await cis.get_canonical_circuit_by_code(s, circuit.circuit_code)
+            assert row is not None
+            assert row.circuit_code == "ng:ci:ci1_test_alpha_circuit"
+            assert row.circuit_code.startswith("ng:ci:")
+            assert row.status == "proposed"
+            assert row.circuit_type == "network"
+            assert row.species == "human"
+            assert row.granularity_level == "clinical"
+            assert row.replaced_by_circuit_id is None
+    _run(_t())
+
+
+def test_code_generation_handles_collisions_and_slug_normalization(db):
+    async def _t():
+        async with AsyncSessionLocal() as s:
+            c1 = await _mk_circuit(s, "CI1 Test  Gamma")  # slug: ci1_test_gamma
+            c2 = await _mk_circuit(s, "CI1 Test--Gamma!!")  # same slug -> _2
+            assert c1.circuit_code == "ng:ci:ci1_test_gamma"
+            assert c2.circuit_code == "ng:ci:ci1_test_gamma_2"
+            c3 = await _mk_circuit(s, "CI1 Test  Gamma")  # -> _3
+            assert c3.circuit_code == "ng:ci:ci1_test_gamma_3"
+    _run(_t())
+
+
+def test_explicit_code_and_duplicate_code_rejected(db):
+    async def _t():
+        async with AsyncSessionLocal() as s:
+            c1 = await _mk_circuit(s, "CI1 Test Explicit", circuit_code="ng:ci:ci1_test_explicit")
+            assert c1.circuit_code == "ng:ci:ci1_test_explicit"
+            with pytest.raises(cis.CanonicalCircuitError, match="already exists"):
+                await _mk_circuit(s, "CI1 Test Explicit2", circuit_code="ng:ci:ci1_test_explicit")
+            with pytest.raises(ValidationError):
+                await _mk_circuit(s, "CI1 Test Explicit3", circuit_code="bad-code")
+    _run(_t())
+
+
+# --------------------------------------------------------------------------- #
+# member binding
+# --------------------------------------------------------------------------- #
+
+
+def test_region_binding(db):
+    async def _t():
+        async with AsyncSessionLocal() as s:
+            region = await _mk_region(s, "thalamus")
+            circuit = await _mk_circuit(s)
+            member = await cis.add_circuit_region(
+                s, circuit.id,
+                CanonicalCircuitRegionCreate(region_id=region.id, role="core_region", order_index=1),
+            )
+            await s.commit()
+            members = await cis.list_circuit_regions(s, circuit.id)
+            assert len(members) == 1
+            assert members[0].region_id == region.id
+            assert members[0].role == "core_region"
+            assert members[0].order_index == 1
+            assert member.id == members[0].id
+    _run(_t())
+
+
+def test_connection_binding(db):
+    async def _t():
+        async with AsyncSessionLocal() as s:
+            a = await _mk_region(s, "a")
+            b = await _mk_region(s, "b")
+            connection = await _mk_connection(s, a, b)
+            circuit = await _mk_circuit(s)
+            await cis.add_circuit_connection(
+                s, circuit.id,
+                CanonicalCircuitConnectionCreate(connection_id=connection.id, role="feedforward"),
+            )
+            await s.commit()
+            members = await cis.list_circuit_connections(s, circuit.id)
+            assert len(members) == 1
+            assert members[0].connection_id == connection.id
+            assert members[0].role == "feedforward"
+    _run(_t())
+
+
+def test_function_binding(db):
+    async def _t():
+        async with AsyncSessionLocal() as s:
+            term_id = await _get_term_id(s)
+            circuit = await _mk_circuit(s)
+            await cis.add_circuit_function(
+                s, circuit.id,
+                CanonicalCircuitFunctionCreate(
+                    function_term_id=term_id, relation_type="involved_in"
+                ),
+            )
+            await s.commit()
+            members = await cis.list_circuit_functions(s, circuit.id)
+            assert len(members) == 1
+            assert members[0].function_term_id == term_id
+            assert members[0].relation_type == "involved_in"
+            # unknown term rejected
+            with pytest.raises(cis.CanonicalCircuitError, match="not found"):
+                await cis.add_circuit_function(
+                    s, circuit.id,
+                    CanonicalCircuitFunctionCreate(function_term_id="00000000-0000-0000-0000-000000000000"),
+                )
+    _run(_t())
+
+
+def test_member_binding_rejects_missing_circuit_or_member(db):
+    async def _t():
+        async with AsyncSessionLocal() as s:
+            region = await _mk_region(s, "x")
+            with pytest.raises(cis.CanonicalCircuitError, match="circuit not found"):
+                await cis.add_circuit_region(
+                    s, "00000000-0000-0000-0000-000000000000",
+                    CanonicalCircuitRegionCreate(region_id=region.id),
+                )
+            circuit = await _mk_circuit(s)
+            with pytest.raises(cis.CanonicalCircuitError, match="region not found"):
+                await cis.add_circuit_region(
+                    s, circuit.id,
+                    CanonicalCircuitRegionCreate(
+                        region_id="00000000-0000-0000-0000-000000000000"
+                    ),
+                )
+            with pytest.raises(cis.CanonicalCircuitError, match="connection not found"):
+                await cis.add_circuit_connection(
+                    s, circuit.id,
+                    CanonicalCircuitConnectionCreate(
+                        connection_id="00000000-0000-0000-0000-000000000000"
+                    ),
+                )
+    _run(_t())
+
+
+# --------------------------------------------------------------------------- #
+# duplicate protection
+# --------------------------------------------------------------------------- #
+
+
+def test_duplicate_members_prevented(db):
+    async def _t():
+        async with AsyncSessionLocal() as s:
+            a = await _mk_region(s, "a")
+            b = await _mk_region(s, "b")
+            connection = await _mk_connection(s, a, b)
+            term_id = await _get_term_id(s)
+            circuit = await _mk_circuit(s)
+            await cis.add_circuit_region(
+                s, circuit.id, CanonicalCircuitRegionCreate(region_id=a.id)
+            )
+            with pytest.raises(cis.CanonicalCircuitError, match="duplicate member"):
+                await cis.add_circuit_region(
+                    s, circuit.id, CanonicalCircuitRegionCreate(region_id=a.id, role="input")
+                )
+            await cis.add_circuit_connection(
+                s, circuit.id, CanonicalCircuitConnectionCreate(connection_id=connection.id)
+            )
+            with pytest.raises(cis.CanonicalCircuitError, match="duplicate member"):
+                await cis.add_circuit_connection(
+                    s, circuit.id, CanonicalCircuitConnectionCreate(connection_id=connection.id)
+                )
+            await cis.add_circuit_function(
+                s, circuit.id, CanonicalCircuitFunctionCreate(function_term_id=term_id)
+            )
+            with pytest.raises(cis.CanonicalCircuitError, match="duplicate member"):
+                await cis.add_circuit_function(
+                    s, circuit.id, CanonicalCircuitFunctionCreate(function_term_id=term_id)
+                )
+    _run(_t())
+
+
+# --------------------------------------------------------------------------- #
+# species consistency
+# --------------------------------------------------------------------------- #
+
+
+def test_species_mismatch_rejected_at_bind(db):
+    async def _t():
+        async with AsyncSessionLocal() as s:
+            mouse_region = await _mk_region(s, "mouse_r", species="mouse")
+            human_circuit = await _mk_circuit(s, "CI1 Test Human")
+            with pytest.raises(cis.CanonicalCircuitError, match="species mismatch"):
+                await cis.add_circuit_region(
+                    s, human_circuit.id, CanonicalCircuitRegionCreate(region_id=mouse_region.id)
+                )
+            # 'unknown' circuit is compatible with any concrete species
+            unknown_circuit = await _mk_circuit(s, "CI1 Test Unknown", species="unknown")
+            await cis.add_circuit_region(
+                s, unknown_circuit.id, CanonicalCircuitRegionCreate(region_id=mouse_region.id)
+            )
+    _run(_t())
+
+
+# --------------------------------------------------------------------------- #
+# merge redirect
+# --------------------------------------------------------------------------- #
+
+
+def test_merge_redirect(db):
+    async def _t():
+        async with AsyncSessionLocal() as s:
+            deprecated = await _mk_circuit(s, "CI1 Test Old")
+            active = await _mk_circuit(s, "CI1 Test New")
+            region = await _mk_region(s, "r")
+            await cis.add_circuit_region(
+                s, deprecated.id, CanonicalCircuitRegionCreate(region_id=region.id)
+            )
+            merged = await cis.merge_circuits(
+                s, deprecated_circuit_id=deprecated.id, active_circuit_id=active.id
+            )
+            await s.commit()
+            assert merged.status == "deprecated"
+            assert merged.replaced_by_circuit_id == active.id
+            # readers can follow the redirect
+            row = await cis.get_canonical_circuit(s, deprecated.id)
+            assert row.replaced_by_circuit_id == active.id
+            assert active.status == "proposed"  # target untouched
+            # members of the deprecated circuit are preserved (provenance never rewritten)
+            members = await cis.list_circuit_regions(s, deprecated.id)
+            assert len(members) == 1
+            # already-merged circuit cannot be re-merged
+            with pytest.raises(cis.CanonicalCircuitError, match="already merged"):
+                await cis.merge_circuits(
+                    s, deprecated_circuit_id=deprecated.id, active_circuit_id=active.id
+                )
+            # a deprecated circuit cannot be a merge target
+            with pytest.raises(cis.CanonicalCircuitError, match="itself deprecated"):
+                await cis.merge_circuits(
+                    s, deprecated_circuit_id=active.id, active_circuit_id=deprecated.id
+                )
+            # self-merge rejected
+            with pytest.raises(cis.CanonicalCircuitError, match="distinct"):
+                await cis.merge_circuits(
+                    s, deprecated_circuit_id=active.id, active_circuit_id=active.id
+                )
+    _run(_t())
+
+
+# --------------------------------------------------------------------------- #
+# integrity checker
+# --------------------------------------------------------------------------- #
+
+
+def test_integrity_ok_for_well_formed_circuit(db):
+    async def _t():
+        async with AsyncSessionLocal() as s:
+            a = await _mk_region(s, "a")
+            b = await _mk_region(s, "b")
+            connection = await _mk_connection(s, a, b)
+            term_id = await _get_term_id(s)
+            circuit = await _mk_circuit(s)
+            await cis.add_circuit_region(s, circuit.id, CanonicalCircuitRegionCreate(region_id=a.id))
+            await cis.add_circuit_connection(
+                s, circuit.id, CanonicalCircuitConnectionCreate(connection_id=connection.id)
+            )
+            await cis.add_circuit_function(
+                s, circuit.id, CanonicalCircuitFunctionCreate(function_term_id=term_id)
+            )
+            await s.flush()
+            integrity = await cis.check_canonical_circuit_integrity(s)
+            assert integrity["ok"] is True, integrity["issues"]
+            assert integrity["counts"]["mirror_circuits_untouched"] == 53562
+            assert integrity["counts"]["region_members"] >= 1
+            assert integrity["counts"]["connection_members"] >= 1
+            assert integrity["counts"]["function_members"] >= 1
+    _run(_t())
+
+
+def test_integrity_flags_memberless_circuit(db):
+    async def _t():
+        async with AsyncSessionLocal() as s:
+            await _mk_circuit(s, "CI1 Test Memberless")
+            await s.flush()
+            integrity = await cis.check_canonical_circuit_integrity(s)
+            assert integrity["counts"]["memberless_circuit_count"] >= 1
+            codes = {i["code"] for i in integrity["issues"]}
+            assert "CIRCUIT_NO_MEMBERS" in codes
+            # medium severity only -> ok stays True
+            assert integrity["ok"] is True
+    _run(_t())
+
+
+def test_integrity_flags_species_mismatch_inserted_out_of_band(db):
+    async def _t():
+        async with AsyncSessionLocal() as s:
+            circuit = await _mk_circuit(s, "CI1 Test Sm")
+            mouse_region = await _mk_region(s, "sm_mouse", species="mouse")
+            # bind-time validation blocks this, but a row inserted outside the
+            # service must still be caught by the checker
+            await s.execute(
+                text(
+                    "INSERT INTO canonical_circuit_regions "
+                    "(circuit_id, region_id, role, order_index) VALUES (:c, :r, 'core_region', 0)"
+                ),
+                {"c": circuit.id, "r": mouse_region.id},
+            )
+            await s.flush()
+            integrity = await cis.check_canonical_circuit_integrity(s)
+            assert integrity["ok"] is False
+            assert any(i["code"] == "SPECIES_MISMATCH" for i in integrity["issues"])
+    _run(_t())
+
+
+def test_integrity_flags_deprecated_references(db):
+    async def _t():
+        async with AsyncSessionLocal() as s:
+            deprecated_circuit = await _mk_circuit(s, "CI1 Test DepNoRep")
+            deprecated_region = await _mk_region(s, "dep_r", status="deprecated")
+            circuit2 = await _mk_circuit(s, "CI1 Test DepRef")
+            await cis.add_circuit_region(
+                s, circuit2.id, CanonicalCircuitRegionCreate(region_id=deprecated_region.id)
+            )
+            deprecated_circuit.status = "deprecated"  # simulate out-of-band lifecycle change
+            await s.flush()
+            integrity = await cis.check_canonical_circuit_integrity(s)
+            codes = {i["code"] for i in integrity["issues"]}
+            assert "DEPRECATED_WITHOUT_REPLACEMENT" in codes
+            assert "DEPRECATED_REGION_REFERENCE" in codes
+            # both are medium -> ok stays True
+            assert integrity["ok"] is True
+    _run(_t())
+
+
+# --------------------------------------------------------------------------- #
+# mirror untouched
+# --------------------------------------------------------------------------- #
+
+
+def test_mirror_circuit_tables_untouched(db):
+    async def _t():
+        async with AsyncSessionLocal() as s:
+            before = int(
+                (await s.execute(text("SELECT count(*) FROM mirror_region_circuits"))).scalar_one()
+            )
+            spot = (
+                await s.execute(
+                    text("SELECT id, updated_at FROM mirror_region_circuits ORDER BY id LIMIT 1")
+                )
+            ).first()
+            a = await _mk_region(s, "a")
+            b = await _mk_region(s, "b")
+            connection = await _mk_connection(s, a, b)
+            term_id = await _get_term_id(s)
+            circuit = await _mk_circuit(s)
+            await cis.add_circuit_region(s, circuit.id, CanonicalCircuitRegionCreate(region_id=a.id))
+            await cis.add_circuit_connection(
+                s, circuit.id, CanonicalCircuitConnectionCreate(connection_id=connection.id)
+            )
+            await cis.add_circuit_function(
+                s, circuit.id, CanonicalCircuitFunctionCreate(function_term_id=term_id)
+            )
+            await s.commit()
+            after = int(
+                (await s.execute(text("SELECT count(*) FROM mirror_region_circuits"))).scalar_one()
+            )
+            spot_after = (
+                await s.execute(
+                    text("SELECT updated_at FROM mirror_region_circuits WHERE id=:i"),
+                    {"i": str(spot[0])},
+                )
+            ).scalar_one()
+            assert before == 53562
+            assert after == 53562
+            assert spot_after == spot[1]
+    _run(_t())
+
+
+# --------------------------------------------------------------------------- #
+# list filters
+# --------------------------------------------------------------------------- #
+
+
+def test_list_filters(db):
+    async def _t():
+        async with AsyncSessionLocal() as s:
+            await _mk_circuit(s, "CI1 Test FilterA", circuit_type="pathway")
+            await _mk_circuit(s, "CI1 Test FilterB", circuit_type="reflex")
+            await s.flush()
+            pathways = await cis.list_canonical_circuits(s, circuit_type="pathway")
+            assert all(c.circuit_type == "pathway" for c in pathways)
+            assert any(c.circuit_code == "ng:ci:ci1_test_filtera" for c in pathways)
+            reflexes = await cis.list_canonical_circuits(s, circuit_type="reflex")
+            assert any(c.circuit_code == "ng:ci:ci1_test_filterb" for c in reflexes)
+            proposed = await cis.list_canonical_circuits(s, status="proposed")
+            assert all(c.status == "proposed" for c in proposed)
+    _run(_t())

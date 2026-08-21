@@ -6,7 +6,6 @@ import {
   listMirrorFunctions,
   listMirrorCircuits,
   listMirrorTriples,
-  listMirrorEvidence,
   listMirrorProjectionFunctions,
   listMirrorCircuitSteps,
   updateMirrorConnection,
@@ -18,8 +17,7 @@ import {
 } from '../../api/endpoints'
 import { FormalObjectTableSection } from './FormalObjectTableSection'
 import { FormalObjectDetailDrawer } from './FormalObjectDetailDrawer'
-import { navigateToEvidenceCandidates } from '../evidence-center/evidenceCenterUrl'
-import { CreateBatchTaskDialog } from '../evidence-center/components/CreateBatchTaskDialog'
+import { type EvidenceQueueHandoffItem, INITIAL_QUEUE_KEY } from '../evidence-center/evidenceCenterUrl'
 import { FieldCompletionModal } from './FieldCompletionModal'
 import { MultiTargetFieldCompletionModal } from './MultiTargetFieldCompletionModal'
 import { resolveCircuitBundleFromCircuitIds } from './circuitBundleUtils'
@@ -32,6 +30,7 @@ import {
   type OverlayPatch,
 } from './fieldCompletionUtils'
 import type { MirrorKgSubTab } from './dataCenterTypes'
+import { ConfidenceFilterPopover, isFilterActive, type ConfidenceFilter } from './ConfidenceFilterPopover'
 
 interface Props {
   mirrorTab: MirrorKgSubTab
@@ -51,7 +50,7 @@ function sourceTabFor(targetType: string): MirrorKgSubTab | null {
   return null
 }
 
-const SUB_TABS: MirrorKgSubTab[] = ['connections', 'functions', 'circuits', 'triples', 'evidence']
+const SUB_TABS: MirrorKgSubTab[] = ['connections', 'functions', 'circuits', 'triples']
 
 // Sub-tabs under each parent tab: { key, label, formalObjectType, listApi }
 const SUB_ITEM_DEFS: Record<MirrorKgSubTab, { key: string; label: string; type: FormalObjectType; listApi: (p: any) => Promise<any> }[]> = {
@@ -69,15 +68,6 @@ const SUB_ITEM_DEFS: Record<MirrorKgSubTab, { key: string; label: string; type: 
   triples: [
     { key: 'self', label: '三元组自身', type: 'triple', listApi: listMirrorTriples },
   ],
-  evidence: [
-    { key: 'paper_verification', label: '论文证据', type: 'evidence', listApi: (p: any) => listMirrorEvidence({ ...p, evidence_type: 'paper_verification' }) },
-    { key: 'llm_explanation', label: 'LLM 解释', type: 'evidence', listApi: (p: any) => listMirrorEvidence({ ...p, evidence_type: 'llm_explanation' }) },
-    { key: 'literature', label: '文献', type: 'evidence', listApi: (p: any) => listMirrorEvidence({ ...p, evidence_type: 'literature' }) },
-    { key: 'rule_validation', label: '规则校验', type: 'evidence', listApi: (p: any) => listMirrorEvidence({ ...p, evidence_type: 'rule_validation' }) },
-    { key: 'manual_note', label: '人工备注', type: 'evidence', listApi: (p: any) => listMirrorEvidence({ ...p, evidence_type: 'manual_note' }) },
-    { key: 'curated_database', label: '数据库', type: 'evidence', listApi: (p: any) => listMirrorEvidence({ ...p, evidence_type: 'curated_database' }) },
-    { key: 'unknown', label: '其他', type: 'evidence', listApi: (p: any) => listMirrorEvidence({ ...p, evidence_type: 'unknown' }) },
-  ],
 }
 
 export function MirrorKgPanel({
@@ -94,16 +84,6 @@ export function MirrorKgPanel({
   const [tick, setTick] = useState(0)
   const [selected, setSelected] = useState<FormalRow | null>(null)
   const [pendingSource, setPendingSource] = useState<{ type: string; id: string } | null>(null)
-  const [evidenceCategory, setEvidenceCategory] = useState<'region' | 'connection' | 'circuit' | 'other'>('connection')
-  const [batchOpen, setBatchOpen] = useState(false)
-  const [batchTargetIds, setBatchTargetIds] = useState<string[]>([])
-  const categoryTypes = useMemo(() => {
-    if (mirrorTab !== 'evidence') return undefined
-    if (evidenceCategory === 'region') return ['mirror_function', 'region_function']
-    if (evidenceCategory === 'connection') return ['mirror_connection', 'connection', 'projection']
-    if (evidenceCategory === 'circuit') return ['mirror_circuit', 'circuit']
-    return ['mirror_triple', 'triple', 'circuit_step', 'projection_function', 'circuit_function', 'unknown']
-  }, [mirrorTab, evidenceCategory])
   const [detailCompletionOpen, setDetailCompletionOpen] = useState(false)
   const [bundleOpen, setBundleOpen] = useState(false)
   const [bundleLoading, setBundleLoading] = useState(false)
@@ -115,14 +95,16 @@ export function MirrorKgPanel({
   const [serverTotal, setServerTotal] = useState(0)
   // Sub-tab index within the current parent tab
   const [subIdx, setSubIdx] = useState(0)
+  const [confidenceFilter, setConfidenceFilter] = useState<ConfidenceFilter>({ min: null, max: null, includeNull: false })
 
   const subDefs = SUB_ITEM_DEFS[mirrorTab]
   const activeSub = subDefs[subIdx] ?? subDefs[0]
   const mapping = getFormalFieldMapping(activeSub.type)
   const refresh = () => setTick(x => x + 1)
 
-  // Reset sub-tab and page when parent tab changes
+  // Reset sub-tab and page when parent tab or confidence filter changes
   useEffect(() => { setSubIdx(0); setPage(1) }, [mirrorTab])
+  useEffect(() => { setPage(1) }, [confidenceFilter])
 
   const handleSaveField = useCallback(async (rowId: string, field: string, value: unknown) => {
     const body = { [field]: value }
@@ -150,11 +132,17 @@ export function MirrorKgPanel({
   const handleFetchAll = useCallback(async (): Promise<FormalRow[]> => {
     // Preserve the active granularity filter so "select all" covers the SAME filtered
     // set the user sees (e.g. only molecular) — not all granularities. limit 5000 covers max.
-    const params: Record<string, any> = { granularity_level: granularityLevel || undefined, limit: 5000, offset: 0, evidence_target_types: categoryTypes?.join(',') }
+    const params: Record<string, any> = {
+      granularity_level: granularityLevel || undefined,
+      confidence_min: confidenceFilter.min ?? undefined,
+      confidence_max: confidenceFilter.max ?? undefined,
+      confidence_include_null: confidenceFilter.includeNull || undefined,
+      limit: 5000, offset: 0,
+    }
     const result = await activeSub.listApi(params)
     const items = result?.items ?? []
     return items.map((item: any) => ({ ...item, id: item.id ?? '' }))
-  }, [activeSub, granularityLevel])
+  }, [activeSub, granularityLevel, confidenceFilter])
 
   const handleBulkDelete = useCallback(async (ids: string[]) => {
     const deleteFn = mirrorTab === 'connections' ? deleteMirrorConnection
@@ -185,8 +173,10 @@ export function MirrorKgPanel({
     limit: pageSize,
     offset,
     granularity_level: granularityLevel || undefined,
-    evidence_target_types: categoryTypes?.join(','),
-  }), [pageSize, offset, granularityLevel, categoryTypes])
+    confidence_min: confidenceFilter.min ?? undefined,
+    confidence_max: confidenceFilter.max ?? undefined,
+    confidence_include_null: confidenceFilter.includeNull || undefined,
+  }), [pageSize, offset, granularityLevel, confidenceFilter])
 
   // Data key changes when sub-tab or page or tick changes
   const dataKey = useMemo(
@@ -221,7 +211,6 @@ export function MirrorKgPanel({
     functions: 'Region Functions',
     circuits: 'Circuits',
     triples: 'Triples',
-    evidence: 'Evidence',
   }
 
   return (
@@ -239,19 +228,6 @@ export function MirrorKgPanel({
           </button>
         ))}
       </div>
-
-      {/* Evidence category tabs */}
-      {mirrorTab === 'evidence' && (
-        <div className="data-center-subtabbar" style={{ marginTop: 4 }}>
-          {(['region', 'connection', 'circuit', 'other'] as const).map(c => (
-            <button key={c} type="button"
-              className={`data-center-tab${evidenceCategory === c ? ' data-center-tab-active' : ''}`}
-              onClick={() => { setEvidenceCategory(c); setSubIdx(0); setPage(1); }}>
-              {c === 'region' ? '脑区' : c === 'connection' ? '连接' : c === 'circuit' ? '回路' : '其他'}
-            </button>
-          ))}
-        </div>
-      )}
 
       {/* Sub-sub-tabs */}
       <div className="data-center-subtabbar" style={{ marginTop: 4 }}>
@@ -275,6 +251,14 @@ export function MirrorKgPanel({
           emptyText={t('dataCenter.noData')}
           pageSize={pageSize}
           serverTotal={serverTotal}
+          extraToolbarButtons={
+            <>
+              <ConfidenceFilterPopover filter={confidenceFilter} onChange={setConfidenceFilter} />
+              <span className="data-center-filter-stats">
+                筛选结果 {serverTotal.toLocaleString()} 条
+              </span>
+            </>
+          }
           serverPage={page}
           onServerPageChange={setPage}
           onOpenDetail={setSelected}
@@ -286,19 +270,24 @@ export function MirrorKgPanel({
           granularityLevel={granularityLevel}
           onPaperEvidence={(rows) => {
             const labelKeys = ['label', 'name', 'circuit_name', 'function_term', 'step_name', 'source_region_name_en', 'title']
-            navigateToEvidenceCandidates({
-              items: rows.map(r => {
-                const targetType = mirrorTab === 'evidence' && typeof r.evidence_target_type === 'string'
-                  ? r.evidence_target_type as string
-                  : (mapping?.targetType as string) || 'connection'
-                const labelKey = labelKeys.find(k => r[k] != null)
-                return { target_type: targetType, target_id: String(r.id), label: labelKey ? String(r[labelKey]) : String(r.id), confidence: typeof r.confidence === 'number' ? r.confidence : null }
-              }),
+            const items: EvidenceQueueHandoffItem[] = rows.map(r => {
+              const labelKey = labelKeys.find(k => r[k] != null)
+              return {
+                target_type: (mapping?.targetType as string) || 'connection',
+                target_id: String(r.id),
+                label: labelKey ? String(r[labelKey]) : String(r.id),
+                confidence: typeof r.confidence === 'number' ? r.confidence : null,
+              }
             })
-          }}
-          onBatchPaperEvidence={(rows) => {
-            setBatchTargetIds(rows.map(r => String(r.id)))
-            setBatchOpen(true)
+            if (items.length) {
+              sessionStorage.setItem(INITIAL_QUEUE_KEY, JSON.stringify({ items, taskId: null }))
+            }
+            const first = items[0]
+            const params = new URLSearchParams()
+            params.set('tab', 'paper_evidence')
+            params.set('module', 'candidates')
+            if (first) { params.set('target_type', first.target_type); params.set('target_id', first.target_id) }
+            window.location.hash = `#/validation-center?${params.toString()}`
           }}
         />
       )}
@@ -312,12 +301,10 @@ export function MirrorKgPanel({
         onDelete={handleDeleteRow}
         onRefresh={refresh}
         evidenceTargetType={
-          mirrorTab === 'evidence' && selected && typeof selected.evidence_target_type === 'string'
-            ? selected.evidence_target_type as string
-            : mirrorTab === 'connections' ? 'connection'
-            : mirrorTab === 'functions' ? 'region_function'
-            : mirrorTab === 'circuits' ? 'circuit'
-            : undefined
+          mirrorTab === 'connections' ? 'connection'
+          : mirrorTab === 'functions' ? 'region_function'
+          : mirrorTab === 'circuits' ? 'circuit'
+          : undefined
         }
         onOpenSource={(targetType, targetId) => {
           const tab = sourceTabFor(targetType)
@@ -347,14 +334,6 @@ export function MirrorKgPanel({
           setDetailCompletionOpen(true)
         }}
       />
-      <CreateBatchTaskDialog
-        open={batchOpen}
-        granularity={granularityLevel}
-        selectedIds={batchTargetIds}
-        onClose={() => setBatchOpen(false)}
-        onCreated={() => setBatchOpen(false)}
-      />
-
       {mapping && selected && mirrorTab !== 'circuits' && (
         <FieldCompletionModal
           open={detailCompletionOpen}

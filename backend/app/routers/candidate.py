@@ -177,6 +177,7 @@ async def list_candidate_brain_regions(
     candidate_status: CandidateStatus | None = None,
     laterality: Laterality | None = None,
     granularity_level: str | None = None,
+    search: str | None = None,
     limit: int = Query(50, ge=1, le=5000),
     offset: int = Query(0, ge=0),
     session: AsyncSession = Depends(get_db),
@@ -190,6 +191,7 @@ async def list_candidate_brain_regions(
         candidate_status=candidate_status.value if candidate_status else None,
         laterality=laterality.value if laterality else None,
         granularity_level=granularity_level,
+        search=search,
         limit=limit,
         offset=offset,
     )

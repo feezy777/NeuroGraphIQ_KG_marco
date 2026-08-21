@@ -39,6 +39,8 @@ export function useConnectionPool(scope: ConnPoolScope | null) {
   const [isLoading, setIsLoading] = useState(false)
   const mountedRef = useRef(true)
   const fetchGenRef = useRef(0)
+  const addBusyRef = useRef(false)
+  const replaceInFlightRef = useRef<Promise<ConnectionPool> | null>(null)
   const currentKey = scope ? scopeKey(scope) : null
 
   const listScopePools = useCallback(async () => {
@@ -101,10 +103,12 @@ export function useConnectionPool(scope: ConnPoolScope | null) {
   /** Add connections to pool (auto-creates pool if none exists). */
   const addConnections = useCallback(async (connectionIds: string[]) => {
     if (!scope || connectionIds.length === 0) return
+    if (addBusyRef.current) return
 
     const newIds = connectionIds.filter(id => !pooledConnectionIds.has(id))
     if (newIds.length === 0) return
 
+    addBusyRef.current = true
     try {
       let currentPool = pool
       if (!currentPool) {
@@ -116,12 +120,28 @@ export function useConnectionPool(scope: ConnPoolScope | null) {
       } else {
         currentPool = await addConnectionPoolMembers(currentPool.id, { connection_ids: newIds })
       }
-      if (mountedRef.current) {
+      // Mutation responses already include full memberships — use them immediately
+      // so a transient/refetch 404 never makes the pool look empty.
+      if (mountedRef.current) setPool(currentPool)
+      try {
         const full = await getConnectionPool(currentPool.id)
         if (mountedRef.current) setPool(full)
+      } catch {
+        // Best-effort refresh only; keep the mutation response on failure.
       }
     } catch (err) {
       console.error('[useConnectionPool] add failed:', err)
+      // Refresh pool state after a failure so retries don't resend duplicates.
+      if (mountedRef.current && pool?.id) {
+        try {
+          const full = await getConnectionPool(pool.id)
+          if (mountedRef.current) setPool(full)
+        } catch {
+          if (mountedRef.current) setPool(null)
+        }
+      }
+    } finally {
+      addBusyRef.current = false
     }
   }, [scope, pool?.id, pooledConnectionIds, currentKey])
 
@@ -146,26 +166,40 @@ export function useConnectionPool(scope: ConnPoolScope | null) {
       scope_granularity: effectiveScope.granularityLevel,
     }
 
+    // Deduplicate concurrent replace calls (e.g. double-click / multi-trigger).
+    if (replaceInFlightRef.current) return replaceInFlightRef.current
+
     ++fetchGenRef.current
+    const task = (async () => {
+      try {
+        const created = await replaceConnectionPool(payload)
+        if (mountedRef.current) setPool(created)
+        try {
+          const full = await getConnectionPool(created.id)
+          if (mountedRef.current) setPool(full)
+          return full
+        } catch {
+          // Best-effort refresh only; replace already returns full memberships.
+          return created
+        }
+      } catch (err) {
+        console.error('[useConnectionPool] setPoolConnections failed:', err)
+        throw err
+      }
+    })()
+    replaceInFlightRef.current = task
     try {
-      const created = await replaceConnectionPool(payload)
-      const full = await getConnectionPool(created.id)
-      if (mountedRef.current) setPool(full)
-      return full
-    } catch (err) {
-      console.error('[useConnectionPool] setPoolConnections failed:', err)
-      throw err
+      return await task
+    } finally {
+      replaceInFlightRef.current = null
     }
   }, [scope, currentKey])
 
   const removeConnection = useCallback(async (connectionId: string) => {
     if (!pool) return
     try {
-      await removeConnectionPoolMembers(pool.id, { connection_ids: [connectionId] })
-      if (mountedRef.current) {
-        const full = await getConnectionPool(pool.id)
-        if (mountedRef.current) setPool(full.connection_count > 0 ? full : null)
-      }
+      const updated = await removeConnectionPoolMembers(pool.id, { connection_ids: [connectionId] })
+      if (mountedRef.current) setPool(updated.connection_count > 0 ? updated : null)
     } catch (err) {
       if (isPoolNotFoundError(err)) {
         if (mountedRef.current) setPool(null)
@@ -178,16 +212,8 @@ export function useConnectionPool(scope: ConnPoolScope | null) {
   const batchRemove = useCallback(async (connectionIds: string[]) => {
     if (!pool || connectionIds.length === 0) return
     try {
-      await removeConnectionPoolMembers(pool.id, { connection_ids: connectionIds })
-      if (mountedRef.current) {
-        const remaining = pool.connection_count - connectionIds.length
-        if (remaining <= 0) {
-          setPool(null)
-        } else {
-          const full = await getConnectionPool(pool.id)
-          if (mountedRef.current) setPool(full)
-        }
-      }
+      const updated = await removeConnectionPoolMembers(pool.id, { connection_ids: connectionIds })
+      if (mountedRef.current) setPool(updated.connection_count > 0 ? updated : null)
     } catch (err) {
       if (isPoolNotFoundError(err)) {
         if (mountedRef.current) setPool(null)

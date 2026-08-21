@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 720" data-pptx-page-role="content"><defs><filter id="g"><feGaussianBlur stdDeviation="2" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs><g id="bg" data-pptx-bounds="0 0 1280 720" data-pptx-role="background"><rect width="1280" height="720" fill="#0D1117"/><line x1="0" y1="108" x2="1280" y2="108" stroke="#212D40" stroke-width="0.5"/><text x="80" y="700" font-family="Microsoft YaHei" font-size="14" fill="#586069">NeuroGraphIQ KG V3</text></g><g id="c" data-pptx-bounds="40 120 1200 560">
+<rect x="40" y="120" width="4" height="48" fill="#58A6FF" /><text x="60" y="155" font-family="Microsoft YaHei" font-weight="bold" font-size="40" fill="#FFFFFF">规则校验与数据增强引擎</text>
+<text x="40" y="200" font-family="Microsoft YaHei" font-size="20" fill="#8B949E">12 条确定性校验规则（不依赖 LLM）| Quality Score 加权评分</text>
+<g transform="translate(40, 218)">
+<rect x="0" y="0" width="580" height="26" rx="2" fill="#161B22"/><text x="10" y="18" font-family="Microsoft YaHei" font-weight="bold" font-size="13" fill="#8B949E">类别</text><text x="150" y="18" font-family="Microsoft YaHei" font-weight="bold" font-size="13" fill="#8B949E">检查项</text><text x="410" y="18" font-family="Microsoft YaHei" font-weight="bold" font-size="13" fill="#8B949E">级别</text>
+<rect x="0" y="28" width="580" height="24" rx="2" fill="#1C2333"/><text x="10" y="45" font-family="Microsoft YaHei" font-size="14" fill="#C9D1D9">完整性</text><text x="150" y="45" font-family="Microsoft YaHei" font-size="14" fill="#C9D1D9">必填字段非空</text><text x="410" y="45" font-family="Consolas" font-size="14" fill="#FF7B72">BLOCKER</text>
+<rect x="0" y="54" width="580" height="24" rx="2" fill="#1C2333"/><text x="10" y="71" font-family="Microsoft YaHei" font-size="14" fill="#C9D1D9">语义ID / 唯一性</text><text x="150" y="71" font-family="Microsoft YaHei" font-size="14" fill="#C9D1D9">格式合法性 / 同图谱不重复</text><text x="410" y="71" font-family="Consolas" font-size="14" fill="#FF7B72">BLOCKER</text>
+<rect x="0" y="80" width="580" height="24" rx="2" fill="#1C2333"/><text x="10" y="97" font-family="Microsoft YaHei" font-size="14" fill="#C9D1D9">拓扑</text><text x="150" y="97" font-family="Microsoft YaHei" font-size="14" fill="#C9D1D9">脑区间引用有效性</text><text x="410" y="97" font-family="Consolas" font-size="14" fill="#FF7B72">BLOCKER</text>
+<rect x="0" y="106" width="580" height="24" rx="2" fill="#1C2333"/><text x="10" y="123" font-family="Microsoft YaHei" font-size="14" fill="#C9D1D9">溯源 / 证据</text><text x="150" y="123" font-family="Microsoft YaHei" font-size="14" fill="#C9D1D9">atlas/version/resource齐全 / evidence_text</text><text x="410" y="123" font-family="Consolas" font-size="14" fill="#FFA657">WARNING</text>
+</g>
+<text x="40" y="390" font-family="Microsoft YaHei" font-size="20" fill="#8B949E">Quality Score: 完整性30% + 溯源20% + 拓扑20% + 证据20% + 关联10% = 0-100</text>
+<!-- Enhancement Engine -->
+<text x="40" y="430" font-family="Microsoft YaHei" font-size="20" fill="#8B949E">数据增强引擎</text>
+<rect x="40" y="448" width="555" height="96" rx="2" fill="#161B22" stroke="#30363D" stroke-width="0.5"/>
+<rect x="40" y="448" width="555" height="4" fill="#38A169"/>
+<text x="60" y="488" font-family="Microsoft YaHei" font-weight="bold" font-size="22" fill="#38A169">Tier 1: 确定性自动修复</text>
+<text x="60" y="523" font-family="Microsoft YaHei" font-size="17" fill="#C9D1D9">补充缺失字段 · 标准化名称 · 修复引用</text>
+<text x="60" y="551" font-family="Microsoft YaHei" font-size="17" fill="#C9D1D9">不调 LLM — 零成本 · 确定性 · 即时反馈</text>
+<rect x="620" y="448" width="555" height="96" rx="2" fill="#161B22" stroke="#30363D" stroke-width="0.5"/>
+<rect x="620" y="448" width="555" height="4" fill="#58A6FF"/>
+<text x="640" y="488" font-family="Microsoft YaHei" font-weight="bold" font-size="22" fill="#58A6FF">Tier 2: LLM 辅助增强 (DeepSeek)</text>
+<text x="640" y="523" font-family="Microsoft YaHei" font-size="17" fill="#C9D1D9">分析疑难问题 → 生成修复建议</text>
+<text x="640" y="551" font-family="Microsoft YaHei" font-size="17" fill="#C9D1D9">人工 approve / reject — 始终保留人工决策权</text>
+</g></svg>

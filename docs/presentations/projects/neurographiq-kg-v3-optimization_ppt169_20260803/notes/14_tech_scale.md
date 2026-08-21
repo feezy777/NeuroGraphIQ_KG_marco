@@ -1,0 +1,1 @@
+技术栈是 FastAPI、React+TypeScript、PostgreSQL Schema 隔离。工程规模指标来自仓库统计：5 粒度、AAL3/Macro96、12 规则、7 类提取、42 路由、88 服务、1173 测试。这里不做“零故障”或“响应极快”这类不可核验承诺。

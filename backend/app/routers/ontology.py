@@ -15,6 +15,11 @@ from app.schemas.paper_evidence_extraction import PaperEvidenceExtractionRunRequ
 from app.services import paper_evidence_extraction_run_service as extraction_run_svc
 from app.schemas.ontology import (
     AlignmentReviewRequest,
+    HierarchyNodeRead,
+    HierarchyPathsResponse,
+    HierarchyRelationCreateRequest,
+    HierarchyRelationListResponse,
+    HierarchyRelationRead,
     BatchActivateRequest,
     BatchGroundingByTextRequest,
     AttachPreviewRequest,
@@ -58,6 +63,8 @@ from app.schemas.ontology import (
     RollbackRescoreRequest,
     RollbackRescoreResponse,
 )
+from app.models.ontology import OntologyTermRelation
+from app.services import ontology_hierarchy_service as hs
 from app.services import ontology_service as svc
 from app.services import ontology_governance_service as gov
 from app.services import paper_evidence_service as pes
@@ -1552,3 +1559,99 @@ async def paper_evidence_review_return(
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail={"code": "INVALID_REQUEST", "message": str(exc)})
+
+
+# ---------------- O1.2 Function Hierarchy ----------------
+
+@router.post("/hierarchy/relations", response_model=HierarchyRelationRead, status_code=201)
+async def create_hierarchy_relation(
+    request: HierarchyRelationCreateRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    rel = await hs.create_relation(
+        db,
+        child_term_id=request.child_term_id,
+        parent_term_id=request.parent_term_id,
+        status=request.status,
+        source=request.source,
+        confidence=request.confidence,
+        provenance=request.provenance,
+        created_by="api",
+    )
+    view = await hs._edge_view(db, rel)
+    return _hierarchy_view(view)
+
+
+@router.get("/hierarchy/relations/{relation_id}", response_model=HierarchyRelationRead)
+async def get_hierarchy_relation(relation_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
+    rel = await db.get(OntologyTermRelation, relation_id)
+    if rel is None:
+        raise HTTPException(status_code=404, detail="hierarchy relation not found")
+    view = await hs._edge_view(db, rel)
+    return _hierarchy_view(view)
+
+
+@router.post("/hierarchy/relations/{relation_id}/activate", response_model=HierarchyRelationRead)
+async def activate_hierarchy_relation(relation_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
+    rel = await hs.activate_relation(db, relation_id, operator_id="api")
+    view = await hs._edge_view(db, rel)
+    return _hierarchy_view(view)
+
+
+@router.post("/hierarchy/relations/{relation_id}/reject", response_model=HierarchyRelationRead)
+async def reject_hierarchy_relation(relation_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
+    rel = await hs.reject_relation(db, relation_id, operator_id="api")
+    view = await hs._edge_view(db, rel)
+    return _hierarchy_view(view)
+
+
+@router.get("/hierarchy/terms/{term_id}/parents", response_model=HierarchyRelationListResponse)
+async def hierarchy_parents(term_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
+    edges = await hs.get_parents(db, term_id)
+    return HierarchyRelationListResponse(items=edges, total=len(edges))
+
+
+@router.get("/hierarchy/terms/{term_id}/children", response_model=HierarchyRelationListResponse)
+async def hierarchy_children(term_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
+    edges = await hs.get_children(db, term_id)
+    return HierarchyRelationListResponse(items=edges, total=len(edges))
+
+
+@router.get("/hierarchy/terms/{term_id}/ancestors", response_model=HierarchyPathsResponse)
+async def hierarchy_ancestors(term_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
+    paths = await hs.get_ancestors(db, term_id)
+    return HierarchyPathsResponse(items=paths, total=len(paths))
+
+
+@router.get("/hierarchy/terms/{term_id}/descendants", response_model=HierarchyPathsResponse)
+async def hierarchy_descendants(term_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
+    paths = await hs.get_descendants(db, term_id)
+    return HierarchyPathsResponse(items=paths, total=len(paths))
+
+
+@router.get("/hierarchy/integrity")
+async def hierarchy_integrity(db: AsyncSession = Depends(get_db)):
+    return await hs.check_function_hierarchy_integrity(db)
+
+
+def _hierarchy_view(view):
+    if view is None:
+        raise HTTPException(status_code=404, detail="hierarchy relation not found")
+    return HierarchyRelationRead(
+        id=view.id,
+        child=HierarchyNodeRead(
+            term_id=view.child.term_id, term_code=view.child.term_code,
+            canonical_term_en=view.child.canonical_term_en, canonical_term_cn=view.child.canonical_term_cn,
+            term_status=view.child.term_status,
+        ),
+        predicate=view.predicate,
+        parent=HierarchyNodeRead(
+            term_id=view.parent.term_id, term_code=view.parent.term_code,
+            canonical_term_en=view.parent.canonical_term_en, canonical_term_cn=view.parent.canonical_term_cn,
+            term_status=view.parent.term_status,
+        ),
+        status=view.status,
+        source=view.source,
+        confidence=view.confidence,
+        provenance=view.provenance,
+    )

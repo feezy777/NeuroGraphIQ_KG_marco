@@ -181,3 +181,80 @@ interface EvidenceCenterState {
 - `review_approved → awaiting_promotion` 独立后端状态
 - review 与 attach 状态机拆分
 - 后端 review 表与 evidence 表解耦
+
+---
+
+# 第二阶段:视觉与交互重构(2026-08-10 追加)
+
+## 11. 统一三栏骨架
+
+```
+EvidenceCenterPage (display:flex column, height: calc(100vh - appHeader))
+├── EvidenceCenterHeader(固定): 一级模块导航 + ContextBar
+└── Body (display:grid, grid-template-columns: 230px minmax(620px,1fr) 370px)
+    ├── 左栏: 对象队列(独立滚动)
+    ├── 中栏: 模块主工作区(独立滚动)
+    └── 右栏: 动态插槽(随模块切换,独立滚动)
+```
+
+- 五个模块共享骨架;右栏随模块变化:佐证任务=Task Summary / 论文库=全宽+Drawer(例外)/ 证据候选=Candidate Summary / 人工审核=Reviewer Panel / 证据晋升=Promotion Impact
+- 三栏轻量 border 分隔,不用大浮动 Card;三栏各自纵向滚动,浏览器页面不无限拉长
+- 窗口过窄时右栏可折叠为 Drawer;桌面端保持三栏
+
+## 12. 顶部 ContextBar
+
+- 当前对象名称 / 对象类型 / 颗粒度 / Current Confidence / 已有论文证据数
+- 当前任务名称 + 队列进度(如 5 / 18)+ batch 任务状态(如来自 batch)
+- 右侧:返回数据中心 / 刷新
+- 不再显示「最小化/关闭」(全页面)
+
+## 13. 中栏 Step Pills(对象处理进度,非模块导航)
+
+- 小型 Step Pills:`确认对象 → 查找论文 → 找到原文 → 人工审核 → 确认晋升`
+- 与顶部一级模块导航明确区分;状态由 queue/draft 推导
+
+## 14. 证据候选模块(三栏)
+
+- 左:对象队列(标题「待处理对象」+ 统计:待审核 N/已完成 N/失败 N + 只看未处理 + 紧凑对象卡:名称/target_type/confidence/证据数/状态色;当前对象浅背景+左边强调)
+- 中:
+  - Claim 区:`当前需要验证的事实` + Claim 单独一行突出 + Component Chips(源脑区/目标脑区/关系/方向)紧凑排布
+  - 搜索区三层:`查找相关论文`(Query 输入 + 重新搜索 + 恢复系统推荐 + Query Terms Chips)→ Search Filters(OA Only/佐证模式/年份/恢复排除)→ Batch Actions(全选/提取所选论文 N)
+  - Paper Cards 分层:标题(粗体)/ 作者·Journal·Year / 匹配信息 / 标签行(PMID/DOI/Abstract/OA Full Text)/ 操作行([查看详情][加入提取][排除此候选]);提取后显示 AI 判断/coverage/核验片段数 + [查看证据候选]
+  - **论文↔证据视图分离**:「查看证据候选」→ 中栏切换为该 Paper 的 Evidence View(顶部 `← 返回论文列表` + Paper Summary + Claim Coverage(源脑区✓等组件表 + 4/5)+ 候选佐证原文(PassageEvidenceCard;Results/Direct/已核验重点;DeepSeek reason/semantic confidence 低层级;paragraph_id/verification 进「详细信息」折叠))
+- 右(候选摘要,禁 Reviewer 修改):当前 Claim / 找到论文 N / AI 提取论文 N / 已核验 Passage N / Coverage / 模型判断 / [进入人工审核]
+
+## 15. 人工审核模块(三栏)
+
+- 左:待人工审核 Queue
+- 中:论文 + 已选 Evidence(PassageEvidenceCard)
+- 右:Reviewer Panel 升级(标题「人工审核」):
+  - AI 初判(支持/Coverage 5/5)
+  - 分隔线「人工最终判断」
+  - Reviewer Direction(支持/部分支持/矛盾/混合/不采用)、Evidence Level、Reviewer Confidence(slider+input)、Reviewer Note
+  - 「置信度影响」:Current / Reviewer / Rule(support cap 0.85)/ Final
+  - sticky 底部:[驳回证据] [审核通过] —— **只完成人工审核,不调 attach**
+- 审核通过 → 前端状态 `review_approved`(sessionStorage `evidence-center.review-approved.<targetId>` + Context),进入「证据晋升」待晋升列表;驳回 → 状态 rejected
+- 文案:不再叫「确认入库」
+
+## 16. 证据晋升模块(三栏)
+
+- 左/上状态:待晋升 / 已晋升 / 已失效
+- 待晋升列表:对象 / Claim / Paper / Coverage / Reviewer / Reviewer Confidence / 当前 Confidence / 预计 Confidence
+- 中:选中项的完整审核结果
+- 右(晋升影响,sticky actions):KG 当前 / 晋升后 / Evidence 新增 / Passages 新增 / 状态(human_verified)+ [退回人工审核] [确认晋升]
+- **仅「确认晋升」调用 POST /api/ontology/evidence/attach**(唯一 attach 入口)
+
+## 17. 视觉规范(第二阶段)
+
+- 减少灰色 border,用 section spacing + subtle divider
+- Primary 按钮只保留当前步骤主操作(进入人工审核/审核通过/确认晋升)
+- 右栏始终回答"当前模块最重要的决策是什么"
+
+## 18. 第二阶段测试
+
+- 三栏骨架渲染/右栏随模块动态切换/ContextBar 信息/Step Pills
+- 候选摘要(右栏无 Reviewer 修改控件)/Evidence View 切换与返回
+- 审核通过 → review_approved 状态写入 → 晋升模块待晋升列表读取
+- 驳回 → rejected;退回人工审核
+- 确认晋升(唯一 attach)+ 标记任务完成(已有)
+- 全部既有测试回归 + build

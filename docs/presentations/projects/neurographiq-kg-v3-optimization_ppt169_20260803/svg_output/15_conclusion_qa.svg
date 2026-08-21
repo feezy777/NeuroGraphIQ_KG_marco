@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 720" width="1280" height="720">
+  <g id="background"><rect width="1280" height="720" fill="#F7FAFC"/></g>
+  <g id="header"><rect x="56" y="42" width="8" height="40" fill="#1F9FB5"/><text x="80" y="72" font-family="Microsoft YaHei, Arial, sans-serif" font-size="34" font-weight="700" fill="#17324D">结论与 Q&amp;A</text></g>
+  <g id="points">
+  <rect x="56" y="160" width="1168" height="90" rx="10" fill="#FFFFFF" stroke="#CBD5E0"/><circle cx="110" cy="205" r="24" fill="#1F9FB5"/><text x="110" y="212" text-anchor="middle" font-family="Arial, sans-serif" font-size="20" font-weight="700" fill="#FFFFFF">1</text><text x="160" y="215" font-family="Microsoft YaHei, Arial, sans-serif" font-size="24" fill="#243447">受控 LLM + Mirror 是关键</text>
+  <rect x="56" y="270" width="1168" height="90" rx="10" fill="#FFFFFF" stroke="#CBD5E0"/><circle cx="110" cy="315" r="24" fill="#1F9FB5"/><text x="110" y="322" text-anchor="middle" font-family="Arial, sans-serif" font-size="20" font-weight="700" fill="#FFFFFF">2</text><text x="160" y="325" font-family="Microsoft YaHei, Arial, sans-serif" font-size="24" fill="#243447">八步溯源保证可追责</text>
+  <rect x="56" y="380" width="1168" height="90" rx="10" fill="#FFFFFF" stroke="#CBD5E0"/><circle cx="110" cy="425" r="24" fill="#1F9FB5"/><text x="110" y="432" text-anchor="middle" font-family="Arial, sans-serif" font-size="20" font-weight="700" fill="#FFFFFF">3</text><text x="160" y="435" font-family="Microsoft YaHei, Arial, sans-serif" font-size="24" fill="#243447">宏观临床层已落地并可继续扩展</text>
+  </g>
+  <rect x="56" y="520" width="1168" height="120" rx="10" fill="#17324D"/><text x="640" y="590" text-anchor="middle" font-family="Arial, sans-serif" font-size="48" font-weight="700" fill="#FFFFFF">Q&amp;A</text>
+  <g id="footer"><text x="1224" y="696" text-anchor="end" font-family="Arial, sans-serif" font-size="12" fill="#8492A0">15</text></g>
+</svg>

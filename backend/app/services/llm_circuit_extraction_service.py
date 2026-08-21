@@ -36,7 +36,7 @@ from app.schemas.mirror_kg import (
     TripleScope,
     TripleSubjectType,
 )
-from app.services import mirror_kg_service
+from app.services import mirror_kg_service, mirror_macro_clinical_service
 from app.services.llm_extraction_service import (
     CandidateNotFoundError,
     ProviderNotConfiguredServiceError,
@@ -975,6 +975,15 @@ async def persist_circuit_mirror_records(
         seen.add(key)
         circuit_ids.append(mirror_circuit.id)
 
+        # P1.4: function_association is only a snapshot — the formal circuit
+        # function relation lives in mirror_circuit_functions.
+        await mirror_macro_clinical_service.sync_circuit_function_from_association(
+            session,
+            circuit=mirror_circuit,
+            function_association=circ.get("function_association"),
+            created_by=f"circuit_extraction:{run.id}",
+        )
+
         if create_triples:
             for cr in circ["circuit_regions"]:
                 rid = uuid.UUID(cr["region_candidate_id"])
@@ -1006,34 +1015,9 @@ async def persist_circuit_mirror_records(
                 await mirror_kg_service.create_mirror_triple(session, triple_payload)
                 triples += 1
 
-            func_assoc = str(circ.get("function_association") or "").strip()
-            if func_assoc:
-                fn_triple = MirrorKgTripleCreate(
-                    subject_type=TripleSubjectType.circuit,
-                    subject_id=mirror_circuit.id,
-                    subject_label=circ["circuit_name"],
-                    predicate="associated_with_function",
-                    object_type=TripleObjectType.function,
-                    object_id=None,
-                    object_label=func_assoc,
-                    triple_scope=TripleScope.same_granularity,
-                    resource_id=run.resource_id,
-                    batch_id=run.batch_id,
-                    llm_run_id=run.id,
-                    llm_item_id=item.id,
-                    source_mirror_circuit_id=mirror_circuit.id,
-                    granularity_level=run.granularity_level or "",
-                    granularity_family=run.granularity_family,
-                    source_atlas=run.source_atlas or "",
-                    source_version=run.source_version,
-                    confidence=circ.get("confidence"),
-                    evidence_text=circ.get("evidence_text"),
-                    uncertainty_reason=circ.get("uncertainty_reason"),
-                    raw_payload_json={"function_association": func_assoc},
-                    normalized_payload_json={"predicate": "associated_with_function"},
-                )
-                await mirror_kg_service.create_mirror_triple(session, fn_triple)
-                triples += 1
+            # P1.4: no direct circuit→function triples from function_association —
+            # the formal relation is materialized in mirror_circuit_functions
+            # (sync above) and triples are consolidated from that table.
 
         if create_evidence and circ.get("evidence_text"):
             ev_payload = MirrorEvidenceRecordCreate(

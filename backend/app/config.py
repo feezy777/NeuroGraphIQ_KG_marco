@@ -32,9 +32,19 @@ class Settings(BaseSettings):
     ontology_residual_confidence_threshold: float = 0.9
     paper_search_concurrency: int = 3
     paper_fetch_concurrency: int = 4
+    # Parallel paper-evidence extraction runs (manual selected papers).
+    paper_extraction_worker_concurrency: int = 4
+    paper_extraction_fetch_concurrency: int = 6
+    paper_extraction_llm_concurrency: int = 4
+    paper_extraction_poll_seconds: float = 1.0
     evidence_batch_max_retries: int = 3
     paper_evidence_materialize_batch_size: int = 1000
     paper_evidence_max_task_items: int = 50000
+    # Semantic pre-filtering of candidate papers before DeepSeek extraction.
+    # relevance < threshold → skipped (reason stored); 0 disables filtering.
+    # Keep the default conservative to reduce irrelevant extraction calls.
+    paper_semantic_threshold: float = 0.25
+    paper_semantic_max_tokens: int = 1200
 
     # Database components — align with backend/.env.example and docs/dbeaver_postgres_connection.md
     postgres_host: str = "127.0.0.1"

@@ -1,0 +1,1 @@
+全局架构是生产—治理—消费闭环。Raw/Staging 到 Candidate，再到 LLM/Mirror，经 Review 进入 Final，最后服务消费侧。Mirror 是唯一预正式缓冲层，晋升必须预览确认后执行。

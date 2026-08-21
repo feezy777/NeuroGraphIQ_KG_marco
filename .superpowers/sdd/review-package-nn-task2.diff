@@ -1,0 +1,223 @@
+372492554ba2473b426aa8f52bc967c34cf7725f feat(evidence): mark non-neural target items as structurally non-existent at creation
+---DIFF---
+diff --git a/backend/app/services/paper_evidence_service.py b/backend/app/services/paper_evidence_service.py
+index 3f982df..e822660 100644
+--- a/backend/app/services/paper_evidence_service.py
++++ b/backend/app/services/paper_evidence_service.py
+@@ -48,20 +48,21 @@ from app.services.confidence_rules import (
+     PARTIAL_CAP,
+     SUPPORT_CAP,
+     compute_adjustment,
+ )
+ from app.services.evidence_target_adapter import (
+     TARGET_MODELS as ADAPTER_TARGET_MODELS,
+     build_search_query,
+     build_target_dto,
+     build_retrieval_context,
+ )
++from app.services.evidence_target_classifier import classify_target
+ from app.services.paragraph_retrieval import build_windows, score_paragraphs
+ from app.services import oa_xml_parser
+ from app.services import paper_fetch_service as pfs
+ 
+ # Similarity tier: token Jaccard (word overlap) or character ratio for LLM
+ # passages that are not verbatim. Exact / whitespace / unicode-normalized
+ # matches stay preferred; similarity is a controlled fallback for human review.
+ SIMILARITY_TOKEN_JACCARD_THRESHOLD = 0.75
+ SIMILARITY_RATIO_THRESHOLD = 0.8
+ LOCATE_SIMILARITY_THRESHOLD = 0.6
+@@ -5800,20 +5801,40 @@ async def materialize_task_items_background(task_id: str) -> None:
+                         "UPDATE paper_evidence_tasks SET materialization_status='failed', "
+                         "materialization_error=:err WHERE id::text=:tid"
+                     ),
+                     {"tid": task_id, "err": str(exc)[:500]},
+                 )
+                 await session.commit()
+             except Exception:  # noqa: BLE001
+                 await session.rollback()
+ 
+ 
++async def _classify_item_target(
++    session: AsyncSession, target_type: str, target_id: uuid.UUID
++) -> str:
++    """查镜像行靶标名并分类:connection/projection 取 target_region 名,其余类型返回 unknown。"""
++    if target_type not in ("connection", "projection"):
++        return "unknown"
++    row = (
++        await session.execute(
++            text(
++                "SELECT target_region_name_cn, target_region_name_en "
++                "FROM mirror_region_connections WHERE id = :oid"
++            ),
++            {"oid": target_id},
++        )
++    ).first()
++    if row is None:
++        return "unknown"
++    return classify_target(row[0], row[1])
++
++
+ async def create_batch_task(
+     session: AsyncSession,
+     *,
+     target_type: str,
+     scope: str,
+     mode: str,
+     max_papers_per_object: int,
+     created_by: str | None = None,
+     limit: int = 200,
+     start_paused: bool = False,
+@@ -5888,20 +5909,23 @@ async def create_batch_task(
+     if not fresh_ids:
+         raise ValueError("all matched targets already have an active evidence task")
+     cfg_json = json.dumps(
+         {"deepseek_concurrency": DEEPSEEK_CONCURRENCY, "europepmc_concurrency": EUROPE_PMC_CONCURRENCY},
+         ensure_ascii=False,
+     )
+     status = "paused" if start_paused else "pending"
+     task_ids: list[str] = []
+     for oid in fresh_ids:
+         label, conf = await _batch_scope_label(session, target_type, uuid.UUID(oid))
++        # 非神经靶标(脑室/脑脊液/脑膜等):直接标记结构性不存在,不进入论文检索
++        target_kind = await _classify_item_target(session, target_type, uuid.UUID(oid))
++        preprocess_outcome = "non_neural_target" if target_kind == "non_neural" else None
+         task_id = (
+             await session.execute(
+                 text(
+                     "INSERT INTO paper_evidence_tasks "
+                     "(target_type, target_id, scope, scope_type, mode, max_papers_per_object, status, created_by, "
+                     "total_items, config, name, granularity_level, only_oa, confidence_lt, "
+                     "stop_after_strong_support, review_status, filter_snapshot, estimated_target_count, "
+                     "materialization_status, materialized_target_count) "
+                     "VALUES (:tt, :oid, :scope, :scope_type, :mode, :maxp, :status, :cb, 1, CAST(:cfg AS jsonb), "
+                     ":name, :gl, :only_oa, :clt, :stop, 'not_started', CAST(:fs AS jsonb), 1, 'completed', 1) "
+@@ -5922,33 +5946,43 @@ async def create_batch_task(
+                     "only_oa": only_oa,
+                     "clt": confidence_lt,
+                     "stop": stop_after_strong_support,
+                     "fs": json.dumps(snapshot, ensure_ascii=False),
+                 },
+             )
+         ).scalar_one()
+         await session.execute(
+             text(
+                 "INSERT INTO paper_evidence_task_items "
+-                "(task_id, target_type, target_id, label, current_confidence, status) "
+-                "VALUES (:tid, :tt, :oid, :label, :conf, 'pending')"
++                "(task_id, target_type, target_id, label, current_confidence, status, preprocess_outcome) "
++                "VALUES (:tid, :tt, :oid, :label, :conf, :status, :po)"
+             ),
+-            {"tid": task_id, "tt": target_type, "oid": uuid.UUID(oid), "label": label, "conf": conf},
++            {
++                "tid": task_id, "tt": target_type, "oid": uuid.UUID(oid), "label": label, "conf": conf,
++                "status": "pending", "po": preprocess_outcome,
++            },
+         )
+         await _write_audit(
+             session,
+             action_type="EVIDENCE_TASK_CREATE",
+             entity_type="evidence_task",
+             entity_id=uuid.UUID(task_id),
+-            after_data={"target_type": target_type, "target_id": oid, "scope": scope, "mode": mode},
++            after_data={
++                "target_type": target_type, "target_id": oid, "scope": scope, "mode": mode,
++                **({"non_neural_target": True} if preprocess_outcome == "non_neural_target" else {}),
++            },
+             operator_id=created_by,
+-            reason="single-object evidence task created",
++            reason=(
++                "single-object evidence task created; target is non-neural structure, marked structurally non-existent"
++                if preprocess_outcome == "non_neural_target"
++                else "single-object evidence task created"
++            ),
+         )
+         task_ids.append(task_id)
+     await session.commit()
+     return {
+         "task_id": task_ids[0],
+         "task_ids": task_ids,
+         "target_count": len(task_ids),
+         "skipped_active_targets": len(busy),
+     }
+ 
+diff --git a/backend/tests/test_paper_evidence_batch.py b/backend/tests/test_paper_evidence_batch.py
+index 07ebcd0..e6e2260 100644
+--- a/backend/tests/test_paper_evidence_batch.py
++++ b/backend/tests/test_paper_evidence_batch.py
+@@ -182,20 +182,45 @@ class TestBatchStateMachine:
+             _run(_fail_item(task_id))
+             retried = _run(_retry(task_id))
+             assert retried["retried"] == 1
+             assert _run(_read_status(task_id)) == "pending"
+             # same target cannot be enqueued again while active
+             with pytest.raises(ValueError, match="already have an active evidence task"):
+                 self._make_task(ids)
+         finally:
+             _run(_cleanup([task_id]))
+ 
++    def test_non_neural_target_marked_without_search(self):
++        oid = str(uuid.uuid4())
++        # 靶标名含「脑室」→ 创建即标记结构性不存在
++        with (
++            patch.object(pes, "_resolve_scope_ids", new=AsyncMock(return_value=[oid])),
++            patch.object(pes, "_resolve_scope_ids_low_confidence", new=AsyncMock(return_value=[oid])),
++            patch.object(
++                pes,
++                "_batch_scope_label",
++                new=AsyncMock(side_effect=lambda s, tt, o: (f"X → 侧脑室", 0.1)),
++            ),
++            patch.object(pes, "_classify_item_target", new=AsyncMock(return_value="non_neural")),
++        ):
++            result = _run(_make_task_inner(target_ids=[oid], start_paused=True))
++        task_id = result["task_id"]
++        try:
++            items = _run(_read_task_items(task_id))
++            assert len(items) == 1
++            assert items[0][0].startswith("X → 侧脑室")
++            # 标记结构性不存在
++            outcome = _run(_read_item_outcome(task_id))
++            assert outcome == "non_neural_target"
++        finally:
++            _run(_cleanup([task_id]))
++
+ 
+ class TestReviewQueueStatsAudit:
+     def test_review_queue_resolve_and_stats_shape(self):
+         target_id = uuid.uuid4()
+         record_ids = []
+         evidence_ids = []
+         audit_ids = []
+         try:
+             ev = _run(_insert_evidence(target_id))
+             evidence_ids.append(ev)
+@@ -256,20 +281,30 @@ async def _read_task_items(task_id):
+                     "SELECT label, status, candidate_papers IS NOT NULL, "
+                     "EXISTS(SELECT 1 FROM paper_evidence_task_item_passages pp WHERE pp.task_item_id = t.id), "
+                     "claim_text_snapshot IS NOT NULL "
+                     "FROM paper_evidence_task_items t WHERE task_id::text=:tid"
+                 ),
+                 {"tid": task_id},
+             )
+         ).all()
+ 
+ 
++async def _read_item_outcome(task_id):
++    async with AsyncSessionLocal() as s:
++        return (
++            await s.execute(
++                text("SELECT preprocess_outcome FROM paper_evidence_task_items WHERE task_id::text=:tid"),
++                {"tid": task_id},
++            )
++        ).scalar_one()
++
++
+ async def _run_loop(task_id):
+     async with AsyncSessionLocal() as s:
+         await pes._run_batch_loop(s, task_id)
+ 
+ 
+ async def _count_evidence(ids):
+     async with AsyncSessionLocal() as s:
+         return (
+             await s.execute(
+                 text(

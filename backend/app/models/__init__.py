@@ -1,4 +1,10 @@
 from app.models.candidate import CandidateBrainRegion, CandidateGenerationRun
+from app.models.canonical_region import (
+    CanonicalBrainRegion,
+    CanonicalRegionHierarchy,
+    ConnectionRegionAlignment,
+)
+from app.models.canonical_region_alias import CanonicalRegionAlias
 from app.models.human_review import CandidateReviewRecord
 from app.models.molecular_circuit_candidate import (
     MirrorMolecularCircuitCandidate,
@@ -64,9 +70,22 @@ from app.models.mirror_cross_validation import (
 )
 from app.models.mirror_review import MirrorHumanReviewRecord
 from app.models.mirror_validation import MirrorRuleValidationResult, MirrorRuleValidationRun
+from app.models.paper_evidence_extraction import (
+    PaperEvidenceExtractionItem,
+    PaperEvidenceExtractionRun,
+)
 from app.models.rule_validation import CandidateRuleValidationResult, RuleValidationRun
+from app.models.multiscale import (
+    AtlasRegionMapping,
+    AtlasRegionResource,
+    CellTypeRegistry,
+    MolecularEntityRegistry,
+    RegionCellAlignment,
+    RegionMolecularAlignment,
+)
 
 __all__ = [
+    "CanonicalRegionAlias",
     "AtlasResource",
     "ResourceFile",
     "ImportBatch",
@@ -127,4 +146,12 @@ __all__ = [
     "MirrorCircuitProjectionCrossValidationResult",
     "MirrorCircuitCorrection",
     "MirrorEnhancementSuggestion",
+    "PaperEvidenceExtractionRun",
+    "PaperEvidenceExtractionItem",
+    "AtlasRegionResource",
+    "AtlasRegionMapping",
+    "CellTypeRegistry",
+    "RegionCellAlignment",
+    "MolecularEntityRegistry",
+    "RegionMolecularAlignment",
 ]

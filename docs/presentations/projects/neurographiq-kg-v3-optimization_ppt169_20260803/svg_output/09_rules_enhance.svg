@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 720" width="1280" height="720">
+  <g id="background"><rect width="1280" height="720" fill="#F7FAFC"/></g>
+  <g id="header">
+  <rect x="56" y="42" width="8" height="40" fill="#1F9FB5"/>
+  <text x="80" y="72" font-family="Microsoft YaHei, Arial, sans-serif" font-size="34" font-weight="700" fill="#17324D">规则校验与增强</text>
+  <text x="80" y="104" font-family="Microsoft YaHei, Arial, sans-serif" font-size="16" fill="#5A6A7A">增强不等于入库</text>
+  </g>
+  <g id="left"><rect x="56" y="140" width="560" height="500" rx="10" fill="#FFFFFF" stroke="#CBD5E0"/>
+  <use data-icon="tabler-outline/shield-check" x="84" y="168" width="32" height="32" stroke="#2F855A" fill="none" stroke-width="2"/>
+  <text x="132" y="192" font-family="Microsoft YaHei, Arial, sans-serif" font-size="22" font-weight="700" fill="#17324D">确定性校验</text>
+  <text x="84" y="260" font-family="Microsoft YaHei, Arial, sans-serif" font-size="20" fill="#243447">12 条规则</text>
+  <text x="84" y="310" font-family="Microsoft YaHei, Arial, sans-serif" font-size="20" fill="#243447">质量分 0-100</text>
+  <rect x="84" y="350" width="500" height="80" rx="8" fill="#EDF2F7"/><text x="108" y="400" font-family="Arial, sans-serif" font-size="22" font-weight="700" fill="#C05640">BLOCKER</text><text x="260" y="400" font-family="Microsoft YaHei, Arial, sans-serif" font-size="18" fill="#243447">直接熔断</text>
+  <text x="84" y="500" font-family="Microsoft YaHei, Arial, sans-serif" font-size="16" fill="#5A6A7A">规则在前，模型在后</text></g>
+  <g id="right"><rect x="664" y="140" width="560" height="500" rx="10" fill="#FFFFFF" stroke="#CBD5E0"/>
+  <use data-icon="tabler-outline/settings" x="692" y="168" width="32" height="32" stroke="#1F9FB5" fill="none" stroke-width="2"/>
+  <text x="740" y="192" font-family="Microsoft YaHei, Arial, sans-serif" font-size="22" font-weight="700" fill="#17324D">增强分层</text>
+  <rect x="692" y="240" width="504" height="140" rx="8" fill="#EDF2F7"/><text x="716" y="290" font-family="Arial, sans-serif" font-size="22" font-weight="700" fill="#1F9FB5">Tier1</text><text x="716" y="335" font-family="Microsoft YaHei, Arial, sans-serif" font-size="18" fill="#243447">规则自动修复</text>
+  <rect x="692" y="410" width="504" height="140" rx="8" fill="#EDF2F7"/><text x="716" y="460" font-family="Arial, sans-serif" font-size="22" font-weight="700" fill="#C05640">Tier2</text><text x="716" y="505" font-family="Microsoft YaHei, Arial, sans-serif" font-size="18" fill="#243447">LLM 建议必须人工复核</text></g>
+  <g id="footer"><text x="1224" y="696" text-anchor="end" font-family="Arial, sans-serif" font-size="12" fill="#8492A0">9</text></g>
+</svg>

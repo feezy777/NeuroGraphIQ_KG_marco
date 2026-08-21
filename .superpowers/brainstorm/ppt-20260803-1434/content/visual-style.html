@@ -1,0 +1,61 @@
+<h2>选择 PPT 的视觉方向</h2>
+<p class="subtitle">三种方案都基于 16:9、14 页结构，并会包含全局架构图与局部流程图。点击卡片可选择。</p>
+
+<div class="cards">
+  <div class="card" data-choice="consulting-blue" onclick="toggleSelect(this)">
+    <div class="card-image" style="background:#f6f9fc;padding:18px;min-height:260px">
+      <div style="font-size:12px;color:#3182ce;font-weight:700;letter-spacing:.08em">RECOMMENDED · 技术咨询蓝</div>
+      <div style="font-size:26px;color:#1a365d;font-weight:800;margin:14px 0 18px">知识图谱构建全景</div>
+      <div style="display:flex;gap:7px;align-items:center">
+        <div style="background:#1a365d;color:white;padding:12px 10px;border-radius:6px;font-size:11px">多源脑图谱</div>
+        <div style="color:#3182ce">→</div>
+        <div style="background:#e7f1fb;color:#1a365d;padding:12px 10px;border-radius:6px;font-size:11px">候选与校验</div>
+        <div style="color:#dd6b20">→</div>
+        <div style="background:#fff0e3;color:#9c4221;padding:12px 10px;border-radius:6px;font-size:11px">Mirror KG</div>
+        <div style="color:#38a169">→</div>
+        <div style="background:#e6ffef;color:#276749;padding:12px 10px;border-radius:6px;font-size:11px">Final KG</div>
+      </div>
+      <div style="margin-top:24px;height:5px;background:linear-gradient(90deg,#1a365d 0 45%,#3182ce 45% 70%,#dd6b20 70% 84%,#38a169 84%)"></div>
+    </div>
+    <div class="card-body">
+      <h3>A. 技术咨询蓝</h3>
+      <p>白底、深蓝主色、橙绿状态色。结构清晰，适合技术汇报和项目评审，架构图可读性最好。</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="neural-dark" onclick="toggleSelect(this)">
+    <div class="card-image" style="background:radial-gradient(circle at 50% 40%,#193b66,#081525 72%);padding:18px;min-height:260px;color:white">
+      <div style="font-size:12px;color:#58c8ff;font-weight:700;letter-spacing:.08em">NEURAL GRAPH · 深色科技</div>
+      <div style="font-size:26px;font-weight:800;margin:14px 0 18px">NeuroGraphIQ KG V3</div>
+      <svg viewBox="0 0 360 130" width="100%" height="130">
+        <g stroke="#3182ce" stroke-width="1.4" opacity=".75">
+          <line x1="40" y1="70" x2="125" y2="28"/><line x1="40" y1="70" x2="125" y2="105"/>
+          <line x1="125" y1="28" x2="220" y2="60"/><line x1="125" y1="105" x2="220" y2="60"/>
+          <line x1="220" y1="60" x2="318" y2="38"/><line x1="220" y1="60" x2="318" y2="100"/>
+        </g>
+        <g fill="#58c8ff"><circle cx="40" cy="70" r="8"/><circle cx="125" cy="28" r="7"/><circle cx="125" cy="105" r="7"/><circle cx="220" cy="60" r="10"/><circle cx="318" cy="38" r="7"/><circle cx="318" cy="100" r="7"/></g>
+      </svg>
+    </div>
+    <div class="card-body">
+      <h3>B. 深色神经网络</h3>
+      <p>深蓝黑背景、发光节点与连接线。封面冲击力强，但长流程图和大量中文说明的阅读压力更高。</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="research-minimal" onclick="toggleSelect(this)">
+    <div class="card-image" style="background:#fff;padding:18px;min-height:260px;border-top:6px solid #245b8a">
+      <div style="font-size:12px;color:#6b7280;font-weight:700;letter-spacing:.08em">RESEARCH SYSTEM · 学术极简</div>
+      <div style="font-size:26px;color:#1f2937;font-weight:750;margin:14px 0 20px">多粒度脑区知识图谱</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+        <div style="border:1px solid #d7dee7;padding:14px;color:#245b8a"><b>五层粒度</b><br><span style="font-size:11px;color:#6b7280">Schema 隔离</span></div>
+        <div style="border:1px solid #d7dee7;padding:14px;color:#245b8a"><b>三道闸门</b><br><span style="font-size:11px;color:#6b7280">治理与审核</span></div>
+        <div style="border:1px solid #d7dee7;padding:14px;color:#245b8a"><b>双模型盲审</b><br><span style="font-size:11px;color:#6b7280">DeepSeek + Kimi</span></div>
+        <div style="border:1px solid #d7dee7;padding:14px;color:#245b8a"><b>七步溯源</b><br><span style="font-size:11px;color:#6b7280">事实到资源</span></div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>C. 学术极简</h3>
+      <p>论文式白底、细线框、低饱和配色。稳健严谨，适合学术答辩，但产品与工程感较弱。</p>
+    </div>
+  </div>
+</div>

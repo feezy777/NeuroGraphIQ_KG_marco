@@ -1,0 +1,64 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 720" data-pptx-page-role="content">
+  <defs><filter id="glow"><feGaussianBlur stdDeviation="2" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs>
+  <g id="bg" data-pptx-bounds="0 0 1280 720" data-pptx-role="background">
+    <rect width="1280" height="720" fill="#0D1117"/>
+    <line x1="0" y1="108" x2="1280" y2="108" stroke="#212D40" stroke-width="0.5"/>
+    <text x="80" y="700" font-family="Microsoft YaHei" font-size="14" fill="#586069">NeuroGraphIQ KG V3</text>
+  </g>
+  <g id="content" data-pptx-bounds="40 120 1200 560">
+    <rect x="40" y="120" width="4" height="48" fill="#58A6FF" filter="url(#glow)"/>
+    <text x="60" y="155" font-family="Microsoft YaHei" font-weight="bold" font-size="40" fill="#FFFFFF">构建流水线与治理约束</text>
+
+    <!-- Flow pipeline: horizontal boxes -->
+    <g transform="translate(40, 190)">
+      <!-- Row 1 -->
+      <rect x="0" y="0" width="130" height="40" rx="2" fill="#1A365D"/><text x="65" y="26" text-anchor="middle" font-family="Microsoft YaHei" font-size="14" fill="#FFFFFF">资源登记</text>
+      <text x="140" y="26" font-family="Consolas" font-size="18" fill="#30363D">→</text>
+      <rect x="165" y="0" width="130" height="40" rx="2" fill="#1A365D"/><text x="230" y="26" text-anchor="middle" font-family="Microsoft YaHei" font-size="14" fill="#FFFFFF">批次导入</text>
+      <text x="305" y="26" font-family="Consolas" font-size="18" fill="#30363D">→</text>
+      <rect x="330" y="0" width="130" height="40" rx="2" fill="#1C3A6E"/><text x="395" y="26" text-anchor="middle" font-family="Microsoft YaHei" font-size="14" fill="#FFFFFF">原始解析</text>
+      <text x="470" y="26" font-family="Consolas" font-size="18" fill="#30363D">→</text>
+      <rect x="495" y="0" width="130" height="40" rx="2" fill="#1C3A6E"/><text x="560" y="26" text-anchor="middle" font-family="Microsoft YaHei" font-size="14" fill="#FFFFFF">候选生成</text>
+      <text x="635" y="26" font-family="Consolas" font-size="18" fill="#30363D">→</text>
+      <rect x="660" y="0" width="130" height="40" rx="2" fill="#1E4080"/><text x="725" y="26" text-anchor="middle" font-family="Microsoft YaHei" font-size="14" fill="#FFFFFF">规则校验</text>
+      <text x="800" y="26" font-family="Consolas" font-size="18" fill="#30363D">→</text>
+      <rect x="825" y="0" width="150" height="40" rx="2" fill="#204A90"/><text x="900" y="26" text-anchor="middle" font-family="Microsoft YaHei" font-size="14" fill="#FFFFFF">LLM 提取</text>
+      <!-- Row 2 -->
+      <rect x="0" y="60" width="130" height="40" rx="2" fill="#2858A0"/><text x="65" y="86" text-anchor="middle" font-family="Microsoft YaHei" font-size="14" fill="#FFFFFF">Mirror KG</text>
+      <text x="140" y="86" font-family="Consolas" font-size="18" fill="#30363D">→</text>
+      <rect x="165" y="60" width="150" height="40" rx="2" fill="#3068B0"/><text x="240" y="86" text-anchor="middle" font-family="Microsoft YaHei" font-size="14" fill="#FFFFFF">校验中心</text>
+      <text x="325" y="86" font-family="Consolas" font-size="18" fill="#30363D">→</text>
+      <rect x="350" y="60" width="130" height="40" rx="2" fill="#3878C0"/><text x="415" y="86" text-anchor="middle" font-family="Microsoft YaHei" font-size="14" fill="#FFFFFF">人工审核</text>
+      <text x="490" y="86" font-family="Consolas" font-size="18" fill="#30363D">→</text>
+      <rect x="515" y="60" width="130" height="40" rx="2" fill="#38A169"/><text x="580" y="86" text-anchor="middle" font-family="Microsoft YaHei" font-size="14" fill="#FFFFFF">晋升</text>
+      <text x="655" y="86" font-family="Consolas" font-size="18" fill="#30363D">→</text>
+      <rect x="680" y="60" width="180" height="40" rx="2" fill="#38A169" filter="url(#glow)"/><text x="770" y="86" text-anchor="middle" font-family="Microsoft YaHei" font-weight="bold" font-size="16" fill="#FFFFFF">Final KG</text>
+    </g>
+
+    <!-- Write boundary table -->
+    <text x="60" y="370" font-family="Microsoft YaHei" font-size="20" fill="#8B949E">核心写边界 (Write Boundary)</text>
+    <g transform="translate(40, 390)">
+      <rect x="0" y="0" width="1180" height="30" rx="2" fill="#161B22"/>
+      <text x="10" y="20" font-family="Microsoft YaHei" font-weight="bold" font-size="16" fill="#8B949E">阶段</text>
+      <text x="240" y="20" font-family="Microsoft YaHei" font-weight="bold" font-size="16" fill="#8B949E">可写入</text>
+      <text x="620" y="20" font-family="Microsoft YaHei" font-weight="bold" font-size="16" fill="#8B949E">严禁写入</text>
+      <rect x="0" y="32" width="1180" height="28" rx="2" fill="#1C2333"/>
+      <text x="10" y="51" font-family="Microsoft YaHei" font-size="15" fill="#C9D1D9">LLM 提取</text>
+      <text x="240" y="51" font-family="Consolas" font-size="14" fill="#58A6FF">mirror_*, llm_extraction_*</text>
+      <text x="620" y="51" font-family="Consolas" font-size="14" fill="#FF7B72">final_*, 自动审核, 自动晋升</text>
+      <rect x="0" y="62" width="1180" height="28" rx="2" fill="#1C2333"/>
+      <text x="10" y="81" font-family="Microsoft YaHei" font-size="15" fill="#C9D1D9">人工审核</text>
+      <text x="240" y="81" font-family="Consolas" font-size="14" fill="#58A6FF">审核记录, 编辑建议</text>
+      <text x="620" y="81" font-family="Consolas" font-size="14" fill="#FF7B72">final_* 直接写入</text>
+      <rect x="0" y="92" width="1180" height="28" rx="2" fill="#1C2333"/>
+      <text x="10" y="111" font-family="Microsoft YaHei" font-size="15" fill="#C9D1D9">Promotion</text>
+      <text x="240" y="111" font-family="Consolas" font-size="14" fill="#58A6FF">final_* + 审计日志</text>
+      <text x="620" y="111" font-family="Consolas" font-size="14" fill="#FF7B72">绕过审核环节</text>
+    </g>
+
+    <!-- Key principle -->
+    <g filter="url(#glow)">
+      <text x="640" y="560" text-anchor="middle" font-family="Microsoft YaHei" font-weight="bold" font-size="20" fill="#58A6FF">LLM 是提取工具而非终审官 · 人工审核是进入 Final KG 的唯一闸门</text>
+    </g>
+  </g>
+</svg>

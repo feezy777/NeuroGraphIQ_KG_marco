@@ -259,7 +259,7 @@ export function SettingsPage() {
                 <label className="form-field">
                   <span className="form-label">{t('common.model')}</span>
                   <select className="form-select" value={form.defaultModel} onChange={e => updateForm({ defaultModel: e.target.value })}>
-                    {(options?.default_models.deepseek ?? ['deepseek-chat', 'deepseek-reasoner']).map(model => (
+                    {(options?.default_models.deepseek ?? ['deepseek-chat', 'deepseek-reasoner', 'deepseek-v4-pro', 'deepseek-v4-flash']).map(model => (
                       <option key={model} value={model}>{model}</option>
                     ))}
                   </select>

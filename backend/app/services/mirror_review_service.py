@@ -82,6 +82,25 @@ class TargetNotFoundError(Exception):
         super().__init__(f"{target_type} not found: {target_id}")
 
 
+_REVIEW_SUBJECT_COL = {
+    "region_candidate": "region_candidate_id",
+    "connection": "projection_id",
+    "circuit": "circuit_id",
+}
+
+
+def _review_subject_type(target_type: str) -> str | None:
+    """Map a review target_type to its Function Triple subject type."""
+    norm = target_type.replace("mirror_", "").replace("_relation", "")
+    if norm in ("function", "region_function"):
+        return "region_candidate"
+    if norm == "projection_function":
+        return "connection"
+    if norm == "circuit_function":
+        return "circuit"
+    return None
+
+
 class InvalidTargetTypeError(Exception):
     def __init__(self, value: str):
         self.value = value
@@ -950,6 +969,19 @@ async def perform_mirror_review_action(
         validation_summary_json=val_summary,
         evidence_summary_json=ev_summary,
     )
+    # P1.6: review state changes affect triple eligibility — reconcile the
+    # affected subject within the same transaction (before the commit below).
+    if state_changing:
+        from app.services.function_triple_projection_service import (
+            reconcile_function_subject,
+        )
+
+        _stype = _review_subject_type(target_type)
+        if _stype is not None:
+            _sid = getattr(obj, _REVIEW_SUBJECT_COL.get(_stype, ""), None)
+            if _sid is not None:
+                await reconcile_function_subject(session, subject_type=_stype, subject_id=_sid)
+
     await session.commit()
     await session.refresh(record)
     if not is_signal or action in (MirrorReviewAction.edit, MirrorReviewAction.approve, MirrorReviewAction.reject, MirrorReviewAction.needs_revision):

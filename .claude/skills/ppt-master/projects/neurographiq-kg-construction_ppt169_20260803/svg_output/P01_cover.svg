@@ -1,0 +1,65 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 720" data-pptx-page-role="cover">
+  <defs>
+    <filter id="glowStrong">
+      <feGaussianBlur stdDeviation="6" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <radialGradient id="bgGrad" cx="50%" cy="40%" r="70%">
+      <stop offset="0%" stop-color="#161B22"/>
+      <stop offset="100%" stop-color="#0D1117"/>
+    </radialGradient>
+  </defs>
+
+  <!-- Background layer -->
+  <g id="background" data-pptx-bounds="0 0 1280 720" data-pptx-role="background">
+    <rect width="1280" height="720" fill="url(#bgGrad)"/>
+  </g>
+
+  <!-- Decorative grid and network -->
+  <g id="decoration" data-pptx-bounds="0 0 1280 720" data-pptx-role="decoration">
+    <g opacity="0.04">
+      <line x1="0" y1="180" x2="1280" y2="180" stroke="#58A6FF" stroke-width="0.5"/>
+      <line x1="0" y1="360" x2="1280" y2="360" stroke="#58A6FF" stroke-width="0.5"/>
+      <line x1="0" y1="540" x2="1280" y2="540" stroke="#58A6FF" stroke-width="0.5"/>
+      <line x1="320" y1="0" x2="320" y2="720" stroke="#58A6FF" stroke-width="0.5"/>
+      <line x1="640" y1="0" x2="640" y2="720" stroke="#58A6FF" stroke-width="0.5"/>
+      <line x1="960" y1="0" x2="960" y2="720" stroke="#58A6FF" stroke-width="0.5"/>
+    </g>
+    <g opacity="0.08">
+      <circle cx="200" cy="150" r="3" fill="#58A6FF" stroke="none"/>
+      <circle cx="350" cy="100" r="2" fill="#58A6FF" stroke="none"/>
+      <circle cx="500" cy="180" r="3" fill="#58A6FF" stroke="none"/>
+      <circle cx="780" cy="120" r="2" fill="#58A6FF" stroke="none"/>
+      <circle cx="950" cy="200" r="3" fill="#58A6FF" stroke="none"/>
+      <circle cx="1080" cy="130" r="2" fill="#58A6FF" stroke="none"/>
+      <circle cx="150" cy="500" r="2" fill="#79C0FF" stroke="none"/>
+      <circle cx="300" cy="580" r="3" fill="#79C0FF" stroke="none"/>
+      <circle cx="600" cy="620" r="2" fill="#79C0FF" stroke="none"/>
+      <circle cx="900" cy="550" r="3" fill="#79C0FF" stroke="none"/>
+      <circle cx="1050" cy="600" r="2" fill="#79C0FF" stroke="none"/>
+      <circle cx="1150" cy="480" r="3" fill="#79C0FF" stroke="none"/>
+      <line x1="200" y1="150" x2="350" y2="100" stroke="#58A6FF" stroke-width="0.8"/>
+      <line x1="200" y1="150" x2="500" y2="180" stroke="#58A6FF" stroke-width="0.8"/>
+      <line x1="350" y1="100" x2="500" y2="180" stroke="#58A6FF" stroke-width="0.8"/>
+      <line x1="500" y1="180" x2="780" y2="120" stroke="#58A6FF" stroke-width="0.8"/>
+      <line x1="780" y1="120" x2="950" y2="200" stroke="#58A6FF" stroke-width="0.8"/>
+      <line x1="950" y1="200" x2="1080" y2="130" stroke="#58A6FF" stroke-width="0.8"/>
+      <line x1="150" y1="500" x2="300" y2="580" stroke="#79C0FF" stroke-width="0.8"/>
+      <line x1="300" y1="580" x2="600" y2="620" stroke="#79C0FF" stroke-width="0.8"/>
+      <line x1="600" y1="620" x2="900" y2="550" stroke="#79C0FF" stroke-width="0.8"/>
+      <line x1="900" y1="550" x2="1050" y2="600" stroke="#79C0FF" stroke-width="0.8"/>
+      <line x1="1050" y1="600" x2="1150" y2="480" stroke="#79C0FF" stroke-width="0.8"/>
+    </g>
+  </g>
+
+  <!-- Content -->
+  <g id="content" data-pptx-bounds="0 0 1280 720">
+    <line x1="540" y1="240" x2="740" y2="240" stroke="#58A6FF" stroke-width="1.5" opacity="0.7"/>
+    <text x="640" y="310" text-anchor="middle" font-family="Microsoft YaHei" font-weight="bold" font-size="68" fill="#FFFFFF" filter="url(#glowStrong)">NeuroGraphIQ KG V3</text>
+    <text x="640" y="380" text-anchor="middle" font-family="Microsoft YaHei" font-size="36" fill="#79C0FF" opacity="0.9">多粒度脑区知识图谱构建</text>
+    <line x1="480" y1="420" x2="800" y2="420" stroke="#58A6FF" stroke-width="1.5" opacity="0.5"/>
+    <text x="640" y="470" text-anchor="middle" font-family="Microsoft YaHei" font-size="20" fill="#8B949E">从脑图谱资源到可探索知识图谱的全流程自动化系统</text>
+    <text x="640" y="590" text-anchor="middle" font-family="Microsoft YaHei" font-size="16" fill="#586069">2026 年 8 月</text>
+    <line x1="80" y1="670" x2="1200" y2="670" stroke="#212D40" stroke-width="0.5"/>
+  </g>
+</svg>

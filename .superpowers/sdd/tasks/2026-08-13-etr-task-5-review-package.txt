@@ -1,0 +1,392 @@
+# Task 5 Review Package (BASE f318fa9 → HEAD 23bb9f6)
+23bb9f6 feat(evidence-center): 右栏待处理队列(置信度升序+回路/连接/功能筛选)
+
+## STAT
+ .../evidence-center/EvidenceCenterPage.test.tsx    |  12 +-
+ .../evidence-center/components/RightPanel.tsx      |  14 +--
+ .../components/TaskItemQueue.test.tsx              | 110 ++++++++++++++++++
+ .../evidence-center/components/TaskItemQueue.tsx   | 126 +++++++++++++++++++++
+ frontend/src/styles.css                            |  13 +++
+ 5 files changed, 256 insertions(+), 19 deletions(-)
+
+## DIFF
+diff --git a/frontend/src/pages/evidence-center/EvidenceCenterPage.test.tsx b/frontend/src/pages/evidence-center/EvidenceCenterPage.test.tsx
+index b8e4a9b..b2c62d8 100644
+--- a/frontend/src/pages/evidence-center/EvidenceCenterPage.test.tsx
++++ b/frontend/src/pages/evidence-center/EvidenceCenterPage.test.tsx
+@@ -194,30 +194,28 @@ describe('EvidenceCenterPage', () => {
+     vi.mocked(listPaperEvidenceTasks).mockResolvedValue({ items: [TASK_FIXTURE], total: 1 })
+     window.location.hash = '#/evidence-center?module=tasks'
+     const { container } = render(<EvidenceCenterPage />)
+     await waitFor(() => expect(screen.getByText('任务A')).toBeTruthy())
+     expect(container.querySelector('.evidence-center-layout-full')).toBeTruthy()
+     expect(container.querySelector('.evidence-left')).toBeNull()
+     expect(container.querySelector('.evidence-right')).toBeNull()
+     expect(screen.getByTestId('evidence-task-card-grid')).toBeTruthy()
+   })
+ 
+-  it('右栏随 module 切换:占位标题(任务/审核)与队列(candidates)', () => {
+-    window.location.hash = '#/evidence-center?module=tasks'
++  it('右栏随 module 切换:tasks 详情渲染待处理队列,candidates 渲染待处理对象队列', () => {
++    // tasks 列表视图全宽无右栏,须带 task_id 进入详情视图才有右栏队列
++    window.location.hash = '#/evidence-center?module=tasks&task_id=ta'
+     const { container } = render(<EvidenceCenterPage />)
+-    const title = () => container.querySelector('.evidence-right-panel h4')?.textContent ?? ''
+-    expect(title()).toContain('任务')
++    expect(screen.getByTestId('evidence-task-queue')).toBeTruthy()
+     fireEvent.click(screen.getByText('证据候选'))
+-    // 候选模块右栏 = 待处理对象队列
++    const title = () => container.querySelector('.evidence-right-panel h4')?.textContent ?? ''
+     expect(title()).toContain('待处理对象')
+-    fireEvent.click(screen.getAllByText('人工审核')[0])
+-    expect(title()).toContain('审核')
+   })
+ 
+   it('candidates 右栏渲染对象队列;中栏统计条 [进入人工审核] 勾选后可用并跳转 review', async () => {
+     vi.mocked(listPaperEvidenceTaskItems).mockResolvedValue({ items: TASK_ITEMS })
+     window.location.hash = '#/evidence-center?module=candidates&task_id=t1'
+     render(<EvidenceCenterPage />)
+     // 右栏 = 待处理对象队列(队列条目在右栏)
+     await waitFor(() => expect(screen.getByTestId('evidence-queue-panel')).toBeTruthy())
+     expect(screen.queryByTestId('evidence-candidate-summary')).toBeNull()
+     // 中栏统计条零选中时 [进入人工审核] 禁用
+diff --git a/frontend/src/pages/evidence-center/components/RightPanel.tsx b/frontend/src/pages/evidence-center/components/RightPanel.tsx
+index b58f880..193e05a 100644
+--- a/frontend/src/pages/evidence-center/components/RightPanel.tsx
++++ b/frontend/src/pages/evidence-center/components/RightPanel.tsx
+@@ -1,57 +1,47 @@
+ import { useMemo } from 'react'
+ import { useEvidenceCenter, type ModuleKey } from '../EvidenceCenterContext'
+ import { EvidenceQueuePanel } from './EvidenceQueuePanel'
+ import { ObjectQueue } from './ObjectQueue'
+ import { PromotionImpact } from './PromotionImpact'
+ import { ReviewerDecisionPanel } from './ReviewerDecisionPanel'
+-import { TaskSummary } from './TaskSummary'
++import { TaskItemQueue } from './TaskItemQueue'
+ 
+ const RIGHT_TITLES: Record<ModuleKey, string> = {
+   tasks: '任务与队列概览',
+   papers: '论文详情',
+   candidates: '待处理对象队列',
+   review: '人工审核',
+   promotion: '晋升确认',
+ }
+ 
+ /** 右栏插槽:佐证任务渲染 TaskSummary,候选模块渲染 ObjectQueue(队列),审核模块渲染 ReviewerDecisionPanel,晋升模块渲染 PromotionImpact */
+ export function RightPanel({ module }: { module: ModuleKey }) {
+   const {
+     state,
+     queue,
+-    taskSummary,
+-    taskSummaryActions,
+     reviewDecision,
+     promotionImpact,
+     openTarget,
+-    openTask,
+   } = useEvidenceCenter()
+ 
+   // 候选模块右栏队列的当前对象下标(与页面左栏队列同逻辑;仅 candidates 分支使用)
+   const candidateQueueIndex = useMemo(() => {
+     if (queue.length === 0) return -1
+     const idx = queue.findIndex(q => q.target_type === state.targetType && q.target_id === state.targetId)
+     return idx >= 0 ? idx : 0
+   }, [queue, state.targetType, state.targetId])
+ 
+   if (module === 'tasks') {
+     return (
+       <aside className="evidence-right-panel" data-testid="evidence-right-panel">
+-        <TaskSummary
+-          data={taskSummary}
+-          onStartReview={() => {
+-            if (taskSummary) openTask(taskSummary.id)
+-          }}
+-          onCreateBatch={taskSummaryActions.onCreateBatch}
+-          onRefresh={taskSummaryActions.onRefresh}
+-        />
++        <TaskItemQueue />
+       </aside>
+     )
+   }
+ 
+   if (module === 'candidates') {
+     // 候选模块右栏 = 待处理对象队列(视觉稿版:状态 Tabs + 数量徽标 + 空态;队列已从页面左栏移到右栏,左栏改渲染 ClaimSummaryPanel)
+     return (
+       <aside className="evidence-right-panel" data-testid="evidence-right-panel">
+         <EvidenceQueuePanel
+           queue={queue}
+diff --git a/frontend/src/pages/evidence-center/components/TaskItemQueue.test.tsx b/frontend/src/pages/evidence-center/components/TaskItemQueue.test.tsx
+new file mode 100644
+index 0000000..b9f542c
+--- /dev/null
++++ b/frontend/src/pages/evidence-center/components/TaskItemQueue.test.tsx
+@@ -0,0 +1,110 @@
++import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
++import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
++import * as endpoints from '../../../api/endpoints'
++import { EvidenceCenterProvider } from '../EvidenceCenterContext'
++import { TaskItemQueue } from './TaskItemQueue'
++
++vi.mock('../../../api/endpoints', () => ({
++  listPaperEvidenceTaskItems: vi.fn(),
++  reopenPaperEvidenceTaskItem: vi.fn(),
++}))
++
++function makeItem(overrides: Record<string, unknown>) {
++  return {
++    id: 'it', target_type: 'connection', target_id: 'conn', status: 'awaiting_review',
++    pmid: null, title: null, passage: null, direction: null, confidence: null,
++    evidence_id: null, error_message: null, updated_at: '2026-08-10T00:00:00Z',
++    label: 'Conn', current_confidence: 0.5, attempt_count: 0, last_error_code: null,
++    last_error_message: null, preprocess_outcome: null, paper_id: null, model_direction: null,
++    candidate_papers: [], review_draft: null, claim_text_snapshot: null,
++    claim_components_snapshot: null, passages_json: null, last_error: null, retry_count: 0,
++    ...overrides,
++  }
++}
++
++function queueItemIds(container: HTMLElement): string[] {
++  return Array.from(container.querySelectorAll('[data-testid^="evidence-queue-item-"]'))
++    .map(el => (el as HTMLElement).dataset.testid ?? '')
++}
++
++describe('TaskItemQueue(待处理区)', () => {
++  afterEach(() => { cleanup(); window.location.hash = '' })
++  beforeEach(() => {
++    vi.clearAllMocks()
++    vi.mocked(endpoints.reopenPaperEvidenceTaskItem).mockResolvedValue({ task_id: 't1', item_id: 'x', status: 'awaiting_review' })
++  })
++
++  it('待处理队列按置信度升序渲染,null 最前;已完成/失败不进队列', async () => {
++    vi.mocked(endpoints.listPaperEvidenceTaskItems).mockResolvedValue({
++      items: [
++        makeItem({ id: 'a', target_id: 'c-high', label: 'High', current_confidence: 0.9 }),
++        makeItem({ id: 'b', target_id: 'c-null', label: 'NoConf', current_confidence: null }),
++        makeItem({ id: 'c', target_id: 'c-low', label: 'Low', current_confidence: 0.2 }),
++        makeItem({ id: 'd', target_id: 'c-done', status: 'completed', current_confidence: 0.8 }),
++        makeItem({ id: 'e', target_id: 'c-fail', status: 'failed', current_confidence: 0.1 }),
++      ],
++    })
++    window.location.hash = '#/evidence-center?module=tasks&task_id=t1'
++    const { container } = render(<EvidenceCenterProvider><TaskItemQueue /></EvidenceCenterProvider>)
++    await waitFor(() => expect(screen.getByText('Low')).toBeTruthy())
++    expect(queueItemIds(container)).toEqual([
++      'evidence-queue-item-c-null', 'evidence-queue-item-c-low', 'evidence-queue-item-c-high',
++    ])
++    expect(screen.queryByText(/^0\.90$/)).toBeTruthy()
++    expect(screen.getByText('—')).toBeTruthy()
++  })
++
++  it('筛选 chips:回路/连接/功能分组过滤,计数正确', async () => {
++    vi.mocked(endpoints.listPaperEvidenceTaskItems).mockResolvedValue({
++      items: [
++        makeItem({ id: 'a', target_id: 'conn-1', target_type: 'connection', label: 'C1', current_confidence: 0.5 }),
++        makeItem({ id: 'b', target_id: 'cir-1', target_type: 'circuit_function', label: 'F1', current_confidence: 0.4 }),
++        makeItem({ id: 'c', target_id: 'cir-2', target_type: 'circuit_step', label: 'S1', current_confidence: 0.3 }),
++        makeItem({ id: 'd', target_id: 'fn-1', target_type: 'region_function', label: 'R1', current_confidence: 0.2 }),
++      ],
++    })
++    window.location.hash = '#/evidence-center?module=tasks&task_id=t1'
++    const { container } = render(<EvidenceCenterProvider><TaskItemQueue /></EvidenceCenterProvider>)
++    await waitFor(() => expect(screen.getByText('C1')).toBeTruthy())
++    expect(screen.getByRole('button', { name: /^全部/ }).textContent).toContain('4')
++    fireEvent.click(screen.getByRole('button', { name: /^回路/ }))
++    expect(queueItemIds(container)).toEqual(['evidence-queue-item-cir-2', 'evidence-queue-item-cir-1'])
++    fireEvent.click(screen.getByRole('button', { name: /^连接/ }))
++    expect(queueItemIds(container)).toEqual(['evidence-queue-item-conn-1'])
++    fireEvent.click(screen.getByRole('button', { name: /^功能/ }))
++    expect(queueItemIds(container)).toEqual(['evidence-queue-item-fn-1'])
++    fireEvent.click(screen.getByRole('button', { name: /^全部/ }))
++    expect(queueItemIds(container)).toHaveLength(4)
++  })
++
++  it('点击队列条目 → openTarget 保持 tasks 模块', async () => {
++    vi.mocked(endpoints.listPaperEvidenceTaskItems).mockResolvedValue({
++      items: [makeItem({ id: 'a', target_id: 'conn-1', label: 'C1', current_confidence: 0.5 })],
++    })
++    window.location.hash = '#/evidence-center?module=tasks&task_id=t1'
++    render(<EvidenceCenterProvider><TaskItemQueue /></EvidenceCenterProvider>)
++    await waitFor(() => expect(screen.getByText('C1')).toBeTruthy())
++    fireEvent.click(screen.getByTestId('evidence-queue-item-conn-1'))
++    await waitFor(() => expect(window.location.hash).toContain('target_id=conn-1'))
++    expect(window.location.hash).toContain('task_id=t1')
++  })
++
++  it('全部完成 → 空态「全部处理完成」', async () => {
++    vi.mocked(endpoints.listPaperEvidenceTaskItems).mockResolvedValue({
++      items: [makeItem({ id: 'a', target_id: 'c-done', status: 'completed' })],
++    })
++    window.location.hash = '#/evidence-center?module=tasks&task_id=t1'
++    render(<EvidenceCenterProvider><TaskItemQueue /></EvidenceCenterProvider>)
++    await waitFor(() => expect(screen.getByTestId('evidence-queue-empty')).toBeTruthy())
++    expect(screen.getByText('全部处理完成')).toBeTruthy()
++  })
++
++  it('队列加载失败 → 错误 + 重试', async () => {
++    vi.mocked(endpoints.listPaperEvidenceTaskItems).mockRejectedValueOnce(new Error('boom'))
++    window.location.hash = '#/evidence-center?module=tasks&task_id=t1'
++    render(<EvidenceCenterProvider><TaskItemQueue /></EvidenceCenterProvider>)
++    await waitFor(() => expect(screen.getByText(/队列加载失败/)).toBeTruthy())
++    fireEvent.click(screen.getByRole('button', { name: '重试' }))
++    await waitFor(() => expect(screen.getByTestId('evidence-queue-empty')).toBeTruthy())
++  })
++})
+diff --git a/frontend/src/pages/evidence-center/components/TaskItemQueue.tsx b/frontend/src/pages/evidence-center/components/TaskItemQueue.tsx
+new file mode 100644
+index 0000000..2c276c2
+--- /dev/null
++++ b/frontend/src/pages/evidence-center/components/TaskItemQueue.tsx
+@@ -0,0 +1,126 @@
++import { useCallback, useEffect, useMemo, useState } from 'react'
++import { Inbox } from 'lucide-react'
++import { listPaperEvidenceTaskItems, type PaperEvidenceTaskItem } from '../../../api/endpoints'
++import { useEvidenceCenter } from '../EvidenceCenterContext'
++import { EmptyState } from './EmptyState'
++import { TASK_STATUS_LABELS, taskStatusTone } from './taskStatus'
++import { TARGET_TYPE_GROUPS, groupOf, isUnfinishedItem, sortByConfidenceAsc } from './taskItemQueueUtils'
++
++/** 队列条目卡片(待处理区):名称/类型/置信度大字/状态/AI 方向;当前对象高亮 */
++function QueueItemCard({ item, selected, onOpen }: { item: PaperEvidenceTaskItem; selected: boolean; onOpen: () => void }) {
++  const conf = item.current_confidence
++  return (
++    <div
++      className={`evidence-conn-card${selected ? ' evidence-conn-card-selected' : ''}`}
++      data-testid={`evidence-queue-item-${item.target_id}`}
++      onClick={onOpen}
++    >
++      <div className="evidence-conn-card-main">
++        <span className="evidence-conn-card-label">{item.label || item.target_id}</span>
++        <span className="evidence-conn-card-type">{item.target_type}</span>
++      </div>
++      <div className="evidence-conn-card-meta">
++        <div className="evidence-conn-card-conf">
++          <span className="evidence-conn-card-conf-label">置信度</span>
++          <b className="evidence-conn-card-conf-value">{conf != null ? conf.toFixed(2) : '—'}</b>
++        </div>
++        <span className={`evidence-task-chip evidence-task-chip-${taskStatusTone(item.status)}`}>
++          {TASK_STATUS_LABELS[item.status] ?? item.status}
++        </span>
++        {item.preprocess_outcome === 'no_evidence_found' && <span className="ew-meta">未找到有效证据</span>}
++        {item.model_direction && <span className="ew-meta">AI:{item.model_direction}</span>}
++      </div>
++    </div>
++  )
++}
++
++/** 右栏待处理队列:置信度升序 + 回路/连接/功能筛选(已完成折叠区在 Task 6 追加) */
++export function TaskItemQueue() {
++  const { state, openTarget } = useEvidenceCenter()
++  const taskId = state.taskId
++  const [items, setItems] = useState<PaperEvidenceTaskItem[]>([])
++  const [loading, setLoading] = useState(false)
++  const [error, setError] = useState<string | null>(null)
++  const [group, setGroup] = useState<string>('all')
++
++  const loadItems = useCallback(async () => {
++    if (!taskId) { setItems([]); return }
++    setLoading(true)
++    setError(null)
++    try {
++      const r = await listPaperEvidenceTaskItems(taskId, { limit: 200 })
++      setItems(r.items)
++    } catch (err) {
++      setError(err instanceof Error ? err.message : String(err))
++    } finally {
++      setLoading(false)
++    }
++  }, [taskId])
++
++  useEffect(() => { void loadItems() }, [loadItems])
++
++  const unfinished = useMemo(() => sortByConfidenceAsc(items.filter(isUnfinishedItem)), [items])
++  const filtered = useMemo(
++    () => (group === 'all' ? unfinished : unfinished.filter(it => groupOf(it.target_type) === group)),
++    [unfinished, group],
++  )
++
++  return (
++    <div className="evidence-task-queue" data-testid="evidence-task-queue">
++      <div className="evidence-task-queue-head">
++        <h4>待处理队列</h4>
++        <button type="button" className="btn btn-xs" onClick={() => void loadItems()}>刷新</button>
++      </div>
++
++      <div className="evidence-queue-filter" data-testid="evidence-queue-filter">
++        <button
++          type="button"
++          className={`evidence-queue-filter-btn${group === 'all' ? ' evidence-queue-filter-btn-active' : ''}`}
++          onClick={() => setGroup('all')}
++        >
++          全部 {unfinished.length}
++        </button>
++        {TARGET_TYPE_GROUPS.map(g => (
++          <button
++            key={g.key}
++            type="button"
++            className={`evidence-queue-filter-btn${group === g.key ? ' evidence-queue-filter-btn-active' : ''}`}
++            onClick={() => setGroup(g.key)}
++          >
++            {g.label} {unfinished.filter(it => groupOf(it.target_type) === g.key).length}
++          </button>
++        ))}
++      </div>
++
++      {loading && <div className="evidence-task-loading">加载中…</div>}
++      {!loading && error && (
++        <div className="evidence-task-error">
++          <p>队列加载失败:{error}</p>
++          <button type="button" className="btn btn-sm" onClick={() => void loadItems()}>重试</button>
++        </div>
++      )}
++      {!loading && !error && filtered.length === 0 && (
++        <EmptyState
++          compact
++          icon={<Inbox size={20} />}
++          title={unfinished.length === 0 ? '全部处理完成' : '该类型下暂无待处理对象'}
++          description={unfinished.length === 0 ? '该任务没有待处理对象。' : '切换筛选分组查看其他类型。'}
++          testId="evidence-queue-empty"
++        />
++      )}
++      {!loading && !error && filtered.length > 0 && (
++        <div className="evidence-queue-list" data-testid="evidence-queue-list">
++          {filtered.map(item => (
++            <QueueItemCard
++              key={item.id}
++              item={item}
++              selected={state.targetType === item.target_type && state.targetId === item.target_id}
++              onOpen={() => openTarget(item.target_type, item.target_id, 'tasks')}
++            />
++          ))}
++          {items.length >= 200 && <div className="ew-meta">仅显示前 200 条(按优先级截断)</div>}
++        </div>
++      )}
++    </div>
++  )
++}
+diff --git a/frontend/src/styles.css b/frontend/src/styles.css
+index 754d79a..9ec5fef 100644
+--- a/frontend/src/styles.css
++++ b/frontend/src/styles.css
+@@ -12512,10 +12512,23 @@ input[type="range"]::-webkit-slider-thumb {
+ .evidence-task-card-failed { color: var(--danger); }
+ .evidence-task-chip-live { border-color: var(--primary); color: var(--primary); }
+ 
+ /* ── 佐证任务详情视图:详情条 ── */
+ .evidence-task-detail-bar {
+   display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+   padding: 10px 14px; margin-bottom: 10px;
+   border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-soft);
+ }
+ .evidence-task-detail-bar h3 { margin: 0; font-size: 15px; }
++
++/* ── 佐证任务右栏:待处理队列 ── */
++.evidence-task-queue { display: flex; flex-direction: column; gap: 10px; }
++.evidence-task-queue-head { display: flex; align-items: center; justify-content: space-between; }
++.evidence-task-queue-head h4 { margin: 0; font-size: 14px; }
++.evidence-queue-filter { display: flex; flex-wrap: wrap; gap: 6px; }
++.evidence-queue-filter-btn {
++  padding: 3px 10px; border-radius: 999px; border: 1px solid var(--border);
++  background: var(--white); font-size: 12px; color: var(--text-muted); cursor: pointer;
++}
++.evidence-queue-filter-btn-active { border-color: var(--primary); color: var(--primary); background: var(--bg-soft); }
++.evidence-queue-list { display: flex; flex-direction: column; gap: 8px; }
++.evidence-conn-card-selected { border-color: var(--primary); box-shadow: 0 0 0 1px var(--primary) inset; }

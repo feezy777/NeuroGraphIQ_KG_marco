@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 720" width="1280" height="720">
+  <g id="background"><rect width="1280" height="720" fill="#F7FAFC" /></g>
+  <g id="header">
+  <rect x="56" y="42" width="8" height="40" fill="#1F9FB5" />
+  <text x="80" y="72" font-family="Microsoft YaHei, Arial, sans-serif" font-size="34" font-weight="700" fill="#17324D">七层知识阶梯</text>
+  <text x="80" y="104" font-family="Microsoft YaHei, Arial, sans-serif" font-size="16" fill="#5A6A7A">自下而上：结构与证据分层，避免混平</text>
+  </g>
+  <g id="stairs">
+  <path fill="#1F9FB5" stroke="#CBD5E0" d="M438,140 H842 A8,8 0 0 1 850,148 V188 A8,8 0 0 1 842,196 H438 A8,8 0 0 1 430,188 V148 A8,8 0 0 1 438,140 Z" /><text x="640" y="176" text-anchor="middle" font-family="Microsoft YaHei, Arial, sans-serif" font-size="20" font-weight="700" fill="#FFFFFF">映射</text>
+  <path fill="#17324D" stroke="#CBD5E0" d="M393,210 H887 A8,8 0 0 1 895,218 V258 A8,8 0 0 1 887,266 H393 A8,8 0 0 1 385,258 V218 A8,8 0 0 1 393,210 Z" /><text x="640" y="246" text-anchor="middle" font-family="Microsoft YaHei, Arial, sans-serif" font-size="20" font-weight="700" fill="#FFFFFF">三元组</text>
+  <path fill="#17324D" stroke="#CBD5E0" d="M348,280 H932 A8,8 0 0 1 940,288 V328 A8,8 0 0 1 932,336 H348 A8,8 0 0 1 340,328 V288 A8,8 0 0 1 348,280 Z" /><text x="640" y="316" text-anchor="middle" font-family="Microsoft YaHei, Arial, sans-serif" font-size="20" font-weight="700" fill="#FFFFFF">证据</text>
+  <path fill="#EDF2F7" stroke="#CBD5E0" d="M303,350 H977 A8,8 0 0 1 985,358 V398 A8,8 0 0 1 977,406 H303 A8,8 0 0 1 295,398 V358 A8,8 0 0 1 303,350 Z" /><text x="640" y="386" text-anchor="middle" font-family="Microsoft YaHei, Arial, sans-serif" font-size="20" font-weight="700" fill="#243447">功能</text>
+  <path fill="#EDF2F7" stroke="#CBD5E0" d="M258,420 H1022 A8,8 0 0 1 1030,428 V468 A8,8 0 0 1 1022,476 H258 A8,8 0 0 1 250,468 V428 A8,8 0 0 1 258,420 Z" /><text x="640" y="456" text-anchor="middle" font-family="Microsoft YaHei, Arial, sans-serif" font-size="20" font-weight="700" fill="#243447">回路</text>
+  <path fill="#EDF2F7" stroke="#CBD5E0" d="M213,490 H1067 A8,8 0 0 1 1075,498 V538 A8,8 0 0 1 1067,546 H213 A8,8 0 0 1 205,538 V498 A8,8 0 0 1 213,490 Z" /><text x="640" y="526" text-anchor="middle" font-family="Microsoft YaHei, Arial, sans-serif" font-size="20" font-weight="700" fill="#243447">连接</text>
+  <path fill="#EDF2F7" stroke="#CBD5E0" d="M168,560 H1112 A8,8 0 0 1 1120,568 V608 A8,8 0 0 1 1112,616 H168 A8,8 0 0 1 160,608 V568 A8,8 0 0 1 168,560 Z" /><text x="640" y="596" text-anchor="middle" font-family="Microsoft YaHei, Arial, sans-serif" font-size="20" font-weight="700" fill="#243447">实体</text>
+  </g>
+  <g id="footer"><text x="1224" y="696" text-anchor="end" font-family="Arial, sans-serif" font-size="12" fill="#8492A0">5</text></g>
+</svg>

@@ -1,0 +1,68 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 720" data-pptx-page-role="content">
+  <defs>
+    <filter id="glow"><feGaussianBlur stdDeviation="2" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+  </defs>
+  <g id="background" data-pptx-bounds="0 0 1280 720" data-pptx-role="background">
+    <rect width="1280" height="720" fill="#0D1117"/>
+    <line x1="0" y1="108" x2="1280" y2="108" stroke="#212D40" stroke-width="0.5"/>
+    <line x1="80" y1="680" x2="1200" y2="680" stroke="#212D40" stroke-width="0.5"/>
+    <text x="80" y="700" font-family="Microsoft YaHei" font-size="14" fill="#586069">NeuroGraphIQ KG V3 — 知识图谱构建过程</text>
+  </g>
+  <g id="content" data-pptx-bounds="40 120 1200 560">
+    <!-- Title bar -->
+    <rect x="40" y="120" width="4" height="48" fill="#58A6FF" filter="url(#glow)"/>
+    <text x="60" y="155" font-family="Microsoft YaHei" font-weight="bold" font-size="40" fill="#FFFFFF">问题、动机与规模</text>
+
+    <!-- Three problem cards -->
+    <!-- Card 1 -->
+    <rect x="40" y="200" width="360" height="180" rx="2" fill="#161B22" stroke="#30363D" stroke-width="1"/>
+    <rect x="40" y="200" width="360" height="4" fill="#FF7B72"/>
+    <text x="60" y="240" font-family="Microsoft YaHei" font-weight="bold" font-size="24" fill="#FF7B72">脑图谱资源分散</text>
+    <text x="60" y="280" font-family="Microsoft YaHei" font-size="18" fill="#C9D1D9">AAL3、Brainnetome、</text>
+    <text x="60" y="306" font-family="Microsoft YaHei" font-size="18" fill="#C9D1D9">HCP-MMP、Allen 等</text>
+    <text x="60" y="332" font-family="Microsoft YaHei" font-size="18" fill="#C9D1D9">6+ 种图谱，格式各异</text>
+    <text x="60" y="358" font-family="Microsoft YaHei" font-size="18" fill="#8B949E">XML / xlsx / CSV / OWL</text>
+
+    <!-- Card 2 -->
+    <rect x="420" y="200" width="360" height="180" rx="2" fill="#161B22" stroke="#30363D" stroke-width="1"/>
+    <rect x="420" y="200" width="360" height="4" fill="#FFA657"/>
+    <text x="440" y="240" font-family="Microsoft YaHei" font-weight="bold" font-size="24" fill="#FFA657">缺乏结构化连接</text>
+    <text x="440" y="280" font-family="Microsoft YaHei" font-size="18" fill="#C9D1D9">不同粒度脑区之间</text>
+    <text x="440" y="306" font-family="Microsoft YaHei" font-size="18" fill="#C9D1D9">无统一语义关联</text>
+    <text x="440" y="332" font-family="Microsoft YaHei" font-size="18" fill="#C9D1D9">跨图谱查询困难</text>
+    <text x="440" y="358" font-family="Microsoft YaHei" font-size="18" fill="#8B949E">名称相似度 ≠ 语义等价</text>
+
+    <!-- Card 3 -->
+    <rect x="800" y="200" width="360" height="180" rx="2" fill="#161B22" stroke="#30363D" stroke-width="1"/>
+    <rect x="800" y="200" width="360" height="4" fill="#FF7B72"/>
+    <text x="820" y="240" font-family="Microsoft YaHei" font-weight="bold" font-size="24" fill="#FF7B72">LLM 提取需治理</text>
+    <text x="820" y="280" font-family="Microsoft YaHei" font-size="18" fill="#C9D1D9">大模型能做知识提取</text>
+    <text x="820" y="306" font-family="Microsoft YaHei" font-size="18" fill="#C9D1D9">但缺乏治理框架</text>
+    <text x="820" y="332" font-family="Microsoft YaHei" font-size="18" fill="#C9D1D9">会传播错误到正式库</text>
+    <text x="820" y="358" font-family="Microsoft YaHei" font-size="18" fill="#8B949E">需要人机协同质控</text>
+
+    <!-- Solution arrow -->
+    <g filter="url(#glow)">
+      <text x="640" y="435" text-anchor="middle" font-family="Microsoft YaHei" font-weight="bold" font-size="22" fill="#58A6FF">→ 解决方案：分层漏斗治理模型</text>
+    </g>
+
+    <!-- Scale metrics row -->
+    <g transform="translate(40, 470)">
+      <rect x="0" y="0" width="180" height="80" rx="2" fill="#1C2333"/>
+      <text x="90" y="30" text-anchor="middle" font-family="Consolas" font-weight="bold" font-size="28" fill="#58A6FF">42+88</text>
+      <text x="90" y="55" text-anchor="middle" font-family="Microsoft YaHei" font-size="14" fill="#8B949E">路由 · 服务</text>
+
+      <rect x="195" y="0" width="180" height="80" rx="2" fill="#1C2333"/>
+      <text x="285" y="30" text-anchor="middle" font-family="Consolas" font-weight="bold" font-size="28" fill="#79C0FF">14</text>
+      <text x="285" y="55" text-anchor="middle" font-family="Microsoft YaHei" font-size="14" fill="#8B949E">前端页面</text>
+
+      <rect x="390" y="0" width="180" height="80" rx="2" fill="#1C2333"/>
+      <text x="480" y="30" text-anchor="middle" font-family="Consolas" font-weight="bold" font-size="28" fill="#58A6FF">5+59</text>
+      <text x="480" y="55" text-anchor="middle" font-family="Microsoft YaHei" font-size="14" fill="#8B949E">Schema · 迁移</text>
+
+      <rect x="585" y="0" width="180" height="80" rx="2" fill="#1C2333"/>
+      <text x="675" y="30" text-anchor="middle" font-family="Consolas" font-weight="bold" font-size="28" fill="#79C0FF">1,173</text>
+      <text x="675" y="55" text-anchor="middle" font-family="Microsoft YaHei" font-size="14" fill="#8B949E">测试函数</text>
+    </g>
+  </g>
+</svg>

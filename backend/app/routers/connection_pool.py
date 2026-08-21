@@ -27,7 +27,7 @@ async def create_pool(
     session: AsyncSession = Depends(get_db),
 ):
     try:
-        return ConnectionPoolRead.model_validate(
+        pool = ConnectionPoolRead.model_validate(
             await svc.create_pool(
                 session,
                 name=body.name,
@@ -39,7 +39,10 @@ async def create_pool(
                 batch_id=body.batch_id,
             )
         )
+        await session.commit()
+        return pool
     except ValueError as exc:
+        await session.rollback()
         raise HTTPException(status_code=400, detail={"code": "INVALID_REQUEST", "message": str(exc)})
 
 
@@ -49,7 +52,7 @@ async def replace_pool(
     session: AsyncSession = Depends(get_db),
 ):
     try:
-        return ConnectionPoolRead.model_validate(
+        pool = ConnectionPoolRead.model_validate(
             await svc.replace_pool_for_scope(
                 session,
                 name=body.name,
@@ -61,7 +64,10 @@ async def replace_pool(
                 batch_id=body.batch_id,
             )
         )
+        await session.commit()
+        return pool
     except ValueError as exc:
+        await session.rollback()
         raise HTTPException(status_code=400, detail={"code": "INVALID_REQUEST", "message": str(exc)})
 
 
@@ -105,6 +111,7 @@ async def delete_pool(
     ok = await svc.delete_pool(session, pool_id)
     if not ok:
         raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": f"Pool {pool_id} not found"})
+    await session.commit()
 
 
 @router.post("/{pool_id}/members", response_model=ConnectionPoolRead)
@@ -114,10 +121,13 @@ async def add_members(
     session: AsyncSession = Depends(get_db),
 ):
     try:
-        return ConnectionPoolRead.model_validate(
+        pool = ConnectionPoolRead.model_validate(
             await svc.add_members(session, pool_id, body.connection_ids)
         )
+        await session.commit()
+        return pool
     except KeyError as exc:
+        await session.rollback()
         raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": str(exc)})
 
 
@@ -128,8 +138,11 @@ async def remove_members(
     session: AsyncSession = Depends(get_db),
 ):
     try:
-        return ConnectionPoolRead.model_validate(
+        pool = ConnectionPoolRead.model_validate(
             await svc.remove_members(session, pool_id, body.connection_ids)
         )
+        await session.commit()
+        return pool
     except KeyError as exc:
+        await session.rollback()
         raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": str(exc)})

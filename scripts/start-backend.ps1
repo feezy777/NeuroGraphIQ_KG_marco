@@ -9,7 +9,12 @@ if (-not (Test-Path ".\.venv\Scripts\python.exe")) {
     & .\.venv\Scripts\python.exe -m pip install -U pip
 }
 Write-Host "Syncing dependencies (includes greenlet for async SQLAlchemy)..." -ForegroundColor DarkGray
-& .\.venv\Scripts\python.exe -m pip install -r requirements.txt -q
+# pip writes notices to stderr; under $ErrorActionPreference=Stop that aborts the whole
+# script (NativeCommandError), so guard the pip call explicitly and fail on real exit codes.
+$ErrorActionPreference = "Continue"
+& .\.venv\Scripts\python.exe -m pip install -r requirements.txt -q 2>$null
+if ($LASTEXITCODE -ne 0) { throw "pip install failed (exit $LASTEXITCODE)" }
+$ErrorActionPreference = "Stop"
 if (-not (Test-Path ".\.env")) { Copy-Item .env.example .env }
 
 # Stop uvicorn worker AND reloader parent (Windows: killing only port 8001 respawns stale code).
@@ -40,6 +45,18 @@ foreach ($cleanupPort in @($port, 8001)) {
 }
 Start-Sleep -Seconds 2
 
+# idempotent guard: if 8002 is already served (e.g. concurrent double-click), do not
+# spawn a second uvicorn that would only fail to bind and linger as a zombie.
+$already = netstat -ano | Select-String ":8002\s" | Select-String "LISTENING"
+if ($already) {
+    Write-Host "Backend already listening on 8002 - skipping start." -ForegroundColor Yellow
+    exit 0
+}
+
 Write-Host "Starting API: http://127.0.0.1:8002  (docs: http://127.0.0.1:8002/api/docs)" -ForegroundColor Green
 # run_server.py sets WindowsSelectorEventLoopPolicy before uvicorn binds (required for psycopg async).
-& .\.venv\Scripts\python.exe run_server.py
+# uvicorn logs to stderr; a direct `2>&1` pipeline under $ErrorActionPreference=Stop
+# aborts the server (NativeCommandError). Wrapping in cmd merges streams at the cmd
+# layer so PowerShell never sees native stderr; output is tee'd for diagnosis.
+$uvicornLog = Join-Path $Root "scripts\logs\uvicorn-$(Get-Date -Format yyyyMMdd-HHmmss).log"
+cmd /c ".\.venv\Scripts\python.exe run_server.py 2>&1" | Tee-Object -FilePath $uvicornLog

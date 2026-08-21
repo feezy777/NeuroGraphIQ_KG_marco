@@ -49,7 +49,6 @@ from app.services.ontology_vocab_cache import (
     get_vocab_codes,
     refresh_vocab_cache,
 )
-from app.services.ontology_service import ground_written_records
 from app.services.llm_providers import LlmProviderResponse, UnknownProviderError, get_llm_provider
 from app.services.settings_service import get_deepseek_runtime_config, get_kimi_runtime_config
 from app.services.llm_workflow_artifact_tagging import tag_raw_payload
@@ -538,7 +537,11 @@ async def _projection_function_exists(
     batch_id: uuid.UUID | None,
     source_atlas: str,
     granularity_level: str,
+    term_id: uuid.UUID | None = None,
 ) -> bool:
+    """P1.4: existence check prefers the canonical term_id; the normalized text
+    is only a fallback for unresolved texts. Semantic qualifiers (category /
+    relation_type) are always part of the key."""
     blocked = {MirrorPromotionStatus.failed, MirrorPromotionStatus.blocked}
     q = select(MirrorProjectionFunction.id).where(
         MirrorProjectionFunction.projection_id == projection_id,
@@ -549,8 +552,11 @@ async def _projection_function_exists(
         MirrorProjectionFunction.promotion_status.notin_(blocked),
         MirrorProjectionFunction.review_status != MirrorReviewStatus.rejected,
         MirrorProjectionFunction.mirror_status != MirrorStatus.superseded,
-        func.lower(MirrorProjectionFunction.function_term) == function_term_key,
     )
+    if term_id is not None:
+        q = q.where(MirrorProjectionFunction.term_id == term_id)
+    else:
+        q = q.where(func.lower(MirrorProjectionFunction.function_term) == function_term_key)
     if resource_id:
         q = q.where(MirrorProjectionFunction.resource_id == resource_id)
     if batch_id:
@@ -567,50 +573,6 @@ def _projection_label(
     src_l = _region_label(src_c, str(projection.source_region_candidate_id))
     tgt_l = _region_label(tgt_c, str(projection.target_region_candidate_id))
     return f"{src_l} -> {tgt_l} ({projection.connection_type})"
-
-
-async def create_projection_function_triples(
-    session: AsyncSession,
-    *,
-    run: LlmExtractionRun,
-    item: LlmExtractionItem,
-    projection: MirrorRegionConnection,
-    projection_function: MirrorProjectionFunction,
-    fn: dict[str, Any],
-    candidate_map: dict[uuid.UUID, CandidateBrainRegion],
-) -> int:
-    relation = fn["relation_type"]
-    predicate = RELATION_TO_PREDICATE.get(relation, "associated_with_function")
-    label = _projection_label(projection, candidate_map)
-    triple_payload = MirrorKgTripleCreate(
-        subject_type=TripleSubjectType.connection,
-        subject_id=projection.id,
-        subject_label=label,
-        predicate=predicate,
-        object_type=TripleObjectType.function,
-        object_id=None,
-        object_label=fn["function_term"],
-        triple_scope=TripleScope.same_granularity,
-        resource_id=projection.resource_id,
-        batch_id=projection.batch_id,
-        llm_run_id=run.id,
-        llm_item_id=item.id,
-        source_mirror_connection_id=projection.id,
-        granularity_level=projection.granularity_level,
-        granularity_family=projection.granularity_family,
-        source_atlas=projection.source_atlas,
-        source_version=projection.source_version,
-        confidence=fn.get("confidence"),
-        evidence_text=fn.get("evidence_text"),
-        uncertainty_reason=fn.get("uncertainty_reason"),
-        mirror_status=MirrorStatus.llm_suggested,
-        review_status=MirrorReviewStatus.pending,
-        promotion_status=MirrorPromotionStatus.not_promoted,
-        raw_payload_json={"projection_function": fn},
-        normalized_payload_json={"predicate": predicate, "function_term": fn["function_term"]},
-    )
-    await mirror_kg_service.create_mirror_triple(session, triple_payload)
-    return 1
 
 
 async def create_projection_function_evidence(
@@ -664,6 +626,13 @@ async def persist_projection_functions(
             skipped += 1
             warnings.append(f"EXISTING_PROJECTION_FUNCTION_SKIPPED: duplicate in session for {projection_id}")
             continue
+        # P1.4: identity is the canonical term_id; text only when unresolved.
+        from app.services.function_term_service import resolve_or_propose_function_term
+
+        term_res = await resolve_or_propose_function_term(
+            session, fn["function_term"], created_by="extraction",
+            source="projection_function_exists",
+        )
         if await _projection_function_exists(
             session,
             projection_id=projection_id,
@@ -674,6 +643,7 @@ async def persist_projection_functions(
             batch_id=projection.batch_id,
             source_atlas=projection.source_atlas,
             granularity_level=projection.granularity_level,
+            term_id=term_res.term_id,
         ):
             skipped += 1
             seen.add(key)
@@ -726,16 +696,8 @@ async def persist_projection_functions(
         created_pfs.append(mirror_fn)
         seen.add(key)
 
-        if create_triples:
-            triples += await create_projection_function_triples(
-                session,
-                run=run,
-                item=item,
-                projection=projection,
-                projection_function=mirror_fn,
-                fn=fn,
-                candidate_map=candidate_map,
-            )
+        # P1.6/P1.8: Function Triples are produced by the incremental projection
+        # (create_projection_function reconciles the subject) — no direct write.
 
         if create_evidence and fn.get("evidence_text"):
             evidence += await create_projection_function_evidence(
@@ -744,12 +706,17 @@ async def persist_projection_functions(
                 warnings=warnings,
             )
 
-    await ground_written_records(
-        session,
-        target_type="projection_function",
-        rows=created_pfs,
-        created_by="extraction",
-    )
+    # P1.3: unified write-time anchoring (create_projection_function already
+    # anchors; this pass is an idempotent safety net covering merged rows).
+    from app.services.function_term_service import anchor_function_relation
+
+    for pf_row in created_pfs:
+        await anchor_function_relation(
+            session,
+            target_type="projection_function",
+            row=pf_row,
+            created_by="extraction",
+        )
     return created, skipped, triples, evidence, warnings
 
 

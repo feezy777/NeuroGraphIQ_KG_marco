@@ -380,6 +380,47 @@ def _fill_connection_names_from_pairs(
         conn["name_en"] = name_en
         conn["name_cn"] = name_cn
 
+        # Bilingual guard (post-processing): never let one language be silently
+        # duplicated into the other column, and never keep an ID-derived
+        # placeholder as a display name.
+        def _guard_pair(
+            name_cn: str | None,
+            name_en: str | None,
+            cand: Any,
+        ) -> tuple[str | None, str | None]:
+            if name_cn and name_en and name_cn == name_en:
+                if cand is not None and cand.cn_name and cand.cn_name != name_cn:
+                    name_cn = cand.cn_name
+                elif cand is not None and cand.en_name and cand.en_name != name_en:
+                    name_en = cand.en_name
+                else:
+                    import re as _re
+                    if _re.search(r"[\u4e00-\u9fff]", name_cn or ""):
+                        name_en = None
+                    else:
+                        name_cn = None
+            return name_cn, name_en
+
+        sc = cand_lookup.get(src_id)
+        tc = cand_lookup.get(tgt_id)
+        src_name_cn, src_name_en = _guard_pair(src_name_cn, src_name_en, sc)
+        tgt_name_cn, tgt_name_en = _guard_pair(tgt_name_cn, tgt_name_en, tc)
+
+        conn["source_region_name_cn"] = src_name_cn
+        conn["source_region_name_en"] = src_name_en
+        conn["target_region_name_cn"] = tgt_name_cn
+        conn["target_region_name_en"] = tgt_name_en
+        conn["name_en"] = (
+            f"{src_name_en} -> {tgt_name_en} projection"
+            if src_name_en and tgt_name_en
+            else None
+        )
+        conn["name_cn"] = (
+            f"{src_name_cn} -> {tgt_name_cn}连接"
+            if src_name_cn and tgt_name_cn
+            else None
+        )
+
 
 def _build_batch_context_json(
     candidates: list[CandidateBrainRegion],
@@ -780,6 +821,7 @@ async def run_same_granularity_connection_extraction(
     dry_run: bool = False,
     max_candidate_pairs: int = DEFAULT_MAX_CANDIDATE_PAIRS,
     pair_strategy: str = "all_pairs",
+    pairs_per_pack: int | None = None,
     center_candidate_id: uuid.UUID | None = None,
     allowed_connection_types: list[str] | None = None,
     create_mirror_records: bool = True,
@@ -837,7 +879,8 @@ async def run_same_granularity_connection_extraction(
     cand_map = {c.id: c for c in candidates}
     pairs = order_pairs_by_priority(pairs, cand_map)
     pair_records = build_compact_pair_records(candidates, pairs)
-    packs = pack_pair_records(pair_records, pairs_per_pack=DEFAULT_PAIRS_PER_PACK_OVERRIDE)
+    resolved_pairs_per_pack = max(1, pairs_per_pack or DEFAULT_PAIRS_PER_PACK_OVERRIDE)
+    packs = pack_pair_records(pair_records, pairs_per_pack=resolved_pairs_per_pack)
     original_pack_count = len(packs)
     resolved_debug_max_packs = debug_max_packs
     if debug_single_pack:
@@ -917,6 +960,7 @@ async def run_same_granularity_connection_extraction(
             "candidate_ids": [str(c.id) for c in candidates],
             "pair_strategy": pair_strategy,
             "max_candidate_pairs": max_candidate_pairs,
+            "pairs_per_pack": resolved_pairs_per_pack,
             "center_candidate_id": str(center_candidate_id) if center_candidate_id else None,
             "pack_count": len(packs),
             **({"composite_workflow_run_id": str(composite_workflow_run_id)} if composite_workflow_run_id else {}),
@@ -1022,10 +1066,10 @@ async def run_same_granularity_connection_extraction(
     await _log_event(
         "info",
         "packs_built",
-        f"Built {len(packs)} prompt packs (size={DEFAULT_PAIRS_PER_PACK_OVERRIDE})",
+        f"Built {len(packs)} prompt packs (size={resolved_pairs_per_pack})",
         {
             "pack_count": len(packs),
-            "pack_size": DEFAULT_PAIRS_PER_PACK_OVERRIDE,
+            "pack_size": resolved_pairs_per_pack,
             "estimated_input_tokens_total": preview.get("estimated_input_tokens", 0),
         },
     )

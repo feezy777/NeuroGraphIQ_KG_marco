@@ -1,0 +1,449 @@
+b7d33a951828b1d740ec19b9c096afc80f12c15e feat(evidence): idempotent 1:1 split migration for legacy batch tasks
+---DIFF---
+diff --git a/backend/app/services/paper_evidence_service.py b/backend/app/services/paper_evidence_service.py
+index 229df54..1442152 100644
+--- a/backend/app/services/paper_evidence_service.py
++++ b/backend/app/services/paper_evidence_service.py
+@@ -3623,20 +3623,152 @@ async def recover_interrupted_batch_tasks(session: AsyncSession) -> int:
+         text(
+             "UPDATE paper_evidence_task_items SET status='pending', updated_at=now() "
+             "WHERE status IN ('searching','fetching','retrieving','extracting','verifying') "
+             "AND task_id IN (SELECT id FROM paper_evidence_tasks WHERE status='pending')"
+         )
+     )
+     await session.commit()
+     return result.rowcount or 0
+ 
+ 
++async def migrate_tasks_to_1to1(session: AsyncSession) -> dict:
++    """存量拆分迁移(幂等):多对象任务按对象拆成一对一任务;旧任务标记 cancelled + migrated_to。
++
++    - 单对象任务:回填任务 target_id 与 item 快照(label 为 UUID/空、置信度 NULL 时实时取);
++    - 多对象任务:每 item 生成一个新任务(复制配置与状态),item 挂接过去,旧任务 cancelled;
++    - 仅扫描 status <> 'cancelled' 的任务,已拆任务自然跳过(幂等)。
++    """
++    rows = (
++        await session.execute(
++            text(
++                "SELECT id::text, target_type, scope, mode, max_papers_per_object, status, name, "
++                "granularity_level, only_oa, confidence_lt, stop_after_strong_support, config, created_by "
++                "FROM paper_evidence_tasks WHERE status <> 'cancelled' ORDER BY created_at"
++            )
++        )
++    ).all()
++    stats = {
++        "tasks_scanned": len(rows),
++        "tasks_split": 0,
++        "objects_migrated": 0,
++        "labels_backfilled": 0,
++        "target_ids_backfilled": 0,
++    }
++    for r in rows:
++        tid, tt, scope, mode, maxp, status, name, gl, only_oa, clt, stop, config, created_by = r
++        items = (
++            await session.execute(
++                text(
++                    "SELECT id::text, target_id::text, label, current_confidence FROM paper_evidence_task_items "
++                    "WHERE task_id::text = :tid ORDER BY updated_at"
++                ),
++                {"tid": tid},
++            )
++        ).all()
++        if not items:
++            continue
++        if len(items) == 1:
++            oid = uuid.UUID(items[0][1])
++            label, conf = await _batch_scope_label(session, tt, oid)
++            if str(label) == str(oid):
++                label = None
++            lbl_bad = not items[0][2] or _UUID_RE.fullmatch(str(items[0][2]))
++            conf_null = items[0][3] is None
++            if lbl_bad or conf_null:
++                # 标签仅在快照本身是坏标签时才写(live 缺失 → 清空 NULL;live 有值 → 覆盖)
++                set_label = label if lbl_bad else items[0][2]
++                res = await session.execute(
++                    text(
++                        "UPDATE paper_evidence_task_items SET label=:lbl, current_confidence=:conf "
++                        "WHERE id::text=:iid AND (label IS NULL OR label = '' OR label ~* :uuid_re "
++                        "OR current_confidence IS NULL) AND (label IS DISTINCT FROM :lbl "
++                        "OR current_confidence IS DISTINCT FROM :conf)"
++                    ),
++                    {"lbl": set_label, "conf": conf, "iid": items[0][0], "uuid_re": _UUID_RE.pattern},
++                )
++                stats["labels_backfilled"] += res.rowcount or 0
++            res2 = await session.execute(
++                text(
++                    "UPDATE paper_evidence_tasks SET target_id=:oid, total_items=1 "
++                    "WHERE id::text=:tid AND (target_id IS NULL OR target_id <> :oid OR total_items IS DISTINCT FROM 1)"
++                ),
++                {"oid": oid, "tid": tid},
++            )
++            stats["target_ids_backfilled"] += res2.rowcount or 0
++            continue
++        new_ids: list[str] = []
++        for iid, oid_s, lbl, conf in items:
++            oid = uuid.UUID(oid_s)
++            label, live_conf = await _batch_scope_label(session, tt, oid)
++            if str(label) == str(oid):
++                label = None
++            new_id = (
++                await session.execute(
++                    text(
++                        "INSERT INTO paper_evidence_tasks "
++                        "(target_type, target_id, scope, mode, max_papers_per_object, status, name, "
++                        "granularity_level, only_oa, confidence_lt, stop_after_strong_support, config, "
++                        "created_by, total_items, review_status, materialization_status, materialized_target_count) "
++                        "VALUES (:tt, :oid, :scope, :mode, :maxp, :status, :name, :gl, :only_oa, :clt, :stop, "
++                        "COALESCE(CAST(:config AS jsonb), '{}'::jsonb), :cb, 1, 'not_started', 'completed', 1) RETURNING id::text"
++                    ),
++                    {
++                        "tt": tt,
++                        "oid": oid,
++                        "scope": scope,
++                        "mode": mode,
++                        "maxp": maxp,
++                        "status": status,
++                        "name": name,
++                        "gl": gl,
++                        "only_oa": only_oa,
++                        "clt": clt,
++                        "stop": stop,
++                        "config": json.dumps(config) if isinstance(config, dict) else config,
++                        "cb": created_by,
++                    },
++                )
++            ).scalar_one()
++            lbl_bad = not lbl or _UUID_RE.fullmatch(str(lbl))
++            conf_null = conf is None
++            # 重挂接无条件执行(与回填解耦,变更守卫为假也不影响 item 归属)
++            await session.execute(
++                text("UPDATE paper_evidence_task_items SET task_id=:new WHERE id::text=:iid"),
++                {"new": uuid.UUID(new_id), "iid": iid},
++            )
++            if lbl_bad or conf_null:
++                set_label = label if lbl_bad else lbl
++                res = await session.execute(
++                    text(
++                        "UPDATE paper_evidence_task_items SET label=:lbl, current_confidence=:conf "
++                        "WHERE id::text=:iid AND (label IS NULL OR label = '' OR label ~* :uuid_re "
++                        "OR current_confidence IS NULL) AND (label IS DISTINCT FROM :lbl "
++                        "OR current_confidence IS DISTINCT FROM :conf)"
++                    ),
++                    {"lbl": set_label, "conf": live_conf, "iid": iid, "uuid_re": _UUID_RE.pattern},
++                )
++                stats["labels_backfilled"] += res.rowcount or 0
++            new_ids.append(new_id)
++        await session.execute(
++            text(
++                "UPDATE paper_evidence_tasks SET status='cancelled', "
++                "summary=jsonb_set(COALESCE(summary, '{}'::jsonb), '{migrated_to}', CAST(:ids AS jsonb)) "
++                "WHERE id::text=:tid"
++            ),
++            {"ids": json.dumps(new_ids), "tid": tid},
++        )
++        stats["tasks_split"] += 1
++        stats["objects_migrated"] += len(new_ids)
++    await session.commit()
++    return stats
++
++
+ async def pause_batch_task(session: AsyncSession, task_id: str, operator_id: str | None = None) -> dict:
+     result = await session.execute(
+         text(
+             "UPDATE paper_evidence_tasks SET status='paused', paused_at=now() "
+             "WHERE id::text=:tid AND status IN ('pending','running')"
+         ),
+         {"tid": task_id},
+     )
+     await session.commit()
+     if result.rowcount == 0:
+diff --git a/backend/scripts/migrate_evidence_tasks_1to1.py b/backend/scripts/migrate_evidence_tasks_1to1.py
+new file mode 100644
+index 0000000..46f49b0
+--- /dev/null
++++ b/backend/scripts/migrate_evidence_tasks_1to1.py
+@@ -0,0 +1,27 @@
++"""一次性存量迁移:多对象佐证任务 → 一对一对象任务(幂等,可重复执行)。
++
++用法: backend/.venv/Scripts/python.exe backend/scripts/migrate_evidence_tasks_1to1.py
++"""
++
++import asyncio
++import sys
++from pathlib import Path
++
++sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
++
++from app.database import AsyncSessionLocal  # noqa: E402
++from app.services import paper_evidence_service as pes  # noqa: E402
++
++
++async def main() -> None:
++    if AsyncSessionLocal is None:
++        print("AsyncSessionLocal 未初始化(数据库未配置),退出。")
++        return
++    async with AsyncSessionLocal() as session:
++        stats = await pes.migrate_tasks_to_1to1(session)
++    print("迁移完成:", stats)
++
++
++if __name__ == "__main__":
++    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
++    asyncio.run(main())
+diff --git a/backend/tests/test_paper_evidence_migrate_1to1.py b/backend/tests/test_paper_evidence_migrate_1to1.py
+new file mode 100644
+index 0000000..d936b9e
+--- /dev/null
++++ b/backend/tests/test_paper_evidence_migrate_1to1.py
+@@ -0,0 +1,251 @@
++# -*- coding: utf-8 -*-
++"""存量拆分迁移:拆分/幂等/审计标记/快照回填。"""
++
++from __future__ import annotations
++
++import asyncio
++import json
++import uuid
++
++from sqlalchemy import text
++
++from app.database import AsyncSessionLocal
++from app.services import paper_evidence_service as pes
++
++
++def _run(coro):
++    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
++    loop = asyncio.new_event_loop()
++    try:
++        return loop.run_until_complete(coro)
++    finally:
++        loop.close()
++
++
++async def _insert_legacy_multi_task(n=3) -> tuple[str, list[str]]:
++    oids = [str(uuid.uuid4()) for _ in range(n)]
++    async with AsyncSessionLocal() as s:
++        tid = (
++            await s.execute(
++                text(
++                    "INSERT INTO paper_evidence_tasks "
++                    "(target_type, scope, mode, max_papers_per_object, status, total_items) "
++                    "VALUES ('connection', 'low_confidence', 'function', 3, 'pending', :n) RETURNING id::text"
++                ),
++                {"n": n},
++            )
++        ).scalar_one()
++        for oid in oids:
++            await s.execute(
++                text(
++                    "INSERT INTO paper_evidence_task_items (task_id, target_type, target_id, label, status) "
++                    "VALUES (:tid, 'connection', :oid, :lbl, 'pending')"
++                ),
++                {"tid": tid, "oid": oid, "lbl": str(uuid.uuid4())},
++            )
++        await s.commit()
++        return tid, oids
++
++
++async def _migrate():
++    async with AsyncSessionLocal() as s:
++        return await pes.migrate_tasks_to_1to1(s)
++
++
++async def _cleanup(ids: list[str]):
++    async with AsyncSessionLocal() as s:
++        for tid in ids:
++            await s.execute(text("DELETE FROM paper_evidence_tasks WHERE id::text=:tid"), {"tid": tid})
++        await s.commit()
++
++
++def test_split_multi_object_task_and_idempotent():
++    tid, oids = _run(_insert_legacy_multi_task(3))
++    new_ids: list[str] = []
++    try:
++        stats = _run(_migrate())
++        assert stats["tasks_split"] >= 1
++        assert stats["objects_migrated"] >= 3
++
++        async def check():
++            nonlocal new_ids
++            async with AsyncSessionLocal() as s:
++                old = (
++                    await s.execute(
++                        text("SELECT status, summary FROM paper_evidence_tasks WHERE id::text=:tid"),
++                        {"tid": tid},
++                    )
++                ).first()
++                assert old[0] == "cancelled"
++                assert isinstance(old[1], dict) and old[1].get("migrated_to")
++                new_ids = old[1]["migrated_to"]
++                assert len(new_ids) == 3
++                for nid in new_ids:
++                    row = (
++                        await s.execute(
++                            text(
++                                "SELECT target_id IS NOT NULL, total_items, scope, mode "
++                                "FROM paper_evidence_tasks WHERE id::text=:nid"
++                            ),
++                            {"nid": nid},
++                        )
++                    ).first()
++                    assert row[0] is True
++                    assert row[1] == 1
++                    assert row[2] == "low_confidence"
++                    assert row[3] == "function"
++                    items = (
++                        await s.execute(
++                            text("SELECT COUNT(*) FROM paper_evidence_task_items WHERE task_id::text=:nid"),
++                            {"nid": nid},
++                        )
++                    ).scalar_one()
++                    assert items == 1
++                    snap = (
++                        await s.execute(
++                            text(
++                                "SELECT label, current_confidence FROM paper_evidence_task_items "
++                                "WHERE task_id::text=:nid"
++                            ),
++                            {"nid": nid},
++                        )
++                    ).first()
++                    assert snap[0] is None
++                    assert snap[1] is None
++        _run(check())
++        # 幂等:旧任务已 cancelled,不在扫描范围,不再产生新拆分
++        stats2 = _run(_migrate())
++        assert stats2["tasks_split"] == 0
++        assert stats2["labels_backfilled"] == 0
++        async def verify_idempotent():
++            async with AsyncSessionLocal() as s:
++                rows = (
++                    await s.execute(
++                        text("SELECT id::text FROM paper_evidence_tasks WHERE summary->>'migrated_to' IS NOT NULL"),
++                    )
++                ).scalars().all()
++                assert tid in set(rows)
++        _run(verify_idempotent())
++    finally:
++        _run(_cleanup([tid, *new_ids]))
++
++
++def test_single_object_task_gets_target_id_backfilled():
++    oid = str(uuid.uuid4())
++    tid: str | None = None
++    try:
++        async def seed():
++            nonlocal tid
++            async with AsyncSessionLocal() as s:
++                tid = (
++                    await s.execute(
++                        text(
++                            "INSERT INTO paper_evidence_tasks "
++                            "(target_type, scope, mode, max_papers_per_object, status, total_items) "
++                            "VALUES ('connection', 'low_confidence', 'function', 3, 'pending', 1) RETURNING id::text"
++                        ),
++                    )
++                ).scalar_one()
++                await s.execute(
++                    text(
++                        "INSERT INTO paper_evidence_task_items (task_id, target_type, target_id, label, status) "
++                        "VALUES (:tid, 'connection', :oid, :lbl, 'pending')"
++                    ),
++                    {"tid": tid, "oid": oid, "lbl": str(uuid.uuid4())},
++                )
++                await s.commit()
++        _run(seed())
++        _run(_migrate())
++
++        async def check():
++            async with AsyncSessionLocal() as s:
++                row = (
++                    await s.execute(
++                        text("SELECT target_id::text, status FROM paper_evidence_tasks WHERE id::text=:tid"),
++                        {"tid": tid},
++                    )
++                ).first()
++                assert row[0] == oid
++                assert row[1] == "pending"  # 不拆分、不取消
++                lbl_row = (
++                    await s.execute(
++                        text("SELECT label FROM paper_evidence_task_items WHERE task_id::text=:tid"),
++                        {"tid": tid},
++                    )
++                ).first()
++                assert lbl_row[0] is None
++        _run(check())
++    finally:
++        _run(_cleanup([tid]))
++
++
++def test_split_path_reassigns_real_label_item_with_null_conf():
++    """回归:真实标签 + NULL 置信度(无镜像行)的 item 也必须重挂接到新任务,不得滞留旧任务。"""
++    oids = [str(uuid.uuid4()), str(uuid.uuid4())]
++    tid: str | None = None
++    new_ids: list[str] = []
++    try:
++        async def seed():
++            nonlocal tid
++            async with AsyncSessionLocal() as s:
++                tid = (
++                    await s.execute(
++                        text(
++                            "INSERT INTO paper_evidence_tasks "
++                            "(target_type, scope, mode, max_papers_per_object, status, total_items) "
++                            "VALUES ('connection', 'low_confidence', 'function', 3, 'pending', 2) RETURNING id::text"
++                        ),
++                    )
++                ).scalar_one()
++                await s.execute(
++                    text(
++                        "INSERT INTO paper_evidence_task_items (task_id, target_type, target_id, label, status) "
++                        "VALUES (:tid, 'connection', :oid, :lbl, 'pending')"
++                    ),
++                    {"tid": tid, "oid": oids[0], "lbl": "BLA → IL"},
++                )
++                await s.execute(
++                    text(
++                        "INSERT INTO paper_evidence_task_items (task_id, target_type, target_id, label, status) "
++                        "VALUES (:tid, 'connection', :oid, :lbl, 'pending')"
++                    ),
++                    {"tid": tid, "oid": oids[1], "lbl": str(uuid.uuid4())},
++                )
++                await s.commit()
++        _run(seed())
++        _run(_migrate())
++
++        async def check():
++            nonlocal new_ids
++            async with AsyncSessionLocal() as s:
++                old = (
++                    await s.execute(
++                        text("SELECT status, summary FROM paper_evidence_tasks WHERE id::text=:tid"),
++                        {"tid": tid},
++                    )
++                ).first()
++                assert old[0] == "cancelled"
++                assert isinstance(old[1], dict) and old[1].get("migrated_to")
++                new_ids = old[1]["migrated_to"]
++                assert len(new_ids) == 2
++                seen: dict[str | None, object] = {}
++                for nid in new_ids:
++                    row = (
++                        await s.execute(
++                            text(
++                                "SELECT COUNT(*), MIN(label), MIN(current_confidence) "
++                                "FROM paper_evidence_task_items WHERE task_id::text=:nid"
++                            ),
++                            {"nid": nid},
++                        )
++                    ).first()
++                    assert row[0] == 1
++                    seen[row[1]] = row[2]
++                # item A: 真实标签保留不被清空,conf 仍 NULL(无镜像行)
++                assert "BLA → IL" in seen
++                assert seen["BLA → IL"] is None
++                # item B: UUID 坏标签被清空为 NULL
++                assert None in seen
++        _run(check())
++    finally:
++        _run(_cleanup([tid, *new_ids]))

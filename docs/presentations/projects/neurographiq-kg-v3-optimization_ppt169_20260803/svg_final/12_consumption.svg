@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 720" width="1280" height="720">
+  <g id="background"><rect width="1280" height="720" fill="#F7FAFC" /></g>
+  <g id="header">
+  <rect x="56" y="42" width="8" height="40" fill="#1F9FB5" />
+  <text x="80" y="72" font-family="Microsoft YaHei, Arial, sans-serif" font-size="34" font-weight="700" fill="#17324D">知识消费：从图谱到可操作洞察</text>
+  <text x="80" y="104" font-family="Microsoft YaHei, Arial, sans-serif" font-size="16" fill="#5A6A7A">四类入口共用同一 Final KG 查询面</text>
+  </g>
+  <g><path fill="#FFFFFF" stroke="#CBD5E0" d="M66,140 H606 A10,10 0 0 1 616,150 V360 A10,10 0 0 1 606,370 H66 A10,10 0 0 1 56,360 V150 A10,10 0 0 1 66,140 Z" />
+  <g transform="translate(84.0, 168.0) scale(1.3333333333333333)" fill="none" stroke="none" stroke-width="2">
+    <path d="M4 6a8 3 0 1 0 16 0a8 3 0 1 0 -16 0" />
+    <path d="M4 6v6a8 3 0 0 0 16 0v-6" />
+    <path d="M4 12v6a8 3 0 0 0 16 0v-6" />
+  </g><text x="132" y="192" font-family="Microsoft YaHei, Arial, sans-serif" font-size="22" font-weight="700" fill="#17324D">数据中心</text><text x="84" y="250" font-family="Microsoft YaHei, Arial, sans-serif" font-size="17" fill="#243447">Raw - Candidate - Mirror - Final</text><text x="84" y="290" font-family="Microsoft YaHei, Arial, sans-serif" font-size="16" fill="#5A6A7A">全生命周期可视化监控与检索</text></g>
+  <g><path fill="#FFFFFF" stroke="#CBD5E0" d="M674,140 H1214 A10,10 0 0 1 1224,150 V360 A10,10 0 0 1 1214,370 H674 A10,10 0 0 1 664,360 V150 A10,10 0 0 1 674,140 Z" />
+  <g transform="translate(692.0, 168.0) scale(1.3333333333333333)" fill="none" stroke="none" stroke-width="2">
+    <path d="M6 9a6 6 0 1 0 12 0a6 6 0 0 0 -12 0" />
+    <path d="M12 3c1.333 .333 2 2.333 2 6s-.667 5.667 -2 6" />
+    <path d="M12 3c-1.333 .333 -2 2.333 -2 6s.667 5.667 2 6" />
+    <path d="M6 9h12" />
+    <path d="M3 20h7" />
+    <path d="M14 20h7" />
+    <path d="M10 20a2 2 0 1 0 4 0a2 2 0 0 0 -4 0" />
+    <path d="M12 15v3" />
+  </g><text x="740" y="192" font-family="Microsoft YaHei, Arial, sans-serif" font-size="22" font-weight="700" fill="#17324D">图谱探索</text><text x="692" y="250" font-family="Microsoft YaHei, Arial, sans-serif" font-size="17" fill="#243447">节点聚焦 / 层级展开 / 关系筛选</text><text x="692" y="290" font-family="Microsoft YaHei, Arial, sans-serif" font-size="16" fill="#5A6A7A">直观呈现脑区-连接-功能拓扑</text></g>
+  <g><path fill="#FFFFFF" stroke="#CBD5E0" d="M66,400 H606 A10,10 0 0 1 616,410 V620 A10,10 0 0 1 606,630 H66 A10,10 0 0 1 56,620 V410 A10,10 0 0 1 66,400 Z" />
+  <g transform="translate(84.0, 428.0) scale(1.3333333333333333)" fill="none" stroke="none" stroke-width="2">
+    <path d="M3 10a7 7 0 1 0 14 0a7 7 0 1 0 -14 0" />
+    <path d="M21 21l-6 -6" />
+  </g><text x="132" y="452" font-family="Microsoft YaHei, Arial, sans-serif" font-size="22" font-weight="700" fill="#17324D">症状查询</text><text x="84" y="510" font-family="Microsoft YaHei, Arial, sans-serif" font-size="17" fill="#243447">自然语言症状到标准化脑区与回路</text><text x="84" y="550" font-family="Microsoft YaHei, Arial, sans-serif" font-size="16" fill="#5A6A7A">输出含证据链的结构化报告</text></g>
+  <g><path fill="#FFFFFF" stroke="#CBD5E0" d="M674,400 H1214 A10,10 0 0 1 1224,410 V620 A10,10 0 0 1 1214,630 H674 A10,10 0 0 1 664,620 V410 A10,10 0 0 1 674,400 Z" />
+  <g transform="translate(692.0, 428.0) scale(1.3333333333333333)" fill="none" stroke="none" stroke-width="2">
+    <path d="M4 6c0 1.657 3.582 3 8 3s8 -1.343 8 -3s-3.582 -3 -8 -3s-8 1.343 -8 3" />
+    <path d="M4 6v6c0 1.657 3.582 3 8 3c1.118 0 2.183 -.086 3.15 -.241" />
+    <path d="M20 12v-6" />
+    <path d="M4 12v6c0 1.657 3.582 3 8 3c.157 0 .312 -.002 .466 -.005" />
+    <path d="M16 19h6" />
+    <path d="M19 16l3 3l-3 3" />
+  </g><text x="740" y="452" font-family="Microsoft YaHei, Arial, sans-serif" font-size="22" font-weight="700" fill="#17324D">知识导出</text><text x="692" y="510" font-family="Microsoft YaHei, Arial, sans-serif" font-size="17" fill="#243447">JSONL / CSV / Neo4j 等图库兼容</text><text x="692" y="550" font-family="Microsoft YaHei, Arial, sans-serif" font-size="16" fill="#5A6A7A">支持离线挖掘与跨平台迁移</text></g>
+  <g id="footer"><text x="1224" y="696" text-anchor="end" font-family="Arial, sans-serif" font-size="12" fill="#8492A0">12</text></g>
+</svg>

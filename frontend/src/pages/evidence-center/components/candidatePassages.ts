@@ -11,7 +11,9 @@ export function candidatePassagesToWorkbench(
   return passages
     .filter((p): p is Record<string, unknown> & { passage: string } => Boolean(p.passage))
     .map((p, i) => ({
-      hash: `${paperId ?? 'paper'}-${i}-${p.passage}`,
+      hash: typeof p.passage_hash === 'string' && p.passage_hash.length <= 64
+        ? p.passage_hash
+        : `${String(paperId ?? 'paper').slice(0, 8)}-${i}-${String(p.passage ?? '').slice(0, 30).replace(/\s+/g, '_')}`.slice(0, 64),
       source_scope: (p.source_scope === 'fulltext' ? 'fulltext' : 'abstract') as 'abstract' | 'fulltext',
       section_title: (p.section_title as string | null) ?? null,
       paragraph_index: (p.paragraph_index as number | null) ?? null,

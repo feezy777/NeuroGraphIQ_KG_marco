@@ -172,6 +172,11 @@ export function DataCenterOverview({ counts, loading, onNavigate, onRefresh }: P
         ) : (
           <div className="ontology-empty">暂无统计或接口不可用</div>
         )}
+        <div style={{ marginTop: 10 }}>
+          <a href="#/validation-center?tab=paper_evidence&module=candidates" className="btn btn-sm btn-primary">
+            前往论文佐证
+          </a>
+        </div>
       </div>
 
       {/* Quick Entry */}

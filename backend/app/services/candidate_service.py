@@ -13,7 +13,7 @@ import logging
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.candidate import CandidateBrainRegion, CandidateGenerationRun
@@ -372,6 +372,7 @@ def _apply_candidate_filters(
     candidate_status: str | None,
     laterality: str | None,
     granularity_level: str | None = None,
+    search: str | None = None,
 ):
     if resource_id:
         stmt = stmt.where(CandidateBrainRegion.resource_id == resource_id)
@@ -387,6 +388,16 @@ def _apply_candidate_filters(
         stmt = stmt.where(CandidateBrainRegion.laterality == laterality)
     if granularity_level:
         stmt = stmt.where(CandidateBrainRegion.granularity_level == granularity_level)
+    if search:
+        pattern = f"%{search.strip()}%"
+        stmt = stmt.where(
+            or_(
+                CandidateBrainRegion.raw_name.ilike(pattern),
+                CandidateBrainRegion.std_name.ilike(pattern),
+                CandidateBrainRegion.en_name.ilike(pattern),
+                CandidateBrainRegion.cn_name.ilike(pattern),
+            )
+        )
     return stmt
 
 
@@ -400,6 +411,7 @@ async def list_candidate_regions(
     candidate_status: str | None = None,
     laterality: str | None = None,
     granularity_level: str | None = None,
+    search: str | None = None,
     limit: int = 50,
     offset: int = 0,
 ) -> tuple[list[CandidateBrainRegion], int]:
@@ -412,6 +424,7 @@ async def list_candidate_regions(
         candidate_status=candidate_status,
         laterality=laterality,
         granularity_level=granularity_level,
+        search=search,
     )
     count_q = _apply_candidate_filters(
         select(func.count()).select_from(CandidateBrainRegion),
@@ -422,6 +435,7 @@ async def list_candidate_regions(
         candidate_status=candidate_status,
         laterality=laterality,
         granularity_level=granularity_level,
+        search=search,
     )
     total = int((await session.execute(count_q)).scalar_one())
     rows = (

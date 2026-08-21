@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 720" width="1280" height="720">
+  <g id="background"><rect width="1280" height="720" fill="#FFFFFF"/></g>
+  <g id="header"><text x="56" y="70" font-family="Cambria, SimSun, serif" font-size="34" font-weight="700" fill="#1A365D">Promotion 是唯一正式写入口，Schema 级隔离保护粒度语义</text><text x="56" y="102" font-family="Microsoft YaHei, Arial, sans-serif" font-size="14" fill="#5F6F7F">预览 → 强确认 → 执行；每次晋升都有审计记录</text></g>
+  <g id="architecture-image"><image href="../images/final_kg_layers_backdrop.png" x="56" y="124" width="850" height="566" preserveAspectRatio="xMidYMid meet"/></g>
+  <g id="layer-labels">
+    <rect x="238" y="140" width="628" height="34" rx="8" fill="#1A365D"/><text x="552" y="163" text-anchor="middle" font-family="Microsoft YaHei, Arial, sans-serif" font-size="14" font-weight="700" fill="#FFFFFF">实体：BrainRegion · Function · Circuit · Step · Projection</text>
+    <rect x="238" y="302" width="628" height="34" rx="8" fill="#3182CE"/><text x="552" y="325" text-anchor="middle" font-family="Microsoft YaHei, Arial, sans-serif" font-size="14" font-weight="700" fill="#FFFFFF">关系：12 种标准谓词</text>
+    <rect x="238" y="450" width="628" height="34" rx="8" fill="#38A169"/><text x="552" y="473" text-anchor="middle" font-family="Microsoft YaHei, Arial, sans-serif" font-size="14" font-weight="700" fill="#FFFFFF">查询：final_kg_triples</text>
+  </g>
+  <g id="promotion">
+    <rect x="934" y="136" width="290" height="202" rx="8" fill="#1A365D"/>
+    <text x="962" y="176" font-family="Microsoft YaHei, Arial, sans-serif" font-size="20" font-weight="700" fill="#FFFFFF">Promotion</text>
+    <text x="962" y="220" font-family="Microsoft YaHei, Arial, sans-serif" font-size="18" fill="#FFFFFF">1. 预览映射结果</text>
+    <text x="962" y="258" font-family="Microsoft YaHei, Arial, sans-serif" font-size="18" fill="#FFFFFF">2. 强确认写入</text>
+    <text x="962" y="296" font-family="Microsoft YaHei, Arial, sans-serif" font-size="18" fill="#FFFFFF">3. 写 8 表 + 审计</text>
+  </g>
+  <g id="schemas">
+    <rect x="934" y="364" width="290" height="276" rx="8" fill="#F4F7FA" stroke="#CBD5DF"/>
+    <text x="962" y="404" font-family="Microsoft YaHei, Arial, sans-serif" font-size="20" font-weight="700" fill="#1A365D">五层 Schema</text>
+    <text x="962" y="448" font-family="Consolas, Courier New, monospace" font-size="16" fill="#243447">macro</text>
+    <text x="962" y="484" font-family="Consolas, Courier New, monospace" font-size="16" fill="#243447">meso</text>
+    <text x="962" y="520" font-family="Consolas, Courier New, monospace" font-size="16" fill="#243447">sub</text>
+    <text x="962" y="556" font-family="Consolas, Courier New, monospace" font-size="16" fill="#243447">fine</text>
+    <text x="962" y="592" font-family="Consolas, Courier New, monospace" font-size="16" fill="#243447">molecular</text>
+    <rect x="1060" y="438" width="136" height="158" rx="8" fill="#FFFFFF" stroke="#DD6B20"/><text x="1128" y="476" text-anchor="middle" font-family="Microsoft YaHei, Arial, sans-serif" font-size="14" font-weight="700" fill="#DD6B20">跨粒度仅允许</text><text x="1128" y="512" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" fill="#243447">exact_match</text><text x="1128" y="544" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" fill="#243447">part_of</text><text x="1128" y="576" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" fill="#243447">overlaps</text>
+  </g>
+  <g id="footer"><text x="56" y="700" font-family="Microsoft YaHei, Arial, sans-serif" font-size="11" fill="#8492A0">Schema isolation is a semantic safety boundary, not a storage convenience.</text><text x="1224" y="700" text-anchor="end" font-family="Arial, sans-serif" font-size="11" fill="#8492A0">11</text></g>
+</svg>

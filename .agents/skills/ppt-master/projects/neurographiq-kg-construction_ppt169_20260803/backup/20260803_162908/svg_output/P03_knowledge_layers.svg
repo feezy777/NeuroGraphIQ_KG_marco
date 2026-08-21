@@ -1,0 +1,57 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 720" data-pptx-page-role="content">
+  <defs><filter id="glow"><feGaussianBlur stdDeviation="2" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs>
+  <g id="background" data-pptx-bounds="0 0 1280 720" data-pptx-role="background">
+    <rect width="1280" height="720" fill="#0D1117"/>
+    <line x1="0" y1="108" x2="1280" y2="108" stroke="#212D40" stroke-width="0.5"/>
+    <text x="80" y="700" font-family="Microsoft YaHei" font-size="14" fill="#586069">NeuroGraphIQ KG V3</text>
+  </g>
+  <g id="content" data-pptx-bounds="40 120 1200 560">
+    <rect x="40" y="120" width="4" height="48" fill="#58A6FF" filter="url(#glow)"/>
+    <text x="60" y="155" font-family="Microsoft YaHei" font-weight="bold" font-size="40" fill="#FFFFFF">七层知识体系 × 五层粒度隔离</text>
+
+    <!-- Left: 7-layer stack -->
+    <text x="60" y="210" font-family="Microsoft YaHei" font-size="18" fill="#8B949E">知识体系</text>
+    <g transform="translate(60, 230)">
+      <rect x="0" y="0" width="560" height="38" rx="2" fill="#1A365D"/>
+      <text x="15" y="26" font-family="Microsoft YaHei" font-size="20" fill="#FFFFFF">1. 脑区实体层 — AAL3/Macro96/BNM 等 · 多图谱注册</text>
+      <rect x="0" y="40" width="560" height="38" rx="2" fill="#1C3A6E"/>
+      <text x="15" y="66" font-family="Microsoft YaHei" font-size="20" fill="#FFFFFF">2. 连接层 — 结构连接 / 功能连接 / 效应连接 / 投射</text>
+      <rect x="0" y="80" width="560" height="38" rx="2" fill="#1E4080"/>
+      <text x="15" y="106" font-family="Microsoft YaHei" font-size="20" fill="#FFFFFF">3. 回路层 — 多脑区有序回路 · 步骤分解</text>
+      <rect x="0" y="120" width="560" height="38" rx="2" fill="#204A90"/>
+      <text x="15" y="146" font-family="Microsoft YaHei" font-size="20" fill="#FFFFFF">4. 功能层 — 脑区/连接/回路功能标注</text>
+      <rect x="0" y="160" width="560" height="38" rx="2" fill="#2858A0"/>
+      <text x="15" y="186" font-family="Microsoft YaHei" font-size="20" fill="#FFFFFF">5. 证据层 — 文献→LLM→审核 全链路溯源</text>
+      <rect x="0" y="200" width="560" height="38" rx="2" fill="#3068B0"/>
+      <text x="15" y="226" font-family="Microsoft YaHei" font-size="20" fill="#FFFFFF">6. 三元组层 — S→P→O 统一查询面</text>
+      <rect x="0" y="240" width="560" height="38" rx="2" fill="#3878C0"/>
+      <text x="15" y="266" font-family="Microsoft YaHei" font-size="20" fill="#FFFFFF">7. 映射层 — 跨粒度显式映射 (exact_match/part_of/overlaps)</text>
+    </g>
+
+    <!-- Right: granularity isolation table -->
+    <text x="660" y="210" font-family="Microsoft YaHei" font-size="18" fill="#8B949E">粒度隔离 (PostgreSQL Schema)</text>
+    <g transform="translate(660, 230)">
+      <rect x="0" y="0" width="560" height="38" rx="2" fill="#1C2333" stroke="#58A6FF" stroke-width="1"/>
+      <text x="15" y="26" font-family="Consolas" font-size="18" fill="#58A6FF">macro_clinical</text>
+      <text x="250" y="26" font-family="Microsoft YaHei" font-size="18" fill="#8B949E">AAL3 166 ROI + Macro96 96脑区</text>
+      <rect x="0" y="42" width="560" height="38" rx="2" fill="#1C2333"/>
+      <text x="15" y="68" font-family="Consolas" font-size="18" fill="#79C0FF">meso_anatomical</text>
+      <text x="250" y="68" font-family="Microsoft YaHei" font-size="18" fill="#586069">HCP-MMP, Desikan (预留)</text>
+      <rect x="0" y="84" width="560" height="38" rx="2" fill="#1C2333"/>
+      <text x="15" y="110" font-family="Consolas" font-size="18" fill="#79C0FF">sub_connectivity</text>
+      <text x="250" y="110" font-family="Microsoft YaHei" font-size="18" fill="#586069">Brainnetome (预留)</text>
+      <rect x="0" y="126" width="560" height="38" rx="2" fill="#1C2333"/>
+      <text x="15" y="152" font-family="Consolas" font-size="18" fill="#79C0FF">fine_cyto</text>
+      <text x="250" y="152" font-family="Microsoft YaHei" font-size="18" fill="#586069">Julich-Brain (预留)</text>
+      <rect x="0" y="168" width="560" height="38" rx="2" fill="#1C2333"/>
+      <text x="15" y="194" font-family="Consolas" font-size="18" fill="#79C0FF">molecular_attr</text>
+      <text x="250" y="194" font-family="Microsoft YaHei" font-size="18" fill="#586069">Allen Brain Atlas (预留)</text>
+    </g>
+
+    <!-- Bottom rule -->
+    <g>
+      <rect x="660" y="440" width="560" height="40" rx="2" fill="#1C2333" stroke="#FFA657" stroke-width="1"/>
+      <text x="940" y="466" text-anchor="middle" font-family="Microsoft YaHei" font-size="18" fill="#FFA657">跨粒度关系必须显式 Mapping  禁止名称相似度合并</text>
+    </g>
+  </g>
+</svg>

@@ -65,10 +65,22 @@ class PaperPassageExtraction(BaseModel):
     evidence_level: Literal["direct", "indirect", "interpretive", "background"] = "indirect"
     semantic_confidence: float | None = Field(default=None, ge=0.0, le=1.0)
     supported_components: list[str] = Field(default_factory=list, max_length=12)
+    evidence_dimension: Literal["existence", "function", "mixed"] | None = None
 
 
 class PaperMultiPassageExtraction(BaseModel):
     overall_direction: Literal["supports", "partial", "contradicts", "mixed", "not_found"]
     paper_relevance: float = Field(ge=0.0, le=1.0)
     assessment: str = Field(default="", max_length=1000)
+    evidence_dimension: Literal["existence", "function", "mixed"] | None = None
     passages: list[PaperPassageExtraction] = Field(default_factory=list, max_length=10)
+
+
+class PaperRelevanceItem(BaseModel):
+    pmid: str = Field(min_length=1, max_length=64)
+    relevance: float = Field(ge=0.0, le=1.0)
+    reason: str = Field(default="", max_length=500)
+
+
+class PaperRelevanceBatch(BaseModel):
+    items: list[PaperRelevanceItem] = Field(default_factory=list, max_length=20)

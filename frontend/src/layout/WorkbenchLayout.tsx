@@ -19,7 +19,6 @@ import { useWorkbenchLog } from '../logging/useWorkbenchLog'
 import { GranularitySwitcher } from '../components/GranularitySwitcher'
 import { BottomLogConsole } from '../components/BottomLogConsole'
 import { TaskCenterDropdown } from '../components/TaskCenterDropdown'
-import { navigateToEvidenceCandidates } from '../pages/evidence-center/evidenceCenterUrl'
 import { useTaskDetailModal } from '../components/TaskDetailModal'
 
 const NAV_ITEMS = [
@@ -29,7 +28,6 @@ const NAV_ITEMS = [
   { path: '/import-batches', labelKey: 'nav.importBatches', icon: Package },
   { path: '/llm-extraction', labelKey: 'nav.llmExtraction', icon: Sparkles },
   { path: '/data-center', labelKey: 'nav.dataCenter', icon: Layers },
-  { path: '/evidence-center', labelKey: 'nav.evidenceCenter', icon: FileText },
   { path: '/ontology-center', labelKey: 'nav.ontologyCenter', icon: BookOpen },
   { path: '/validation-center', labelKey: 'nav.validationCenter', icon: ShieldCheck },
   { path: '/task-center', labelKey: 'nav.taskCenter', icon: MonitorPlay },
@@ -60,7 +58,10 @@ export function WorkbenchLayout({ currentPath, children }: WorkbenchLayoutProps)
           <TaskCenterDropdown
             onViewAll={() => navigate('/task-center')}
             onViewTask={openTask}
-            onOpenEvidenceWorkbench={(task) => navigateToEvidenceCandidates({ taskId: task.id })}
+            onOpenEvidenceWorkbench={(task) => {
+              sessionStorage.setItem('evidence-center.initial-queue', JSON.stringify({ items: [], taskId: task.id ?? null }))
+              window.location.hash = `#/validation-center?tab=paper_evidence&module=candidates&task_id=${task.id}`
+            }}
           />
           <GranularitySwitcher />
           <span className="topbar-version">v3.2.9-mvp1</span>

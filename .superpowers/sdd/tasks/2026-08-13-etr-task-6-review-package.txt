@@ -1,0 +1,289 @@
+# Task 6 Review Package (BASE 9d30427 → HEAD c43ba7b)
+c43ba7b feat(evidence-center): 已完成折叠区 + 两步确认回退重新审查(reopen 端点接线)
+
+## STAT
+ frontend/src/api/endpoints.ts                      |  5 ++
+ .../components/TaskItemQueue.test.tsx              | 60 ++++++++++++++++++
+ .../evidence-center/components/TaskItemQueue.tsx   | 73 +++++++++++++++++++++-
+ frontend/src/styles.css                            | 12 ++++
+ 4 files changed, 148 insertions(+), 2 deletions(-)
+
+## DIFF
+diff --git a/frontend/src/api/endpoints.ts b/frontend/src/api/endpoints.ts
+index 391c25d..ceb0789 100644
+--- a/frontend/src/api/endpoints.ts
++++ b/frontend/src/api/endpoints.ts
+@@ -5611,20 +5611,25 @@ export const cancelPaperEvidenceTask = (taskId: string) =>
+ export const retryPaperEvidenceTask = (taskId: string) =>
+   postJson<{ task_id: string; retried: number }>(`/api/ontology/evidence/batch/${taskId}/retry-failed`)
+ 
+ export const completePaperEvidenceTaskItem = (taskId: string, itemId: string, evidenceId?: string | null) =>
+   postJson<{ task_id: string; item_id: string; status: string; evidence_id: string | null }>(
+     `/api/ontology/evidence/batch/${taskId}/items/${itemId}/reviewed`,
+     undefined,
+     { evidence_id: evidenceId ?? undefined },
+   )
+ 
++export const reopenPaperEvidenceTaskItem = (taskId: string, itemId: string) =>
++  postJson<{ task_id: string; item_id: string; status: string }>(
++    `/api/ontology/evidence/batch/${taskId}/items/${itemId}/reopen`,
++  )
++
+ export const getTaskItemDraft = (itemId: string) =>
+   getJson<{
+     item_id: string
+     status: string
+     preprocess_outcome: string | null
+     review_draft: Record<string, unknown> | null
+     candidate_papers: Array<Record<string, unknown>> | null
+   }>(`/api/ontology/evidence/batch/items/${itemId}/draft`)
+ 
+ // 后端仅注册 GET + PUT(见 backend/app/routers/ontology.py),POST 会 405,故用 putJson
+diff --git a/frontend/src/pages/evidence-center/components/TaskItemQueue.test.tsx b/frontend/src/pages/evidence-center/components/TaskItemQueue.test.tsx
+index fc08846..8741c12 100644
+--- a/frontend/src/pages/evidence-center/components/TaskItemQueue.test.tsx
++++ b/frontend/src/pages/evidence-center/components/TaskItemQueue.test.tsx
+@@ -104,11 +104,71 @@ describe('TaskItemQueue(待处理区)', () => {
+     // 显式设置重试后的成功响应(不依赖前序测试遗留的 mock 实现)
+     vi.mocked(endpoints.listPaperEvidenceTaskItems).mockResolvedValue({
+       items: [makeItem({ id: 'r', target_id: 'c-done', status: 'completed' })],
+     })
+     window.location.hash = '#/evidence-center?module=tasks&task_id=t1'
+     render(<EvidenceCenterProvider><TaskItemQueue /></EvidenceCenterProvider>)
+     await waitFor(() => expect(screen.getByText(/队列加载失败/)).toBeTruthy())
+     fireEvent.click(screen.getByRole('button', { name: '重试' }))
+     await waitFor(() => expect(screen.getByTestId('evidence-queue-empty')).toBeTruthy())
+   })
++
++  it('已完成折叠区:展开显示 completed 条目,按完成时间倒序', async () => {
++    vi.mocked(endpoints.listPaperEvidenceTaskItems).mockResolvedValue({
++      items: [
++        makeItem({ id: 'a', target_id: 'done-old', label: 'done-old', status: 'completed', updated_at: '2026-08-09T00:00:00Z' }),
++        makeItem({ id: 'b', target_id: 'done-new', label: 'done-new', status: 'completed', updated_at: '2026-08-12T00:00:00Z' }),
++        makeItem({ id: 'c', target_id: 'live', label: 'live', status: 'awaiting_review', current_confidence: 0.5 }),
++      ],
++    })
++    window.location.hash = '#/evidence-center?module=tasks&task_id=t1'
++    const { container } = render(<EvidenceCenterProvider><TaskItemQueue /></EvidenceCenterProvider>)
++    await waitFor(() => expect(screen.getByText('live')).toBeTruthy())
++    fireEvent.click(screen.getByTestId('evidence-queue-done-toggle'))
++    await waitFor(() => expect(screen.getByText('done-new')).toBeTruthy())
++    const doneIds = Array.from(container.querySelectorAll('[data-testid^="evidence-queue-done-item-"]'))
++      .map(el => (el as HTMLElement).dataset.testid ?? '')
++    expect(doneIds).toEqual(['evidence-queue-done-item-done-new', 'evidence-queue-done-item-done-old'])
++  })
++
++  it('回退两步确认:第一次点击变确认态,第二次调用 reopen 并刷新队列', async () => {
++    vi.mocked(endpoints.listPaperEvidenceTaskItems)
++      .mockResolvedValueOnce({
++        items: [
++          makeItem({ id: 'a', target_id: 'live', label: 'live', status: 'awaiting_review', current_confidence: 0.5 }),
++          makeItem({ id: 'b', target_id: 'done-1', label: 'done-1', status: 'completed', updated_at: '2026-08-12T00:00:00Z' }),
++        ],
++      })
++      .mockResolvedValueOnce({
++        items: [
++          makeItem({ id: 'a', target_id: 'live', label: 'live', status: 'awaiting_review', current_confidence: 0.5 }),
++          makeItem({ id: 'b', target_id: 'done-1', label: 'done-1', status: 'awaiting_review', current_confidence: 0.6 }),
++        ],
++      })
++    window.location.hash = '#/evidence-center?module=tasks&task_id=t1'
++    render(<EvidenceCenterProvider><TaskItemQueue /></EvidenceCenterProvider>)
++    await waitFor(() => expect(screen.getByText('live')).toBeTruthy())
++    fireEvent.click(screen.getByTestId('evidence-queue-done-toggle'))
++    const reopenBtn = () => screen.getByTestId('evidence-queue-reopen-done-1')
++    fireEvent.click(reopenBtn())
++    expect(reopenBtn().textContent).toContain('确认回退?')
++    fireEvent.click(reopenBtn())
++    await waitFor(() => expect(vi.mocked(endpoints.reopenPaperEvidenceTaskItem)).toHaveBeenCalledWith('t1', 'b'))
++    await waitFor(() => expect(screen.getAllByTestId('evidence-queue-item-done-1')).toHaveLength(1))
++  })
++
++  it('回退接口失败 → 错误提示,已完成区不变', async () => {
++    vi.mocked(endpoints.listPaperEvidenceTaskItems).mockResolvedValue({
++      items: [makeItem({ id: 'b', target_id: 'done-1', status: 'completed', updated_at: '2026-08-12T00:00:00Z' })],
++    })
++    vi.mocked(endpoints.reopenPaperEvidenceTaskItem).mockRejectedValueOnce(new Error('boom'))
++    window.location.hash = '#/evidence-center?module=tasks&task_id=t1'
++    render(<EvidenceCenterProvider><TaskItemQueue /></EvidenceCenterProvider>)
++    await waitFor(() => expect(screen.getByTestId('evidence-queue-done-toggle')).toBeTruthy())
++    fireEvent.click(screen.getByTestId('evidence-queue-done-toggle'))
++    const btn = () => screen.getByTestId('evidence-queue-reopen-done-1')
++    fireEvent.click(btn())
++    fireEvent.click(btn())
++    await waitFor(() => expect(screen.getByText(/回退失败/)).toBeTruthy())
++    expect(screen.getByTestId('evidence-queue-done-item-done-1')).toBeTruthy()
++  })
+ })
+diff --git a/frontend/src/pages/evidence-center/components/TaskItemQueue.tsx b/frontend/src/pages/evidence-center/components/TaskItemQueue.tsx
+index 2c276c2..92cbff6 100644
+--- a/frontend/src/pages/evidence-center/components/TaskItemQueue.tsx
++++ b/frontend/src/pages/evidence-center/components/TaskItemQueue.tsx
+@@ -1,13 +1,17 @@
+ import { useCallback, useEffect, useMemo, useState } from 'react'
+-import { Inbox } from 'lucide-react'
+-import { listPaperEvidenceTaskItems, type PaperEvidenceTaskItem } from '../../../api/endpoints'
++import { ChevronDown, ChevronRight, Inbox } from 'lucide-react'
++import {
++  listPaperEvidenceTaskItems,
++  reopenPaperEvidenceTaskItem,
++  type PaperEvidenceTaskItem,
++} from '../../../api/endpoints'
+ import { useEvidenceCenter } from '../EvidenceCenterContext'
+ import { EmptyState } from './EmptyState'
+ import { TASK_STATUS_LABELS, taskStatusTone } from './taskStatus'
+ import { TARGET_TYPE_GROUPS, groupOf, isUnfinishedItem, sortByConfidenceAsc } from './taskItemQueueUtils'
+ 
+ /** 队列条目卡片(待处理区):名称/类型/置信度大字/状态/AI 方向;当前对象高亮 */
+ function QueueItemCard({ item, selected, onOpen }: { item: PaperEvidenceTaskItem; selected: boolean; onOpen: () => void }) {
+   const conf = item.current_confidence
+   return (
+     <div
+@@ -35,20 +39,24 @@ function QueueItemCard({ item, selected, onOpen }: { item: PaperEvidenceTaskItem
+ }
+ 
+ /** 右栏待处理队列:置信度升序 + 回路/连接/功能筛选(已完成折叠区在 Task 6 追加) */
+ export function TaskItemQueue() {
+   const { state, openTarget } = useEvidenceCenter()
+   const taskId = state.taskId
+   const [items, setItems] = useState<PaperEvidenceTaskItem[]>([])
+   const [loading, setLoading] = useState(false)
+   const [error, setError] = useState<string | null>(null)
+   const [group, setGroup] = useState<string>('all')
++  const [doneOpen, setDoneOpen] = useState(false)
++  const [reopeningId, setReopeningId] = useState<string | null>(null)
++  const [confirmId, setConfirmId] = useState<string | null>(null)
++  const [actionError, setActionError] = useState<string | null>(null)
+ 
+   const loadItems = useCallback(async () => {
+     if (!taskId) { setItems([]); return }
+     setLoading(true)
+     setError(null)
+     try {
+       const r = await listPaperEvidenceTaskItems(taskId, { limit: 200 })
+       setItems(r.items)
+     } catch (err) {
+       setError(err instanceof Error ? err.message : String(err))
+@@ -58,20 +66,46 @@ export function TaskItemQueue() {
+   }, [taskId])
+ 
+   useEffect(() => { void loadItems() }, [loadItems])
+ 
+   const unfinished = useMemo(() => sortByConfidenceAsc(items.filter(isUnfinishedItem)), [items])
+   const filtered = useMemo(
+     () => (group === 'all' ? unfinished : unfinished.filter(it => groupOf(it.target_type) === group)),
+     [unfinished, group],
+   )
+ 
++  const doneItems = useMemo(
++    () => items.filter(it => it.status === 'completed').sort((a, b) => (b.updated_at ?? '').localeCompare(a.updated_at ?? '')),
++    [items],
++  )
++
++  const handleReopen = useCallback(async (item: PaperEvidenceTaskItem) => {
++    if (confirmId !== item.id) {
++      setConfirmId(item.id)
++      window.setTimeout(() => {
++        setConfirmId(prev => (prev === item.id ? null : prev))
++      }, 3000)
++      return
++    }
++    setConfirmId(null)
++    setReopeningId(item.id)
++    setActionError(null)
++    try {
++      await reopenPaperEvidenceTaskItem(taskId ?? '', item.id)
++      await loadItems()
++    } catch (err) {
++      setActionError(err instanceof Error ? err.message : String(err))
++    } finally {
++      setReopeningId(null)
++    }
++  }, [confirmId, taskId, loadItems])
++
+   return (
+     <div className="evidence-task-queue" data-testid="evidence-task-queue">
+       <div className="evidence-task-queue-head">
+         <h4>待处理队列</h4>
+         <button type="button" className="btn btn-xs" onClick={() => void loadItems()}>刷新</button>
+       </div>
+ 
+       <div className="evidence-queue-filter" data-testid="evidence-queue-filter">
+         <button
+           type="button"
+@@ -114,13 +148,48 @@ export function TaskItemQueue() {
+             <QueueItemCard
+               key={item.id}
+               item={item}
+               selected={state.targetType === item.target_type && state.targetId === item.target_id}
+               onOpen={() => openTarget(item.target_type, item.target_id, 'tasks')}
+             />
+           ))}
+           {items.length >= 200 && <div className="ew-meta">仅显示前 200 条(按优先级截断)</div>}
+         </div>
+       )}
++      <div className="evidence-queue-done" data-testid="evidence-queue-done">
++        <button
++          type="button"
++          className="evidence-queue-done-toggle"
++          data-testid="evidence-queue-done-toggle"
++          onClick={() => setDoneOpen(o => !o)}
++        >
++          <span>已完成 {doneItems.length}</span>
++          {doneOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
++        </button>
++        {doneOpen && (
++          <>
++            {actionError && <div className="ew-meta" style={{ color: 'var(--danger)' }}>回退失败:{actionError}</div>}
++            {doneItems.length === 0 && <span className="ew-meta">暂无已完成对象</span>}
++            {doneItems.map(item => (
++              <div key={item.id} className="evidence-queue-done-item" data-testid={`evidence-queue-done-item-${item.target_id}`}>
++                <div className="evidence-queue-done-main">
++                  <span className="evidence-conn-card-label">{item.label || item.target_id}</span>
++                  <span className="evidence-conn-card-type">{item.target_type}</span>
++                  <span className="evidence-task-chip evidence-task-chip-ok">已完成</span>
++                </div>
++                <button
++                  type="button"
++                  className="btn btn-xs"
++                  data-testid={`evidence-queue-reopen-${item.target_id}`}
++                  disabled={reopeningId === item.id}
++                  onClick={() => void handleReopen(item)}
++                >
++                  {reopeningId === item.id ? '回退中…' : (confirmId === item.id ? '确认回退?' : '回退重新审查')}
++                </button>
++              </div>
++            ))}
++          </>
++        )}
++      </div>
+     </div>
+   )
+ }
+diff --git a/frontend/src/styles.css b/frontend/src/styles.css
+index 9ec5fef..a040388 100644
+--- a/frontend/src/styles.css
++++ b/frontend/src/styles.css
+@@ -12525,10 +12525,22 @@ input[type="range"]::-webkit-slider-thumb {
+ .evidence-task-queue-head { display: flex; align-items: center; justify-content: space-between; }
+ .evidence-task-queue-head h4 { margin: 0; font-size: 14px; }
+ .evidence-queue-filter { display: flex; flex-wrap: wrap; gap: 6px; }
+ .evidence-queue-filter-btn {
+   padding: 3px 10px; border-radius: 999px; border: 1px solid var(--border);
+   background: var(--white); font-size: 12px; color: var(--text-muted); cursor: pointer;
+ }
+ .evidence-queue-filter-btn-active { border-color: var(--primary); color: var(--primary); background: var(--bg-soft); }
+ .evidence-queue-list { display: flex; flex-direction: column; gap: 8px; }
+ .evidence-conn-card-selected { border-color: var(--primary); box-shadow: 0 0 0 1px var(--primary) inset; }
++
++/* ── 佐证任务右栏:已完成折叠区 ── */
++.evidence-queue-done { border-top: 1px dashed var(--border); padding-top: 8px; display: flex; flex-direction: column; gap: 8px; }
++.evidence-queue-done-toggle {
++  display: flex; align-items: center; gap: 4px; border: none; background: none;
++  color: var(--text-muted); font-size: 12px; cursor: pointer; padding: 0;
++}
++.evidence-queue-done-item {
++  display: flex; align-items: center; justify-content: space-between; gap: 8px;
++  padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--white);
++}
++.evidence-queue-done-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; }

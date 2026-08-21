@@ -1,0 +1,337 @@
+67da6d7 fix(evidence-center): 晋升后标记任务项完成 + 返回候选时同步落盘草稿
+===DIFF===
+diff --git a/frontend/src/pages/evidence-center/modules/EvidencePromotionModule.test.tsx b/frontend/src/pages/evidence-center/modules/EvidencePromotionModule.test.tsx
+index 795b439..a215abd 100644
+--- a/frontend/src/pages/evidence-center/modules/EvidencePromotionModule.test.tsx
++++ b/frontend/src/pages/evidence-center/modules/EvidencePromotionModule.test.tsx
+@@ -1,28 +1,31 @@
+ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
++import { useEffect } from 'react'
+ import * as endpoints from '../../../api/endpoints'
+ import type { PaperEvidenceItem } from '../../../api/endpoints'
+-import { EvidenceCenterProvider } from '../EvidenceCenterContext'
+-import type { EvidenceLevel, WorkbenchPassage } from '../components/types'
++import { EvidenceCenterProvider, useEvidenceCenter } from '../EvidenceCenterContext'
++import type { EvidenceLevel, QueueStatus, WorkbenchPassage } from '../components/types'
+ import { EvidencePromotionModule } from './EvidencePromotionModule'
+ 
+ vi.mock('../../../api/endpoints', () => ({
+   getEvidenceTarget: vi.fn(),
+   attachPaperEvidencePreview: vi.fn(),
+   attachPaperEvidence: vi.fn(),
++  completePaperEvidenceTaskItem: vi.fn(),
+   listPaperEvidence: vi.fn(),
+   rollbackPaperEvidence: vi.fn(),
+ }))
+ 
+ const DRAFT_KEY = 'evidence-center.review-draft.r1-r2'
+ const HASH = '#/evidence-center?module=promotion&task_id=t1&target_type=connection&target_id=r1-r2'
++const HASH_NO_TASK = '#/evidence-center?module=promotion&target_type=connection&target_id=r1-r2'
+ 
+ const PASSAGE_VERIFIED: WorkbenchPassage = {
+   hash: 'h1',
+   paper_id: 'paper-1',
+   paper_passage_id: 'pp1',
+   source_scope: 'abstract',
+   section_title: null,
+   paragraph_index: 0,
+   paragraph_id: null,
+   passage: 'We observed that R1 projects to R2 in the macaque.',
+@@ -152,20 +155,37 @@ const EVIDENCE_INVALIDATED: PaperEvidenceItem = {
+ 
+ function renderModule(hash = HASH) {
+   window.location.hash = hash
+   return render(
+     <EvidenceCenterProvider>
+       <EvidencePromotionModule />
+     </EvidenceCenterProvider>,
+   )
+ }
+ 
++/** 模拟候选模块已把带 taskItemId 的队列同步到 context */
++function QueueSeeder() {
++  const { setQueue } = useEvidenceCenter()
++  useEffect(() => {
++    setQueue([{
++      target_type: 'connection',
++      target_id: 'r1-r2',
++      label: 'R1 → R2 连接',
++      confidence: 0.7,
++      status: 'awaiting_review' as QueueStatus,
++      evidenceCount: 1,
++      taskItemId: 'item-1',
++    }])
++  }, [setQueue])
++  return null
++}
++
+ describe('EvidencePromotionModule', () => {
+   afterEach(() => {
+     cleanup()
+     window.location.hash = ''
+     sessionStorage.clear()
+   })
+ 
+   beforeEach(() => {
+     vi.clearAllMocks()
+     sessionStorage.setItem(DRAFT_KEY, JSON.stringify(DRAFT))
+@@ -255,20 +275,62 @@ describe('EvidencePromotionModule', () => {
+     const confirmBtn = screen.getByTestId('ew-confirm-attach') as HTMLButtonElement
+     await waitFor(() => expect(confirmBtn.disabled).toBe(false))
+     fireEvent.click(confirmBtn)
+     await waitFor(() => expect(endpoints.attachPaperEvidence).toHaveBeenCalled())
+     await waitFor(() => expect(endpoints.listPaperEvidence).toHaveBeenCalledTimes(2))
+     expect(sessionStorage.getItem(DRAFT_KEY)).toBeNull()
+     // 待晋升组消失(草稿已清)
+     expect(screen.queryByText('人工核对通过，允许晋升')).toBeNull()
+   })
+ 
++  it('晋升成功:有 taskId 且 queue 带 taskItemId 时调用 completePaperEvidenceTaskItem 标记后端完成', async () => {
++    // 标记接口失败不阻断主流程:先 mock reject,再断言列表仍刷新、成功消息仍出现
++    vi.mocked(endpoints.completePaperEvidenceTaskItem).mockRejectedValueOnce(new Error('boom'))
++    window.location.hash = HASH
++    render(
++      <EvidenceCenterProvider>
++        <QueueSeeder />
++        <EvidencePromotionModule />
++      </EvidenceCenterProvider>,
++    )
++    await waitFor(() => expect(endpoints.attachPaperEvidencePreview).toHaveBeenCalled())
++    fireEvent.click(screen.getAllByRole('button', { name: '确认晋升' })[0])
++    const confirmBtn = screen.getByTestId('ew-confirm-attach') as HTMLButtonElement
++    await waitFor(() => expect(confirmBtn.disabled).toBe(false))
++    fireEvent.click(confirmBtn)
++    await waitFor(() => expect(endpoints.attachPaperEvidence).toHaveBeenCalled())
++    await waitFor(() =>
++      expect(endpoints.completePaperEvidenceTaskItem).toHaveBeenCalledWith('t1', 'item-1', 'ev-new'),
++    )
++    // 尽管标记接口 reject,主流程仍完成:列表刷新 + 成功消息
++    await waitFor(() => expect(endpoints.listPaperEvidence).toHaveBeenCalledTimes(2))
++    expect(screen.getByText('证据已晋升并应用到知识对象')).toBeTruthy()
++    expect(sessionStorage.getItem(DRAFT_KEY)).toBeNull()
++  })
++
++  it('晋升成功:URL 无 task_id 时不调用 completePaperEvidenceTaskItem', async () => {
++    window.location.hash = HASH_NO_TASK
++    render(
++      <EvidenceCenterProvider>
++        <QueueSeeder />
++        <EvidencePromotionModule />
++      </EvidenceCenterProvider>,
++    )
++    await waitFor(() => expect(endpoints.attachPaperEvidencePreview).toHaveBeenCalled())
++    fireEvent.click(screen.getAllByRole('button', { name: '确认晋升' })[0])
++    const confirmBtn = screen.getByTestId('ew-confirm-attach') as HTMLButtonElement
++    await waitFor(() => expect(confirmBtn.disabled).toBe(false))
++    fireEvent.click(confirmBtn)
++    await waitFor(() => expect(endpoints.attachPaperEvidence).toHaveBeenCalled())
++    expect(endpoints.completePaperEvidenceTaskItem).not.toHaveBeenCalled()
++  })
++
+   it('已晋升:点击记录打开 EvidenceDetailDrawer;「回滚」→ ConfirmDialog 输入原因 → rollbackPaperEvidence', async () => {
+     renderModule()
+     await waitFor(() => expect(screen.getByText('已晋升')).toBeTruthy())
+     fireEvent.click(screen.getAllByTestId('promotion-evidence-row')[0])
+     await waitFor(() => expect(screen.getByTestId('evidence-detail-drawer')).toBeTruthy())
+     // drawer 展示 reviewer 决策/备注/claim snapshot
+     expect(screen.getByText('支持正式入库')).toBeTruthy()
+     expect(screen.getAllByText(/直接证据/).length).toBeGreaterThan(0)
+     // 回滚流程:原因输入 + 确认
+     fireEvent.click(screen.getByRole('button', { name: '回滚' }))
+diff --git a/frontend/src/pages/evidence-center/modules/EvidencePromotionModule.tsx b/frontend/src/pages/evidence-center/modules/EvidencePromotionModule.tsx
+index cc5827f..72a2354 100644
+--- a/frontend/src/pages/evidence-center/modules/EvidencePromotionModule.tsx
++++ b/frontend/src/pages/evidence-center/modules/EvidencePromotionModule.tsx
+@@ -1,14 +1,15 @@
+ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+ import {
+   attachPaperEvidence,
+   attachPaperEvidencePreview,
++  completePaperEvidenceTaskItem,
+   getEvidenceTarget,
+   listPaperEvidence,
+   rollbackPaperEvidence,
+   type AttachPreviewResponse,
+   type EvidenceTargetDto,
+   type PaperEvidenceItem,
+ } from '../../../api/endpoints'
+ import { useEvidenceCenter } from '../EvidenceCenterContext'
+ import { ClaimPanel } from '../components/ClaimPanel'
+ import { EvidenceDetailDrawer } from '../components/EvidenceDetailDrawer'
+@@ -157,21 +158,21 @@ export function EvidencePromotionModule() {
+   }, [targetType, targetId, draft, selectedPassages])
+ 
+   useEffect(() => { void runPreview() }, [runPreview])
+ 
+   // ─── 晋升:PromotionDialog 确认 → attach → 清 draft + 刷新列表 + 更新 queue ───
+   const handlePromote = useCallback(async () => {
+     if (!targetType || !targetId || !draft) return
+     setAttachBusy(true)
+     setMessage(null)
+     try {
+-      await attachPaperEvidence({
++      const resp = await attachPaperEvidence({
+         target_type: targetType,
+         target_id: targetId,
+         pmid: draft.pmid,
+         direction: draft.reviewerDirection ?? 'supports',
+         evidence_level: draft.reviewerEvidenceLevel ?? 'indirect',
+         model_direction: draft.modelDirection ?? null,
+         model_assessment: draft.modelAssessment ?? null,
+         reviewer_note: draft.note ?? null,
+         reviewer_confidence: parseFloat(draft.reviewerConfidence ?? '0.8') || 0,
+         passages: selectedPassages.map(p => ({
+@@ -187,27 +188,38 @@ export function EvidencePromotionModule() {
+         })),
+       })
+       sessionStorage.removeItem(`${DRAFT_PREFIX}${targetId}`)
+       setDraft(null)
+       setPreview(null)
+       setConfirmOpen(false)
+       setMessage('证据已晋升并应用到知识对象')
+       setQueue(queue.map(q =>
+         q.target_type === targetType && q.target_id === targetId ? { ...q, status: 'completed' } : q,
+       ))
++      // 标记后端 task item 完成(镜像旧 Modal 条件调用),失败静默,不阻断晋升主流程
++      if (state.taskId) {
++        const entry = queue.find(q => q.target_type === targetType && q.target_id === targetId)
++        if (entry?.taskItemId) {
++          try {
++            await completePaperEvidenceTaskItem(state.taskId, entry.taskItemId, resp.evidence_id)
++          } catch {
++            // 标记失败不影响已入库证据
++          }
++        }
++      }
+       await loadList()
+     } catch (err) {
+       setMessage(`晋升失败：${err instanceof Error ? err.message : String(err)}`)
+     } finally {
+       setAttachBusy(false)
+     }
+-  }, [targetType, targetId, draft, selectedPassages, queue, setQueue, loadList])
++  }, [targetType, targetId, draft, selectedPassages, queue, setQueue, loadList, state.taskId])
+ 
+   // ─── 回滚:抽屉内 ConfirmDialog 输入原因 → rollback → 刷新列表 ───
+   const handleRollback = useCallback(async (reason: string) => {
+     const ev = detailEvidence
+     if (!ev) return
+     setRollbackBusy(true)
+     setMessage(null)
+     try {
+       await rollbackPaperEvidence(ev.evidence_id, reason)
+       setDetailEvidence(null)
+diff --git a/frontend/src/pages/evidence-center/modules/EvidenceReviewModule.test.tsx b/frontend/src/pages/evidence-center/modules/EvidenceReviewModule.test.tsx
+index 01a0873..2b3f86e 100644
+--- a/frontend/src/pages/evidence-center/modules/EvidenceReviewModule.test.tsx
++++ b/frontend/src/pages/evidence-center/modules/EvidenceReviewModule.test.tsx
+@@ -193,20 +193,34 @@ describe('EvidenceReviewModule', () => {
+     const raw = sessionStorage.getItem(DRAFT_KEY)
+     expect(raw).toBeTruthy()
+     expect(JSON.parse(raw!).passages.length).toBe(2)
+     // 重新进入 review 模块 → 从 draft 恢复
+     cleanup()
+     renderModule()
+     await waitFor(() => expect(screen.getByText('We observed that R1 projects to R2 in the macaque.')).toBeTruthy())
+     expect(screen.getByText('AI 推荐：支持')).toBeTruthy()
+   })
+ 
++  it('「返回证据候选」在 debounce(500ms)窗口内同步落盘最后编辑(草稿不丢失)', async () => {
++    renderModule()
++    await waitFor(() => expect(screen.getByText('We observed that R1 projects to R2 in the macaque.')).toBeTruthy())
++    // 修改备注(触发 debounce 重排 500ms 定时器)
++    const note = screen.getByPlaceholderText('为什么接受/调整方向/修改组件等（可选）') as HTMLTextAreaElement
++    fireEvent.change(note, { target: { value: '最新人工备注' } })
++    // 立即返回(不等待 debounce 触发)—— handleBack 必须同步落盘
++    fireEvent.click(screen.getByRole('button', { name: '返回证据候选' }))
++    await waitFor(() => expect(window.location.hash).toContain('module=candidates'))
++    const raw = sessionStorage.getItem(DRAFT_KEY)
++    expect(raw).toBeTruthy()
++    expect(JSON.parse(raw!).note).toBe('最新人工备注')
++  })
++
+   it('AI 推荐与人工确认视觉:modelDirection 灰字 + 人工方向 radio 独立高亮', async () => {
+     const { container } = renderModule()
+     await waitFor(() => expect(screen.getByText('AI 推荐：支持')).toBeTruthy())
+     const badge = container.querySelector('.ew-ai-recommend')
+     expect(badge).toBeTruthy()
+     expect(badge!.textContent).toBe('AI 推荐：支持')
+     // 人工方向 radio 独立于 AI 推荐存在,当前选择高亮
+     const radios = container.querySelectorAll('input[name="dir"]')
+     expect(radios.length).toBe(5)
+     const checked = [...radios].find(r => (r as HTMLInputElement).checked) as HTMLInputElement
+diff --git a/frontend/src/pages/evidence-center/modules/EvidenceReviewModule.tsx b/frontend/src/pages/evidence-center/modules/EvidenceReviewModule.tsx
+index 0b62e4b..00d25f9 100644
+--- a/frontend/src/pages/evidence-center/modules/EvidenceReviewModule.tsx
++++ b/frontend/src/pages/evidence-center/modules/EvidenceReviewModule.tsx
+@@ -179,27 +179,40 @@ export function EvidenceReviewModule() {
+     paperTitle,
+     pmid,
+     doi,
+     translations,
+     reviewerDirection: direction,
+     reviewerEvidenceLevel: evidenceLevel,
+     reviewerConfidence: confidence,
+     note,
+   }), [passages, modelDirection, modelAssessment, paperTitle, pmid, doi, translations, direction, evidenceLevel, confidence, note])
+ 
++  /** 同步落盘当前草稿(debounce 定时器与退出路径共用,保证草稿不丢失) */
++  const persistDraft = useCallback(() => {
++    if (!targetId || passages.length === 0) return
++    sessionStorage.setItem(`${DRAFT_PREFIX}${targetId}`, JSON.stringify(buildDraft()))
++  }, [targetId, passages.length, buildDraft])
++
+   useEffect(() => {
+     if (!targetId || passages.length === 0) return
+-    const t = setTimeout(() => {
+-      sessionStorage.setItem(`${DRAFT_PREFIX}${targetId}`, JSON.stringify(buildDraft()))
+-    }, 500)
++    const t = setTimeout(() => persistDraft(), 500)
+     return () => clearTimeout(t)
+-  }, [targetId, buildDraft])
++  }, [targetId, passages.length, persistDraft])
++
++  // 模块卸载/切换时同步落盘最后一次编辑(绕过 debounce 清理窗口)
++  const persistDraftRef = useRef(persistDraft)
++  useEffect(() => {
++    persistDraftRef.current = persistDraft
++  })
++  useEffect(() => {
++    return () => { persistDraftRef.current() }
++  }, [])
+ 
+   // ─── 片段操作 ───
+   const translatePassage = useCallback(async (hash: string, text: string) => {
+     try {
+       const r = await translateEvidenceText({ text })
+       setTranslations(t => ({ ...t, [hash]: r.translated }))
+     } catch (err) {
+       setMessage(`翻译失败：${err instanceof Error ? err.message : String(err)}`)
+     }
+   }, [])
+@@ -226,22 +239,23 @@ export function EvidenceReviewModule() {
+       setMessage('重新截取已通过原文校验')
+       return true
+     } catch (err) {
+       setMessage(`重新截取失败：${err instanceof Error ? err.message : String(err)}`)
+       return false
+     }
+   }, [passages, updatePassage])
+ 
+   // ─── 顶部操作 ───
+   const handleBack = useCallback(() => {
++    persistDraft()
+     if (targetType && targetId) openTarget(targetType, targetId, 'candidates')
+-  }, [targetType, targetId, openTarget])
++  }, [targetType, targetId, openTarget, persistDraft])
+ 
+   const taskItem = queue.find(q => q.target_type === targetType && q.target_id === targetId)
+ 
+   const handleSaveDraft = useCallback(async () => {
+     if (!targetId) return
+     const draft = buildDraft()
+     sessionStorage.setItem(`${DRAFT_PREFIX}${targetId}`, JSON.stringify(draft))
+     if (taskItem?.taskItemId) {
+       setSaveState('saving')
+       try {

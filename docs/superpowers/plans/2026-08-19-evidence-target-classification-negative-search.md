@@ -140,7 +140,7 @@ def classify_target(region_name_cn: str | None, region_name_en: str | None) -> s
 - [ ] **Step 4: 运行确认通过**
 
 Run: `cd backend && ./.venv/Scripts/python.exe -m pytest tests/test_evidence_target_classifier.py -q`
-Expected: 11 passed
+Expected: 10 passed(表驱动补测后 11)
 
 - [ ] **Step 5: Commit**
 

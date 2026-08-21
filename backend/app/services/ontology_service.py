@@ -499,12 +499,50 @@ async def merge_term(
     )
     grounding_count = grounding_result.rowcount or 0
 
+    # P1.6: capture affected relation ids before redirect so we can project
+    affected_ids: list[uuid.UUID] = []
+    for model in TERM_TABLE_BY_TYPE.values():
+        affected_ids.extend(
+            (await session.execute(select(model.id).where(model.term_id == source_id))).scalars().all()
+        )
+
     business_updated = 0
     for model in TERM_TABLE_BY_TYPE.values():
         result = await session.execute(
             update(model).where(model.term_id == source_id).values(term_id=target_id)
         )
         business_updated += result.rowcount or 0
+
+    if affected_ids:
+        from app.services.function_triple_projection_service import (
+            project_changed_function_relations,
+        )
+
+        await project_changed_function_relations(
+            session, affected_ids, created_by="system:ontology_merge"
+        )
+        # P1.8: Final side must not keep referencing the merged term either.
+        from app.services.final_function_promotion_service import (
+            propagate_ontology_merge_to_final,
+        )
+
+        await propagate_ontology_merge_to_final(
+            session,
+            source_term_id=source_id,
+            target_term_id=target_id,
+        )
+    # O1.2: redirect hierarchy edges (duplicate-safe + cycle re-check) —
+    # runs even when no domain relation references the merged term.
+    from app.services.ontology_hierarchy_service import (
+        redirect_relations_for_term_merge,
+    )
+
+    await redirect_relations_for_term_merge(
+        session,
+        source_term_id=source_id,
+        target_term_id=target_id,
+        operator_id=operator_id,
+    )
 
     now = datetime.now(timezone.utc)
     source.status = "merged"

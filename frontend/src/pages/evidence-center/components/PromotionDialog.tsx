@@ -49,10 +49,21 @@ export function PromotionDialog({ open, targetLabel, claimText, paper, passages,
               </p>
             ))}
           </details>
-          {preview && !preview.allow && preview.block_reasons.map((r, i) => <div key={i} className="ew-bad">{r}</div>)}
-          <p className="ew-meta">确认后将创建正式论文证据，并更新当前知识对象置信度。所有操作可在证据记录中追溯并可回滚。</p>
+          {preview && !preview.allow && (
+            <div className="ew-bad" style={{ margin: '8px 0', padding: 8, background: '#fff3cd', borderRadius: 4 }}>
+              <strong>⚠ 拦截原因：</strong>
+              {preview.block_reasons.map((r, i) => <div key={i}>• {r}</div>)}
+              <p className="ew-meta" style={{ marginTop: 4 }}>若确认原文无误，可继续强制入库（证据仍会记录，但需人工复核原文匹配）。</p>
+            </div>
+          )}
+          {preview?.allow && (
+            <p className="ew-meta">确认后将创建正式论文证据，并更新当前知识对象置信度。所有操作可在证据记录中追溯并可回滚。</p>
+          )}
           <div className="ontology-modal-actions">
-            <button type="button" data-testid="ew-confirm-attach" className="btn btn-sm" disabled={!preview?.allow || busy} onClick={onConfirm}>确认晋升</button>
+            <button type="button" data-testid="ew-confirm-attach" className="btn btn-sm btn-primary"
+              disabled={busy} onClick={onConfirm}>
+              {preview?.allow ? '确认入库' : '强制入库（跳过验证）'}
+            </button>
             <button type="button" className="btn btn-sm" onClick={onClose}>取消</button>
           </div>
         </div>

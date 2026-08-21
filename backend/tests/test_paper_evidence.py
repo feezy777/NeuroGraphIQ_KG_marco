@@ -66,6 +66,21 @@ def test_partial_cap_075():
     assert r.final_confidence == PARTIAL_CAP
 
 
+def test_weak_evidence_does_not_raise_confidence():
+    # indirect/weak evidence (reviewer below current) must NOT pull confidence up
+    r = compute_adjustment(direction="supports", current_confidence=0.9, reviewer_confidence=0.4)
+    assert r.apply is False
+    assert r.adjustment_status == "no_change_weak_evidence"
+    assert r.final_confidence == 0.9
+    r2 = compute_adjustment(direction="partial", current_confidence=0.8, reviewer_confidence=0.3)
+    assert r2.apply is False
+    assert r2.final_confidence == 0.8
+    # equal values still count as applied (reviewer >= current)
+    r3 = compute_adjustment(direction="supports", current_confidence=0.5, reviewer_confidence=0.5)
+    assert r3.apply is True
+    assert r3.final_confidence == 0.5
+
+
 def test_contradict_no_auto_change():
     r = compute_adjustment(direction="contradicts", current_confidence=0.4, reviewer_confidence=0.8)
     assert r.apply is False

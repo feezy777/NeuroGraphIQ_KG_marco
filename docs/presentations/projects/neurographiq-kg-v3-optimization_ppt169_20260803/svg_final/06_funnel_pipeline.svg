@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 720" width="1280" height="720">
+  <g id="background"><rect width="1280" height="720" fill="#F7FAFC" /></g>
+  <g id="header">
+  <rect x="56" y="42" width="8" height="40" fill="#1F9FB5" />
+  <text x="80" y="72" font-family="Microsoft YaHei, Arial, sans-serif" font-size="34" font-weight="700" fill="#17324D">构建漏斗：五阶段</text>
+  <text x="80" y="104" font-family="Microsoft YaHei, Arial, sans-serif" font-size="16" fill="#5A6A7A">自动化解决规模，人工把关解决可信</text>
+  </g>
+  <g id="funnel">
+  <path fill="#1F9FB5" d="M160,150 H1120 A10,10 0 0 1 1130,160 V220 A10,10 0 0 1 1120,230 H160 A10,10 0 0 1 150,220 V160 A10,10 0 0 1 160,150 Z" />
+  <g transform="translate(178.0, 174.0) scale(1.3333333333333333)" fill="none" stroke="none" stroke-width="2">
+    <path d="M4 6c0 1.657 3.582 3 8 3s8 -1.343 8 -3s-3.582 -3 -8 -3s-8 1.343 -8 3" />
+    <path d="M4 6v6c0 1.657 3.582 3 8 3c.856 0 1.68 -.05 2.454 -.144m5.546 -2.856v-6" />
+    <path d="M4 12v6c0 1.657 3.582 3 8 3c.171 0 .341 -.002 .51 -.006" />
+    <path d="M19 22v-6" />
+    <path d="M22 19l-3 -3l-3 3" />
+  </g><text x="640" y="200" text-anchor="middle" font-family="Microsoft YaHei, Arial, sans-serif" font-size="22" font-weight="700" fill="#FFFFFF">导入解析</text>
+  <path fill="#1F9FB5" d="M220,246 H1060 A10,10 0 0 1 1070,256 V316 A10,10 0 0 1 1060,326 H220 A10,10 0 0 1 210,316 V256 A10,10 0 0 1 220,246 Z" />
+  <g transform="translate(238.0, 270.0) scale(1.3333333333333333)" fill="none" stroke="none" stroke-width="2">
+    <path d="M4 4h16v2.172a2 2 0 0 1 -.586 1.414l-4.414 4.414v7l-6 2v-8.5l-4.48 -4.928a2 2 0 0 1 -.52 -1.345v-2.227" />
+  </g><text x="640" y="296" text-anchor="middle" font-family="Microsoft YaHei, Arial, sans-serif" font-size="22" font-weight="700" fill="#FFFFFF">候选生成</text>
+  <path fill="#1F9FB5" d="M280,342 H1000 A10,10 0 0 1 1010,352 V412 A10,10 0 0 1 1000,422 H280 A10,10 0 0 1 270,412 V352 A10,10 0 0 1 280,342 Z" />
+  <g transform="translate(298.0, 366.0) scale(1.3333333333333333)" fill="none" stroke="none" stroke-width="2">
+    <path d="M11.46 20.846a12 12 0 0 1 -7.96 -14.846a12 12 0 0 0 8.5 -3a12 12 0 0 0 8.5 3a12 12 0 0 1 -.09 7.06" />
+    <path d="M15 19l2 2l4 -4" />
+  </g><text x="640" y="392" text-anchor="middle" font-family="Microsoft YaHei, Arial, sans-serif" font-size="22" font-weight="700" fill="#FFFFFF">校验增强</text>
+  <path fill="#17324D" d="M340,438 H940 A10,10 0 0 1 950,448 V508 A10,10 0 0 1 940,518 H340 A10,10 0 0 1 330,508 V448 A10,10 0 0 1 340,438 Z" />
+  <g transform="translate(358.0, 462.0) scale(1.3333333333333333)" fill="none" stroke="none" stroke-width="2">
+    <path d="M6 6a2 2 0 0 1 2 -2h8a2 2 0 0 1 2 2v4a2 2 0 0 1 -2 2h-8a2 2 0 0 1 -2 -2l0 -4" />
+    <path d="M12 2v2" />
+    <path d="M9 12v9" />
+    <path d="M15 12v9" />
+    <path d="M5 16l4 -2" />
+    <path d="M15 14l4 2" />
+    <path d="M9 18h6" />
+    <path d="M10 8v.01" />
+    <path d="M14 8v.01" />
+  </g><text x="640" y="488" text-anchor="middle" font-family="Microsoft YaHei, Arial, sans-serif" font-size="22" font-weight="700" fill="#FFFFFF">LLM 提取</text>
+  <path fill="#2F855A" d="M400,534 H880 A10,10 0 0 1 890,544 V604 A10,10 0 0 1 880,614 H400 A10,10 0 0 1 390,604 V544 A10,10 0 0 1 400,534 Z" />
+  <g transform="translate(418.0, 558.0) scale(1.3333333333333333)" fill="none" stroke="none" stroke-width="2">
+    <path d="M8 7a4 4 0 1 0 8 0a4 4 0 0 0 -8 0" />
+    <path d="M6 21v-2a4 4 0 0 1 4 -4h4" />
+    <path d="M15 19l2 2l4 -4" />
+  </g><text x="640" y="584" text-anchor="middle" font-family="Microsoft YaHei, Arial, sans-serif" font-size="22" font-weight="700" fill="#FFFFFF">审核晋升</text>
+  </g>
+  <g id="footer"><text x="1224" y="696" text-anchor="end" font-family="Arial, sans-serif" font-size="12" fill="#8492A0">6</text></g>
+</svg>

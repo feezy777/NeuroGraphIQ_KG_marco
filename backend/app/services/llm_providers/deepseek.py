@@ -195,7 +195,7 @@ class DeepSeekProvider:
             )
 
         # Unified timeout: all models >=120s, reasoning models >=180s
-        _MODEL_MIN_TIMEOUT = {'deepseek-v4-pro': 180, 'deepseek-reasoner': 180}
+        _MODEL_MIN_TIMEOUT = {'deepseek-v4-pro': 180, 'deepseek-reasoner': 180, 'deepseek-v4-flash': 120}
         resolved_timeout = max(timeout_seconds or config.timeout_seconds or 120,
                                _MODEL_MIN_TIMEOUT.get(use_model, 120))
         started = time.monotonic()

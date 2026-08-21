@@ -35,6 +35,7 @@ _DEFAULT_PORT = 8002
 _DETACHED_PROCESS = 0x00000008
 _CREATE_NEW_PROCESS_GROUP = 0x00000200
 _CREATE_BREAKAWAY_FROM_JOB = 0x01000000
+_CREATE_NO_WINDOW = 0x08000000
 
 
 def detect_server_port() -> int:
@@ -86,6 +87,7 @@ def _launch_worker_via_wmi(argv: list[str]) -> bool:
             ["powershell", "-NoProfile", "-NonInteractive", "-Command", ps_script],
             capture_output=True,
             timeout=20,
+            creationflags=_CREATE_NO_WINDOW,
         )
     except Exception as exc:  # noqa: BLE001 - fall back on any launcher error
         logger.warning("[restart] WMI launch failed to run: %s", exc)
@@ -107,13 +109,14 @@ def _launch_worker_detached(argv: list[str]) -> None:
         try:
             subprocess.Popen(
                 argv, cwd=str(_BACKEND_DIR),
-                creationflags=base_flags | _CREATE_BREAKAWAY_FROM_JOB,
+                creationflags=base_flags | _CREATE_BREAKAWAY_FROM_JOB | _CREATE_NO_WINDOW,
                 close_fds=True,
             )
             return
         except OSError:
             subprocess.Popen(
-                argv, cwd=str(_BACKEND_DIR), creationflags=base_flags, close_fds=True,
+                argv, cwd=str(_BACKEND_DIR),
+                creationflags=base_flags | _CREATE_NO_WINDOW, close_fds=True,
             )
     else:
         subprocess.Popen(argv, cwd=str(_BACKEND_DIR), start_new_session=True, close_fds=True)
@@ -133,10 +136,17 @@ def schedule_server_restart(*, exit_delay: float = 0.8) -> dict:
     pid = os.getpid()
     argv = _worker_argv(pid, port)
 
-    launched_via = "wmi"
-    if not _launch_worker_via_wmi(argv):
-        launched_via = "detached"
+    # Prefer a direct detached launch: a WMI-created worker (and its relaunched
+    # server child) inherits WmiPrvSE's job object and can be killed when the
+    # WMI host cleans up. Direct breakaway spawn survives independently.
+    launched_via = "detached"
+    try:
         _launch_worker_detached(argv)
+    except Exception as exc:  # noqa: BLE001 - fall back to WMI on any launcher error
+        logger.warning("[restart] detached launch failed: %s", exc)
+        if not _launch_worker_via_wmi(argv):
+            raise
+        launched_via = "wmi"
 
     # Graceful self-exit AFTER the response is flushed; the worker's taskkill is a
     # belt-and-suspenders fallback in case this timer never fires.

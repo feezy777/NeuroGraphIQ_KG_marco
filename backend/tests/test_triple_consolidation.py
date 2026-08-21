@@ -17,6 +17,7 @@ from app.models.mirror_kg import (
     MirrorRegionConnection,
     MirrorRegionFunction,
 )
+from app.models.mirror_macro_clinical import MirrorCircuitFunction
 from app.schemas.mirror_kg import MirrorReviewStatus, MirrorStatus
 from app.services.triple_consolidation_service import (
     ConsolidationScope,
@@ -161,17 +162,32 @@ def test_build_connection_bidirectional_predicate():
 
 
 def test_build_function_triple():
+    from app.services.function_term_service import (
+        FunctionTermResolution,
+        STATE_GROUNDED_ACTIVE,
+    )
+
     c1 = _candidate()
-    fn = _function(region_candidate_id=c1.id, relation_type="involved_in")
-    cands, skip = build_function_triple_candidates([fn], {c1.id: c1}, [])
+    term_id = uuid.uuid4()
+    fn = _function(region_candidate_id=c1.id, relation_type="involved_in", term_id=term_id)
+    canonical_map = {
+        term_id: FunctionTermResolution(
+            term_id=term_id, term_code="ng:func:x", canonical_name="fear extinction",
+            status="active", is_function_term=True, state=STATE_GROUNDED_ACTIVE,
+        )
+    }
+    cands, skip = build_function_triple_candidates([fn], {c1.id: c1}, [], canonical_map=canonical_map)
     assert skip == 0
     assert cands[0].predicate == "involved_in_function"
     assert cands[0].source_mirror_function_id == fn.id
+    # P1.5: entity-ized object
+    assert cands[0].object_id == term_id
+    assert cands[0].object_label == "fear extinction"
 
 
 def test_build_function_skips_empty_term():
     fn = _function(function_term="  ")
-    cands, skip = build_function_triple_candidates([fn], {}, [])
+    cands, skip = build_function_triple_candidates([fn], {}, [], canonical_map={})
     assert cands == []
     assert skip == 1
 
@@ -181,14 +197,56 @@ def test_build_circuit_triples():
     circ = _circuit()
     cr1 = MirrorCircuitRegion(circuit_id=circ.id, region_candidate_id=c1.id, role="participant", sort_order=0)
     cr2 = MirrorCircuitRegion(circuit_id=circ.id, region_candidate_id=c2.id, role="participant", sort_order=1)
+    # P1.4: circuit→function triples come from mirror_circuit_functions only,
+    # never from circuit.function_association.
+    from app.services.function_term_service import (
+        FunctionTermResolution,
+        STATE_GROUNDED_ACTIVE,
+    )
+
+    term_id = uuid.uuid4()
+    cf = MirrorCircuitFunction(
+        id=uuid.uuid4(), circuit_id=circ.id, function_term_en="memory",
+        term_id=term_id, granularity_level="macro",
+        granularity_family="macro_clinical", source_atlas="Macro96",
+        mirror_status=MirrorStatus.llm_suggested,
+        review_status=MirrorReviewStatus.pending,
+        promotion_status="not_promoted",
+    )
+    canonical_map = {
+        term_id: FunctionTermResolution(
+            term_id=term_id, term_code="ng:func:memory", canonical_name="memory",
+            status="active", is_function_term=True, state=STATE_GROUNDED_ACTIVE,
+        )
+    }
     cands, skip = build_circuit_triple_candidates(
-        [circ], [cr1, cr2], {c1.id: c1, c2.id: c2}, []
+        [circ], [cr1, cr2], [cf], {c1.id: c1, c2.id: c2}, [],
+        canonical_map=canonical_map,
     )
     assert skip == 0
     predicates = {c.predicate for c in cands}
     assert "has_participant_region" in predicates
     assert "associated_with_function" in predicates
+    fn_cands = [c for c in cands if c.predicate == "associated_with_function"]
+    assert len(fn_cands) == 1
+    assert fn_cands[0].object_label == "memory"
+    assert fn_cands[0].object_id == term_id  # P1.5 entity-ized object
+    # legacy FK points at the circuit subject; relation id lives in payload
+    assert fn_cands[0].source_mirror_circuit_id == circ.id
+    assert fn_cands[0].raw_payload_json["circuit_function_id"] == str(cf.id)
     assert all(c.source_mirror_circuit_id == circ.id for c in cands)
+
+
+def test_build_circuit_triples_ignores_function_association():
+    """P1.4: function_association alone must not produce function triples."""
+    c1, c2 = _candidate(), _candidate()
+    circ = _circuit(function_association="memory")
+    cr1 = MirrorCircuitRegion(circuit_id=circ.id, region_candidate_id=c1.id, role="participant", sort_order=0)
+    cands, skip = build_circuit_triple_candidates(
+        [circ], [cr1], [], {c1.id: c1}, [], canonical_map={}
+    )
+    assert skip == 0
+    assert all(c.predicate != "associated_with_function" for c in cands)
 
 
 def test_duplicate_key_same_session():

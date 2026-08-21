@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 720" data-pptx-page-role="content"><defs><filter id="g"><feGaussianBlur stdDeviation="2" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs><g id="bg" data-pptx-bounds="0 0 1280 720" data-pptx-role="background"><rect width="1280" height="720" fill="#0D1117"/><line x1="0" y1="108" x2="1280" y2="108" stroke="#212D40" stroke-width="0.5"/><text x="80" y="700" font-family="Microsoft YaHei" font-size="14" fill="#586069">NeuroGraphIQ KG V3</text></g><g id="c" data-pptx-bounds="40 120 1200 560">
+<rect x="40" y="120" width="4" height="48" fill="#58A6FF" /><text x="60" y="155" font-family="Microsoft YaHei" font-weight="bold" font-size="40" fill="#FFFFFF">校验中心：三道闸门</text>
+<text x="40" y="190" font-family="Microsoft YaHei" font-size="18" fill="#8B949E">Mirror KG 数据必须通过三道独立闸门才能进入 Final KG</text>
+<!-- Three gates -->
+<rect x="40" y="215" width="370" height="200" rx="2" fill="#161B22" stroke="#30363D" stroke-width="0.5"/>
+<rect x="40" y="215" width="370" height="4" fill="#1A365D"/>
+<text x="60" y="255" font-family="Microsoft YaHei" font-weight="bold" font-size="22" fill="#1A365D">闸门 1: 规则校验</text>
+<text x="60" y="290" font-family="Microsoft YaHei" font-size="17" fill="#C9D1D9">12 条规则 · 确定性 · 无 LLM</text>
+<text x="60" y="318" font-family="Microsoft YaHei" font-size="17" fill="#C9D1D9"></text>
+<text x="60" y="346" font-family="Microsoft YaHei" font-size="17" fill="#C9D1D9">Blocker → Tier1 自动修复</text>
+<text x="60" y="374" font-family="Microsoft YaHei" font-size="17" fill="#C9D1D9">         → Tier2 LLM 增强</text>
+<text x="60" y="402" font-family="Microsoft YaHei" font-size="17" fill="#C9D1D9">Warning → 标记提醒审核员</text>
+<rect x="430" y="215" width="370" height="200" rx="2" fill="#161B22" stroke="#30363D" stroke-width="0.5"/>
+<rect x="430" y="215" width="370" height="4" fill="#3068B0"/>
+<text x="450" y="255" font-family="Microsoft YaHei" font-weight="bold" font-size="22" fill="#3068B0">闸门 2: 大模型校验</text>
+<text x="450" y="290" font-family="Microsoft YaHei" font-size="17" fill="#C9D1D9">DeepSeek + Kimi 双模型盲审</text>
+<text x="450" y="318" font-family="Microsoft YaHei" font-size="17" fill="#C9D1D9"></text>
+<text x="450" y="346" font-family="Microsoft YaHei" font-size="17" fill="#C9D1D9">consensus → 绿色通道加速</text>
+<text x="450" y="374" font-family="Microsoft YaHei" font-size="17" fill="#C9D1D9">conflict → 升级 + 分歧标注</text>
+<text x="450" y="402" font-family="Microsoft YaHei" font-size="17" fill="#C9D1D9">两模型互不可见结果</text>
+<rect x="820" y="215" width="370" height="200" rx="2" fill="#161B22" stroke="#30363D" stroke-width="0.5"/>
+<rect x="820" y="215" width="370" height="4" fill="#FFA657"/>
+<text x="840" y="255" font-family="Microsoft YaHei" font-weight="bold" font-size="22" fill="#FFA657">闸门 3: 人工审核</text>
+<text x="840" y="290" font-family="Microsoft YaHei" font-size="17" fill="#C9D1D9">领域专家终审 · 唯一终审权</text>
+<text x="840" y="318" font-family="Microsoft YaHei" font-size="17" fill="#C9D1D9"></text>
+<text x="840" y="346" font-family="Microsoft YaHei" font-size="17" fill="#C9D1D9">approve → 进入晋升队列</text>
+<text x="840" y="374" font-family="Microsoft YaHei" font-size="17" fill="#C9D1D9">reject → 退回 + 原因记录</text>
+<text x="840" y="402" font-family="Microsoft YaHei" font-size="17" fill="#C9D1D9">request_changes → 返回修改</text>
+<!-- Convergence -->
+<rect x="230" y="445" width="820" height="50" rx="2" fill="#1A365D" />
+<text x="640" y="476" text-anchor="middle" font-family="Microsoft YaHei" font-weight="bold" font-size="22" fill="#FFFFFF">→ Final KG（三道全过，缺一不可）←</text>
+<g><text x="640" y="540" text-anchor="middle" font-family="Microsoft YaHei" font-size="16" fill="#8B949E">设计原则：前两道自动化（规则 + LLM 校验）+ 最后一道人工终审 = 效率与质量的最佳平衡</text></g>
+</g></svg>

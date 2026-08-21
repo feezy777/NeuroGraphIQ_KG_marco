@@ -1,0 +1,243 @@
+46f4974 feat(evidence-center): 路由/侧边栏/页面壳/模块导航
+===STAT===
+ frontend/src/App.tsx                               |  2 ++
+ frontend/src/i18n.ts                               |  2 ++
+ frontend/src/layout/WorkbenchLayout.tsx            |  1 +
+ .../pages/evidence-center/EvidenceCenterHeader.tsx | 21 +++++++++++
+ .../evidence-center/EvidenceCenterPage.test.tsx    | 27 ++++++++++++++
+ .../pages/evidence-center/EvidenceCenterPage.tsx   | 42 ++++++++++++++++++++++
+ .../modules/EvidenceTasksModule.tsx                |  3 ++
+ 7 files changed, 98 insertions(+)
+===DIFF===
+diff --git a/frontend/src/App.tsx b/frontend/src/App.tsx
+index 3762495..edd07c0 100644
+--- a/frontend/src/App.tsx
++++ b/frontend/src/App.tsx
+@@ -9,34 +9,36 @@ import { ResourcesPage } from './pages/ResourcesPage'
+ import { FilesPage } from './pages/FilesPage'
+ import { ImportBatchesPage } from './pages/ImportBatchesPage'
+ import { ImportPipelinePage } from './pages/ImportPipelinePage'
+ import { DataCenterPage } from './pages/data-center/DataCenterPage'
+ import { LegacyDataCenterRedirect } from './pages/data-center/LegacyDataCenterRedirect'
+ import { LlmExtractionPage } from './pages/LlmExtractionPage'
+ import { ValidationCenterPage } from './pages/validation-center/ValidationCenterPage'
+ import { SettingsPage } from './pages/SettingsPage'
+ import { MirrorKgPage } from './pages/MirrorKgPage'
+ import { OntologyCenterPage } from './pages/ontology-center/OntologyCenterPage'
++import { EvidenceCenterPage } from './pages/evidence-center/EvidenceCenterPage'
+ import { BackgroundTaskCenterPage } from './pages/BackgroundTaskCenter'
+ import { GraphExplorerPage } from './pages/GraphExplorerPage'
+ import './components/brain-3d/brain3d.css'
+ import { TaskDetailModalProvider } from './components/TaskDetailModal'
+ 
+ const Brain3DPage = lazy(() => import('./pages/Brain3DPage').then(m => ({ default: m.Brain3DPage })))
+ 
+ const ROUTES: Record<string, ComponentType> = {
+   '/': DashboardPage,
+   '/resources': ResourcesPage,
+   '/files': FilesPage,
+   '/import-batches': ImportBatchesPage,
+   '/import-pipeline': ImportPipelinePage,
+   '/data-center': DataCenterPage,
++  '/evidence-center': EvidenceCenterPage,
+   '/ontology-center': OntologyCenterPage,
+   '/llm-extraction': LlmExtractionPage,
+   '/mirror-kg': MirrorKgPage,
+   '/task-center': BackgroundTaskCenterPage,
+   '/graph-explorer': GraphExplorerPage,
+   '/brain-3d': Brain3DPage,
+   '/symptom-query': SymptomQueryPage,
+   '/validation-center': ValidationCenterPage,
+   '/settings': SettingsPage,
+ }
+diff --git a/frontend/src/i18n.ts b/frontend/src/i18n.ts
+index c18bb44..d458540 100644
+--- a/frontend/src/i18n.ts
++++ b/frontend/src/i18n.ts
+@@ -55,20 +55,21 @@ export const messages: Record<Language, Record<string, string>> = {
+     'logConsole.filter.all': '全部',
+     'logConsole.filter.error': '错误',
+     'logConsole.filter.warning': '警告',
+     'logConsole.filter.info': '信息',
+     'logConsole.filter.request': '请求',
+ 
+     // nav
+     'nav.group': '导航',
+     'nav.dashboard': '仪表盘',
+     'nav.dataCenter': '数据中心',
++    'nav.evidenceCenter': '论文证据中心',
+     'nav.ontologyCenter': '本体中心',
+     'nav.resources': '资源登记',
+     'nav.files': '文件管理',
+     'nav.importBatches': '批次管理',
+     'nav.importPipeline': '导入流水线',
+     'nav.rawAal3': 'Raw AAL3 标签',
+     'nav.rawMacro96': 'Raw Macro96 行',
+     'nav.candidates': '候选脑区',
+     'nav.llmExtraction': 'LLM 提取',
+     'nav.taskCenter': '任务中心',
+@@ -2579,20 +2580,21 @@ export const messages: Record<Language, Record<string, string>> = {
+     'logConsole.stack': 'Stack',
+     'logConsole.filter.all': 'All',
+     'logConsole.filter.error': 'Error',
+     'logConsole.filter.warning': 'Warning',
+     'logConsole.filter.info': 'Info',
+     'logConsole.filter.request': 'Request',
+ 
+     'nav.group': 'Navigation',
+     'nav.dashboard': 'Dashboard',
+     'nav.dataCenter': 'Data Center',
++    'nav.evidenceCenter': 'Evidence Center',
+     'nav.resources': 'Resources',
+     'nav.files': 'Files',
+     'nav.importBatches': 'Batch Management',
+     'nav.importPipeline': 'Import Pipeline',
+     'nav.rawAal3': 'Raw AAL3 Labels',
+     'nav.rawMacro96': 'Raw Macro96 Rows',
+     'nav.candidates': 'Candidates',
+     'nav.llmExtraction': 'LLM Extraction',
+     'nav.taskCenter': 'Task Center',
+     'nav.graphExplorer': 'Graph Explorer',
+diff --git a/frontend/src/layout/WorkbenchLayout.tsx b/frontend/src/layout/WorkbenchLayout.tsx
+index 43facee..2dfdc2d 100644
+--- a/frontend/src/layout/WorkbenchLayout.tsx
++++ b/frontend/src/layout/WorkbenchLayout.tsx
+@@ -22,20 +22,21 @@ import { TaskCenterDropdown } from '../components/TaskCenterDropdown'
+ import { EvidenceReviewModal } from '../pages/data-center/EvidenceReviewModal'
+ import { useTaskDetailModal } from '../components/TaskDetailModal'
+ 
+ const NAV_ITEMS = [
+   { path: '/', labelKey: 'nav.dashboard', icon: LayoutDashboard },
+   { path: '/resources', labelKey: 'nav.resources', icon: Database },
+   { path: '/files', labelKey: 'nav.files', icon: FileText },
+   { path: '/import-batches', labelKey: 'nav.importBatches', icon: Package },
+   { path: '/llm-extraction', labelKey: 'nav.llmExtraction', icon: Sparkles },
+   { path: '/data-center', labelKey: 'nav.dataCenter', icon: Layers },
++  { path: '/evidence-center', labelKey: 'nav.evidenceCenter', icon: FileText },
+   { path: '/ontology-center', labelKey: 'nav.ontologyCenter', icon: BookOpen },
+   { path: '/validation-center', labelKey: 'nav.validationCenter', icon: ShieldCheck },
+   { path: '/task-center', labelKey: 'nav.taskCenter', icon: MonitorPlay },
+   { path: '/graph-explorer', labelKey: 'nav.graphExplorer', icon: Share2 },
+   { path: '/brain-3d', labelKey: 'nav.brain3D', icon: Brain },
+   { path: '/symptom-query', labelKey: 'nav.symptomQuery', icon: Search },
+   { path: '/settings', labelKey: 'nav.settings', icon: Settings },
+ ]
+ 
+ interface WorkbenchLayoutProps {
+diff --git a/frontend/src/pages/evidence-center/EvidenceCenterHeader.tsx b/frontend/src/pages/evidence-center/EvidenceCenterHeader.tsx
+new file mode 100644
+index 0000000..b5c7dee
+--- /dev/null
++++ b/frontend/src/pages/evidence-center/EvidenceCenterHeader.tsx
+@@ -0,0 +1,21 @@
++import type { ModuleKey } from './EvidenceCenterContext'
++import { useEvidenceCenter } from './EvidenceCenterContext'
++
++export function EvidenceCenterHeader({ moduleTitles }: { moduleTitles: Record<ModuleKey, string> }) {
++  const { state, gotoModule } = useEvidenceCenter()
++  const MODULES: ModuleKey[] = ['tasks', 'papers', 'candidates', 'review', 'promotion']
++  return (
++    <div className="evidence-center-header">
++      <div className="evidence-module-nav">
++        {MODULES.map(m => (
++          <button key={m} type="button"
++            className={`evidence-module-btn${state.module === m ? ' active' : ''}`}
++            onClick={() => gotoModule(m)}>
++            {moduleTitles[m]}
++          </button>
++        ))}
++      </div>
++      <button type="button" className="btn btn-sm" onClick={() => { window.location.hash = '#/data-center' }}>返回数据中心</button>
++    </div>
++  )
++}
+diff --git a/frontend/src/pages/evidence-center/EvidenceCenterPage.test.tsx b/frontend/src/pages/evidence-center/EvidenceCenterPage.test.tsx
+new file mode 100644
+index 0000000..10c635e
+--- /dev/null
++++ b/frontend/src/pages/evidence-center/EvidenceCenterPage.test.tsx
+@@ -0,0 +1,27 @@
++import { afterEach, describe, expect, it } from 'vitest'
++import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
++import { EvidenceCenterPage } from './EvidenceCenterPage'
++
++describe('EvidenceCenterPage', () => {
++  afterEach(() => { cleanup(); window.location.hash = '' })
++
++  it('渲染五模块导航与默认说明句', () => {
++    window.location.hash = '#/evidence-center'
++    render(<EvidenceCenterPage />)
++    expect(screen.getByText('佐证任务')).toBeTruthy()
++    expect(screen.getByText('论文库')).toBeTruthy()
++    expect(screen.getByText('证据候选')).toBeTruthy()
++    expect(screen.getByText('人工审核')).toBeTruthy()
++    expect(screen.getByText('证据晋升')).toBeTruthy()
++  })
++
++  it('模块导航切换更新 URL 与内容区', async () => {
++    window.location.hash = '#/evidence-center'
++    render(<EvidenceCenterPage />)
++    fireEvent.click(screen.getByText('论文库'))
++    await waitFor(() => expect(window.location.hash).toContain('module=papers'))
++    expect(screen.getByText('管理系统已经获取和解析的真实论文资源。')).toBeTruthy()
++    fireEvent.click(screen.getByText('返回数据中心'))
++    await waitFor(() => expect(window.location.hash).toContain('/data-center'))
++  })
++})
+diff --git a/frontend/src/pages/evidence-center/EvidenceCenterPage.tsx b/frontend/src/pages/evidence-center/EvidenceCenterPage.tsx
+new file mode 100644
+index 0000000..aa803e4
+--- /dev/null
++++ b/frontend/src/pages/evidence-center/EvidenceCenterPage.tsx
+@@ -0,0 +1,42 @@
++import { EvidenceCenterProvider, useEvidenceCenter, type ModuleKey } from './EvidenceCenterContext'
++import { EvidenceCenterHeader } from './EvidenceCenterHeader'
++import { EvidenceTasksModule } from './modules/EvidenceTasksModule'
++
++const MODULE_TITLE: Record<ModuleKey, string> = {
++  tasks: '佐证任务',
++  papers: '论文库',
++  candidates: '证据候选',
++  review: '人工审核',
++  promotion: '证据晋升',
++}
++const MODULE_HINT: Record<ModuleKey, string> = {
++  tasks: '哪些知识对象需要论文佐证，以及任务处理到哪里。',
++  papers: '管理系统已经获取和解析的真实论文资源。',
++  candidates: '查看 DeepSeek 从论文中提取出的候选佐证原文。',
++  review: '人工确认候选原文是否足以证明当前知识事实。',
++  promotion: '将审核通过的论文证据正式应用到知识图谱。',
++}
++
++function EvidenceCenterBody() {
++  const { state } = useEvidenceCenter()
++  return (
++    <div className="evidence-center-body">
++      <div className="evidence-module-hint">{MODULE_HINT[state.module]}</div>
++      {state.module === 'tasks' && <EvidenceTasksModule />}
++      {/* papers/candidates/review/promotion 模块在 Task 6-9 接入 */}
++    </div>
++  )
++}
++
++export function EvidenceCenterPage() {
++  return (
++    <EvidenceCenterProvider>
++      <div className="evidence-center" data-testid="evidence-center">
++        <EvidenceCenterHeader moduleTitles={MODULE_TITLE} />
++        <EvidenceCenterBody />
++      </div>
++    </EvidenceCenterProvider>
++  )
++}
++
++export default EvidenceCenterPage
+diff --git a/frontend/src/pages/evidence-center/modules/EvidenceTasksModule.tsx b/frontend/src/pages/evidence-center/modules/EvidenceTasksModule.tsx
+new file mode 100644
+index 0000000..23a70fd
+--- /dev/null
++++ b/frontend/src/pages/evidence-center/modules/EvidenceTasksModule.tsx
+@@ -0,0 +1,3 @@
++export function EvidenceTasksModule() {
++  return <div className="evidence-module-placeholder">佐证任务模块(建设中)</div>
++}

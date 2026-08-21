@@ -1,0 +1,1016 @@
+bfefc40 feat(evidence-center): 三栏骨架 + ContextBar + StepPills + 统一对象队列
+===STAT===
+ .superpowers/sdd/tasks/task-s1-report.md           |  76 +++++++++++
+ .../pages/evidence-center/EvidenceCenterHeader.tsx |   3 +-
+ .../evidence-center/EvidenceCenterPage.test.tsx    | 150 +++++++++++++++++++--
+ .../pages/evidence-center/EvidenceCenterPage.tsx   |  84 ++++++++++--
+ .../evidence-center/components/ContextBar.test.tsx |  60 +++++++++
+ .../evidence-center/components/ContextBar.tsx      |  64 +++++++++
+ .../components/ObjectQueue.test.tsx                |  48 +++++++
+ .../evidence-center/components/ObjectQueue.tsx     |  80 +++++++++++
+ .../evidence-center/components/RightPanel.tsx      |  20 +++
+ .../evidence-center/components/StepPills.test.tsx  |  30 +++++
+ .../pages/evidence-center/components/StepPills.tsx |  29 ++++
+ .../src/pages/evidence-center/components/types.ts  |  24 ++++
+ frontend/src/styles.css                            | 126 +++++++++++++++++
+ 13 files changed, 775 insertions(+), 19 deletions(-)
+===DIFF===
+diff --git a/.superpowers/sdd/tasks/task-s1-report.md b/.superpowers/sdd/tasks/task-s1-report.md
+new file mode 100644
+index 0000000..74b027e
+--- /dev/null
++++ b/.superpowers/sdd/tasks/task-s1-report.md
+@@ -0,0 +1,76 @@
++# Task S1 Report: 三栏骨架 + ContextBar + StepPills + 统一对象队列
++
++## Status: DONE (committed)
++
++## Commit
++
++`feat(evidence-center): 三栏骨架 + ContextBar + StepPills + 统一对象队列`
++
++## What Was Delivered
++
++### 页面骨架 (EvidenceCenterPage.tsx)
++- 页面改为 `evidence-center` (flex column) + `evidence-center-layout` 三栏 grid:
++  `grid-template-columns: 230px minmax(620px, 1fr) 370px`
++- 左栏 `<aside class="evidence-left">` → `<ObjectQueue>`;中栏 `evidence-main` → 模块内容(hint + 五模块条件渲染,模块内容本身未动);右栏 `<aside class="evidence-right">` → `<RightPanel module={state.module} />` 占位
++- **papers 模块例外**:加 `evidence-center-layout-full` 修饰类 → 单列全宽,左右栏隐藏
++- 页面级任务名推导:`useEffect` 按 `state.taskId` 从 `listPaperEvidenceTasks` 查 name(target_type 兜底),传给 ContextBar
++- `currentIndex` 由 queue 匹配 `state.targetType/targetId` 推导,无匹配时取 0
++- 刷新按钮 → `window.location.reload()`(S1 兜底实现);返回数据中心 → hash `#/data-center`
++
++### ContextBar (components/ContextBar.tsx)
++- props 按 brief:`{ targetLabel, targetType, granularity, confidence, evidenceCount, taskName, queueIndex, queueTotal, taskStatus, onBackToDataCenter, onRefresh }`
++- 显示:对象名(空时「未选择对象」)/ 类型 / 粒度(仅提供时)/ 置信度百分比 / 证据数 / 任务名·进度 `(idx+1)/total`(空队列显示「等待处理对象」)/ 状态 chip / 刷新 + 返回数据中心按钮
++- 纯展示组件,数据由页面从 Context queue + state 推导后传入
++
++### StepPills (components/StepPills.tsx)
++- 五步胶囊:确认对象 → 查找论文 → 找到原文 → 人工审核 → 确认晋升
++- `MODULE_TO_STEP`: tasks=0, papers=0, candidates=1, review=3, promotion=4(严格按 brief);currentStep=0 时无高亮;仅当前步 `.active`
++
++### ObjectQueue (components/ObjectQueue.tsx)
++- props:`{ queue, currentIndex, onSelect, showStats? }`(showStats 默认 true,暂未使用)
++- 标题「待处理对象」+ 计数;统计:待审核(pending/searching/extracting/awaiting_review)/ 已完成(completed/skipped)/ 失败(failed)
++- 「只看未处理」checkbox(组件内本地 state 过滤)
++- 紧凑对象卡:名称 / `target_type · 置信度` / 状态色(ok/warn/bad/info/muted)/ 证据数;当前对象浅背景 + 左侧 3px 强调条
++- 空队列占位「队列为空」
++
++### RightPanel (components/RightPanel.tsx)
++- 右栏插槽占位,按 module 显示标题:tasks=任务与队列概览 / candidates=检索与候选 / review=审核决策 / promotion=晋升确认 / papers=论文详情(papers 下不渲染)
++- S2-S5 各模块后续填充
++
++### EvidenceCenterHeader.tsx
++- 保留五模块导航(新增 `data-testid="evidence-module-nav"`);「返回数据中心」按钮移入 ContextBar(避免重复文本)
++
++### types.ts
++- 新增 `QUEUE_STATUS_LABEL`(QueueStatus → 中文)与 `queueStatusTone`(状态 → 色板),ObjectQueue/ContextBar 共用;各模块内部自己的状态映射未动
++
++### styles.css
++- `.evidence-center` 高度: `calc(100vh - var(--topbar-h) - var(--log-console-actual-height, var(--log-console-height-collapsed)) - 44px)`(适配 main padding 22px*2 + 底部日志栏)
++- `.evidence-center-layout` 三栏 grid + `-full` 单列修饰;三栏独立 `overflow-y: auto`,白底轻 border + shadow
++- `.evidence-context-bar`(对象信息行 + chips + actions)、`.evidence-step-pills`(胶囊 + 编号圆点 + active 主色)、`.evidence-queue-*`(统计/过滤/紧凑卡/状态色/左强调条)
++
++## Tests (TDD RED → GREEN)
++
++- 扩展 `EvidenceCenterPage.test.tsx`:
++  - 三栏骨架渲染(left/main/right + queue/right-panel testid)
++  - papers 模块全宽(隐藏左右栏)
++  - 右栏占位标题随 module 切换
++  - ContextBar 显示对象/类型/置信度/证据数/进度(1/2)
++  - 空队列 ContextBar 占位
++  - ObjectQueue 条目渲染 + 当前项高亮
++  - StepPills 五步渲染 + 随 module 高亮(candidates→确认对象,review→找到原文)
++  - 既有测试适配:导航断言改用 `within(nav)`,「人工审核」点击改用 `getAllByText[0]`(nav 与 step pill 文本重复)
++- 新建 `ContextBar.test.tsx`(对象信息/进度/空态/按钮回调)、`StepPills.test.tsx`(五步/各 step 高亮/0 无高亮)、`ObjectQueue.test.tsx`(统计/点击回调/只看未处理过滤/空态)
++
++## Verification
++
++- `npx vitest run src/pages/evidence-center/` — 10 files, 71 tests passed
++- `npx vitest run` (全量) — 13 files, 85 tests passed
++- `npm run build` — 0 TS errors,build 成功(仅有既有的 chunk-size/dynamic-import 警告,与本次改动无关)
++
++## Concerns / Notes for Follow-ups
++
++1. **模块内左队列仍在**:EvidenceCandidatesModule 内部 240px 队列与 ObjectQueue 并存(骨架期有意为之);S2/S3 需删除模块内队列并复用 Context queue
++2. **granularity 为 null**:ContextBar 的 granularity 需 `getEvidenceTarget` 数据,模块已各自拉取 DTO;S2+ 可考虑在 Context 层缓存 DTO 或由 ObjectQueue 条目携带
++3. **onRefresh 现为整页 reload**,后续可改为仅重拉当前模块数据
++4. **页面高度 calc 依赖 `--log-console-actual-height` 变量**;日志台展开时页面按实际高度适配(未见异常)
++5. 右栏当前为占位,`RightPanel` 标题与 S2-S5 任务对齐(tasks 概览 / candidates 检索 / review 审核决策 / promotion 晋升确认)
+diff --git a/frontend/src/pages/evidence-center/EvidenceCenterHeader.tsx b/frontend/src/pages/evidence-center/EvidenceCenterHeader.tsx
+index b5c7dee..60d9385 100644
+--- a/frontend/src/pages/evidence-center/EvidenceCenterHeader.tsx
++++ b/frontend/src/pages/evidence-center/EvidenceCenterHeader.tsx
+@@ -1,21 +1,20 @@
+ import type { ModuleKey } from './EvidenceCenterContext'
+ import { useEvidenceCenter } from './EvidenceCenterContext'
+ 
+ export function EvidenceCenterHeader({ moduleTitles }: { moduleTitles: Record<ModuleKey, string> }) {
+   const { state, gotoModule } = useEvidenceCenter()
+   const MODULES: ModuleKey[] = ['tasks', 'papers', 'candidates', 'review', 'promotion']
+   return (
+     <div className="evidence-center-header">
+-      <div className="evidence-module-nav">
++      <div className="evidence-module-nav" data-testid="evidence-module-nav">
+         {MODULES.map(m => (
+           <button key={m} type="button"
+             className={`evidence-module-btn${state.module === m ? ' active' : ''}`}
+             onClick={() => gotoModule(m)}>
+             {moduleTitles[m]}
+           </button>
+         ))}
+       </div>
+-      <button type="button" className="btn btn-sm" onClick={() => { window.location.hash = '#/data-center' }}>返回数据中心</button>
+     </div>
+   )
+ }
+diff --git a/frontend/src/pages/evidence-center/EvidenceCenterPage.test.tsx b/frontend/src/pages/evidence-center/EvidenceCenterPage.test.tsx
+index e9ab97f..68ccec6 100644
+--- a/frontend/src/pages/evidence-center/EvidenceCenterPage.test.tsx
++++ b/frontend/src/pages/evidence-center/EvidenceCenterPage.test.tsx
+@@ -1,45 +1,99 @@
+ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
++import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+ import { EvidenceCenterPage } from './EvidenceCenterPage'
++import { listPaperEvidenceTaskItems, listPaperEvidenceTasks } from '../../api/endpoints'
+ 
+ vi.mock('../../api/endpoints', () => ({
+-  listPaperEvidenceTasks: vi.fn().mockResolvedValue({ items: [] }),
++  listPaperEvidenceTasks: vi.fn().mockResolvedValue({ items: [], total: 0 }),
+   listEvidencePapers: vi.fn().mockResolvedValue({ items: [], total: 0 }),
+   listPaperEvidenceTaskItems: vi.fn().mockResolvedValue({ items: [] }),
+   getEvidenceTarget: vi.fn().mockResolvedValue(null),
+   searchPaperEvidence: vi.fn().mockResolvedValue({ target_info: {}, papers: [] }),
+   extractSelectedPaperEvidence: vi.fn().mockResolvedValue({ results: [] }),
+   listPaperEvidence: vi.fn().mockResolvedValue({ items: [] }),
+   attachPaperEvidencePreview: vi.fn().mockResolvedValue({}),
+   attachPaperEvidence: vi.fn().mockResolvedValue({}),
+   rollbackPaperEvidence: vi.fn().mockResolvedValue({}),
+   translateEvidenceText: vi.fn().mockResolvedValue({ translated: '' }),
+   saveTaskItemDraft: vi.fn().mockResolvedValue({ server_revision: 0 }),
+   validatePassageSelection: vi.fn().mockResolvedValue({ source_verified: true }),
+ }))
+ 
++function makeItem(overrides: Record<string, unknown>) {
++  return {
++    id: 'it',
++    target_type: 'connection',
++    target_id: 'r1-r2',
++    status: 'awaiting_review',
++    pmid: null,
++    title: null,
++    passage: null,
++    direction: null,
++    confidence: null,
++    evidence_id: null,
++    error_message: null,
++    updated_at: null,
++    label: 'R1→R2',
++    current_confidence: 0.85,
++    attempt_count: 0,
++    last_error_code: null,
++    last_error_message: null,
++    preprocess_outcome: null,
++    paper_id: null,
++    model_direction: null,
++    candidate_papers: [],
++    review_draft: null,
++    claim_text_snapshot: null,
++    claim_components_snapshot: null,
++    passages_json: null,
++    last_error: null,
++    retry_count: 0,
++    ...overrides,
++  }
++}
++
++const TASK_ITEMS = [
++  makeItem({ candidate_papers: [{ paper_id: 'p1' }] }),
++  makeItem({
++    id: 'it2',
++    target_type: 'region',
++    target_id: 'r3',
++    label: 'R3',
++    status: 'completed',
++    current_confidence: 0.9,
++    candidate_papers: [{ paper_id: 'p1' }],
++  }),
++]
++
+ describe('EvidenceCenterPage', () => {
+   beforeEach(() => {
+     sessionStorage.clear()
+   })
+ 
+-  afterEach(() => { cleanup(); window.location.hash = ''; sessionStorage.clear() })
++  afterEach(() => {
++    cleanup()
++    window.location.hash = ''
++    sessionStorage.clear()
++    vi.mocked(listPaperEvidenceTaskItems).mockResolvedValue({ items: [] })
++    vi.mocked(listPaperEvidenceTasks).mockResolvedValue({ items: [], total: 0 })
++  })
+ 
+   it('渲染五模块导航与默认说明句', () => {
+     window.location.hash = '#/evidence-center'
+     render(<EvidenceCenterPage />)
+-    expect(screen.getByText('佐证任务')).toBeTruthy()
+-    expect(screen.getByText('论文库')).toBeTruthy()
+-    expect(screen.getByText('证据候选')).toBeTruthy()
+-    expect(screen.getByText('人工审核')).toBeTruthy()
+-    expect(screen.getByText('证据晋升')).toBeTruthy()
++    const nav = screen.getByTestId('evidence-module-nav')
++    expect(within(nav).getByText('佐证任务')).toBeTruthy()
++    expect(within(nav).getByText('论文库')).toBeTruthy()
++    expect(within(nav).getByText('证据候选')).toBeTruthy()
++    expect(within(nav).getByText('人工审核')).toBeTruthy()
++    expect(within(nav).getByText('证据晋升')).toBeTruthy()
+   })
+ 
+   it('模块导航切换更新 URL 与内容区', async () => {
+     window.location.hash = '#/evidence-center'
+     render(<EvidenceCenterPage />)
+     fireEvent.click(screen.getByText('论文库'))
+     await waitFor(() => expect(window.location.hash).toContain('module=papers'))
+     expect(screen.getByText('管理系统已经获取和解析的真实论文资源。')).toBeTruthy()
+     fireEvent.click(screen.getByText('返回数据中心'))
+     await waitFor(() => expect(window.location.hash).toContain('/data-center'))
+@@ -49,11 +103,91 @@ describe('EvidenceCenterPage', () => {
+     { module: 'papers', selector: '.paper-module', text: /暂无论文/ },
+     { module: 'candidates', selector: '.evidence-candidates', text: /请先在「佐证任务」中打开一个任务/ },
+     { module: 'review', selector: '.evidence-review', text: /请先从「佐证任务」或「证据候选」进入一个目标对象/ },
+     { module: 'promotion', selector: '.evidence-promotion', text: /请先从「佐证任务」或「证据候选」进入一个目标对象/ },
+   ])('五模块接线:module=$module 渲染对应模块', async ({ module, selector, text }) => {
+     window.location.hash = `#/evidence-center?module=${module}`
+     const { container } = render(<EvidenceCenterPage />)
+     await waitFor(() => expect(container.querySelector(selector)).toBeTruthy())
+     expect(screen.getByText(text)).toBeTruthy()
+   })
++
++  // ─── V2 三栏骨架 ───
++
++  it('渲染三栏骨架:左队列 / 主内容 / 右栏', () => {
++    window.location.hash = '#/evidence-center?module=candidates'
++    const { container } = render(<EvidenceCenterPage />)
++    expect(container.querySelector('.evidence-center-layout')).toBeTruthy()
++    expect(container.querySelector('.evidence-left')).toBeTruthy()
++    expect(container.querySelector('.evidence-main')).toBeTruthy()
++    expect(container.querySelector('.evidence-right')).toBeTruthy()
++    expect(screen.getByTestId('evidence-queue')).toBeTruthy()
++    expect(screen.getByTestId('evidence-right-panel')).toBeTruthy()
++  })
++
++  it('papers 模块例外:全宽渲染并隐藏左右栏', async () => {
++    window.location.hash = '#/evidence-center?module=papers'
++    const { container } = render(<EvidenceCenterPage />)
++    await waitFor(() => expect(container.querySelector('.evidence-center-layout-full')).toBeTruthy())
++    expect(container.querySelector('.evidence-left')).toBeNull()
++    expect(container.querySelector('.evidence-right')).toBeNull()
++  })
++
++  it('右栏占位标题随 module 切换', () => {
++    window.location.hash = '#/evidence-center?module=tasks'
++    const { container } = render(<EvidenceCenterPage />)
++    const title = () => container.querySelector('.evidence-right-panel h4')?.textContent ?? ''
++    expect(title()).toContain('任务')
++    fireEvent.click(screen.getByText('证据候选'))
++    expect(title()).toContain('检索')
++    fireEvent.click(screen.getAllByText('人工审核')[0])
++    expect(title()).toContain('审核')
++  })
++
++  it('ContextBar 显示当前对象、类型、置信度、证据数与队列进度', async () => {
++    vi.mocked(listPaperEvidenceTaskItems).mockResolvedValue({ items: TASK_ITEMS })
++    window.location.hash = '#/evidence-center?module=candidates&task_id=t1'
++    render(<EvidenceCenterPage />)
++    const bar = await screen.findByTestId('evidence-context-bar')
++    await waitFor(() => expect(within(bar).getByText('R1→R2')).toBeTruthy())
++    expect(within(bar).getByText('connection')).toBeTruthy()
++    expect(within(bar).getByText(/置信度 85%/)).toBeTruthy()
++    expect(within(bar).getByText(/1 条证据/)).toBeTruthy()
++    expect(within(bar).getByText(/1\/2/)).toBeTruthy()
++    expect(within(bar).getByText('待审核')).toBeTruthy()
++  })
++
++  it('队列为空时 ContextBar 显示占位', async () => {
++    window.location.hash = '#/evidence-center?module=tasks'
++    render(<EvidenceCenterPage />)
++    const bar = await screen.findByTestId('evidence-context-bar')
++    expect(within(bar).getByText('未选择对象')).toBeTruthy()
++    expect(within(bar).getByText(/等待处理对象/)).toBeTruthy()
++  })
++
++  it('ObjectQueue 渲染待处理对象列表且当前项高亮', async () => {
++    vi.mocked(listPaperEvidenceTaskItems).mockResolvedValue({ items: TASK_ITEMS })
++    window.location.hash = '#/evidence-center?module=candidates&task_id=t1'
++    render(<EvidenceCenterPage />)
++    await waitFor(() => expect(screen.getByText('待处理对象')).toBeTruthy())
++    const items = screen.getAllByTestId('evidence-queue-item')
++    expect(items).toHaveLength(2)
++    expect(items[0].textContent).toContain('R1→R2')
++    expect(items[0].textContent).toContain('待审核')
++    expect(items[0].className).toContain('evidence-queue-item-active')
++    expect(items[1].className).not.toContain('evidence-queue-item-active')
++  })
++
++  it('StepPills 渲染五步并随 module 高亮当前步', async () => {
++    window.location.hash = '#/evidence-center?module=candidates'
++    render(<EvidenceCenterPage />)
++    const pills = await screen.findByTestId('evidence-step-pills')
++    for (const label of ['确认对象', '查找论文', '找到原文', '人工审核', '确认晋升']) {
++      expect(within(pills).getByText(label)).toBeTruthy()
++    }
++    expect(pills.querySelector('.evidence-step-pill.active')?.textContent).toContain('确认对象')
++    fireEvent.click(screen.getAllByText('人工审核')[0])
++    await waitFor(() => expect(window.location.hash).toContain('module=review'))
++    expect(screen.getByTestId('evidence-step-pills').querySelector('.evidence-step-pill.active')?.textContent)
++      .toContain('找到原文')
++  })
+ })
+diff --git a/frontend/src/pages/evidence-center/EvidenceCenterPage.tsx b/frontend/src/pages/evidence-center/EvidenceCenterPage.tsx
+index e9115aa..463c5ff 100644
+--- a/frontend/src/pages/evidence-center/EvidenceCenterPage.tsx
++++ b/frontend/src/pages/evidence-center/EvidenceCenterPage.tsx
+@@ -1,12 +1,19 @@
++import { useEffect, useMemo, useState } from 'react'
++import { listPaperEvidenceTasks } from '../../api/endpoints'
+ import { EvidenceCenterProvider, useEvidenceCenter, type ModuleKey } from './EvidenceCenterContext'
+ import { EvidenceCenterHeader } from './EvidenceCenterHeader'
++import { ContextBar } from './components/ContextBar'
++import { ObjectQueue } from './components/ObjectQueue'
++import { RightPanel } from './components/RightPanel'
++import { MODULE_TO_STEP, StepPills } from './components/StepPills'
++import { QUEUE_STATUS_LABEL } from './components/types'
+ import { EvidenceCandidatesModule } from './modules/EvidenceCandidatesModule'
+ import { EvidencePromotionModule } from './modules/EvidencePromotionModule'
+ import { EvidenceReviewModule } from './modules/EvidenceReviewModule'
+ import { EvidenceTasksModule } from './modules/EvidenceTasksModule'
+ import { PaperLibraryModule } from './modules/PaperLibraryModule'
+ 
+ const MODULE_TITLE: Record<ModuleKey, string> = {
+   tasks: '佐证任务',
+   papers: '论文库',
+   candidates: '证据候选',
+@@ -15,30 +22,89 @@ const MODULE_TITLE: Record<ModuleKey, string> = {
+ }
+ const MODULE_HINT: Record<ModuleKey, string> = {
+   tasks: '哪些知识对象需要论文佐证，以及任务处理到哪里。',
+   papers: '管理系统已经获取和解析的真实论文资源。',
+   candidates: '查看 DeepSeek 从论文中提取出的候选佐证原文。',
+   review: '人工确认候选原文是否足以证明当前知识事实。',
+   promotion: '将审核通过的论文证据正式应用到知识图谱。',
+ }
+ 
+ function EvidenceCenterBody() {
+-  const { state } = useEvidenceCenter()
++  const { state, queue, openTarget } = useEvidenceCenter()
++  const [taskName, setTaskName] = useState<string | null>(null)
++
++  // 任务名:从 tasks 列表按 state.taskId 推导(ContextBar 展示用)
++  useEffect(() => {
++    if (!state.taskId) {
++      setTaskName(null)
++      return
++    }
++    let cancelled = false
++    listPaperEvidenceTasks({ limit: 50 })
++      .then(r => {
++        const t = r.items.find(x => x.id === state.taskId)
++        if (!cancelled) setTaskName(t?.name || t?.target_type || null)
++      })
++      .catch(() => { if (!cancelled) setTaskName(null) })
++    return () => { cancelled = true }
++  }, [state.taskId])
++
++  const currentIndex = useMemo(() => {
++    if (queue.length === 0) return -1
++    const idx = queue.findIndex(q => q.target_type === state.targetType && q.target_id === state.targetId)
++    return idx >= 0 ? idx : 0
++  }, [queue, state.targetType, state.targetId])
++
++  const current = currentIndex >= 0 ? queue[currentIndex] : null
++  const isPapers = state.module === 'papers'
++
+   return (
+-    <div className="evidence-center-body">
+-      <div className="evidence-module-hint">{MODULE_HINT[state.module]}</div>
+-      {state.module === 'tasks' && <EvidenceTasksModule />}
+-      {state.module === 'papers' && <PaperLibraryModule />}
+-      {state.module === 'candidates' && <EvidenceCandidatesModule />}
+-      {state.module === 'review' && <EvidenceReviewModule />}
+-      {state.module === 'promotion' && <EvidencePromotionModule />}
+-    </div>
++    <>
++      <ContextBar
++        targetLabel={current?.label ?? null}
++        targetType={current?.target_type ?? null}
++        granularity={null}
++        confidence={current?.confidence ?? null}
++        evidenceCount={current?.evidenceCount ?? null}
++        taskName={taskName}
++        queueIndex={currentIndex}
++        queueTotal={queue.length}
++        taskStatus={current ? (QUEUE_STATUS_LABEL[current.status] ?? current.status) : null}
++        onBackToDataCenter={() => { window.location.hash = '#/data-center' }}
++        onRefresh={() => { window.location.reload() }}
++      />
++      <StepPills currentStep={MODULE_TO_STEP[state.module]} />
++      <div className={`evidence-center-layout${isPapers ? ' evidence-center-layout-full' : ''}`} data-testid="evidence-center-layout">
++        {!isPapers && (
++          <aside className="evidence-left">
++            <ObjectQueue
++              queue={queue}
++              currentIndex={currentIndex}
++              onSelect={e => openTarget(e.target_type, e.target_id, 'candidates')}
++            />
++          </aside>
++        )}
++        <main className="evidence-main">
++          <div className="evidence-module-hint">{MODULE_HINT[state.module]}</div>
++          {state.module === 'tasks' && <EvidenceTasksModule />}
++          {state.module === 'papers' && <PaperLibraryModule />}
++          {state.module === 'candidates' && <EvidenceCandidatesModule />}
++          {state.module === 'review' && <EvidenceReviewModule />}
++          {state.module === 'promotion' && <EvidencePromotionModule />}
++        </main>
++        {!isPapers && (
++          <aside className="evidence-right">
++            <RightPanel module={state.module} />
++          </aside>
++        )}
++      </div>
++    </>
+   )
+ }
+ 
+ export function EvidenceCenterPage() {
+   return (
+     <EvidenceCenterProvider>
+       <div className="evidence-center" data-testid="evidence-center">
+         <EvidenceCenterHeader moduleTitles={MODULE_TITLE} />
+         <EvidenceCenterBody />
+       </div>
+diff --git a/frontend/src/pages/evidence-center/components/ContextBar.test.tsx b/frontend/src/pages/evidence-center/components/ContextBar.test.tsx
+new file mode 100644
+index 0000000..48f20bd
+--- /dev/null
++++ b/frontend/src/pages/evidence-center/components/ContextBar.test.tsx
+@@ -0,0 +1,60 @@
++import { describe, expect, it, vi } from 'vitest'
++import { fireEvent, render, screen } from '@testing-library/react'
++import { ContextBar } from './ContextBar'
++
++const base = {
++  targetLabel: 'R1→R2',
++  targetType: 'connection',
++  granularity: 'macro_clinical',
++  confidence: 0.85,
++  evidenceCount: 3,
++  taskName: '佐证任务 A',
++  queueIndex: 0,
++  queueTotal: 5,
++  taskStatus: '待审核',
++}
++
++describe('ContextBar', () => {
++  it('显示当前对象信息与进度', () => {
++    render(<ContextBar {...base} onBackToDataCenter={() => {}} onRefresh={() => {}} />)
++    expect(screen.getByText('R1→R2')).toBeTruthy()
++    expect(screen.getByText('connection')).toBeTruthy()
++    expect(screen.getByText(/macro_clinical/)).toBeTruthy()
++    expect(screen.getByText(/置信度 85%/)).toBeTruthy()
++    expect(screen.getByText(/3 条证据/)).toBeTruthy()
++    expect(screen.getByText(/佐证任务 A/)).toBeTruthy()
++    expect(screen.getByText(/1\/5/)).toBeTruthy()
++    expect(screen.getByText('待审核')).toBeTruthy()
++  })
++
++  it('队列为空时显示占位,不显示进度', () => {
++    render(
++      <ContextBar
++        {...base}
++        targetLabel={null}
++        targetType={null}
++        confidence={null}
++        evidenceCount={null}
++        taskName={null}
++        taskStatus={null}
++        queueIndex={-1}
++        queueTotal={0}
++        onBackToDataCenter={() => {}}
++        onRefresh={() => {}}
++      />,
++    )
++    expect(screen.getByText('未选择对象')).toBeTruthy()
++    expect(screen.getByText(/等待处理对象/)).toBeTruthy()
++    expect(screen.queryByText(/1\/5/)).toBeNull()
++  })
++
++  it('返回数据中心与刷新按钮触发回调', () => {
++    const onBack = vi.fn()
++    const onRefresh = vi.fn()
++    render(<ContextBar {...base} onBackToDataCenter={onBack} onRefresh={onRefresh} />)
++    fireEvent.click(screen.getByText('返回数据中心'))
++    fireEvent.click(screen.getByText('刷新'))
++    expect(onBack).toHaveBeenCalledTimes(1)
++    expect(onRefresh).toHaveBeenCalledTimes(1)
++  })
++})
+diff --git a/frontend/src/pages/evidence-center/components/ContextBar.tsx b/frontend/src/pages/evidence-center/components/ContextBar.tsx
+new file mode 100644
+index 0000000..aa6747a
+--- /dev/null
++++ b/frontend/src/pages/evidence-center/components/ContextBar.tsx
+@@ -0,0 +1,64 @@
++interface ContextBarProps {
++  /** 当前队列对象名称;null 表示未选择 */
++  targetLabel: string | null
++  targetType: string | null
++  granularity: string | null
++  confidence: number | null
++  evidenceCount: number | null
++  taskName: string | null
++  /** 当前对象在队列中的下标(0 起);无匹配时为 -1 */
++  queueIndex: number
++  queueTotal: number
++  taskStatus: string | null
++  onBackToDataCenter: () => void
++  onRefresh: () => void
++}
++
++function formatConfidence(v: number | null): string {
++  return v == null ? '—' : `${Math.round(v * 100)}%`
++}
++
++/** 顶部信息条:当前对象 / 任务 / 队列进度,随 Context 数据实时推导 */
++export function ContextBar({
++  targetLabel,
++  targetType,
++  granularity,
++  confidence,
++  evidenceCount,
++  taskName,
++  queueIndex,
++  queueTotal,
++  taskStatus,
++  onBackToDataCenter,
++  onRefresh,
++}: ContextBarProps) {
++  const hasQueue = queueTotal > 0
++  const progress = hasQueue ? `${Math.max(queueIndex, 0) + 1}/${queueTotal}` : null
++  return (
++    <div className="evidence-context-bar" data-testid="evidence-context-bar">
++      <div className="evidence-context-object">
++        <span className="evidence-context-label">{targetLabel ?? '未选择对象'}</span>
++        {targetType && <span className="evidence-context-chip">{targetType}</span>}
++        {granularity && <span className="evidence-context-chip">粒度 {granularity}</span>}
++        {confidence != null && (
++          <span className="evidence-context-chip">置信度 {formatConfidence(confidence)}</span>
++        )}
++        {evidenceCount != null && <span className="evidence-context-chip">{evidenceCount} 条证据</span>}
++      </div>
++      <div className="evidence-context-progress">
++        {hasQueue ? (
++          <span className="evidence-context-task">
++            {taskName ?? '当前任务'} · 进度 {progress}
++          </span>
++        ) : (
++          <span className="evidence-context-task">等待处理对象</span>
++        )}
++        {taskStatus && <span className="evidence-context-chip">{taskStatus}</span>}
++      </div>
++      <div className="evidence-context-actions">
++        <button type="button" className="btn btn-sm" onClick={onRefresh}>刷新</button>
++        <button type="button" className="btn btn-sm btn-primary" onClick={onBackToDataCenter}>返回数据中心</button>
++      </div>
++    </div>
++  )
++}
+diff --git a/frontend/src/pages/evidence-center/components/ObjectQueue.test.tsx b/frontend/src/pages/evidence-center/components/ObjectQueue.test.tsx
+new file mode 100644
+index 0000000..7d51032
+--- /dev/null
++++ b/frontend/src/pages/evidence-center/components/ObjectQueue.test.tsx
+@@ -0,0 +1,48 @@
++import { describe, expect, it, vi } from 'vitest'
++import { fireEvent, render, screen, within } from '@testing-library/react'
++import { ObjectQueue } from './ObjectQueue'
++import type { QueueEntry } from './types'
++
++const ENTRIES: QueueEntry[] = [
++  { target_type: 'connection', target_id: 'a', label: '连接A', confidence: 0.8, status: 'awaiting_review', evidenceCount: 2 },
++  { target_type: 'region', target_id: 'b', label: '脑区B', confidence: null, status: 'completed', evidenceCount: 0 },
++  { target_type: 'region', target_id: 'c', label: '脑区C', confidence: 0.5, status: 'failed', evidenceCount: 1 },
++]
++
++describe('ObjectQueue', () => {
++  it('渲染标题、统计与全部条目,当前条目高亮', () => {
++    render(<ObjectQueue queue={ENTRIES} currentIndex={0} onSelect={() => {}} />)
++    expect(screen.getByText('待处理对象')).toBeTruthy()
++    expect(screen.getByText(/待审核 1/)).toBeTruthy()
++    expect(screen.getByText(/已完成 1/)).toBeTruthy()
++    expect(screen.getByText(/失败 1/)).toBeTruthy()
++    const items = screen.getAllByTestId('evidence-queue-item')
++    expect(items).toHaveLength(3)
++    expect(items[0].className).toContain('evidence-queue-item-active')
++    expect(items[0].textContent).toContain('连接A')
++    expect(items[0].textContent).toContain('connection · 置信度 80%')
++    expect(items[0].textContent).toContain('待审核')
++    expect(items[0].textContent).toContain('2 证据')
++  })
++
++  it('点击条目触发 onSelect', () => {
++    const onSelect = vi.fn()
++    render(<ObjectQueue queue={ENTRIES} currentIndex={-1} onSelect={onSelect} />)
++    fireEvent.click(screen.getAllByTestId('evidence-queue-item')[1])
++    expect(onSelect).toHaveBeenCalledWith(ENTRIES[1])
++  })
++
++  it('勾选「只看未处理」后过滤已完成与失败', () => {
++    render(<ObjectQueue queue={ENTRIES} currentIndex={0} onSelect={() => {}} />)
++    fireEvent.click(screen.getByText('只看未处理'))
++    const items = screen.getAllByTestId('evidence-queue-item')
++    expect(items).toHaveLength(1)
++    expect(items[0].textContent).toContain('连接A')
++  })
++
++  it('空队列显示占位', () => {
++    render(<ObjectQueue queue={[]} currentIndex={-1} onSelect={() => {}} />)
++    expect(screen.getByText('队列为空')).toBeTruthy()
++    expect(within(screen.getByTestId('evidence-queue')).queryByTestId('evidence-queue-item')).toBeNull()
++  })
++})
+diff --git a/frontend/src/pages/evidence-center/components/ObjectQueue.tsx b/frontend/src/pages/evidence-center/components/ObjectQueue.tsx
+new file mode 100644
+index 0000000..67a78e1
+--- /dev/null
++++ b/frontend/src/pages/evidence-center/components/ObjectQueue.tsx
+@@ -0,0 +1,80 @@
++import { useMemo, useState } from 'react'
++import { QUEUE_STATUS_LABEL, queueStatusTone, type QueueEntry, type QueueStatus } from './types'
++
++const PENDING_STATUSES: QueueStatus[] = ['pending', 'searching', 'extracting', 'awaiting_review']
++const DONE_STATUSES: QueueStatus[] = ['completed', 'skipped']
++
++interface ObjectQueueProps {
++  queue: QueueEntry[]
++  /** 当前对象下标;无匹配传 -1 */
++  currentIndex: number
++  onSelect: (entry: QueueEntry) => void
++  showStats?: boolean
++}
++
++/** 统一左栏对象队列:统计 + 只看未处理 + 紧凑对象卡,当前对象浅背景左边强调 */
++export function ObjectQueue({ queue, currentIndex, onSelect, showStats = true }: ObjectQueueProps) {
++  const [onlyPending, setOnlyPending] = useState(false)
++
++  const stats = useMemo(() => ({
++    pending: queue.filter(e => PENDING_STATUSES.includes(e.status)).length,
++    done: queue.filter(e => DONE_STATUSES.includes(e.status)).length,
++    failed: queue.filter(e => e.status === 'failed').length,
++  }), [queue])
++
++  const visible = useMemo(
++    () => (onlyPending ? queue.filter(e => PENDING_STATUSES.includes(e.status)) : queue),
++    [queue, onlyPending],
++  )
++
++  return (
++    <aside className="evidence-queue" data-testid="evidence-queue">
++      <div className="evidence-queue-head">
++        <h4 className="evidence-queue-title">待处理对象</h4>
++        <span className="evidence-queue-count">{queue.length}</span>
++      </div>
++      {showStats && (
++        <div className="evidence-queue-stats">
++          <span className="evidence-queue-stat">待审核 {stats.pending}</span>
++          <span className="evidence-queue-stat">已完成 {stats.done}</span>
++          <span className="evidence-queue-stat">失败 {stats.failed}</span>
++        </div>
++      )}
++      <label className="evidence-queue-filter">
++        <input
++          type="checkbox"
++          checked={onlyPending}
++          onChange={e => setOnlyPending(e.target.checked)}
++        />
++        只看未处理
++      </label>
++      <div className="evidence-queue-list">
++        {visible.map((e, i) => {
++          const originalIndex = onlyPending ? queue.indexOf(e) : i
++          const active = originalIndex === currentIndex
++          const tone = queueStatusTone(e.status)
++          return (
++            <div
++              key={`${e.target_type}:${e.target_id}`}
++              className={`evidence-queue-item${active ? ' evidence-queue-item-active' : ''}`}
++              data-testid="evidence-queue-item"
++              onClick={() => onSelect(e)}
++            >
++              <div className="evidence-queue-item-label">{e.label}</div>
++              <div className="evidence-queue-item-meta">
++                {e.target_type} · 置信度 {e.confidence == null ? '—' : `${Math.round(e.confidence * 100)}%`}
++              </div>
++              <div className="evidence-queue-item-foot">
++                <span className={`evidence-queue-status evidence-queue-status-${tone}`}>
++                  {QUEUE_STATUS_LABEL[e.status] ?? e.status}
++                </span>
++                <span className="evidence-queue-evidence">{e.evidenceCount} 证据</span>
++              </div>
++            </div>
++          )
++        })}
++        {visible.length === 0 && <div className="evidence-queue-empty">队列为空</div>}
++      </div>
++    </aside>
++  )
++}
+diff --git a/frontend/src/pages/evidence-center/components/RightPanel.tsx b/frontend/src/pages/evidence-center/components/RightPanel.tsx
+new file mode 100644
+index 0000000..c9ca98d
+--- /dev/null
++++ b/frontend/src/pages/evidence-center/components/RightPanel.tsx
+@@ -0,0 +1,20 @@
++import type { ModuleKey } from '../EvidenceCenterContext'
++
++const RIGHT_TITLES: Record<ModuleKey, string> = {
++  tasks: '任务与队列概览',
++  papers: '论文详情',
++  candidates: '检索与候选',
++  review: '审核决策',
++  promotion: '晋升确认',
++}
++
++/** 右栏插槽:S2-S5 各模块将在此填充具体内容,本轮仅渲染占位标题 */
++export function RightPanel({ module }: { module: ModuleKey }) {
++  const title = RIGHT_TITLES[module]
++  return (
++    <aside className="evidence-right-panel" data-testid="evidence-right-panel">
++      <h4>{title}</h4>
++      <p className="evidence-module-hint">该面板将在后续迭代提供「{title}」相关内容。</p>
++    </aside>
++  )
++}
+diff --git a/frontend/src/pages/evidence-center/components/StepPills.test.tsx b/frontend/src/pages/evidence-center/components/StepPills.test.tsx
+new file mode 100644
+index 0000000..13fe4e1
+--- /dev/null
++++ b/frontend/src/pages/evidence-center/components/StepPills.test.tsx
+@@ -0,0 +1,30 @@
++import { describe, expect, it } from 'vitest'
++import { render, screen } from '@testing-library/react'
++import { StepPills } from './StepPills'
++
++describe('StepPills', () => {
++  it('渲染五步胶囊', () => {
++    render(<StepPills currentStep={0} />)
++    const pills = screen.getByTestId('evidence-step-pills')
++    for (const label of ['确认对象', '查找论文', '找到原文', '人工审核', '确认晋升']) {
++      expect(screen.getByText(label)).toBeTruthy()
++    }
++    expect(pills.querySelectorAll('.evidence-step-pill')).toHaveLength(5)
++  })
++
++  it.each([
++    { step: 1, active: '确认对象' },
++    { step: 3, active: '找到原文' },
++    { step: 4, active: '人工审核' },
++    { step: 5, active: '确认晋升' },
++  ])('currentStep=$step 时高亮 $active', ({ step, active }) => {
++    render(<StepPills currentStep={step} />)
++    const activePill = screen.getByTestId('evidence-step-pills').querySelector('.evidence-step-pill.active')
++    expect(activePill?.textContent).toContain(active)
++  })
++
++  it('currentStep=0 时无高亮', () => {
++    render(<StepPills currentStep={0} />)
++    expect(screen.getByTestId('evidence-step-pills').querySelector('.evidence-step-pill.active')).toBeNull()
++  })
++})
+diff --git a/frontend/src/pages/evidence-center/components/StepPills.tsx b/frontend/src/pages/evidence-center/components/StepPills.tsx
+new file mode 100644
+index 0000000..1bf11e6
+--- /dev/null
++++ b/frontend/src/pages/evidence-center/components/StepPills.tsx
+@@ -0,0 +1,29 @@
++import type { ModuleKey } from '../EvidenceCenterContext'
++
++export const EVIDENCE_STEPS = ['确认对象', '查找论文', '找到原文', '人工审核', '确认晋升'] as const
++
++/** module → 步骤(0 表示未进入任何步骤,不高亮):候选=1 确认对象,审核=3 找到原文,晋升=4 人工审核 */
++export const MODULE_TO_STEP: Record<ModuleKey, number> = {
++  tasks: 0,
++  papers: 0,
++  candidates: 1,
++  review: 3,
++  promotion: 4,
++}
++
++/** 五步流程小胶囊,仅当前步高亮 */
++export function StepPills({ currentStep }: { currentStep: number }) {
++  return (
++    <div className="evidence-step-pills" data-testid="evidence-step-pills">
++      {EVIDENCE_STEPS.map((label, i) => {
++        const step = i + 1
++        return (
++          <span key={label} className={`evidence-step-pill${currentStep === step ? ' active' : ''}`}>
++            <span className="evidence-step-num">{step}</span>
++            {label}
++          </span>
++        )
++      })}
++    </div>
++  )
++}
+diff --git a/frontend/src/pages/evidence-center/components/types.ts b/frontend/src/pages/evidence-center/components/types.ts
+index ef6dfa8..74415bd 100644
+--- a/frontend/src/pages/evidence-center/components/types.ts
++++ b/frontend/src/pages/evidence-center/components/types.ts
+@@ -63,20 +63,44 @@ export interface QueueEntry {
+   evidenceCount: number
+   taskItemId?: string
+   draftPmid?: string
+   preprocessOutcome?: string | null
+   modelDirection?: Direction | null
+   draftPassages?: WorkbenchPassage[]
+   draftDirection?: Direction
+   draft?: WorkbenchDraft
+ }
+ 
++export const QUEUE_STATUS_LABEL: Record<QueueStatus, string> = {
++  pending: '待处理',
++  searching: '检索中',
++  extracting: '提取中',
++  awaiting_review: '待审核',
++  completed: '已完成',
++  skipped: '已跳过',
++  failed: '失败',
++}
++
++/** 队列条目状态 → 语义色板(ok/warn/bad/info/muted) */
++export function queueStatusTone(status: QueueStatus): string {
++  switch (status) {
++    case 'completed': return 'ok'
++    case 'awaiting_review': return 'warn'
++    case 'failed': return 'bad'
++    case 'pending':
++    case 'searching':
++    case 'extracting': return 'info'
++    case 'skipped': return 'muted'
++    default: return 'muted'
++  }
++}
++
+ export const DIRECTION_LABEL: Record<Direction, string> = {
+   supports: '支持',
+   partial: '部分支持',
+   contradicts: '矛盾',
+   mixed: '混合证据',
+   not_found: '未找到',
+ }
+ 
+ export const LEVEL_LABEL: Record<EvidenceLevel, string> = {
+   direct: '直接证据',
+diff --git a/frontend/src/styles.css b/frontend/src/styles.css
+index a85cc85..83d9f71 100644
+--- a/frontend/src/styles.css
++++ b/frontend/src/styles.css
+@@ -11963,10 +11963,136 @@ input[type="range"]::-webkit-slider-thumb {
+   border: 1px solid var(--border);
+   border-radius: 8px;
+   padding: 8px 10px;
+   display: flex;
+   flex-direction: column;
+   gap: 4px;
+   background: #fafcff;
+ }
+ .evidence-detail-passage-meta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+ .evidence-detail-actions { display: flex; gap: 8px; justify-content: flex-end; }
++
++/* ── Evidence Center V2 三栏骨架 (S1) ─────────────────────────────────────── */
++.evidence-center {
++  height: calc(100vh - var(--topbar-h) - var(--log-console-actual-height, var(--log-console-height-collapsed)) - 44px);
++  min-height: 0;
++}
++.evidence-center-layout {
++  flex: 1;
++  min-height: 0;
++  display: grid;
++  grid-template-columns: 230px minmax(620px, 1fr) 370px;
++  gap: 14px;
++}
++.evidence-center-layout-full { grid-template-columns: 1fr; }
++.evidence-center-layout-full .evidence-left,
++.evidence-center-layout-full .evidence-right { display: none; }
++.evidence-left,
++.evidence-main,
++.evidence-right {
++  min-height: 0;
++  min-width: 0;
++  overflow-y: auto;
++  background: var(--white);
++  border: 1px solid var(--border);
++  border-radius: var(--card-radius);
++  box-shadow: var(--shadow);
++  padding: 12px 14px;
++}
++.evidence-main { display: flex; flex-direction: column; gap: 12px; }
++.evidence-right-panel h4 { font-size: 14px; color: var(--text); margin-bottom: 6px; }
++
++/* 顶部信息条 ContextBar */
++.evidence-context-bar {
++  display: flex;
++  align-items: center;
++  gap: 14px;
++  flex-wrap: wrap;
++  padding: 10px 14px;
++  background: var(--white);
++  border: 1px solid var(--border);
++  border-radius: var(--card-radius);
++  box-shadow: var(--shadow);
++}
++.evidence-context-object { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-width: 0; }
++.evidence-context-label { font-size: 14px; font-weight: 700; color: var(--text); }
++.evidence-context-chip {
++  font-size: 11px;
++  font-weight: 600;
++  background: #f1f5f9;
++  color: var(--text-muted);
++  border-radius: 999px;
++  padding: 2px 10px;
++}
++.evidence-context-task { font-size: 12px; color: var(--text-muted); }
++.evidence-context-progress { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
++.evidence-context-actions { margin-left: auto; display: flex; gap: 8px; }
++
++/* 五步流程 StepPills */
++.evidence-step-pills { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
++.evidence-step-pill {
++  display: inline-flex;
++  align-items: center;
++  gap: 6px;
++  font-size: 12px;
++  font-weight: 500;
++  color: var(--text-muted);
++  padding: 4px 10px;
++  border-radius: 999px;
++  background: #f1f5f9;
++  transition: all .15s ease;
++}
++.evidence-step-num {
++  width: 16px;
++  height: 16px;
++  border-radius: 50%;
++  background: #e2e8f0;
++  color: var(--text-muted);
++  font-size: 10px;
++  font-weight: 700;
++  display: inline-flex;
++  align-items: center;
++  justify-content: center;
++}
++.evidence-step-pill.active { background: var(--primary); color: #fff; }
++.evidence-step-pill.active .evidence-step-num { background: rgba(255, 255, 255, .25); color: #fff; }
++
++/* 统一对象队列 ObjectQueue */
++.evidence-queue { display: flex; flex-direction: column; gap: 8px; }
++.evidence-queue-head { display: flex; align-items: center; justify-content: space-between; }
++.evidence-queue-title { font-size: 14px; font-weight: 700; color: var(--text); }
++.evidence-queue-count { background: #eff6ff; color: var(--primary); border-radius: 999px; padding: 1px 8px; font-size: 11px; font-weight: 600; }
++.evidence-queue-stats { display: flex; gap: 6px; flex-wrap: wrap; }
++.evidence-queue-stat { font-size: 11px; color: var(--text-muted); background: #f8fafc; border-radius: 6px; padding: 2px 8px; }
++.evidence-queue-filter { font-size: 12px; color: var(--text-muted); display: flex; align-items: center; gap: 4px; cursor: pointer; user-select: none; }
++.evidence-queue-list { display: flex; flex-direction: column; gap: 6px; }
++.evidence-queue-item {
++  position: relative;
++  border: 1px solid var(--border);
++  border-radius: 8px;
++  padding: 8px 10px 8px 14px;
++  cursor: pointer;
++  transition: border-color .15s ease, background .15s ease;
++}
++.evidence-queue-item:hover { border-color: var(--primary); }
++.evidence-queue-item-active { border-color: var(--primary); background: #eff6ff; }
++.evidence-queue-item-active::before {
++  content: '';
++  position: absolute;
++  left: -1px;
++  top: 6px;
++  bottom: 6px;
++  width: 3px;
++  border-radius: 2px;
++  background: var(--primary);
++}
++.evidence-queue-item-label { font-size: 13px; font-weight: 600; color: var(--text); }
++.evidence-queue-item-meta { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
++.evidence-queue-item-foot { display: flex; align-items: center; justify-content: space-between; margin-top: 4px; }
++.evidence-queue-status { font-size: 11px; font-weight: 600; }
++.evidence-queue-status-info { color: var(--primary); }
++.evidence-queue-status-warn { color: #d48806; }
++.evidence-queue-status-ok { color: #389e0d; }
++.evidence-queue-status-bad { color: #cf1322; }
++.evidence-queue-status-muted { color: var(--text-muted); }
++.evidence-queue-evidence { font-size: 11px; color: var(--text-muted); }
++.evidence-queue-empty { font-size: 12px; color: var(--text-muted); text-align: center; padding: 16px 0; }

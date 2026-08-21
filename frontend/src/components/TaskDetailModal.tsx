@@ -166,6 +166,8 @@ export function TaskDetailModalProvider({ children }: { children: ReactNode }) {
                 ) : (
                   <ExtractionProgressPanel
                     progress={mapCwToProgress(detail, elapsed)}
+                    provider={task.provider}
+                    modelName={task.modelName}
                     onPause={isRunning && !isCancelling ? handlePause : undefined}
                     onCancel={isRunning ? handleCancel : () => {}}
                     onClose={isRunning ? handleBackground : closeTask}

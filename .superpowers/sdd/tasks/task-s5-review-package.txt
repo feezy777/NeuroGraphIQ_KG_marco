@@ -1,0 +1,807 @@
+12c8b02 feat(evidence-center): 佐证任务右栏摘要 + 论文库全宽 + 视觉收尾
+===STAT===
+ .../evidence-center/EvidenceCenterContext.tsx      |  18 ++-
+ .../evidence-center/EvidenceCenterPage.test.tsx    |   6 +-
+ .../evidence-center/components/RightPanel.tsx      |  29 ++++-
+ .../evidence-center/components/TaskSummary.tsx     | 121 +++++++++++++++++++++
+ .../pages/evidence-center/components/taskStatus.ts |  32 ++++++
+ .../modules/EvidenceTasksModule.test.tsx           |  94 +++++++++++++++-
+ .../modules/EvidenceTasksModule.tsx                | 102 ++++++++++-------
+ frontend/src/styles.css                            |  35 +++++-
+ 8 files changed, 390 insertions(+), 47 deletions(-)
+===DIFF===
+diff --git a/frontend/src/pages/evidence-center/EvidenceCenterContext.tsx b/frontend/src/pages/evidence-center/EvidenceCenterContext.tsx
+index 3d7d61a..672443f 100644
+--- a/frontend/src/pages/evidence-center/EvidenceCenterContext.tsx
++++ b/frontend/src/pages/evidence-center/EvidenceCenterContext.tsx
+@@ -1,14 +1,15 @@
+ import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
+ import type { CandidateSummaryData } from './components/CandidateSummary'
+ import type { PromotionImpactState } from './components/PromotionImpact'
+ import type { ReviewDecisionState } from './components/ReviewerDecisionPanel'
++import type { TaskSummaryActions, TaskSummaryData } from './components/TaskSummary'
+ import type { QueueEntry } from './components/types'
+ import { buildEvidenceUrl, parseEvidenceUrl, type EvidenceCenterState } from './evidenceCenterUrl'
+ 
+ export type ModuleKey = 'tasks' | 'papers' | 'candidates' | 'review' | 'promotion'
+ 
+ interface EvidenceCenterContextValue {
+   state: EvidenceCenterState
+   queue: QueueEntry[]
+   setQueue: (q: QueueEntry[]) => void
+   gotoModule: (m: ModuleKey) => void
+@@ -17,30 +18,41 @@ interface EvidenceCenterContextValue {
+   selectPaper: (paperId: string | null) => void
+   /** 候选模块推送的右栏摘要(仅 candidates 模块使用) */
+   candidateSummary: CandidateSummaryData | null
+   setCandidateSummary: (s: CandidateSummaryData | null) => void
+   /** 审核模块推送的人工审核决策状态(仅 review 模块使用,RightPanel 渲染 ReviewerDecisionPanel) */
+   reviewDecision: ReviewDecisionState | null
+   setReviewDecision: (s: ReviewDecisionState | null) => void
+   /** 晋升模块推送的晋升影响状态(仅 promotion 模块使用,RightPanel 渲染 PromotionImpact) */
+   promotionImpact: PromotionImpactState | null
+   setPromotionImpact: (s: PromotionImpactState | null) => void
++  /** 佐证任务模块推送的选中任务摘要(仅 tasks 模块使用,RightPanel 渲染 TaskSummary) */
++  taskSummary: TaskSummaryData | null
++  setTaskSummary: (s: TaskSummaryData | null) => void
++  /** 佐证任务模块注册的右栏操作(创建批量预处理/刷新;对话框与列表都在模块内) */
++  taskSummaryActions: TaskSummaryActions
++  setTaskSummaryActions: (a: TaskSummaryActions) => void
+ }
+ 
+ const EvidenceCenterContext = createContext<EvidenceCenterContextValue | null>(null)
+ 
+ export function EvidenceCenterProvider({ children }: { children: ReactNode }) {
+   const [state, setState] = useState<EvidenceCenterState>(() => parseEvidenceUrl(window.location.hash))
+   const [queue, setQueue] = useState<QueueEntry[]>([])
+   const [candidateSummary, setCandidateSummary] = useState<CandidateSummaryData | null>(null)
+   const [reviewDecision, setReviewDecision] = useState<ReviewDecisionState | null>(null)
+   const [promotionImpact, setPromotionImpact] = useState<PromotionImpactState | null>(null)
++  const [taskSummary, setTaskSummary] = useState<TaskSummaryData | null>(null)
++  const [taskSummaryActions, setTaskSummaryActions] = useState<TaskSummaryActions>({
++    onCreateBatch: () => {},
++    onRefresh: () => {},
++  })
+ 
+   useEffect(() => {
+     const handler = () => setState(parseEvidenceUrl(window.location.hash))
+     window.addEventListener('hashchange', handler)
+     return () => window.removeEventListener('hashchange', handler)
+   }, [])
+ 
+   const apply = useCallback((patch: Partial<EvidenceCenterState>) => {
+     setState(prev => {
+       const next = { ...prev, ...patch }
+@@ -67,20 +79,24 @@ export function EvidenceCenterProvider({ children }: { children: ReactNode }) {
+     gotoModule,
+     openTask,
+     openTarget,
+     selectPaper,
+     candidateSummary,
+     setCandidateSummary,
+     reviewDecision,
+     setReviewDecision,
+     promotionImpact,
+     setPromotionImpact,
+-  }), [state, queue, gotoModule, openTask, openTarget, selectPaper, candidateSummary, reviewDecision, promotionImpact])
++    taskSummary,
++    setTaskSummary,
++    taskSummaryActions,
++    setTaskSummaryActions,
++  }), [state, queue, gotoModule, openTask, openTarget, selectPaper, candidateSummary, reviewDecision, promotionImpact, taskSummary, taskSummaryActions])
+ 
+   return <EvidenceCenterContext.Provider value={value}>{children}</EvidenceCenterContext.Provider>
+ }
+ 
+ export function useEvidenceCenter(): EvidenceCenterContextValue {
+   const ctx = useContext(EvidenceCenterContext)
+   if (!ctx) throw new Error('useEvidenceCenter must be used within EvidenceCenterProvider')
+   return ctx
+ }
+diff --git a/frontend/src/pages/evidence-center/EvidenceCenterPage.test.tsx b/frontend/src/pages/evidence-center/EvidenceCenterPage.test.tsx
+index e4b6f25..a8abbcb 100644
+--- a/frontend/src/pages/evidence-center/EvidenceCenterPage.test.tsx
++++ b/frontend/src/pages/evidence-center/EvidenceCenterPage.test.tsx
+@@ -141,26 +141,30 @@ describe('EvidenceCenterPage', () => {
+     window.location.hash = '#/evidence-center?module=candidates'
+     const { container } = render(<EvidenceCenterPage />)
+     expect(container.querySelector('.evidence-center-layout')).toBeTruthy()
+     expect(container.querySelector('.evidence-left')).toBeTruthy()
+     expect(container.querySelector('.evidence-main')).toBeTruthy()
+     expect(container.querySelector('.evidence-right')).toBeTruthy()
+     expect(screen.getByTestId('evidence-queue')).toBeTruthy()
+     expect(screen.getByTestId('evidence-right-panel')).toBeTruthy()
+   })
+ 
+-  it('papers 模块例外:全宽渲染并隐藏左右栏', async () => {
++  it('papers 模块例外:全宽渲染并隐藏左右栏,论文库主区布局完整', async () => {
+     window.location.hash = '#/evidence-center?module=papers'
+     const { container } = render(<EvidenceCenterPage />)
+     await waitFor(() => expect(container.querySelector('.evidence-center-layout-full')).toBeTruthy())
+     expect(container.querySelector('.evidence-left')).toBeNull()
+     expect(container.querySelector('.evidence-right')).toBeNull()
++    // 全宽下论文库完整渲染:搜索条 + 空态(不受 620px 主区限制影响)
++    expect(container.querySelector('.paper-module')).toBeTruthy()
++    expect(container.querySelector('.paper-search-bar')).toBeTruthy()
++    await waitFor(() => expect(screen.getByText(/暂无论文/)).toBeTruthy())
+   })
+ 
+   it('右栏随 module 切换:占位标题(任务/审核)与候选摘要(candidates)', () => {
+     window.location.hash = '#/evidence-center?module=tasks'
+     const { container } = render(<EvidenceCenterPage />)
+     const title = () => container.querySelector('.evidence-right-panel h4')?.textContent ?? ''
+     expect(title()).toContain('任务')
+     fireEvent.click(screen.getByText('证据候选'))
+     expect(title()).toContain('候选摘要')
+     fireEvent.click(screen.getAllByText('人工审核')[0])
+diff --git a/frontend/src/pages/evidence-center/components/RightPanel.tsx b/frontend/src/pages/evidence-center/components/RightPanel.tsx
+index b8044ac..d1d9cd1 100644
+--- a/frontend/src/pages/evidence-center/components/RightPanel.tsx
++++ b/frontend/src/pages/evidence-center/components/RightPanel.tsx
+@@ -1,26 +1,51 @@
+ import { useEvidenceCenter, type ModuleKey } from '../EvidenceCenterContext'
+ import { CandidateSummary } from './CandidateSummary'
+ import { PromotionImpact } from './PromotionImpact'
+ import { ReviewerDecisionPanel } from './ReviewerDecisionPanel'
++import { TaskSummary } from './TaskSummary'
+ 
+ const RIGHT_TITLES: Record<ModuleKey, string> = {
+   tasks: '任务与队列概览',
+   papers: '论文详情',
+   candidates: '检索与候选',
+   review: '人工审核',
+   promotion: '晋升确认',
+ }
+ 
+-/** 右栏插槽:候选模块渲染 CandidateSummary,审核模块渲染 ReviewerDecisionPanel,晋升模块渲染 PromotionImpact,其余模块暂为占位标题 */
++/** 右栏插槽:佐证任务渲染 TaskSummary,候选模块渲染 CandidateSummary,审核模块渲染 ReviewerDecisionPanel,晋升模块渲染 PromotionImpact */
+ export function RightPanel({ module }: { module: ModuleKey }) {
+-  const { state, candidateSummary, reviewDecision, promotionImpact, openTarget } = useEvidenceCenter()
++  const {
++    state,
++    taskSummary,
++    taskSummaryActions,
++    candidateSummary,
++    reviewDecision,
++    promotionImpact,
++    openTarget,
++    openTask,
++  } = useEvidenceCenter()
++
++  if (module === 'tasks') {
++    return (
++      <aside className="evidence-right-panel" data-testid="evidence-right-panel">
++        <TaskSummary
++          data={taskSummary}
++          onStartReview={() => {
++            if (taskSummary) openTask(taskSummary.id)
++          }}
++          onCreateBatch={taskSummaryActions.onCreateBatch}
++          onRefresh={taskSummaryActions.onRefresh}
++        />
++      </aside>
++    )
++  }
+ 
+   if (module === 'candidates') {
+     return (
+       <aside className="evidence-right-panel" data-testid="evidence-right-panel">
+         <CandidateSummary
+           data={candidateSummary}
+           onEnterReview={() => {
+             if (state.targetType && state.targetId) openTarget(state.targetType, state.targetId, 'review')
+           }}
+         />
+diff --git a/frontend/src/pages/evidence-center/components/TaskSummary.tsx b/frontend/src/pages/evidence-center/components/TaskSummary.tsx
+new file mode 100644
+index 0000000..cf61bf3
+--- /dev/null
++++ b/frontend/src/pages/evidence-center/components/TaskSummary.tsx
+@@ -0,0 +1,121 @@
++import { TASK_REVIEW_LABELS, TASK_STATUS_LABELS, taskReviewTone, taskStatusTone } from './taskStatus'
++
++/** 佐证任务模块经 Context 推送到右栏的选中任务摘要(与 S3 reviewDecision / S4 promotionImpact 同模式) */
++export interface TaskSummaryData {
++  id: string
++  name: string | null
++  targetType: string
++  mode: string
++  granularity: string | null
++  status: string
++  reviewStatus: string | null
++  total: number
++  processed: number
++  awaitingReview: number
++  failed: number
++  createdAt: string | null
++}
++
++/** 任务模块注册到 Context 的右栏操作(对话框与列表刷新都在模块内,经回调触发) */
++export interface TaskSummaryActions {
++  onCreateBatch: () => void
++  onRefresh: () => void
++}
++
++interface Props {
++  data: TaskSummaryData | null
++  /** 开始人工处理:进入证据候选模块(openTask) */
++  onStartReview: () => void
++  onCreateBatch: () => void
++  onRefresh: () => void
++}
++
++const MODE_LABELS: Record<string, string> = {
++  existence: '存在性',
++  function: '功能',
++  relation: '关系',
++  combined: '组合',
++}
++
++function formatDate(iso: string | null): string {
++  if (!iso) return '—'
++  const d = new Date(iso)
++  if (Number.isNaN(d.getTime())) return iso
++  const pad = (n: number) => String(n).padStart(2, '0')
++  // UTC 输出,避免测试与浏览器时区差异导致断言漂移
++  return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())} ${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}`
++}
++
++/** 右栏任务摘要:选中任务的状态/进度计数条/任务信息 + [开始人工处理] [创建批量预处理] [刷新] */
++export function TaskSummary({ data, onStartReview, onCreateBatch, onRefresh }: Props) {
++  if (!data) {
++    return (
++      <div className="evidence-task-summary" data-testid="evidence-task-summary">
++        <h4>任务摘要</h4>
++        <p className="evidence-module-hint">在左侧任务列表中选择一个任务，查看处理进度与操作。</p>
++      </div>
++    )
++  }
++
++  const total = data.total
++  const pct = (n: number) => (total > 0 ? Math.min(100, Math.round((n / total) * 100)) : 0)
++  const statusLabel = TASK_STATUS_LABELS[data.status] ?? data.status
++  const reviewLabel = TASK_REVIEW_LABELS[data.reviewStatus ?? ''] ?? data.reviewStatus ?? '—'
++
++  return (
++    <div className="evidence-task-summary" data-testid="evidence-task-summary">
++      <h4>任务摘要</h4>
++
++      <div className="evidence-task-summary-name">{data.name || data.targetType}</div>
++      <div className="evidence-task-summary-meta">
++        <span className="evidence-task-type">{data.targetType}</span>
++        <span className={`evidence-task-chip evidence-task-chip-${taskStatusTone(data.status)}`}>预处理 · {statusLabel}</span>
++        <span className={`evidence-task-chip evidence-task-chip-${taskReviewTone(data.reviewStatus)}`}>审核 · {reviewLabel}</span>
++      </div>
++
++      <div className="evidence-task-summary-section">
++        <span className="evidence-summary-label">处理进度</span>
++        <div className="evidence-progress-bar" data-testid="evidence-progress-bar">
++          <span className="evidence-progress-seg evidence-progress-ok" data-testid="evidence-progress-ok" style={{ width: `${pct(data.processed)}%` }} />
++          <span className="evidence-progress-seg evidence-progress-warn" data-testid="evidence-progress-warn" style={{ width: `${pct(data.awaitingReview)}%` }} />
++          <span className="evidence-progress-seg evidence-progress-bad" data-testid="evidence-progress-bad" style={{ width: `${pct(data.failed)}%` }} />
++        </div>
++        <div className="evidence-task-progress-stats">
++          <span>已处理 <b>{data.processed}</b></span>
++          <span>待审 <b>{data.awaitingReview}</b></span>
++          <span>失败 <b>{data.failed}</b></span>
++          <span>总数 <b>{total}</b></span>
++        </div>
++      </div>
++
++      <div className="evidence-section-divider" />
++
++      <dl className="evidence-summary-stats">
++        <div className="evidence-summary-stat">
++          <dt>模式</dt>
++          <dd>{MODE_LABELS[data.mode] ?? data.mode}</dd>
++        </div>
++        <div className="evidence-summary-stat">
++          <dt>粒度</dt>
++          <dd>{data.granularity || '—'}</dd>
++        </div>
++        <div className="evidence-summary-stat">
++          <dt>创建时间</dt>
++          <dd>{formatDate(data.createdAt)}</dd>
++        </div>
++      </dl>
++
++      <div className="evidence-task-summary-actions">
++        <button type="button" className="btn btn-sm btn-primary" onClick={onStartReview}>
++          开始人工处理
++        </button>
++        <button type="button" className="btn btn-sm" onClick={onCreateBatch}>
++          创建批量预处理
++        </button>
++        <button type="button" className="btn btn-sm" onClick={onRefresh}>
++          刷新
++        </button>
++      </div>
++    </div>
++  )
++}
+diff --git a/frontend/src/pages/evidence-center/components/taskStatus.ts b/frontend/src/pages/evidence-center/components/taskStatus.ts
+new file mode 100644
+index 0000000..ea74277
+--- /dev/null
++++ b/frontend/src/pages/evidence-center/components/taskStatus.ts
+@@ -0,0 +1,32 @@
++/** 佐证任务状态标签与色调用色(任务列表 EvidenceTasksModule 与右栏 TaskSummary 共用) */
++
++export const TASK_STATUS_LABELS: Record<string, string> = {
++  pending: '待预处理',
++  running: '运行中',
++  paused: '已暂停',
++  completed: '预处理完成',
++  failed: '预处理失败',
++}
++
++export const TASK_REVIEW_LABELS: Record<string, string> = {
++  not_started: '未开始审核',
++  processing: '审核中',
++  in_progress: '审核中',
++  completed: '审核完成',
++}
++
++export function taskStatusTone(status: string): string {
++  switch (status) {
++    case 'completed': return 'ok'
++    case 'failed': return 'bad'
++    case 'paused': return 'warn'
++    case 'running': return 'info'
++    default: return 'muted'
++  }
++}
++
++export function taskReviewTone(reviewStatus: string | null): string {
++  if (reviewStatus === 'completed') return 'ok'
++  if (reviewStatus === 'processing' || reviewStatus === 'in_progress') return 'info'
++  return 'muted'
++}
+diff --git a/frontend/src/pages/evidence-center/modules/EvidenceTasksModule.test.tsx b/frontend/src/pages/evidence-center/modules/EvidenceTasksModule.test.tsx
+index 8da4f44..eabfcf6 100644
+--- a/frontend/src/pages/evidence-center/modules/EvidenceTasksModule.test.tsx
++++ b/frontend/src/pages/evidence-center/modules/EvidenceTasksModule.test.tsx
+@@ -1,14 +1,15 @@
+ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
++import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+ import * as endpoints from '../../../api/endpoints'
+ import { EvidenceCenterProvider } from '../EvidenceCenterContext'
++import { RightPanel } from '../components/RightPanel'
+ import { EvidenceTasksModule } from './EvidenceTasksModule'
+ 
+ vi.mock('../../../api/endpoints', () => ({
+   listPaperEvidenceTasks: vi.fn(),
+   createPaperEvidenceBatch: vi.fn(),
+   previewEvidenceBatchScope: vi.fn(),
+ }))
+ 
+ const TASK = {
+   id: 't1', target_type: 'connection', name: '任务一', status: 'pending',
+@@ -20,20 +21,34 @@ const TASK = {
+   started_at: null, finished_at: null, error_message: null, materialization_status: 'completed',
+   materialization_cursor: null, materialization_error: null, confidence_lt: null,
+   only_oa: false, stop_after_strong_support: false, summary: null,
+   scope_type: 'filter', filter_snapshot: null, versions: null,
+ }
+ 
+ /** 匹配 "标签 <b>值</b>" 结构的统计文本(直接文本子节点不含 <b> 内数值) */
+ const stat = (label: string, value: number) =>
+   screen.getByText((_content, el) => el?.textContent === `${label} ${value}`)
+ 
++/** 在 Task Summary 内匹配 "标签 <b>值</b>" 结构(避免与任务行统计重复匹配) */
++const summaryStat = (label: string, value: number) =>
++  within(screen.getByTestId('evidence-task-summary'))
++    .getByText((_content, el) => el?.textContent === `${label} ${value}`)
++
++/** 模块 + 右栏 Task Summary 组合渲染(与页面级 EvidenceCenterPage 接线一致) */
++const renderWithRightPanel = () =>
++  render(
++    <EvidenceCenterProvider>
++      <EvidenceTasksModule />
++      <RightPanel module="tasks" />
++    </EvidenceCenterProvider>,
++  )
++
+ describe('EvidenceTasksModule', () => {
+   afterEach(() => { cleanup(); window.location.hash = '' })
+   beforeEach(() => {
+     vi.clearAllMocks()
+     vi.mocked(endpoints.listPaperEvidenceTasks).mockResolvedValue({ items: [TASK], total: 1 })
+     vi.mocked(endpoints.previewEvidenceBatchScope).mockResolvedValue({ estimated_target_count: 2, over_limit: false, message: null })
+     vi.mocked(endpoints.createPaperEvidenceBatch).mockResolvedValue({ task_id: 'new1', target_count: 2, skipped_active_targets: 0, auto_started: true })
+   })
+ 
+   it('渲染任务列表与状态分组', async () => {
+@@ -98,11 +113,88 @@ describe('EvidenceTasksModule', () => {
+     await waitFor(() => expect(screen.getByText(/任务加载失败/)).toBeTruthy())
+     fireEvent.click(screen.getByText('重试'))
+     await waitFor(() => expect(screen.getByText('任务一')).toBeTruthy())
+   })
+ 
+   it('空列表显示空态提示', async () => {
+     vi.mocked(endpoints.listPaperEvidenceTasks).mockResolvedValue({ items: [], total: 0 })
+     render(<EvidenceCenterProvider><EvidenceTasksModule /></EvidenceCenterProvider>)
+     await waitFor(() => expect(screen.getByText(/暂无佐证任务/)).toBeTruthy())
+   })
++
++  // ─── V2-S5 右栏 Task Summary ───
++
++  it('未选中任务时右栏 Task Summary 显示引导提示', async () => {
++    renderWithRightPanel()
++    await waitFor(() => expect(screen.getByText('任务一')).toBeTruthy())
++    expect(screen.getByTestId('evidence-task-summary')).toBeTruthy()
++    expect(screen.getByText(/选择一个任务/)).toBeTruthy()
++  })
++
++  it('选中任务后右栏 Task Summary 显示进度计数条/状态/任务信息,行高亮', async () => {
++    renderWithRightPanel()
++    await waitFor(() => expect(screen.getByText('任务一')).toBeTruthy())
++    fireEvent.click(screen.getByTestId('evidence-task-row-t1'))
++    const summary = screen.getByTestId('evidence-task-summary')
++    // 名称与类型
++    expect(within(summary).getByText('任务一')).toBeTruthy()
++    expect(within(summary).getByText('connection')).toBeTruthy()
++    // 状态 chips(与任务行内文本重复,限定在摘要内断言)
++    expect(within(summary).getByText('预处理 · 待预处理')).toBeTruthy()
++    expect(within(summary).getByText('审核 · 未开始审核')).toBeTruthy()
++    // 进度计数条:processed=0 / awaiting=2 / failed=0(总数为 2)
++    expect(within(summary).getByTestId('evidence-progress-bar')).toBeTruthy()
++    expect((within(summary).getByTestId('evidence-progress-ok') as HTMLSpanElement).style.width).toBe('0%')
++    expect((within(summary).getByTestId('evidence-progress-warn') as HTMLSpanElement).style.width).toBe('100%')
++    expect((within(summary).getByTestId('evidence-progress-bad') as HTMLSpanElement).style.width).toBe('0%')
++    expect(summaryStat('已处理', 0)).toBeTruthy()
++    expect(summaryStat('待审', 2)).toBeTruthy()
++    expect(summaryStat('失败', 0)).toBeTruthy()
++    expect(summaryStat('总数', 2)).toBeTruthy()
++    // 任务信息:模式/粒度/创建时间
++    expect(within(summary).getByText('模式')).toBeTruthy()
++    expect(within(summary).getByText('存在性')).toBeTruthy()
++    expect(within(summary).getByText('粒度')).toBeTruthy()
++    expect(within(summary).getByText('macro')).toBeTruthy()
++    expect(within(summary).getByText('创建时间')).toBeTruthy()
++    expect(within(summary).getByText('2026-08-10 00:00')).toBeTruthy()
++    // 任务行选中高亮
++    expect(screen.getByTestId('evidence-task-row-t1').className).toContain('evidence-task-row-selected')
++  })
++
++  it('TaskSummary [开始人工处理] 跳转候选模块(URL task_id)', async () => {
++    renderWithRightPanel()
++    await waitFor(() => expect(screen.getByText('任务一')).toBeTruthy())
++    fireEvent.click(screen.getByTestId('evidence-task-row-t1'))
++    fireEvent.click(within(screen.getByTestId('evidence-task-summary')).getByText('开始人工处理'))
++    await waitFor(() => expect(window.location.hash).toContain('module=candidates'))
++    expect(window.location.hash).toContain('task_id=t1')
++  })
++
++  it('TaskSummary [创建批量预处理] 打开模块对话框,[刷新] 重新加载任务列表', async () => {
++    renderWithRightPanel()
++    await waitFor(() => expect(screen.getByText('任务一')).toBeTruthy())
++    fireEvent.click(screen.getByTestId('evidence-task-row-t1'))
++    const summary = screen.getByTestId('evidence-task-summary')
++    // 创建批量预处理:右栏按钮触发模块内对话框
++    fireEvent.click(within(summary).getByText('创建批量预处理'))
++    expect(screen.getByTestId('create-batch-dialog')).toBeTruthy()
++    fireEvent.click(within(screen.getByTestId('create-batch-dialog')).getByText('关闭'))
++    expect(screen.queryByTestId('create-batch-dialog')).toBeNull()
++    // 刷新:重新请求任务列表
++    const callsBefore = vi.mocked(endpoints.listPaperEvidenceTasks).mock.calls.length
++    fireEvent.click(within(summary).getByText('刷新'))
++    await waitFor(() =>
++      expect(vi.mocked(endpoints.listPaperEvidenceTasks).mock.calls.length).toBeGreaterThan(callsBefore),
++    )
++  })
++
++  it('URL 携带 task_id 时自动选中任务并在右栏显示摘要', async () => {
++    window.location.hash = '#/evidence-center?module=tasks&task_id=t1'
++    renderWithRightPanel()
++    const summary = await screen.findByTestId('evidence-task-summary')
++    await waitFor(() => expect(within(summary).getByText('任务一')).toBeTruthy())
++    expect(screen.getByTestId('evidence-task-row-t1').className).toContain('evidence-task-row-selected')
++    expect(within(summary).getByText('存在性')).toBeTruthy()
++    expect(summaryStat('总数', 2)).toBeTruthy()
++  })
+ })
+diff --git a/frontend/src/pages/evidence-center/modules/EvidenceTasksModule.tsx b/frontend/src/pages/evidence-center/modules/EvidenceTasksModule.tsx
+index b8dfe58..e95bbf4 100644
+--- a/frontend/src/pages/evidence-center/modules/EvidenceTasksModule.tsx
++++ b/frontend/src/pages/evidence-center/modules/EvidenceTasksModule.tsx
+@@ -1,126 +1,148 @@
+-import { useCallback, useEffect, useState } from 'react'
++import { useCallback, useEffect, useMemo, useState } from 'react'
+ import { listPaperEvidenceTasks, type PaperEvidenceTask } from '../../../api/endpoints'
+ import { useGlobalGranularity } from '../../../hooks/useGlobalGranularity'
+ import { useEvidenceCenter } from '../EvidenceCenterContext'
+ import { CreateBatchTaskDialog } from '../components/CreateBatchTaskDialog'
++import type { TaskSummaryActions, TaskSummaryData } from '../components/TaskSummary'
++import { TASK_REVIEW_LABELS, TASK_STATUS_LABELS, taskReviewTone, taskStatusTone } from '../components/taskStatus'
+ 
+ interface StatusGroup {
+   key: string
+   label: string
+   match: (t: PaperEvidenceTask) => boolean
+ }
+ 
+ /** 状态分组(任务只落入第一个命中的分组,避免重复展示) */
+ const STATUS_GROUPS: StatusGroup[] = [
+   { key: 'pending', label: '待处理', match: t => t.status === 'pending' },
+   { key: 'preprocessing', label: '预处理中', match: t => ['running', 'paused'].includes(t.status) },
+   { key: 'awaiting', label: '待人工审核', match: t => t.awaiting_review_items > 0 },
+   { key: 'reviewed', label: '已审核', match: t => t.review_status === 'completed' },
+   { key: 'done', label: '已完成', match: t => t.status === 'completed' && t.awaiting_review_items === 0 },
+   { key: 'failed', label: '失败', match: t => t.failed_items > 0 || t.status === 'failed' },
+ ]
+ 
+-const STATUS_LABELS: Record<string, string> = {
+-  pending: '待预处理',
+-  running: '运行中',
+-  paused: '已暂停',
+-  completed: '预处理完成',
+-  failed: '预处理失败',
+-}
+-
+-const REVIEW_LABELS: Record<string, string> = {
+-  not_started: '未开始审核',
+-  processing: '审核中',
+-  in_progress: '审核中',
+-  completed: '审核完成',
+-}
+-
+-function statusTone(status: string): string {
+-  switch (status) {
+-    case 'completed': return 'ok'
+-    case 'failed': return 'bad'
+-    case 'paused': return 'warn'
+-    case 'running': return 'info'
+-    default: return 'muted'
+-  }
+-}
+-
+-function reviewTone(reviewStatus: string | null): string {
+-  if (reviewStatus === 'completed') return 'ok'
+-  if (reviewStatus === 'processing' || reviewStatus === 'in_progress') return 'info'
+-  return 'muted'
+-}
+-
+-function TaskRow({ task, onStartReview, onOpen }: {
++function TaskRow({ task, selected, onSelect, onStartReview, onOpen }: {
+   task: PaperEvidenceTask
++  selected: boolean
++  onSelect: () => void
+   onStartReview: () => void
+   onOpen: () => void
+ }) {
+-  const statusLabel = STATUS_LABELS[task.status] ?? task.status
+-  const reviewLabel = REVIEW_LABELS[task.review_status ?? ''] ?? task.review_status ?? '—'
++  const statusLabel = TASK_STATUS_LABELS[task.status] ?? task.status
++  const reviewLabel = TASK_REVIEW_LABELS[task.review_status ?? ''] ?? task.review_status ?? '—'
+   const evidenceCount = task.awaiting_review_items + task.processed_items
+   return (
+-    <div className="evidence-task-row">
++    <div
++      className={`evidence-task-row${selected ? ' evidence-task-row-selected' : ''}`}
++      data-testid={`evidence-task-row-${task.id}`}
++      onClick={onSelect}
++    >
+       <div className="evidence-task-main">
+         <span className="evidence-task-name">{task.name || task.target_type}</span>
+         <span className="evidence-task-type">{task.target_type}</span>
+       </div>
+       <div className="evidence-task-stats">
+         <span className="evidence-task-stat">已处理 <b>{task.processed_items}</b></span>
+         <span className="evidence-task-stat">待审 <b>{task.awaiting_review_items}</b></span>
+         <span className="evidence-task-stat">失败数 <b>{task.failed_items}</b></span>
+         <span className="evidence-task-stat">佐证数 <b>{evidenceCount}</b></span>
+       </div>
+       <div className="evidence-task-chips">
+-        <span className={`evidence-task-chip evidence-task-chip-${statusTone(task.status)}`}>预处理 · {statusLabel}</span>
+-        <span className={`evidence-task-chip evidence-task-chip-${reviewTone(task.review_status)}`}>审核 · {reviewLabel}</span>
++        <span className={`evidence-task-chip evidence-task-chip-${taskStatusTone(task.status)}`}>预处理 · {statusLabel}</span>
++        <span className={`evidence-task-chip evidence-task-chip-${taskReviewTone(task.review_status)}`}>审核 · {reviewLabel}</span>
+       </div>
+       <div className="evidence-task-actions">
+         <button type="button" className="btn btn-xs btn-primary" onClick={onStartReview}>开始人工处理</button>
+         {task.awaiting_review_items > 0 && (
+           <button type="button" className="btn btn-xs" onClick={onOpen}>跳转待审核</button>
+         )}
+         <button type="button" className="btn btn-xs" onClick={onOpen}>打开任务</button>
+       </div>
+     </div>
+   )
+ }
+ 
+ export function EvidenceTasksModule() {
+-  const { openTask } = useEvidenceCenter()
++  const { state, openTask, setTaskSummary, setTaskSummaryActions } = useEvidenceCenter()
+   const { granularity } = useGlobalGranularity()
+   const [tasks, setTasks] = useState<PaperEvidenceTask[]>([])
+   const [loading, setLoading] = useState(true)
+   const [error, setError] = useState<string | null>(null)
+   const [createOpen, setCreateOpen] = useState(false)
++  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null)
+ 
+   const loadTasks = useCallback(async () => {
+     setLoading(true)
+     setError(null)
+     try {
+       const r = await listPaperEvidenceTasks()
+       setTasks(r.items)
+     } catch (err) {
+       setError(err instanceof Error ? err.message : String(err))
+     } finally {
+       setLoading(false)
+     }
+   }, [])
+ 
+   useEffect(() => { void loadTasks() }, [loadTasks])
+ 
++  // 选中任务(点击任务行;URL 携带 task_id 时自动选中)
++  const handleSelectTask = useCallback((taskId: string) => {
++    setSelectedTaskId(prev => (prev === taskId ? prev : taskId))
++  }, [])
++
++  useEffect(() => {
++    const tid = state.taskId
++    if (tid && !selectedTaskId && tasks.some(t => t.id === tid)) setSelectedTaskId(tid)
++  }, [state.taskId, selectedTaskId, tasks])
++
+   // 进入证据候选模块,由该模块加载 task 的候选论文
+   const handleStartReview = useCallback((task: PaperEvidenceTask) => {
++    setSelectedTaskId(task.id)
+     openTask(task.id)
+   }, [openTask])
+ 
++  // 选中任务 → Context 推送右栏 TaskSummary(与 S3 reviewDecision / S4 promotionImpact 同模式)
++  const selectedTask = selectedTaskId ? tasks.find(t => t.id === selectedTaskId) ?? null : null
++  const taskSummary = useMemo<TaskSummaryData | null>(() => {
++    if (!selectedTask) return null
++    return {
++      id: selectedTask.id,
++      name: selectedTask.name,
++      targetType: selectedTask.target_type,
++      mode: selectedTask.mode,
++      granularity: selectedTask.granularity_level,
++      status: selectedTask.status,
++      reviewStatus: selectedTask.review_status,
++      total: selectedTask.total_items,
++      processed: selectedTask.processed_items,
++      awaitingReview: selectedTask.awaiting_review_items,
++      failed: selectedTask.failed_items,
++      createdAt: selectedTask.created_at,
++    }
++  }, [selectedTask])
++
++  useEffect(() => { setTaskSummary(taskSummary) }, [taskSummary, setTaskSummary])
++  useEffect(() => () => { setTaskSummary(null) }, [setTaskSummary])
++
++  // 右栏操作:创建批量预处理对话框与列表刷新都在本模块内,经 Context 回调暴露
++  const handleCreateBatch = useCallback(() => setCreateOpen(true), [])
++  useEffect(() => {
++    const actions: TaskSummaryActions = { onCreateBatch: handleCreateBatch, onRefresh: loadTasks }
++    setTaskSummaryActions(actions)
++    return () => {
++      setTaskSummaryActions({ onCreateBatch: () => {}, onRefresh: () => {} })
++    }
++  }, [setTaskSummaryActions, handleCreateBatch, loadTasks])
++
+   // 每个任务只落入第一个命中的分组(按 STATUS_GROUPS 顺序优先)
+   const assignedKeys = new Set<string>()
+   const groups = STATUS_GROUPS
+     .map(g => ({
+       ...g,
+       tasks: tasks.filter(t => {
+         if (assignedKeys.has(t.id)) return false
+         if (g.match(t)) { assignedKeys.add(t.id); return true }
+         return false
+       }),
+@@ -157,20 +179,22 @@ export function EvidenceTasksModule() {
+           {groups.map(group => (
+             <section key={group.key} className="evidence-task-group">
+               <div className="evidence-task-group-head">
+                 <span className="evidence-task-group-title">{group.label}</span>
+                 <span className="evidence-task-group-count">{group.tasks.length}</span>
+               </div>
+               {group.tasks.map(task => (
+                 <TaskRow
+                   key={task.id}
+                   task={task}
++                  selected={task.id === selectedTaskId}
++                  onSelect={() => handleSelectTask(task.id)}
+                   onStartReview={() => void handleStartReview(task)}
+                   onOpen={() => openTask(task.id)}
+                 />
+               ))}
+             </section>
+           ))}
+         </div>
+       )}
+ 
+       <CreateBatchTaskDialog
+diff --git a/frontend/src/styles.css b/frontend/src/styles.css
+index f7eb9fb..8968fe9 100644
+--- a/frontend/src/styles.css
++++ b/frontend/src/styles.css
+@@ -11460,20 +11460,49 @@ input[type="range"]::-webkit-slider-thumb {
+ .evidence-task-error { padding: 24px; text-align: center; color: var(--danger); display: flex; flex-direction: column; gap: 10px; align-items: center; }
+ .evidence-task-empty {
+   padding: 40px 20px;
+   text-align: center;
+   color: var(--text-muted);
+   font-size: 13px;
+   background: var(--white);
+   border: 1px dashed var(--border);
+   border-radius: var(--card-radius);
+ }
++/* 任务行可点击选中(选中 → 右栏 Task Summary) */
++.evidence-task-row { cursor: pointer; }
++.evidence-task-row-selected { border-color: var(--primary); background: #f0f7ff; }
++.evidence-task-row-selected:hover { box-shadow: none; }
++
++/* 右栏 Task Summary(S5) */
++.evidence-task-summary { display: flex; flex-direction: column; gap: 12px; }
++.evidence-task-summary h4 { margin: 0; }
++.evidence-task-summary-name { font-size: 14px; font-weight: 700; color: var(--text); line-height: 1.45; }
++.evidence-task-summary-meta { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
++.evidence-task-summary-section { display: flex; flex-direction: column; gap: 8px; }
++.evidence-progress-bar {
++  display: flex;
++  width: 100%;
++  height: 8px;
++  border-radius: 999px;
++  overflow: hidden;
++  background: #eef1f6;
++}
++.evidence-progress-seg { height: 100%; transition: width .2s ease; }
++.evidence-progress-ok { background: #34c77b; }
++.evidence-progress-warn { background: #f2b13b; }
++.evidence-progress-bad { background: #f2685f; }
++.evidence-task-progress-stats { display: flex; gap: 12px; flex-wrap: wrap; font-size: 12px; color: var(--text-muted); }
++.evidence-task-progress-stats b { color: var(--text); font-size: 13px; margin-left: 2px; }
++.evidence-task-summary-actions { display: flex; gap: 8px; flex-wrap: wrap; }
++
++/* 通用:section 间轻分隔(替代密集灰色 border) */
++.evidence-section-divider { height: 1px; background: var(--border); opacity: .6; }
+ 
+ /* 论文库模块 */
+ .paper-module { display: flex; flex-direction: column; gap: 12px; }
+ .paper-toolbar { display: flex; align-items: flex-end; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+ .paper-toolbar-title h3 { font-size: 15px; color: var(--text); margin-bottom: 2px; }
+ .paper-search-bar {
+   display: flex;
+   align-items: center;
+   gap: 10px;
+   flex-wrap: wrap;
+@@ -12233,30 +12262,30 @@ input[type="range"]::-webkit-slider-thumb {
+ .evidence-center-layout {
+   flex: 1;
+   min-height: 0;
+   display: grid;
+   grid-template-columns: 230px minmax(620px, 1fr) 370px;
+   gap: 14px;
+ }
+ .evidence-center-layout-full { grid-template-columns: 1fr; }
+ .evidence-center-layout-full .evidence-left,
+ .evidence-center-layout-full .evidence-right { display: none; }
++/* 论文库全宽:主区不再受 620px 最小宽限制;限制可读行长并居中 */
++.evidence-center-layout-full .evidence-main { max-width: 1280px; width: 100%; margin: 0 auto; }
++/* V2 视觉收尾:三栏以间距分隔(页面灰底 + 白底栏),去掉密集灰 border/阴影 */
+ .evidence-left,
+ .evidence-main,
+ .evidence-right {
+   min-height: 0;
+   min-width: 0;
+   overflow-y: auto;
+   background: var(--white);
+-  border: 1px solid var(--border);
+-  border-radius: var(--card-radius);
+-  box-shadow: var(--shadow);
+   padding: 12px 14px;
+ }
+ .evidence-main { display: flex; flex-direction: column; gap: 12px; }
+ .evidence-right-panel h4 { font-size: 14px; color: var(--text); margin-bottom: 6px; }
+ 
+ /* 顶部信息条 ContextBar */
+ .evidence-context-bar {
+   display: flex;
+   align-items: center;
+   gap: 14px;

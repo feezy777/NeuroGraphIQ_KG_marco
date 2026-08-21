@@ -1,0 +1,162 @@
+{
+  "schema": "ppt-master.svg-quality-report.v1",
+  "stage": "first-page",
+  "target": "D:\\Tool\\Coding\\IDE\\PyCharm\\NeuroGraphIQ_KG_V3_1\\.claude\\skills\\ppt-master\\projects\\neurographiq-kg-construction_ppt169_20260803",
+  "source_fingerprint": {
+    "algorithm": "sha256",
+    "digest": "a7fbb22bafac0225e011aa8ac29a098c810d350f7860c5c03d831ac0804a2c93",
+    "file_count": 1,
+    "files": [
+      {
+        "file": "P01_cover.svg",
+        "sha256": "78b21b320ad78c071e878c1277be7be98605f342b24a0f11c646fc0b9b288144"
+      }
+    ]
+  },
+  "summary": {
+    "total": 1,
+    "passed": 0,
+    "warnings": 1,
+    "errors": 1
+  },
+  "issue_types": {
+    "pptx_structure_error": 1
+  },
+  "categories": {
+    "blocking": {
+      "count": 1,
+      "issues": [
+        {
+          "scope": "pptx_structure",
+          "message": "spec_lock.md generated PowerPoint theme contract is missing: colors"
+        }
+      ]
+    },
+    "introduced": {
+      "count": 2,
+      "issues": [
+        {
+          "file": "P01_cover.svg",
+          "message": "Fidelity warning: <g> uses group opacity='0.04'. The converter distributes this alpha to descendants and cannot preserve isolated group compositing; generated SVG should prefer descendant alpha. Existing input remains convertible and does not require modification."
+        },
+        {
+          "file": "P01_cover.svg",
+          "message": "Fidelity warning: <g> uses group opacity='0.08'. The converter distributes this alpha to descendants and cannot preserve isolated group compositing; generated SVG should prefer descendant alpha. Existing input remains convertible and does not require modification."
+        }
+      ]
+    },
+    "inherited": {
+      "count": 0,
+      "issues": []
+    },
+    "source-import": {
+      "count": 0,
+      "summary": {
+        "warning_count": 0,
+        "by_code": {}
+      }
+    }
+  },
+  "drift": {
+    "colors": {
+      "#0D1117": [
+        "P01_cover.svg"
+      ],
+      "#161B22": [
+        "P01_cover.svg"
+      ],
+      "#212D40": [
+        "P01_cover.svg"
+      ],
+      "#586069": [
+        "P01_cover.svg"
+      ],
+      "#58A6FF": [
+        "P01_cover.svg"
+      ],
+      "#79C0FF": [
+        "P01_cover.svg"
+      ],
+      "#8B949E": [
+        "P01_cover.svg"
+      ],
+      "#FFFFFF": [
+        "P01_cover.svg"
+      ]
+    },
+    "fonts": {
+      "Microsoft YaHei": [
+        "P01_cover.svg"
+      ]
+    },
+    "sizes": {
+      "16": [
+        "P01_cover.svg"
+      ],
+      "20": [
+        "P01_cover.svg"
+      ],
+      "36": [
+        "P01_cover.svg"
+      ],
+      "68": [
+        "P01_cover.svg"
+      ]
+    }
+  },
+  "project_issues": {
+    "template": [],
+    "animation": [],
+    "illustration": [],
+    "communication_trace": [],
+    "pptx_structure": [
+      {
+        "severity": "error",
+        "message": "spec_lock.md generated PowerPoint theme contract is missing: colors"
+      }
+    ]
+  },
+  "files": [
+    {
+      "file": "P01_cover.svg",
+      "path": "D:\\Tool\\Coding\\IDE\\PyCharm\\NeuroGraphIQ_KG_V3_1\\.claude\\skills\\ppt-master\\projects\\neurographiq-kg-construction_ppt169_20260803\\svg_output\\P01_cover.svg",
+      "exists": true,
+      "errors": [],
+      "warnings": [
+        "Fidelity warning: <g> uses group opacity='0.04'. The converter distributes this alpha to descendants and cannot preserve isolated group compositing; generated SVG should prefer descendant alpha. Existing input remains convertible and does not require modification.",
+        "Fidelity warning: <g> uses group opacity='0.08'. The converter distributes this alpha to descendants and cannot preserve isolated group compositing; generated SVG should prefer descendant alpha. Existing input remains convertible and does not require modification."
+      ],
+      "info": {
+        "viewbox": "0 0 1280 720",
+        "fonts": [
+          "Microsoft YaHei"
+        ],
+        "text_elements": 4,
+        "tspan_elements": 0,
+        "contextual_values": {
+          "colors": [
+            "#0D1117",
+            "#161B22",
+            "#212D40",
+            "#586069",
+            "#58A6FF",
+            "#79C0FF",
+            "#8B949E",
+            "#FFFFFF"
+          ],
+          "font_families": [
+            "Microsoft YaHei"
+          ]
+        },
+        "sparse_typography_sizes": {
+          "16": 1,
+          "20": 1,
+          "36": 1,
+          "68": 1
+        }
+      },
+      "passed": true,
+      "source_sha256": "78b21b320ad78c071e878c1277be7be98605f342b24a0f11c646fc0b9b288144"
+    }
+  ]
+}

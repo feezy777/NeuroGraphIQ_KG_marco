@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { QualityScoreBadge } from './QualityScoreBadge'
+import { CircuitDetailDrawer } from './CircuitDetailDrawer'
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -17,6 +17,7 @@ export interface CircuitItem {
   reviewer_a_decision?: string
   reviewer_b_decision?: string
   adjudication_status?: string
+  source_atlas?: string
 }
 
 interface Props {
@@ -32,23 +33,44 @@ interface Props {
 
 const PAGE_SIZE = 25
 
+const STATUS_COLORS: Record<string, string> = {
+  pending: '#faad14', approved: '#52c41a', rejected: '#ff4d4f',
+  not_promoted: '#86909c', promoted_to_final: '#2f54eb',
+  llm_suggested: '#2f54eb', passed: '#52c41a', failed: '#ff4d4f',
+  blocked: '#faad14', support: '#52c41a', reject: '#ff4d4f',
+  conflict: '#faad14', agreement: '#52c41a',
+}
+
+const STATUS_LABELS: Record<string, string> = {
+  pending: '待审核', approved: '已通过', rejected: '已拒绝',
+  not_promoted: '未晋升', promoted_to_final: '已晋升',
+  llm_suggested: 'LLM建议', passed: '通过', failed: '失败',
+  blocked: '阻塞', support: '支持', reject: '拒绝',
+  conflict: '冲突', agreement: '一致',
+}
+
 function formatConfidence(v: number): string {
-  if (!v) return '—'
+  if (v === 0) return '—'
   return (v * 100).toFixed(0) + '%'
 }
 
 function statusBadge(status: string): { color: string; label: string } {
-  const colors: Record<string, string> = {
-    pending: '#faad14', approved: '#52c41a', rejected: '#ff4d4f',
-    not_promoted: '#86909c', promoted_to_final: '#2f54eb',
-    passed: '#52c41a', failed: '#ff4d4f', blocked: '#faad14',
-  }
-  const labels: Record<string, string> = {
-    pending: '待审核', approved: '已通过', rejected: '已拒绝',
-    not_promoted: '未晋升', promoted_to_final: '已晋升',
-    passed: '通过', failed: '失败', blocked: '阻塞',
-  }
-  return { color: colors[status] || '#86909c', label: labels[status] || status }
+  const c = STATUS_COLORS[status] || '#86909c'
+  return { color: c, label: STATUS_LABELS[status] || status }
+}
+
+function badgeHtml(status: string): React.ReactNode {
+  const { color, label } = statusBadge(status)
+  if (!status) return <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>—</span>
+  return (
+    <span style={{
+      display: 'inline-block', padding: '1px 8px', borderRadius: 10,
+      fontSize: 11, fontWeight: 600,
+      background: color + '1a', color, border: `1px solid ${color}44`,
+    }}>
+      {label}
+    </span>
+  )
 }
 
 // ── Component ──────────────────────────────────────────────────────────────
@@ -61,18 +83,26 @@ export function CircuitSelector({
   const [loading, setLoading] = useState(true)
   const [page, setPage] = useState(0)
   const [search, setSearch] = useState('')
+  const [granFilter, setGranFilter] = useState(granularityLevel || 'all')
   const [error, setError] = useState<string | null>(null)
+  const [detailCircuitId, setDetailCircuitId] = useState<string | null>(null)
+  const [selectAllLoading, setSelectAllLoading] = useState(false)
+
+  // Sync granFilter when granularityLevel prop changes
+  useEffect(() => {
+    setGranFilter(granularityLevel || 'all')
+  }, [granularityLevel])
 
   const fetchData = useCallback(async () => {
     setLoading(true)
     setError(null)
     try {
       const params = new URLSearchParams()
-      const gran = granularityLevel && granularityLevel !== 'all' ? granularityLevel : undefined
-      if (gran) params.set('granularity_level', gran)
+      if (granFilter && granFilter !== 'all') params.set('granularity_level', granFilter)
       if (search) params.set('search', search)
       if (onlyBlocked) params.set('rule_status', 'blocked')
       if (onlyPassed) params.set('rule_status', 'passed')
+      params.set('only_not_promoted', 'true')
       params.set('limit', String(PAGE_SIZE))
       params.set('offset', String(page * PAGE_SIZE))
       const res = await fetch(`/api/validation/circuit/candidates?${params}`)
@@ -85,9 +115,33 @@ export function CircuitSelector({
     } finally {
       setLoading(false)
     }
-  }, [granularityLevel, search, page, onlyBlocked, onlyPassed])
+  }, [granFilter, search, page, onlyBlocked, onlyPassed])
 
   useEffect(() => { fetchData() }, [fetchData])
+
+  // Select all matching data across all pages
+  const handleSelectAll = useCallback(async () => {
+    setSelectAllLoading(true)
+    try {
+      const params = new URLSearchParams()
+      if (granFilter && granFilter !== 'all') params.set('granularity_level', granFilter)
+      if (search) params.set('search', search)
+      if (onlyBlocked) params.set('rule_status', 'blocked')
+      if (onlyPassed) params.set('rule_status', 'passed')
+      params.set('only_not_promoted', 'true')
+      params.set('limit', '10000')
+      params.set('offset', '0')
+      const res = await fetch(`/api/validation/circuit/candidates?${params}`)
+      if (!res.ok) throw new Error(`API错误: ${res.status}`)
+      const data = await res.json()
+      const allIds = (data.items || []).map((item: CircuitItem) => item.id)
+      onSelectionChange(new Set(allIds))
+    } catch {
+      // silently fail
+    } finally {
+      setSelectAllLoading(false)
+    }
+  }, [granFilter, search, onlyBlocked, onlyPassed, onSelectionChange])
 
   const toggleSelect = (id: string) => {
     const next = new Set(selected)
@@ -107,11 +161,23 @@ export function CircuitSelector({
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-      {/* Filter bar */}
+      {/* Filter bar — matching CandidateCircuitTable */}
       <div style={{
         display: 'flex', gap: 8, alignItems: 'center', padding: '8px 0',
-        flexShrink: 0,
+        flexShrink: 0, flexWrap: 'wrap',
       }}>
+        <select
+          className="form-select"
+          value={granFilter}
+          onChange={e => { setGranFilter(e.target.value); setPage(0); onSelectionChange(new Set()) }}
+          style={{ padding: '4px 8px', borderRadius: 'var(--radius)', border: '1px solid var(--border)', fontSize: 13 }}
+        >
+          <option value="all">全部粒度</option>
+          <option value="macro_clinical">宏观临床</option>
+          <option value="molecular_attr">分子属性</option>
+          <option value="meso_anatomical">中观解剖</option>
+        </select>
+
         <input
           type="text"
           placeholder="搜索回路名称…"
@@ -126,7 +192,27 @@ export function CircuitSelector({
         <button className="btn btn-sm btn-outline" onClick={fetchData} disabled={loading}>
           {loading ? '加载中…' : '查询'}
         </button>
-        <span className="vr-total">共 {total} 条</span>
+
+        <span className="vr-total" style={{ marginLeft: 8 }}>共 {total} 条</span>
+
+        <button
+          className="btn btn-sm btn-outline"
+          onClick={handleSelectAll}
+          disabled={selectAllLoading || total === 0}
+          style={{ marginLeft: 'auto', fontSize: 12 }}
+          title="选中当前筛选条件下的全部数据"
+        >
+          {selectAllLoading ? '加载中…' : '全选所有'}
+        </button>
+        {selected.size > 0 && (
+          <button
+            className="btn btn-sm btn-outline"
+            onClick={() => onSelectionChange(new Set())}
+            style={{ fontSize: 12 }}
+          >
+            清除 ({selected.size})
+          </button>
+        )}
         <span style={{ fontSize: 13, color: 'var(--text-muted)' }}>
           已选 {selected.size} 项
         </span>
@@ -139,7 +225,7 @@ export function CircuitSelector({
         </div>
       )}
 
-      {/* Table */}
+      {/* Table — matching CandidateCircuitTable columns */}
       <div style={{ flex: 1, overflow: 'auto', border: '1px solid var(--border)', borderRadius: 'var(--radius)' }}>
         {loading ? (
           <div className="vw-empty-state" style={{ padding: 40, textAlign: 'center' }}>
@@ -160,24 +246,30 @@ export function CircuitSelector({
                     onChange={toggleSelectAll}
                   />
                 </th>
-                <th style={{ minWidth: 160 }}>回路名称</th>
-                <th style={{ width: 80 }}>类型</th>
+                <th style={{ minWidth: 140 }}>回路名称</th>
+                <th className="vr-th-type">类型</th>
+                <th style={{ width: 72 }}>粒度</th>
                 <th style={{ width: 48, textAlign: 'center' }}>步骤</th>
-                <th style={{ width: 56 }}>置信度</th>
-                <th style={{ width: 52 }}>质量</th>
-                <th style={{ width: 56 }}>规则</th>
-                <th style={{ width: 64 }}>审核</th>
+                <th className="vr-th-conf">置信度</th>
+                <th className="vr-th-status">规则</th>
+                <th className="vr-th-status">审 A</th>
+                <th className="vr-th-status">审 B</th>
+                <th className="vr-th-status">裁决</th>
+                <th className="vr-th-status">审核</th>
+                <th className="vr-th-status">晋升</th>
+                <th style={{ width: 100 }}>数据源</th>
               </tr>
             </thead>
             <tbody>
               {items.map((item, i) => {
-                const ruleBadge = statusBadge(item.rule_overall_status || '')
                 const reviewBadge = statusBadge(item.review_status)
+                const promoBadge = statusBadge(item.promotion_status)
                 return (
                   <tr
                     key={item.id}
                     className={`vr-row${i % 2 === 1 ? ' even' : ''}${selected.has(item.id) ? ' selected' : ''}`}
-                    onClick={() => toggleSelect(item.id)}
+                    onClick={() => setDetailCircuitId(item.id)}
+                    style={{ cursor: 'pointer' }}
                   >
                     <td className="vr-td-check" onClick={e => e.stopPropagation()}>
                       <input
@@ -194,21 +286,13 @@ export function CircuitSelector({
                       {item.circuit_name?.slice(0, 60) || item.id.slice(0, 12)}
                     </td>
                     <td><span className="vr-badge" style={{ fontSize: 11 }}>{item.circuit_type}</span></td>
+                    <td style={{ fontSize: 12 }}>{item.granularity_level}</td>
                     <td style={{ textAlign: 'center', fontSize: 13 }}>{item.step_count}</td>
                     <td style={{ fontSize: 12 }}>{formatConfidence(item.confidence)}</td>
-                    <td style={{ fontSize: 12 }}>
-                      <QualityScoreBadge score={item.quality_score || 0} />
-                    </td>
-                    <td>
-                      <span style={{
-                        display: 'inline-block', padding: '1px 6px', borderRadius: 8,
-                        fontSize: 11, fontWeight: 600,
-                        background: ruleBadge.color + '1a', color: ruleBadge.color,
-                        border: `1px solid ${ruleBadge.color}44`,
-                      }}>
-                        {ruleBadge.label}
-                      </span>
-                    </td>
+                    <td>{badgeHtml(item.rule_overall_status || '')}</td>
+                    <td style={{ fontSize: 12, color: 'var(--text-muted)' }}>{item.reviewer_a_decision || '—'}</td>
+                    <td style={{ fontSize: 12, color: 'var(--text-muted)' }}>{item.reviewer_b_decision || '—'}</td>
+                    <td style={{ fontSize: 12, color: 'var(--text-muted)' }}>{item.adjudication_status || '—'}</td>
                     <td>
                       <span style={{
                         display: 'inline-block', padding: '1px 6px', borderRadius: 8,
@@ -219,6 +303,17 @@ export function CircuitSelector({
                         {reviewBadge.label}
                       </span>
                     </td>
+                    <td>
+                      <span style={{
+                        display: 'inline-block', padding: '1px 6px', borderRadius: 8,
+                        fontSize: 11, fontWeight: 600,
+                        background: promoBadge.color + '1a', color: promoBadge.color,
+                        border: `1px solid ${promoBadge.color}44`,
+                      }}>
+                        {promoBadge.label}
+                      </span>
+                    </td>
+                    <td style={{ fontSize: 12, color: 'var(--text-muted)' }}>{item.source_atlas || '—'}</td>
                   </tr>
                 )
               })}
@@ -252,6 +347,9 @@ export function CircuitSelector({
           </button>
         </div>
       )}
+
+      {/* Detail drawer */}
+      <CircuitDetailDrawer circuitId={detailCircuitId} onClose={() => setDetailCircuitId(null)} />
     </div>
   )
 }

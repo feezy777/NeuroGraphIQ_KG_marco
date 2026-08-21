@@ -69,3 +69,24 @@
 
 ## Commit
 `feat(evidence-center): 证据候选三栏重构 + 论文证据视图分离`
+
+---
+
+## V2-S2 Review Fix (2026-08-10)
+
+### Findings Fixed
+1. **Critical — 手动批量提取结果从不渲染**:候选列表新增 `manualResults.map(...)` 渲染(经 `extractedToCardData` 转换,与 candidates 相同处理,支持 排除/重新提取/查看证据候选),`totalPapers` 计入 `manualResults.length`。
+2. **Critical — 打开证据视图静默删除已存审核草稿**:auto-draft effect 增加 `draftWrittenRef`(key+论文 id),仅当本 effect 先前在同一论文写入过草稿且选择被清空时才 `removeItem`;模块重挂载/切换论文不再误删既有草稿。
+3. **Important — 补测试**:新增「手动批量提取后提取结果卡片渲染 + 查看证据候选出现(含 候选论文(2) 计数)」与「建立审核草稿 → 模块重挂载 → 打开证据视图草稿保留」;CandidateSummary 新增零选中禁用与选中数显示测试。
+4. **Important — [进入人工审核] 零选中禁用**:`CandidateSummaryData` 新增 `selectedPassages`(候选模块以 `selectedHashes.size` 推送),`selectedPassages === 0` 时按钮 disabled 并带 title「请先勾选已核验的候选片段」,选中后按钮显示 `进入人工审核（N）`。
+
+### Additional Change
+- `EvidenceCenterPage.test.tsx`:review 跳转测试需先勾选片段(左栏 ObjectQueue 的「只看未处理」checkbox 也在 DOM 中,已用 `within(evidence-paper-view)` 限定范围)。
+
+### Verification
+- Targeted: `npx vitest run EvidenceCandidatesModule.test.tsx CandidateSummary.test.tsx EvidenceCenterPage.test.tsx` → 39 passed (3 files)
+- Full: `npx vitest run` → 108 passed (15 files)
+- `npx tsc --noEmit` → 0 errors
+
+### Commit
+`8f5d23b fix(evidence-center): 候选模块渲染手动提取结果 + 证据视图不再误删草稿 + 进入审核禁用条件 + 补测试`

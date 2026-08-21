@@ -23,9 +23,11 @@ from app.schemas.llm_circuit_extraction import (
     CircuitExtractionRunRead,
     CircuitExtractionStartResponse,
 )
+from app.services import function_term_service, mirror_macro_clinical_service
 from app.services.llm_field_completion_service import _resolve_model_status
 from app.services.llm_providers import get_llm_provider
 from app.services.llm_prompt_defaults import DEFAULT_TEMPLATES
+from app.services.settings_service import get_deepseek_runtime_config, get_kimi_runtime_config
 from app.services.llm_workflow_cancel_registry import mark_cancelling, is_cancelling, clear as clear_cancel_registry
 from app.utils.json_safety import to_jsonable
 
@@ -877,6 +879,14 @@ async def _execute_connection_based_extraction(
                                 psession.add(circuit)
                                 await psession.flush()
                                 _add_circuit_memberships(psession, circuit, member_rids, cdata.get("steps"))
+                                # P1.4: association text is a snapshot; formal
+                                # relation goes to mirror_circuit_functions.
+                                await mirror_macro_clinical_service.sync_circuit_function_from_association(
+                                    psession,
+                                    circuit=circuit,
+                                    function_association=cdata.get("function_association"),
+                                    created_by=f"circuit_pack:{run.id}",
+                                )
                                 local_circuits += 1
                                 local_created += 1
                         except Exception as exc:
@@ -896,6 +906,13 @@ async def _execute_connection_based_extraction(
                                     existing_circ.mirror_status = MirrorStatus.llm_suggested
                                     psession.add(existing_circ)
                                     await psession.flush()
+                                    # P1.4: mirror association text into mirror_circuit_functions.
+                                    await mirror_macro_clinical_service.sync_circuit_function_from_association(
+                                        psession,
+                                        circuit=existing_circ,
+                                        function_association=cdata.get("function_association"),
+                                        created_by=f"circuit_pack:{run.id}",
+                                    )
                                     local_merged += 1
                                 else:
                                     local_skipped += 1
@@ -915,10 +932,33 @@ async def _execute_connection_based_extraction(
                             await psession.flush()
                             local_steps += 1
 
+                            new_fns = []
                             for fdata in sdata.get("functions", []):
                                 fn = _build_function_orm(circuit=circuit, fdata=fdata)
                                 psession.add(fn)
+                                new_fns.append(fn)
                                 local_fns += 1
+                            if new_fns:
+                                await psession.flush()
+                                # P1.4: anchor pack-created circuit functions to
+                                # canonical terms (shared index, one pass).
+                                index = await function_term_service._load_term_index(psession)
+                                for fn in new_fns:
+                                    await function_term_service.anchor_function_relation(
+                                        psession,
+                                        target_type="circuit_function",
+                                        row=fn,
+                                        created_by=f"circuit_pack:{run.id}",
+                                        index=index,
+                                    )
+                                # P1.6: incremental projection for the circuit
+                                from app.services.function_triple_projection_service import (
+                                    reconcile_function_subject,
+                                )
+
+                                await reconcile_function_subject(
+                                    psession, subject_type="circuit", subject_id=circuit.id
+                                )
                         await psession.commit()
             except Exception as exc:
                 logger.warning("[circuit-extraction][conn] pack %s/%s DB write failed: %s", pi + 1, len(edge_packs), exc)
@@ -1042,7 +1082,12 @@ async def execute_circuit_extraction_background(
             await session.commit()
 
             provider_key = request.provider.lower()
-            resolved_model = request.model_name or "deepseek-chat"
+            if provider_key == "deepseek":
+                resolved_model = request.model_name or get_deepseek_runtime_config().default_model
+            elif provider_key == "kimi":
+                resolved_model = request.model_name or get_kimi_runtime_config().default_model
+            else:
+                resolved_model = request.model_name or "deepseek-chat"
             tier_status, _ = _resolve_model_status(resolved_model)
             is_connection_mode = bool(request.connection_ids)
 
@@ -1196,6 +1241,14 @@ async def execute_circuit_extraction_background(
                                         existing.circuit_strength = float(cdata.get("circuit_strength", new_conf))
                                         existing.name_cn = str(cdata.get("name_cn", ""))[:512] or existing.name_cn
                                         psession.add(existing)
+                                        await psession.flush()
+                                        # P1.4: mirror association text into mirror_circuit_functions.
+                                        await mirror_macro_clinical_service.sync_circuit_function_from_association(
+                                            psession,
+                                            circuit=existing,
+                                            function_association=cdata.get("function_association"),
+                                            created_by=f"circuit_pack:{run.id}",
+                                        )
                                         local_merged += 1
                                     else:
                                         local_skipped += 1

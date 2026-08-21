@@ -1,0 +1,34 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 720" data-pptx-page-role="content"><defs><filter id="g"><feGaussianBlur stdDeviation="2" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs><g id="bg" data-pptx-bounds="0 0 1280 720" data-pptx-role="background"><rect width="1280" height="720" fill="#0D1117"/><line x1="0" y1="108" x2="1280" y2="108" stroke="#212D40" stroke-width="0.5"/><text x="80" y="700" font-family="Microsoft YaHei" font-size="14" fill="#586069">NeuroGraphIQ KG V3</text></g><g id="c" data-pptx-bounds="40 120 1200 560">
+<rect x="40" y="120" width="4" height="48" fill="#58A6FF" /><text x="60" y="155" font-family="Microsoft YaHei" font-weight="bold" font-size="40" fill="#FFFFFF">当前状态与下一步规划</text>
+<text x="40" y="185" font-family="Microsoft YaHei" font-weight="bold" font-size="24" fill="#38A169">已完成</text>
+<g transform="translate(40, 198)">
+<rect x="0" y="0" width="555" height="28" rx="2" fill="#1C2333"/><text x="10" y="19" font-family="Microsoft YaHei" font-size="15" fill="#C9D1D9">端到端流水线 (Resource → Final KG) 闭环</text>
+<rect x="0" y="30" width="555" height="28" rx="2" fill="#1C2333"/><text x="10" y="49" font-family="Microsoft YaHei" font-size="15" fill="#C9D1D9">7 种 LLM 提取能力 + 复合工作流编排</text>
+<rect x="0" y="60" width="555" height="28" rx="2" fill="#1C2333"/><text x="10" y="79" font-family="Microsoft YaHei" font-size="15" fill="#C9D1D9">12 规则校验 + 数据增强引擎 (Tier 1 + Tier 2)</text>
+<rect x="0" y="90" width="555" height="28" rx="2" fill="#1C2333"/><text x="10" y="109" font-family="Microsoft YaHei" font-size="15" fill="#C9D1D9">双模型盲审 + 交叉验证</text>
+<rect x="0" y="120" width="555" height="28" rx="2" fill="#1C2333"/><text x="10" y="139" font-family="Microsoft YaHei" font-size="15" fill="#C9D1D9">Mirror → Final 晋升 + Triple Consolidation</text>
+<rect x="0" y="150" width="555" height="28" rx="2" fill="#1C2333"/><text x="10" y="169" font-family="Microsoft YaHei" font-size="15" fill="#C9D1D9">写入时去重合并 (6 类实体全覆盖)</text>
+<rect x="0" y="180" width="555" height="28" rx="2" fill="#1C2333"/><text x="10" y="199" font-family="Microsoft YaHei" font-size="15" fill="#C9D1D9">14 页前端工作台 + Graph Explorer + 症状查询</text>
+<rect x="0" y="210" width="555" height="28" rx="2" fill="#1C2333"/><text x="10" y="229" font-family="Microsoft YaHei" font-size="15" fill="#C9D1D9">1,173 测试函数 · 59 数据库迁移 · 全链路 audit</text>
+</g>
+<rect x="615" y="170" width="2" height="280" fill="#30363D"/>
+<text x="640" y="185" font-family="Microsoft YaHei" font-weight="bold" font-size="24" fill="#FFA657">规划中</text>
+<g transform="translate(640, 198)">
+<rect x="0" y="0" width="555" height="28" rx="2" fill="#1C2333"/><text x="10" y="19" font-family="Microsoft YaHei" font-size="15" fill="#8B949E">接入更多粒度数据</text>
+<rect x="0" y="30" width="555" height="28" rx="2" fill="#1C2333"/><text x="10" y="49" font-family="Microsoft YaHei" font-size="15" fill="#8B949E">图数据库同步 (Neo4j 可选路径)</text>
+<rect x="0" y="60" width="555" height="28" rx="2" fill="#1C2333"/><text x="10" y="79" font-family="Microsoft YaHei" font-size="15" fill="#8B949E">跨粒度映射关系自动发现</text>
+<rect x="0" y="90" width="555" height="28" rx="2" fill="#1C2333"/><text x="10" y="109" font-family="Microsoft YaHei" font-size="15" fill="#8B949E">Graph Explorer 交互增强 (ReactFlow)</text>
+<rect x="0" y="120" width="555" height="28" rx="2" fill="#1C2333"/><text x="10" y="139" font-family="Microsoft YaHei" font-size="15" fill="#8B949E">DashBoard 关键指标看板</text>
+<rect x="0" y="150" width="555" height="28" rx="2" fill="#1C2333"/><text x="10" y="169" font-family="Microsoft YaHei" font-size="15" fill="#8B949E">批量字段补全进度可视化</text>
+<rect x="0" y="180" width="555" height="28" rx="2" fill="#1C2333"/><text x="10" y="199" font-family="Microsoft YaHei" font-size="15" fill="#8B949E">知识图谱版本管理与差异对比</text>
+</g>
+<!-- Metrics -->
+<g transform="translate(40, 515)">
+<rect x="0" y="0" width="175" height="75" rx="2" fill="#1C2333"/><text x="87" y="32" text-anchor="middle" font-family="Consolas" font-weight="bold" font-size="26" fill="#58A6FF">42+88</text><text x="87" y="55" text-anchor="middle" font-family="Microsoft YaHei" font-size="13" fill="#8B949E">API 路由 · 服务</text>
+<rect x="190" y="0" width="175" height="75" rx="2" fill="#1C2333"/><text x="277" y="32" text-anchor="middle" font-family="Consolas" font-weight="bold" font-size="26" fill="#58A6FF">14</text><text x="277" y="55" text-anchor="middle" font-family="Microsoft YaHei" font-size="13" fill="#8B949E">前端页面</text>
+<rect x="380" y="0" width="175" height="75" rx="2" fill="#1C2333"/><text x="467" y="32" text-anchor="middle" font-family="Consolas" font-weight="bold" font-size="26" fill="#58A6FF">5+59</text><text x="467" y="55" text-anchor="middle" font-family="Microsoft YaHei" font-size="13" fill="#8B949E">Schema · 迁移</text>
+<rect x="570" y="0" width="175" height="75" rx="2" fill="#1C2333"/><text x="657" y="32" text-anchor="middle" font-family="Consolas" font-weight="bold" font-size="26" fill="#58A6FF">1,173</text><text x="657" y="55" text-anchor="middle" font-family="Microsoft YaHei" font-size="13" fill="#8B949E">测试函数</text>
+<rect x="760" y="0" width="175" height="75" rx="2" fill="#1C2333"/><text x="847" y="32" text-anchor="middle" font-family="Consolas" font-weight="bold" font-size="26" fill="#58A6FF">7</text><text x="847" y="55" text-anchor="middle" font-family="Microsoft YaHei" font-size="13" fill="#8B949E">知识层</text>
+<rect x="950" y="0" width="175" height="75" rx="2" fill="#1C2333"/><text x="1037" y="32" text-anchor="middle" font-family="Consolas" font-weight="bold" font-size="26" fill="#58A6FF">2</text><text x="1037" y="55" text-anchor="middle" font-family="Microsoft YaHei" font-size="13" fill="#8B949E">LLM 模型</text>
+</g>
+</g></svg>

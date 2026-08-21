@@ -1,0 +1,1835 @@
+89daa8eb0aeaf8d4bb7f4304f92ee1f0e18c824c fix(evidence): smoke-test fixes
+25a21a6b3abbf01aa11802c4cf4693fd6fc3d7b0 feat(evidence-ui): structurally-impossible badge on task cards + banner on evidence page
+f6605e49e041bd08bdf1671788fd7fe77008cb24 feat(evidence): one-off cleanup script for final-KG non-neural-target edges
+d17fd5edd9179611de41971def0dbdfedcaa8162 feat(evidence): promotion skips structurally-impossible and negated edges
+3913507578491fb30ac484ef22e8fdb90830d829 feat(evidence): negative search on no-result — auto second round distinguishes evidence_negated vs no_evidence
+0a18414efbe63148be6fbf71ea6b5b4cff166175 feat(evidence): skip paper search for structurally-impossible items
+372492554ba2473b426aa8f52bc967c34cf7725f feat(evidence): mark non-neural target items as structurally non-existent at creation
+cc44999ea6694ebc783e56ba5588e0b6874e6117 feat(evidence): non-neural target classifier (ventricle/CSF/meninges/plexus)
+---STAT---
+ .../modules/EvidenceTasksModule.test.tsx           |  11 ++
+ .../modules/EvidenceTasksModule.tsx                |   6 +
+ frontend/src/styles.css                            |   3 +
+ 17 files changed, 892 insertions(+), 21 deletions(-)
+---DIFF---
+diff --git a/backend/app/services/evidence_target_adapter.py b/backend/app/services/evidence_target_adapter.py
+index 3c6031f..d215b7a 100644
+--- a/backend/app/services/evidence_target_adapter.py
++++ b/backend/app/services/evidence_target_adapter.py
+@@ -1,20 +1,21 @@
+ """Unified Evidence Target Adapter.
+ 
+ Maps any supported knowledge object (connection / projection_function / circuit /
+ circuit_function / circuit_step / region_function) into a single Evidence Target DTO
+ that search, retrieval, and DeepSeek judgment consume. Nothing else in the evidence
+ chain should reach into raw object rows directly.
+ """
+ 
+ from __future__ import annotations
+ 
++import re
+ import uuid
+ 
+ from sqlalchemy import text
+ from sqlalchemy.ext.asyncio import AsyncSession
+ 
+ from app.models.mirror_kg import (
+     MirrorRegionCircuit,
+     MirrorRegionConnection,
+     MirrorRegionFunction,
+ )
+@@ -91,23 +92,27 @@ def _build_claim_components(target_type: str, dto: dict) -> list[dict]:
+ 
+     def comp(component_type: str, statement: str, required: bool = True, metadata: dict | None = None) -> dict:
+         return {
+             "component_type": component_type,
+             "statement": statement,
+             "required": required,
+             "metadata": metadata or {},
+         }
+ 
+     if target_type in ("connection", "projection"):
++        src_cn = dto.get("source_region_cn") or ""
++        tgt_cn = dto.get("target_region_cn") or ""
+         components = [
+-            comp("source_region", f"源脑区为 {source}" if source else "存在确定的源脑区"),
+-            comp("target_region", f"靶脑区为 {target}" if target else "存在确定的靶脑区"),
++            comp("source_region", f"源脑区为 {source}" if source else "存在确定的源脑区",
++                 metadata={"name_en": source, "name_cn": src_cn} if source else {}),
++            comp("target_region", f"靶脑区为 {target}" if target else "存在确定的靶脑区",
++                 metadata={"name_en": target, "name_cn": tgt_cn} if target else {}),
+             comp("relation", f"{source or '源'} 到 {target or '靶'} 存在 {relation or '连接'} 关系"),
+         ]
+         if direction:
+             components.append(comp("direction", f"连接方向性为 {direction}"))
+         return components
+     if target_type == "projection_function":
+         components = [
+             comp("source_region", f"源脑区为 {source}" if source else "存在确定的源脑区"),
+             comp("target_region", f"靶脑区为 {target}" if target else "存在确定的靶脑区"),
+             comp("relation", f"从 {source or '源'} 到 {target or '靶'} 存在投射"),
+@@ -147,20 +152,22 @@ def _connection_dto(row: MirrorRegionConnection) -> dict:
+         "granularity": _clean(getattr(row, "granularity_level", "")),
+         "display_name": _join(
+             [
+                 _clean(getattr(row, "source_region_name_en", "")),
+                 _clean(getattr(row, "target_region_name_en", "")),
+                 _clean(getattr(row, "connection_type", "")),
+             ]
+         ),
+         "source_region": _clean(getattr(row, "source_region_name_en", "")),
+         "target_region": _clean(getattr(row, "target_region_name_en", "")),
++        "source_region_cn": _clean(getattr(row, "source_region_name_cn", "")),
++        "target_region_cn": _clean(getattr(row, "target_region_name_cn", "")),
+         "canonical_terms": _join(
+             [
+                 _clean(getattr(row, "source_region_name_en", "")),
+                 _clean(getattr(row, "target_region_name_en", "")),
+                 _clean(getattr(row, "connection_type", "")),
+             ]
+         ),
+         "relation": "投射连接" if getattr(row, "connection_type", "") else "连接",
+         "connection_type": _clean(getattr(row, "connection_type", "")),
+         "directionality": _clean(getattr(row, "directionality", "")),
+@@ -291,20 +298,31 @@ async def build_target_dto(
+     dto.update(
+         {
+             "target_type": target_type,
+             "target_id": str(target_id),
+             "current_confidence": float(confidence) if confidence is not None else None,
+             "display_name": " · ".join(dto["display_name"]) if isinstance(dto["display_name"], list) else dto["display_name"],
+             "canonical_terms": dto["canonical_terms"] if isinstance(dto["canonical_terms"], list) else [dto["canonical_terms"]],
+             "existing_evidence": await _count_evidence(session, target_type, target_id),
+         }
+     )
++    # circuit_function / circuit_step carry circuit_id as circuit_context:
++    # resolve it to the circuit name so claims read "回路「xxx」" not a UUID.
++    if target_type in ("circuit_function", "circuit_step") and dto.get("circuit_context"):
++        try:
++            cid = uuid.UUID(str(dto["circuit_context"]))
++        except (ValueError, TypeError):
++            cid = None
++        if cid is not None:
++            circuit_row = await session.get(MirrorRegionCircuit, cid)
++            if circuit_row is not None and getattr(circuit_row, "circuit_name", None):
++                dto["circuit_context"] = circuit_row.circuit_name
+     dto["claim_text"] = _build_claim(target_type, dto)
+     dto["structured_claim"] = {
+         "target_type": target_type,
+         "target_id": str(target_id),
+         "source_region": dto.get("source_region") or None,
+         "target_region": dto.get("target_region") or None,
+         "relation": dto.get("relation") or None,
+         "canonical_terms": dto.get("canonical_terms") or [],
+     }
+     dto["claim_components"] = _build_claim_components(target_type, dto)
+@@ -352,28 +370,48 @@ async def load_synonyms_for_terms(session: AsyncSession, terms: list[str]) -> di
+     for canonical, synonym in rows:
+         result.setdefault(canonical, [canonical])
+         if synonym and synonym not in result[canonical]:
+             result[canonical].append(synonym)
+     for term in clean:
+         result.setdefault(term, [term])
+     return result
+ 
+ 
+ async def build_retrieval_context(
+-    session: AsyncSession, target_type: str, target_id: uuid.UUID
++    session: AsyncSession,
++    target_type: str,
++    target_id: uuid.UUID,
++    *,
++    mode: str = "function",
+ ) -> dict:
+-    """Build the unified retrieval context from an Evidence Target DTO + ontology."""
++    """Build the unified retrieval context from an Evidence Target DTO + ontology.
++
++    mode="existence" drops function terms from retrieval (regions/relation only):
++    a paper may prove the object EXISTS (e.g. an anatomical projection) without
++    mentioning any function. The claim itself stays unchanged.
++    """
+     dto = await build_target_dto(session, target_type, target_id)
+     canonical = dto.get("canonical_terms") or []
+     source = dto.get("source_region") or ""
+     target = dto.get("target_region") or ""
+     fn_terms = [t for t in canonical if t not in (source, target)]
++    if mode == "existence":
++        fn_terms = []
++    # circuit-family rows carry no region fields: derive retrieval terms from the
++    # circuit name itself (snake_case → words) minus generic words.
++    if target_type in ("circuit", "circuit_function", "circuit_step"):
++        name = dto.get("circuit_context") or dto.get("display_name") or ""
++        name_words = [
++            w for w in re.split(r"[_\-\s]+", name)
++            if len(w) > 3 and w.lower() not in _GENERIC_CIRCUIT_WORDS
++        ]
++        fn_terms = list(dict.fromkeys(fn_terms + name_words))
+     synonym_map = await load_synonyms_for_terms(
+         session, [t for t in [source, target] + fn_terms if t]
+     )
+ 
+     def synonyms_for(term: str) -> list[str]:
+         if not term:
+             return []
+         return [s for s in synonym_map.get(term, [term]) if s != term]
+ 
+     relation = dto.get("relation") or ""
+@@ -384,39 +422,139 @@ async def build_retrieval_context(
+         relation_keywords.append(dto["directionality"])
+     connection_type = dto.get("connection_type") or ""
+     if connection_type and connection_type not in ("unknown", ""):
+         relation_keywords.append(connection_type)
+ 
+     return {
+         "claim_text": dto.get("claim_text") or "",
+         "structured_claim": dto.get("structured_claim") or {},
+         "claim_components": dto.get("claim_components") or [],
+         "claim_version": dto.get("claim_version") or "claim_v1",
++        "claim_mode": mode,
+         "object_type": target_type,
+         "granularity": dto.get("granularity") or "",
+         "source_region": source,
+         "target_region": target,
+         "source_region_synonyms": synonyms_for(source),
+         "target_region_synonyms": synonyms_for(target),
+         "function_terms": fn_terms,
+         "function_synonyms": [s for t in fn_terms for s in synonyms_for(t)],
+         "relation": relation,
+         "relation_keywords": relation_keywords,
+         "directionality": dto.get("directionality") or "",
+         "circuit_context": dto.get("circuit_context") or "",
+         "current_confidence": dto.get("current_confidence"),
+         "existing_evidence": dto.get("existing_evidence", 0),
+     }
+ 
+ 
+-async def build_search_query(session: AsyncSession, target_type: str, target_id: uuid.UUID) -> str:
++# Connection-evidence vocabulary (mirrors paper_evidence_service.CONNECTION_EVIDENCE_TERMS):
++# structural terms only — "connectivity" alone matches fMRI functional-connectivity
++# papers, which are not evidence for an anatomical projection.
++_CONNECTION_EVIDENCE_TERMS = [
++    "projection",
++    "tractography",
++    "fiber",
++    "tract",
++    "DTI",
++    "structural connectivity",
++    "white matter",
++    "thalamostriatal",
++    "thalamo-striatal",
++]
++
++# Region synonyms papers actually use ("putamen" ⊂ striatum).
++_REGION_SYNONYM_HINTS = {
++    "putamen": ["striatum", "caudate putamen", "neostriatum"],
++    "striatum": ["putamen"],
++    "thalamus": ["thalamic"],
++    "thalamic": ["thalamus"],
++}
++
++
++def _region_search_terms(region: str) -> list[str]:
++    core = _core_region_term(region)
++    terms = [region, core]
++    hints = _REGION_SYNONYM_HINTS.get((core or "").lower(), [])
++    return [t for t in dict.fromkeys(terms + hints) if t]
++
++_REGION_MODIFIER_WORDS = {
++    "right", "left", "proper", "superior", "inferior", "medial", "lateral",
++    "anterior", "posterior", "dorsal", "ventral", "caudal", "rostral",
++    "central", "deep", "superficial", "primary", "secondary", "bilateral",
++    "motor", "related", "gray", "white", "intermediate",
++}
++
++_REGION_STRUCTURAL_WORDS = {
++    "layer", "part", "area", "sublayer", "region", "sector", "division",
++}
++
++# Words too generic to retrieve on for circuit-name-based queries.
++_GENERIC_CIRCUIT_WORDS = {
++    "circuit", "pathway", "system", "sensory", "limbic", "motor",
++    "medial", "lateral", "dorsal", "ventral", "related", "function",
++    "area", "primary", "layer", "cortical", "posterior", "anterior",
++}
++
++
++def _core_region_term(region: str) -> str:
++    """'right thalamus proper' → 'thalamus'; 'Agranular insular area, posterior
++    part, layer 6b' → 'Agranular insular' (modifiers + structural suffixes stripped,
++    numeric labels dropped, remainder trimmed to last 3 words)."""
++    words = [
++        w for w in re.split(r"[\s\-,\/]+", region or "")
++        if w
++        and len(w) > 1
++        and not re.fullmatch(r"\d+[a-z]?|\d+", w)
++        and w.lower() not in _REGION_MODIFIER_WORDS
++        and w.lower() not in _REGION_STRUCTURAL_WORDS
++    ]
++    if not words:
++        return (region or "").strip()
++    core = " ".join(words).strip()
++    parts = core.split()
++    return " ".join(parts[-3:]) if len(parts) > 3 else core
++
++
++async def build_search_query(
++    session: AsyncSession,
++    target_type: str,
++    target_id: uuid.UUID,
++    *,
++    mode: str = "function",
++    abstract_only: bool = True,
++    negative: bool = False,
++) -> str:
+     dto = await build_target_dto(session, target_type, target_id)
++    src = dto.get("source_region") or ""
++    tgt = dto.get("target_region") or ""
++    if mode == "existence":
++        # regions only (canonical + core term + synonym hints) — no function terms
++        terms = _region_search_terms(src) + _region_search_terms(tgt)
++    else:
++        terms = list(dto["canonical_terms"]) + _region_search_terms(src) + _region_search_terms(tgt)
++        if target_type in ("connection", "projection"):
++            terms += _CONNECTION_EVIDENCE_TERMS
+     tokens = []
+-    for term in dto["canonical_terms"]:
++    seen: set[str] = set()
++    for term in terms:
+         term = (term or "").strip().strip('"')
+-        if term and len(term) <= 80:
+-            tokens.append(f'(ABSTRACT:"{term}" OR BODY:"{term}")')
++        key = term.lower()
++        if term and len(term) <= 80 and key not in seen:
++            seen.add(key)
++            tokens.append(f'ABSTRACT:"{term}"')
++            if not abstract_only:
++                tokens.append(f'BODY:"{term}"')
++    # 否定向查询:否定短语用 OR 组(任一命中即可;AND 连接多个否定短语现实中无法命中)
++    if negative:
++        neg_group = "(" + " OR ".join(
++            f'ABSTRACT:"{t}"' for t in (
++                "no projection", "does not connect", "absence of connection",
++                "not connected", "no connection",
++            )
++        ) + ")"
++        tokens.append(neg_group)
+     if not tokens:
+         display = (dto.get("display_name") or "").strip().strip('"')
+         if display:
+             tokens = [f'(ABSTRACT:"{display}" OR BODY:"{display}")']
+     return " AND ".join(tokens)
+diff --git a/backend/app/services/evidence_target_classifier.py b/backend/app/services/evidence_target_classifier.py
+new file mode 100644
+index 0000000..0a7a59f
+--- /dev/null
++++ b/backend/app/services/evidence_target_classifier.py
+@@ -0,0 +1,36 @@
++"""非神经靶标分类器。
++
++识别「脑区 → 非神经结构」(如侧脑室)这类解剖学上不可能的连接靶标。
++纯函数、无 DB;未命中返回 unknown(按神经处理,不误杀)。
++"""
++
++from __future__ import annotations
++
++# 非神经结构关键词(子串匹配,大小写不敏感;中文按原样匹配)
++_NON_NEURAL_KEYWORDS: tuple[str, ...] = (
++    # 脑室系统
++    "ventricle", "脑室",
++    # 脑脊液/蛛网膜下腔/池
++    "cistern", "csf", "cerebrospinal", "subarachnoid", "脑脊液", "蛛网膜下腔", "池",
++    # 脑膜
++    "meninges", "dura", "pia mater", "arachnoid", "脑膜", "硬脑膜", "软脑膜",
++    # 脉络丛
++    "choroid plexus", "脉络丛",
++    # 硬膜结构
++    "falx", "tentorium", "大脑镰", "小脑幕",
++)
++
++
++def classify_target(region_name_cn: str | None, region_name_en: str | None) -> str:
++    """判定靶标是否为非神经结构。返回 'neural' | 'non_neural' | 'unknown'。
++
++    - 命中非神经关键词(中英任一)→ 'non_neural';
++    - 未命中 → 'unknown'(按神经处理,不误杀;本版本不做神经白名单确认)。
++    """
++    haystacks = [region_name_en or "", region_name_cn or ""]
++    for kw in _NON_NEURAL_KEYWORDS:
++        lowered = kw.lower()
++        for h in haystacks:
++            if lowered in h.lower():
++                return "non_neural"
++    return "unknown"
+diff --git a/backend/app/services/mirror_promotion_service.py b/backend/app/services/mirror_promotion_service.py
+index 295d821..371a2d1 100644
+--- a/backend/app/services/mirror_promotion_service.py
++++ b/backend/app/services/mirror_promotion_service.py
+@@ -1,24 +1,26 @@
+ """Mirror KG Promotion to Final KG service (Step 9).
+ 
+ Deterministic DB promotion from human_approved Mirror KG objects to final_* tables.
+ Does NOT call LLM; does NOT write kg_*; does NOT connect to external formal DB.
+ """
+ 
+ from __future__ import annotations
+ 
++import logging
+ import uuid
+ from dataclasses import dataclass
+ from datetime import datetime, timezone
+ from typing import Any
+ 
+-from sqlalchemy import func, or_, select
++from sqlalchemy import func, or_, select, text
++from sqlalchemy.exc import SQLAlchemyError
+ from sqlalchemy.ext.asyncio import AsyncSession
+ 
+ from app.models.final_kg import (
+     FinalCircuitRegion,
+     FinalEvidenceRecord,
+     FinalKgTriple,
+     FinalRegionCircuit,
+     FinalRegionConnection,
+     FinalRegionFunction,
+ )
+@@ -37,20 +39,22 @@ from app.schemas.mirror_promotion import (
+     MirrorPromotionPreviewItem,
+     MirrorPromotionRecordStatus,
+     MirrorPromotionRequest,
+     MirrorPromotionResponse,
+     MirrorPromotionRunStatus,
+ )
+ from app.schemas.mirror_review import MirrorReviewAction
+ from app.services import mirror_review_service as mrs
+ from app.services.triple_consolidation_service import normalize_triple_key
+ 
++_logger = logging.getLogger(__name__)
++
+ VALID_TARGET_TYPES = frozenset({"connection", "function", "circuit", "triple"})
+ 
+ MIRROR_EVIDENCE_TYPE = {
+     "connection": "mirror_connection",
+     "function": "mirror_function",
+     "circuit": "mirror_circuit",
+     "triple": "mirror_triple",
+ }
+ 
+ FINAL_EVIDENCE_TYPE = {
+@@ -62,20 +66,31 @@ FINAL_EVIDENCE_TYPE = {
+ 
+ FINAL_TARGET_TYPE = {
+     "connection": "final_connection",
+     "function": "final_function",
+     "circuit": "final_circuit",
+     "triple": "final_triple",
+ }
+ 
+ PROMOTION_ORDER = ("connection", "function", "circuit", "triple")
+ 
++# 治理边永久跳过晋升:paper-evidence 预处理标记「结构性不存在」(non_neural_target)
++# 与「证据否定」(evidence_negated)的对象不得进入 final_kg,即使已有 review 通过。
++GOVERNANCE_SKIP_NEVER_PROMOTE = "GOVERNANCE_SKIP_NEVER_PROMOTE"
++GOVERNANCE_SKIP_OUTCOMES = frozenset({"non_neural_target", "evidence_negated"})
++# paper_evidence_task_items.target_type → 晋升 target_type 映射(triple 无证据任务支持)。
++EVIDENCE_TASK_TARGET_TYPES = {
++    "connection": ("connection", "projection"),
++    "function": ("region_function",),
++    "circuit": ("circuit",),
++}
++
+ 
+ class EmptyTargetTypesError(ValueError):
+     pass
+ 
+ 
+ class InvalidTargetTypeError(ValueError):
+     pass
+ 
+ 
+ class MissingOperatorError(ValueError):
+@@ -301,20 +316,61 @@ async def detect_final_duplicate(
+                 granularity_family=row.granularity_family,
+                 resource_id=row.resource_id,
+                 batch_id=row.batch_id,
+             ) == key:
+                 return True
+         return False
+ 
+     return False
+ 
+ 
++async def get_governance_skip_outcome(
++    session: AsyncSession,
++    target_type: str,
++    target_id: uuid.UUID,
++) -> str | None:
++    """Return the permanent promotion-skip outcome for the target, if any.
++
++    Paper-evidence preprocessing marks structurally-impossible targets
++    (non_neural_target) and evidence-negated objects (evidence_negated) on
++    paper_evidence_task_items. Governance edges must never be promoted to
++    final_kg, regardless of review state. Takes the latest outcome for the
++    target; targets without an evidence task item return None.
++    """
++    evidence_types = EVIDENCE_TASK_TARGET_TYPES.get(target_type)
++    if not evidence_types:
++        return None
++    try:
++        row = (
++            await session.execute(
++                text(
++                    "SELECT preprocess_outcome FROM paper_evidence_task_items "
++                    "WHERE target_type = ANY(:tt) AND target_id = :oid "
++                    "ORDER BY created_at DESC LIMIT 1"
++                ),
++                {"tt": list(evidence_types), "oid": target_id},
++            )
++        ).first()
++    except SQLAlchemyError:
++        # 未迁移证据表(如运行时切换的旧库):无治理 outcome 可查,fail-open 不阻断晋升
++        _logger.warning(
++            "governance skip check skipped: evidence task table unavailable (target_type=%s, target_id=%s)",
++            target_type,
++            target_id,
++        )
++        return None
++    if row is None:
++        return None
++    outcome = row[0]
++    return outcome if outcome in GOVERNANCE_SKIP_OUTCOMES else None
++
++
+ async def validate_promotion_eligibility(
+     session: AsyncSession,
+     target_type: str,
+     obj: Any,
+ ) -> tuple[bool, str | None, uuid.UUID | None, dict[str, Any]]:
+     if obj is None:
+         return False, "TARGET_NOT_FOUND", None, {}
+ 
+     if obj.mirror_status != MirrorStatus.human_approved:
+         return False, "NOT_HUMAN_APPROVED", None, {}
+@@ -338,20 +394,24 @@ async def validate_promotion_eligibility(
+     val_summary = await get_latest_validation_summary(session, target_type, obj.id)
+     if val_summary.get("has_blocker") or val_summary.get("has_error"):
+         return False, "HAS_VALIDATION_BLOCKER", approve_record.id, val_summary
+ 
+     if not obj.source_atlas:
+         return False, "MISSING_SOURCE_ATLAS", approve_record.id, val_summary
+ 
+     if not obj.granularity_level:
+         return False, "MISSING_GRANULARITY", approve_record.id, val_summary
+ 
++    governance_outcome = await get_governance_skip_outcome(session, target_type, obj.id)
++    if governance_outcome is not None:
++        return False, GOVERNANCE_SKIP_NEVER_PROMOTE, approve_record.id, val_summary
++
+     if await detect_final_duplicate(session, target_type, obj):
+         return False, "DUPLICATE_FINAL_EXISTS", approve_record.id, val_summary
+ 
+     return True, None, approve_record.id, val_summary
+ 
+ 
+ def _scope_from_request(request: MirrorPromotionRequest) -> PromotionScope:
+     scope = request.scope
+     default_mirror = [MirrorStatus.human_approved]
+     default_review = [MirrorReviewStatus.approved]
+diff --git a/backend/app/services/paper_evidence_service.py b/backend/app/services/paper_evidence_service.py
+index 3f982df..b74143f 100644
+--- a/backend/app/services/paper_evidence_service.py
++++ b/backend/app/services/paper_evidence_service.py
+@@ -48,20 +48,21 @@ from app.services.confidence_rules import (
+     PARTIAL_CAP,
+     SUPPORT_CAP,
+     compute_adjustment,
+ )
+ from app.services.evidence_target_adapter import (
+     TARGET_MODELS as ADAPTER_TARGET_MODELS,
+     build_search_query,
+     build_target_dto,
+     build_retrieval_context,
+ )
++from app.services.evidence_target_classifier import classify_target
+ from app.services.paragraph_retrieval import build_windows, score_paragraphs
+ from app.services import oa_xml_parser
+ from app.services import paper_fetch_service as pfs
+ 
+ # Similarity tier: token Jaccard (word overlap) or character ratio for LLM
+ # passages that are not verbatim. Exact / whitespace / unicode-normalized
+ # matches stay preferred; similarity is a controlled fallback for human review.
+ SIMILARITY_TOKEN_JACCARD_THRESHOLD = 0.75
+ SIMILARITY_RATIO_THRESHOLD = 0.8
+ LOCATE_SIMILARITY_THRESHOLD = 0.6
+@@ -3990,33 +3991,35 @@ async def _enrich_task_display(session: AsyncSession, tasks: list[dict]) -> list
+         ).all()
+         for r in rows:
+             live[(tt, str(r._mapping["id"]))] = r._mapping
+     # 始终批量取唯一 item 的 id 与快照(一对一:任务 = 对象;item_id 供前端回退/review 关联,快照兜底名称)
+     snap: dict[str, dict] = {}
+     need_item = [t["id"] for t in tasks]
+     if need_item:
+         rows = (
+             await session.execute(
+                 text(
+-                    "SELECT DISTINCT ON (task_id) task_id::text, id::text, target_id::text, label, current_confidence "
++                    "SELECT DISTINCT ON (task_id) task_id::text, id::text, target_id::text, label, current_confidence, "
++                    "preprocess_outcome "
+                     "FROM paper_evidence_task_items WHERE task_id::text = ANY(:ids) "
+                     "ORDER BY task_id, updated_at DESC"
+                 ),
+                 {"ids": need_item},
+             )
+         ).all()
+         for r in rows:
+             snap[r[0]] = {
+                 "item_id": r[1],
+                 "target_id": r[2],
+                 "label": r[3],
+                 "confidence": float(r[4]) if r[4] is not None else None,
++                "preprocess_outcome": r[5],
+             }
+     out: list[dict] = []
+     for t in tasks:
+         tt = t["target_type"]
+         oid = t.get("target_id") or snap.get(t["id"], {}).get("target_id")
+         m = live.get((tt, oid)) if oid else None
+         cn = en = None
+         conf = None
+         name_src = "missing"
+         if m is not None:
+@@ -4041,20 +4044,21 @@ async def _enrich_task_display(session: AsyncSession, tasks: list[dict]) -> list
+             conf_src = "mirror_live"
+         out.append(
+             {
+                 **t,
+                 "item_id": snap.get(t["id"], {}).get("item_id"),
+                 "display_name_cn": cn,
+                 "display_name_en": en,
+                 "display_confidence": conf,
+                 "display_name_source": name_src,
+                 "display_confidence_source": conf_src,
++                "preprocess_outcome": snap.get(t["id"], {}).get("preprocess_outcome"),
+             }
+         )
+     return out
+ 
+ 
+ # workbench 颗粒度级别 → 镜像 family 值(任务表两种值并存:旧数据存级别,新数据/镜像行存 family)
+ _GRANULARITY_FAMILY: dict[str, str] = {
+     "macro": "macro_clinical",
+     "meso": "meso_anatomical",
+     "sub_connectivity": "sub_connectivity",
+@@ -5138,47 +5142,79 @@ async def _process_batch_item_v2(
+     sem_deepseek: asyncio.Semaphore,
+     max_retries: int,
+ ) -> None:
+     from app.database import AsyncSessionLocal
+ 
+     if AsyncSessionLocal is None:
+         return
+     async with AsyncSessionLocal() as session:
+         stage = "search"
+         try:
++            # 非神经靶标:已标记结构性不存在,直接完成(不检索、不调 LLM)
++            marked_row = (
++                await session.execute(
++                    text(
++                        "SELECT preprocess_outcome FROM paper_evidence_task_items WHERE id::text = :iid"
++                    ),
++                    {"iid": item_id},
++                )
++            ).first()
++            if marked_row is not None and marked_row[0] == "non_neural_target":
++                await _set_item_stage(
++                    session, item_id, "awaiting_review",
++                    preprocess_outcome="non_neural_target",
++                    finished_preprocessing_at="SQL:now()",
++                )
++                return
+             context = await build_retrieval_context(
+                 session, target_type, uuid.UUID(target_id), mode=mode
+             )
+             await _set_item_stage(
+                 session, item_id, "searching",
+                 started_at="SQL:COALESCE(started_at, now())",
+                 attempt_count="SQL:attempt_count + 1",
+                 search_query=context.get("claim_text") or "",
+                 claim_version=context.get("claim_version") or "claim_v1",
+                 claim_text_snapshot=context.get("claim_text") or "",
+                 claim_components_snapshot=context.get("claim_components") or [],
+             )
++            query_is_negative = False
+             query = await build_search_query(
+                 session, target_type, uuid.UUID(target_id), mode=mode
+             )
+             async with sem_search:
+                 papers = await _search_with_retry(query, limit=max(10, max_papers * 3))
+             if not papers:
+                 # ABSTRACT-only missed everything → retry with BODY-inclusive query
+                 wide_query = await build_search_query(
+                     session, target_type, uuid.UUID(target_id), mode=mode, abstract_only=False
+                 )
+                 if wide_query and wide_query != query:
+                     async with sem_search:
+                         papers = await _search_with_retry(wide_query, limit=max(10, max_papers * 3))
+                     if papers:
+                         query = wide_query
++            if not papers:
++                # 反向验证:正向无结果时用否定向查询再搜一轮,区分「证据否定」与「无证据」
++                negative_query = await build_search_query(
++                    session, target_type, uuid.UUID(target_id), mode=mode, abstract_only=False, negative=True
++                )
++                if negative_query and negative_query != query:
++                    async with sem_search:
++                        papers = await _search_with_retry(negative_query, limit=max(10, max_papers * 3))
++                    logging.getLogger("uvicorn.error").info(
++                        "[evidence] negative round: item=%s target=%s hits=%d query=%s",
++                        item_id, target_id, len(papers), negative_query,
++                    )
++                    if papers:
++                        query = negative_query
++                        query_is_negative = True
+             if not papers:
+                 await _set_item_stage(
+                     session, item_id, "awaiting_review",
+                     preprocess_outcome="no_evidence_found",
+                     last_error_code="EUROPE_PMC_NO_RESULT",
+                     last_error_message="no papers matched the query",
+                     last_error_at="SQL:now()",
+                     finished_preprocessing_at="SQL:now()",
+                 )
+                 return
+@@ -5302,21 +5338,25 @@ async def _process_batch_item_v2(
+                     }
+                 )
+             await _save_item_candidates(session, item_id, candidates)
+             verified_any = any(
+                 p.get("source_verified")
+                 for cand in candidates
+                 for p in cand.get("passages") or []
+             )
+             await _set_item_stage(
+                 session, item_id, "awaiting_review",
+-                preprocess_outcome="evidence_found" if verified_any else "no_evidence_found",
++                preprocess_outcome=(
++                    "evidence_negated"
++                    if query_is_negative and verified_any
++                    else "evidence_found" if verified_any else "no_evidence_found"
++                ),
+                 last_error_code=None if verified_any else "NO_RELEVANT_PASSAGE",
+                 last_error_message=None if verified_any else "no verified passage across candidates",
+                 last_error_at=None if verified_any else "SQL:now()",
+                 finished_preprocessing_at="SQL:now()",
+                 paper_id=uuid.UUID(candidates[0]["paper_id"]) if candidates else None,
+                 preprocessing_version=PAPER_EVIDENCE_PREPROCESS_VERSION,
+                 retrieval_version=PAPER_PASSAGE_RETRIEVAL_VERSION,
+                 prompt_version=PAPER_EVIDENCE_EXTRACTION_PROMPT_VERSION,
+                 llm_model=last_llm_model,
+             )
+@@ -5800,20 +5840,40 @@ async def materialize_task_items_background(task_id: str) -> None:
+                         "UPDATE paper_evidence_tasks SET materialization_status='failed', "
+                         "materialization_error=:err WHERE id::text=:tid"
+                     ),
+                     {"tid": task_id, "err": str(exc)[:500]},
+                 )
+                 await session.commit()
+             except Exception:  # noqa: BLE001
+                 await session.rollback()
+ 
+ 
++async def _classify_item_target(
++    session: AsyncSession, target_type: str, target_id: uuid.UUID
++) -> str:
++    """查镜像行靶标名并分类:connection/projection 取 target_region 名,其余类型返回 unknown。"""
++    if target_type not in ("connection", "projection"):
++        return "unknown"
++    row = (
++        await session.execute(
++            text(
++                "SELECT target_region_name_cn, target_region_name_en "
++                "FROM mirror_region_connections WHERE id = :oid"
++            ),
++            {"oid": target_id},
++        )
++    ).first()
++    if row is None:
++        return "unknown"
++    return classify_target(row[0], row[1])
++
++
+ async def create_batch_task(
+     session: AsyncSession,
+     *,
+     target_type: str,
+     scope: str,
+     mode: str,
+     max_papers_per_object: int,
+     created_by: str | None = None,
+     limit: int = 200,
+     start_paused: bool = False,
+@@ -5888,20 +5948,23 @@ async def create_batch_task(
+     if not fresh_ids:
+         raise ValueError("all matched targets already have an active evidence task")
+     cfg_json = json.dumps(
+         {"deepseek_concurrency": DEEPSEEK_CONCURRENCY, "europepmc_concurrency": EUROPE_PMC_CONCURRENCY},
+         ensure_ascii=False,
+     )
+     status = "paused" if start_paused else "pending"
+     task_ids: list[str] = []
+     for oid in fresh_ids:
+         label, conf = await _batch_scope_label(session, target_type, uuid.UUID(oid))
++        # 非神经靶标(脑室/脑脊液/脑膜等):直接标记结构性不存在,不进入论文检索
++        target_kind = await _classify_item_target(session, target_type, uuid.UUID(oid))
++        preprocess_outcome = "non_neural_target" if target_kind == "non_neural" else None
+         task_id = (
+             await session.execute(
+                 text(
+                     "INSERT INTO paper_evidence_tasks "
+                     "(target_type, target_id, scope, scope_type, mode, max_papers_per_object, status, created_by, "
+                     "total_items, config, name, granularity_level, only_oa, confidence_lt, "
+                     "stop_after_strong_support, review_status, filter_snapshot, estimated_target_count, "
+                     "materialization_status, materialized_target_count) "
+                     "VALUES (:tt, :oid, :scope, :scope_type, :mode, :maxp, :status, :cb, 1, CAST(:cfg AS jsonb), "
+                     ":name, :gl, :only_oa, :clt, :stop, 'not_started', CAST(:fs AS jsonb), 1, 'completed', 1) "
+@@ -5922,33 +5985,43 @@ async def create_batch_task(
+                     "only_oa": only_oa,
+                     "clt": confidence_lt,
+                     "stop": stop_after_strong_support,
+                     "fs": json.dumps(snapshot, ensure_ascii=False),
+                 },
+             )
+         ).scalar_one()
+         await session.execute(
+             text(
+                 "INSERT INTO paper_evidence_task_items "
+-                "(task_id, target_type, target_id, label, current_confidence, status) "
+-                "VALUES (:tid, :tt, :oid, :label, :conf, 'pending')"
++                "(task_id, target_type, target_id, label, current_confidence, status, preprocess_outcome) "
++                "VALUES (:tid, :tt, :oid, :label, :conf, :status, :po)"
+             ),
+-            {"tid": task_id, "tt": target_type, "oid": uuid.UUID(oid), "label": label, "conf": conf},
++            {
++                "tid": task_id, "tt": target_type, "oid": uuid.UUID(oid), "label": label, "conf": conf,
++                "status": "pending", "po": preprocess_outcome,
++            },
+         )
+         await _write_audit(
+             session,
+             action_type="EVIDENCE_TASK_CREATE",
+             entity_type="evidence_task",
+             entity_id=uuid.UUID(task_id),
+-            after_data={"target_type": target_type, "target_id": oid, "scope": scope, "mode": mode},
++            after_data={
++                "target_type": target_type, "target_id": oid, "scope": scope, "mode": mode,
++                **({"non_neural_target": True} if preprocess_outcome == "non_neural_target" else {}),
++            },
+             operator_id=created_by,
+-            reason="single-object evidence task created",
++            reason=(
++                "single-object evidence task created; target is non-neural structure, marked structurally non-existent"
++                if preprocess_outcome == "non_neural_target"
++                else "single-object evidence task created"
++            ),
+         )
+         task_ids.append(task_id)
+     await session.commit()
+     return {
+         "task_id": task_ids[0],
+         "task_ids": task_ids,
+         "target_count": len(task_ids),
+         "skipped_active_targets": len(busy),
+     }
+ 
+diff --git a/backend/scripts/clean_final_non_neural_edges.py b/backend/scripts/clean_final_non_neural_edges.py
+new file mode 100644
+index 0000000..6579d2d
+--- /dev/null
++++ b/backend/scripts/clean_final_non_neural_edges.py
+@@ -0,0 +1,60 @@
++"""一次性清理:final_kg 中靶标为非神经结构(脑室/脑脊液/脑膜/脉络丛)的连接。
++
++靶标判定:优先 JOIN mirror_region_connections(source_mirror_connection_id)取 target_region 名;
++镜像行缺失时回退 raw_payload_json 中的 target 名称字段(如 target_region_name_en/cn)。
++仅删除 final 行,镜像数据保留(审计留痕)。
++
++用法: backend/.venv/Scripts/python.exe backend/scripts/clean_final_non_neural_edges.py
++"""
++
++import asyncio
++import json
++import sys
++from pathlib import Path
++
++sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
++
++from sqlalchemy import text  # noqa: E402
++
++from app.database import AsyncSessionLocal  # noqa: E402
++from app.services.evidence_target_classifier import classify_target  # noqa: E402
++
++
++async def main() -> None:
++    if AsyncSessionLocal is None:
++        print("AsyncSessionLocal 未初始化,退出。")
++        return
++    async with AsyncSessionLocal() as s:
++        rows = (
++            await s.execute(
++                text(
++                    "SELECT f.id, m.target_region_name_cn, m.target_region_name_en, f.raw_payload_json "
++                    "FROM final_region_connections f "
++                    "LEFT JOIN mirror_region_connections m ON m.id = f.source_mirror_connection_id"
++                )
++            )
++        ).all()
++        doomed: list[str] = []
++        for rid, tgt_cn, tgt_en, raw in rows:
++            if tgt_cn or tgt_en:
++                kind = classify_target(tgt_cn, tgt_en)
++            else:
++                payload = raw or {}
++                kind = classify_target(
++                    payload.get("target_region_name_cn") or payload.get("target_name_cn"),
++                    payload.get("target_region_name_en") or payload.get("target_name_en"),
++                )
++            if kind == "non_neural":
++                doomed.append(str(rid))
++        if doomed:
++            await s.execute(
++                text("DELETE FROM final_region_connections WHERE id::text = ANY(:ids)"),
++                {"ids": doomed},
++            )
++            await s.commit()
++        print(f"scanned {len(rows)} final connections; deleted {len(doomed)} non-neural-target edges")
++
++
++if __name__ == "__main__":
++    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
++    asyncio.run(main())
+diff --git a/backend/tests/test_evidence_target_adapter.py b/backend/tests/test_evidence_target_adapter.py
+new file mode 100644
+index 0000000..862af0d
+--- /dev/null
++++ b/backend/tests/test_evidence_target_adapter.py
+@@ -0,0 +1,41 @@
++# -*- coding: utf-8 -*-
++"""build_search_query negative 变体:否定连接词注入。"""
++
++import asyncio
++import uuid
++from unittest.mock import AsyncMock, patch
++
++from app.services import evidence_target_adapter as eta
++
++
++def _run(coro):
++    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
++    loop = asyncio.new_event_loop()
++    try:
++        return loop.run_until_complete(coro)
++    finally:
++        loop.close()
++
++
++def test_negative_query_contains_negation_terms():
++    dto = {
++        "source_region": "BLA", "target_region": "IL",
++        "canonical_terms": [], "function_terms": [], "function_synonyms": [],
++        "display_name": "BLA → IL",
++    }
++    with patch.object(eta, "build_target_dto", AsyncMock(return_value=dto)):
++        q = _run(eta.build_search_query(None, "connection", uuid.uuid4(), mode="existence", negative=True))
++    assert "no projection" in q or "does not connect" in q or "absence of connection" in q
++    assert "ABSTRACT:\"BLA\"" in q
++    assert "ABSTRACT:\"IL\"" in q
++
++
++def test_positive_query_has_no_negation_terms():
++    dto = {
++        "source_region": "BLA", "target_region": "IL",
++        "canonical_terms": [], "function_terms": [], "function_synonyms": [],
++        "display_name": "BLA → IL",
++    }
++    with patch.object(eta, "build_target_dto", AsyncMock(return_value=dto)):
++        q = _run(eta.build_search_query(None, "connection", uuid.uuid4(), mode="existence"))
++    assert "no projection" not in q
+diff --git a/backend/tests/test_evidence_target_classifier.py b/backend/tests/test_evidence_target_classifier.py
+new file mode 100644
+index 0000000..9d81820
+--- /dev/null
++++ b/backend/tests/test_evidence_target_classifier.py
+@@ -0,0 +1,67 @@
++# -*- coding: utf-8 -*-
++"""非神经靶标分类器:脑室/脑脊液/脑膜/脉络丛识别,正常脑区不误伤。"""
++
++from app.services.evidence_target_classifier import classify_target
++
++
++def test_lateral_ventricle_en():
++    assert classify_target(None, "Lateral ventricle") == "non_neural"
++
++
++def test_ventricle_cn():
++    assert classify_target("侧脑室", None) == "non_neural"
++
++
++def test_third_fourth_ventricle():
++    assert classify_target("第三脑室", "Third ventricle") == "non_neural"
++
++
++def test_cistern_cn_en():
++    assert classify_target(None, "Suprasellar cistern") == "non_neural"
++    assert classify_target("环池", None) == "non_neural"
++
++
++def test_csf_subarachnoid():
++    assert classify_target(None, "Cerebrospinal fluid") == "non_neural"
++    assert classify_target(None, "Subarachnoid space") == "non_neural"
++
++
++def test_meninges():
++    assert classify_target(None, "Dura mater") == "non_neural"
++    assert classify_target(None, "Pia mater") == "non_neural"
++    assert classify_target("硬脑膜", None) == "non_neural"
++
++
++def test_choroid_plexus():
++    assert classify_target(None, "Choroid plexus") == "non_neural"
++    assert classify_target("脉络丛", None) == "non_neural"
++
++
++def test_falk_tentorium():
++    assert classify_target(None, "Falx cerebri") == "non_neural"
++    assert classify_target(None, "Tentorium cerebelli") == "non_neural"
++
++
++def test_real_region_not_mistaken():
++    assert classify_target("杏仁核", "Amygdala") == "unknown"
++    assert classify_target("前扣带皮层", "Anterior cingulate cortex") == "unknown"
++    assert classify_target(None, "Primary somatosensory area, layer 4") == "unknown"
++
++
++def test_none_inputs():
++    assert classify_target(None, None) == "unknown"
++
++
++def test_all_non_neural_keywords_hit():
++    """表驱动:全部非神经关键词(含未单独覆盖的 9 个)都应命中 non_neural。"""
++    cases = [
++        ("csf", None), ("脑脊液", None), ("蛛网膜下腔", None),
++        ("meninges", None), ("arachnoid", None), ("脑膜", None), ("软脑膜", None),
++        ("大脑镰", None), ("小脑幕", None),
++        # 已覆盖关键词回归
++        ("Lateral ventricle", None), ("侧脑室", None), ("Suprasellar cistern", None),
++        ("Choroid plexus", None), ("Dura mater", None), ("Falx cerebri", None),
++        ("Tentorium cerebelli", None),
++    ]
++    for cn, en in cases:
++        assert classify_target(cn, en) == "non_neural", f"missed: {cn or en}"
+diff --git a/backend/tests/test_mirror_promotion_to_final.py b/backend/tests/test_mirror_promotion_to_final.py
+index 2e03bd4..69ed79b 100644
+--- a/backend/tests/test_mirror_promotion_to_final.py
++++ b/backend/tests/test_mirror_promotion_to_final.py
+@@ -1,33 +1,36 @@
+ """Mirror KG Promotion to Final KG tests (no LLM, no network)."""
+ 
+ from __future__ import annotations
+ 
+ import asyncio
+ import uuid
+ from unittest.mock import AsyncMock, MagicMock, patch
+ 
+ import pytest
+ from fastapi.testclient import TestClient
++from sqlalchemy.exc import SQLAlchemyError
+ 
+ from app.main import app
++from app.models.final_kg import FinalRegionConnection
+ from app.models.mirror_kg import (
+     MirrorCircuitRegion,
+     MirrorEvidenceRecord,
+     MirrorKgTriple,
+     MirrorRegionCircuit,
+     MirrorRegionConnection,
+     MirrorRegionFunction,
+ )
++from app.models.mirror_promotion import MirrorPromotionRecord
+ from app.models.mirror_review import MirrorHumanReviewRecord
+ from app.schemas.mirror_kg import MirrorPromotionStatus, MirrorReviewStatus, MirrorStatus
+-from app.schemas.mirror_promotion import MirrorPromotionRequest, MirrorPromotionResponse, MirrorPromotionScope
++from app.schemas.mirror_promotion import MirrorPromotionRecordStatus, MirrorPromotionRequest, MirrorPromotionResponse, MirrorPromotionScope
+ from app.schemas.mirror_review import MirrorReviewAction
+ from app.services import mirror_promotion_service as mps
+ 
+ 
+ def _connection(**kwargs) -> MirrorRegionConnection:
+     defaults = dict(
+         id=uuid.uuid4(),
+         batch_id=uuid.uuid4(),
+         resource_id=uuid.uuid4(),
+         source_atlas="Macro96",
+@@ -461,18 +464,226 @@ def test_no_llm_imports_in_promotion_service():
+ 
+     src = inspect.getsource(mod)
+     assert "deepseek" not in src.lower()
+     assert "kimi" not in src.lower()
+     assert "openai" not in src.lower()
+     assert "llm_extraction" not in src
+     assert "FinalKgTriple" in src
+     assert "FinalRegionConnection" in src
+ 
+ 
++def _approve_lookup(approve):
++    return MagicMock(scalars=MagicMock(return_value=MagicMock(first=MagicMock(return_value=approve))))
++
++
++def _outcome_lookup(outcome: str | None):
++    row = (outcome,) if outcome is not None else None
++    return MagicMock(first=MagicMock(return_value=row))
++
++
++def test_non_neural_target_ineligible_never_promote():
++    conn = _connection()
++    approve = _approve_record("connection", conn.id)
++    session = AsyncMock()
++    session.execute = AsyncMock(
++        side_effect=[_approve_lookup(approve), _outcome_lookup("non_neural_target")]
++    )
++    with patch.object(
++        mps, "get_latest_validation_summary", AsyncMock(return_value={"has_blocker": False, "has_error": False})
++    ):
++        with patch.object(mps, "detect_final_duplicate", AsyncMock(return_value=False)):
++            eligible, reason, review_id, _ = asyncio.run(
++                mps.validate_promotion_eligibility(session, "connection", conn)
++            )
++    assert not eligible
++    assert reason == mps.GOVERNANCE_SKIP_NEVER_PROMOTE
++    assert review_id == approve.id
++
++
++def test_evidence_negated_ineligible_never_promote():
++    fn = _function()
++    approve = _approve_record("function", fn.id)
++    session = AsyncMock()
++    session.execute = AsyncMock(
++        side_effect=[_approve_lookup(approve), _outcome_lookup("evidence_negated")]
++    )
++    with patch.object(
++        mps, "get_latest_validation_summary", AsyncMock(return_value={"has_blocker": False, "has_error": False})
++    ):
++        with patch.object(mps, "detect_final_duplicate", AsyncMock(return_value=False)):
++            eligible, reason, _, _ = asyncio.run(
++                mps.validate_promotion_eligibility(session, "function", fn)
++            )
++    assert not eligible
++    assert reason == mps.GOVERNANCE_SKIP_NEVER_PROMOTE
++
++
++def test_no_evidence_found_does_not_block_promotion():
++    conn = _connection()
++    approve = _approve_record("connection", conn.id)
++    session = AsyncMock()
++    session.execute = AsyncMock(
++        side_effect=[_approve_lookup(approve), _outcome_lookup("no_evidence_found")]
++    )
++    with patch.object(
++        mps, "get_latest_validation_summary", AsyncMock(return_value={"has_blocker": False, "has_error": False})
++    ):
++        with patch.object(mps, "detect_final_duplicate", AsyncMock(return_value=False)):
++            eligible, reason, _, _ = asyncio.run(
++                mps.validate_promotion_eligibility(session, "connection", conn)
++            )
++    assert eligible
++    assert reason is None
++
++
++def test_evidence_found_does_not_block_promotion():
++    conn = _connection()
++    approve = _approve_record("connection", conn.id)
++    session = AsyncMock()
++    session.execute = AsyncMock(
++        side_effect=[_approve_lookup(approve), _outcome_lookup("evidence_found")]
++    )
++    with patch.object(
++        mps, "get_latest_validation_summary", AsyncMock(return_value={"has_blocker": False, "has_error": False})
++    ):
++        with patch.object(mps, "detect_final_duplicate", AsyncMock(return_value=False)):
++            eligible, reason, _, _ = asyncio.run(
++                mps.validate_promotion_eligibility(session, "connection", conn)
++            )
++    assert eligible
++    assert reason is None
++
++
++def test_no_evidence_task_item_does_not_block_promotion():
++    conn = _connection()
++    approve = _approve_record("connection", conn.id)
++    session = AsyncMock()
++    session.execute = AsyncMock(side_effect=[_approve_lookup(approve), _outcome_lookup(None)])
++    with patch.object(
++        mps, "get_latest_validation_summary", AsyncMock(return_value={"has_blocker": False, "has_error": False})
++    ):
++        with patch.object(mps, "detect_final_duplicate", AsyncMock(return_value=False)):
++            eligible, reason, _, _ = asyncio.run(
++                mps.validate_promotion_eligibility(session, "connection", conn)
++            )
++    assert eligible
++    assert reason is None
++
++
++def test_evidence_table_missing_fails_open():
++    # 未迁移证据表(运行时切换的旧库):治理查询报 SQL 错 → fail-open,不阻断晋升
++    conn = _connection()
++    approve = _approve_record("connection", conn.id)
++    session = AsyncMock()
++    session.execute = AsyncMock(
++        side_effect=[_approve_lookup(approve), SQLAlchemyError("relation does not exist")]
++    )
++    with patch.object(
++        mps, "get_latest_validation_summary", AsyncMock(return_value={"has_blocker": False, "has_error": False})
++    ):
++        with patch.object(mps, "detect_final_duplicate", AsyncMock(return_value=False)):
++            eligible, reason, _, _ = asyncio.run(
++                mps.validate_promotion_eligibility(session, "connection", conn)
++            )
++    assert eligible
++    assert reason is None
++
++
++def test_run_skips_non_neural_target_no_final_row():
++    conn = _connection()
++    approve = _approve_record("connection", conn.id)
++    outcome = _outcome_lookup("non_neural_target")
++    session = AsyncMock()
++    session.add = MagicMock()
++    session.commit = AsyncMock()
++    session.execute = AsyncMock(
++        side_effect=[
++            _approve_lookup(approve),
++            outcome,
++            _approve_lookup(approve),
++            outcome,
++        ]
++    )
++    req = MirrorPromotionRequest(
++        target_types=["connection"],
++        dry_run=False,
++        operator="op1",
++        reason="governance skip test",
++        confirmation_text="PROMOTE MIRROR KG TO FINAL: connection COUNT 0",
++    )
++    with patch.object(mps, "collect_promotion_targets", AsyncMock(return_value=[("connection", conn)])):
++        with patch.object(
++            mps, "get_latest_validation_summary", AsyncMock(return_value={"has_blocker": False, "has_error": False})
++        ):
++            with patch.object(mps, "promote_connection", AsyncMock(side_effect=AssertionError("must not be called"))):
++                resp = asyncio.run(mps.run_mirror_promotion(session, req))
++
++    assert resp.promoted_count == 0
++    assert resp.skipped_ineligible_count == 1
++    assert resp.failed_count == 0
++    assert conn.promotion_status == MirrorPromotionStatus.not_promoted
++    assert conn.mirror_status == MirrorStatus.human_approved
++    recs = [
++        c.args[0]
++        for c in session.add.call_args_list
++        if c.args and isinstance(c.args[0], MirrorPromotionRecord)
++    ]
++    assert any(
++        r.status == MirrorPromotionRecordStatus.skipped_ineligible
++        and r.message == mps.GOVERNANCE_SKIP_NEVER_PROMOTE
++        for r in recs
++    )
++
++
++def test_run_promotes_evidence_found_control():
++    conn = _connection()
++    approve = _approve_record("connection", conn.id)
++    outcome = _outcome_lookup("evidence_found")
++    session = AsyncMock()
++    session.add = MagicMock()
++    session.commit = AsyncMock()
++
++    async def _fake_flush():
++        # assign DB-generated ids the way a real flush would
++        for c in session.add.call_args_list:
++            obj = c.args[0] if c.args else None
++            if isinstance(obj, FinalRegionConnection) and getattr(obj, "id", None) is None:
++                obj.id = uuid.uuid4()
++
++    session.flush = AsyncMock(side_effect=_fake_flush)
++    session.execute = AsyncMock(
++        side_effect=[
++            _approve_lookup(approve),
++            outcome,
++            _approve_lookup(approve),
++            outcome,
++        ]
++    )
++    req = MirrorPromotionRequest(
++        target_types=["connection"],
++        dry_run=False,
++        operator="op1",
++        reason="control test",
++        confirmation_text="PROMOTE MIRROR KG TO FINAL: connection COUNT 1",
++    )
++    with patch.object(mps, "collect_promotion_targets", AsyncMock(return_value=[("connection", conn)])):
++        with patch.object(
++            mps, "get_latest_validation_summary", AsyncMock(return_value={"has_blocker": False, "has_error": False})
++        ):
++            with patch.object(mps, "detect_final_duplicate", AsyncMock(return_value=False)):
++                with patch.object(mps, "promote_evidence_for_target", AsyncMock(return_value=1)):
++                    resp = asyncio.run(mps.run_mirror_promotion(session, req))
++
++    assert resp.promoted_count == 1
++    assert resp.skipped_ineligible_count == 0
++    assert resp.failed_count == 0
++    assert conn.promotion_status == MirrorPromotionStatus.promoted
++
++
+ def test_final_kg_list_api():
+     client = TestClient(app)
+     with patch("app.routers.final_kg.fks.list_final_connections", AsyncMock(return_value=([], 0))):
+         with patch("app.database.get_db") as mock_get_db:
+             mock_get_db.return_value = AsyncMock()
+             resp = client.get("/api/final-kg/connections")
+     assert resp.status_code == 200
+     assert resp.json()["total"] == 0
+diff --git a/backend/tests/test_paper_evidence_batch.py b/backend/tests/test_paper_evidence_batch.py
+index 07ebcd0..91fe785 100644
+--- a/backend/tests/test_paper_evidence_batch.py
++++ b/backend/tests/test_paper_evidence_batch.py
+@@ -182,20 +182,119 @@ class TestBatchStateMachine:
+             _run(_fail_item(task_id))
+             retried = _run(_retry(task_id))
+             assert retried["retried"] == 1
+             assert _run(_read_status(task_id)) == "pending"
+             # same target cannot be enqueued again while active
+             with pytest.raises(ValueError, match="already have an active evidence task"):
+                 self._make_task(ids)
+         finally:
+             _run(_cleanup([task_id]))
+ 
++    def test_non_neural_target_marked_without_search(self):
++        oid = str(uuid.uuid4())
++        # 靶标名含「脑室」→ 创建即标记结构性不存在
++        with (
++            patch.object(pes, "_resolve_scope_ids", new=AsyncMock(return_value=[oid])),
++            patch.object(pes, "_resolve_scope_ids_low_confidence", new=AsyncMock(return_value=[oid])),
++            patch.object(
++                pes,
++                "_batch_scope_label",
++                new=AsyncMock(side_effect=lambda s, tt, o: (f"X → 侧脑室", 0.1)),
++            ),
++            patch.object(pes, "_classify_item_target", new=AsyncMock(return_value="non_neural")),
++        ):
++            result = _run(_make_task_inner(target_ids=[oid], start_paused=True))
++        task_id = result["task_id"]
++        try:
++            items = _run(_read_task_items(task_id))
++            assert len(items) == 1
++            assert items[0][0].startswith("X → 侧脑室")
++            # 标记结构性不存在
++            outcome = _run(_read_item_outcome(task_id))
++            assert outcome == "non_neural_target"
++        finally:
++            _run(_cleanup([task_id]))
++
++    def test_non_neural_item_skips_search(self):
++        oid = str(uuid.uuid4())
++        with (
++            patch.object(pes, "_resolve_scope_ids", new=AsyncMock(return_value=[oid])),
++            patch.object(pes, "_resolve_scope_ids_low_confidence", new=AsyncMock(return_value=[oid])),
++            patch.object(pes, "_batch_scope_label", new=AsyncMock(side_effect=lambda s, tt, o: (f"X → 侧脑室", 0.1))),
++            patch.object(pes, "_classify_item_target", new=AsyncMock(return_value="non_neural")),
++        ):
++            result = _run(_make_task_inner(target_ids=[oid], start_paused=False))
++        task_id = result["task_id"]
++        try:
++            with (
++                patch.object(pes, "build_retrieval_context", new=AsyncMock(return_value={})),
++                patch.object(pes, "search_papers", new=AsyncMock(return_value=[])),
++                patch.object(pes, "pack_target_info", new=AsyncMock(return_value={})),
++            ):
++                _run(_run_loop(task_id))
++                # 已标记 item:不触发检索,直接 awaiting_review
++                items = _run(_read_task_items(task_id))
++                assert items[0][1] == "awaiting_review"
++                assert pes.search_papers.await_count == 0  # type: ignore[attr-defined]
++        finally:
++            _run(_cleanup([task_id]))
++
++    def test_negative_round_marks_evidence_negated(self):
++        """正向检索无结果 → 否定向检索命中 → preprocess_outcome='evidence_negated'."""
++        oid = str(uuid.uuid4())
++        result = self._make_task([oid])
++        task_id = result["task_id"]
++        try:
++            context = {
++                "claim_text": "memory consolidation",
++                "structured_claim": {},
++                "object_type": "connection",
++                "granularity": "macro",
++                "source_region": "Hippocampus",
++                "target_region": "Prefrontal cortex",
++                "source_region_synonyms": [],
++                "target_region_synonyms": [],
++                "function_terms": ["memory consolidation"],
++                "function_synonyms": [],
++                "relation_keywords": ["projection"],
++            }
++            meta = {**_paper(), "pmcid": "PMC10001"}
++            extraction = {
++                **_extraction(),
++                "overall_direction": "contradicts",
++                "llm_model": "deepseek-test",
++            }
++            with (
++                # call 1 = 初始正向;call 2 = wide(与 query 相同 → 跳过);call 3 = 否定向
++                patch.object(pes, "build_search_query", new=AsyncMock(side_effect=["pos q", "pos q", "neg q"])),
++                # call 1 = 正向检索无结果;call 2 = 否定向检索命中
++                patch.object(pes, "_search_with_retry", new=AsyncMock(side_effect=[[], [_paper()]])),
++                patch.object(pes, "build_retrieval_context", new=AsyncMock(return_value=context)),
++                patch.object(
++                    pes, "semantic_filter_papers",
++                    new=AsyncMock(side_effect=lambda papers, ctx: (papers, [])),
++                ),
++                patch.object(pes, "_verify_paper_with_retry", new=AsyncMock(return_value=meta)),
++                patch.object(pes.pfs, "fetch_oa_fulltext_xml", new=AsyncMock(return_value="")),
++                patch.object(pes, "_extract_from_paper_with_retry", new=AsyncMock(return_value=extraction)),
++            ):
++                _run(_run_loop(task_id))
++            items = _run(_read_task_items(task_id))
++            assert items[0][1] == "awaiting_review"
++            outcome = _run(_read_item_outcome(task_id))
++            assert outcome == "evidence_negated"
++            direction = _run(_read_item_model_direction(task_id))
++            assert direction == "contradicts"
++        finally:
++            _run(_cleanup([task_id]))
++            _run(_cleanup_batch_paper())
++
+ 
+ class TestReviewQueueStatsAudit:
+     def test_review_queue_resolve_and_stats_shape(self):
+         target_id = uuid.uuid4()
+         record_ids = []
+         evidence_ids = []
+         audit_ids = []
+         try:
+             ev = _run(_insert_evidence(target_id))
+             evidence_ids.append(ev)
+@@ -256,20 +355,40 @@ async def _read_task_items(task_id):
+                     "SELECT label, status, candidate_papers IS NOT NULL, "
+                     "EXISTS(SELECT 1 FROM paper_evidence_task_item_passages pp WHERE pp.task_item_id = t.id), "
+                     "claim_text_snapshot IS NOT NULL "
+                     "FROM paper_evidence_task_items t WHERE task_id::text=:tid"
+                 ),
+                 {"tid": task_id},
+             )
+         ).all()
+ 
+ 
++async def _read_item_outcome(task_id):
++    async with AsyncSessionLocal() as s:
++        return (
++            await s.execute(
++                text("SELECT preprocess_outcome FROM paper_evidence_task_items WHERE task_id::text=:tid"),
++                {"tid": task_id},
++            )
++        ).scalar_one()
++
++
++async def _read_item_model_direction(task_id):
++    async with AsyncSessionLocal() as s:
++        return (
++            await s.execute(
++                text("SELECT model_direction FROM paper_evidence_task_items WHERE task_id::text=:tid"),
++                {"tid": task_id},
++            )
++        ).scalar_one()
++
++
+ async def _run_loop(task_id):
+     async with AsyncSessionLocal() as s:
+         await pes._run_batch_loop(s, task_id)
+ 
+ 
+ async def _count_evidence(ids):
+     async with AsyncSessionLocal() as s:
+         return (
+             await s.execute(
+                 text(
+diff --git a/backend/tests/test_paper_evidence_task_display.py b/backend/tests/test_paper_evidence_task_display.py
+index 16e395c..4f370f3 100644
+--- a/backend/tests/test_paper_evidence_task_display.py
++++ b/backend/tests/test_paper_evidence_task_display.py
+@@ -15,43 +15,43 @@ from app.services import paper_evidence_service as pes
+ 
+ def _run(coro):
+     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+     loop = asyncio.new_event_loop()
+     try:
+         return loop.run_until_complete(coro)
+     finally:
+         loop.close()
+ 
+ 
+-async def _insert_task(tt, oid, *, label, conf, summary_counts=True):
++async def _insert_task(tt, oid, *, label, conf, summary_counts=True, preprocess_outcome=None):
+     async with AsyncSessionLocal() as s:
+         tid = (
+             await s.execute(
+                 text(
+                     "INSERT INTO paper_evidence_tasks "
+                     "(target_type, target_id, scope, mode, max_papers_per_object, status, total_items, summary) "
+                     "VALUES (:tt, :oid, 'selected', 'function', 3, 'pending', 1, :sm) RETURNING id::text"
+                 ),
+                 {
+                     "tt": tt,
+                     "oid": uuid.UUID(oid),
+                     "sm": json.dumps({"counts": {"pending": 1}}) if summary_counts else None,
+                 },
+             )
+         ).scalar_one()
+         await s.execute(
+             text(
+                 "INSERT INTO paper_evidence_task_items "
+-                "(task_id, target_type, target_id, label, current_confidence, status) "
+-                "VALUES (:tid, :tt, :oid, :lbl, :conf, 'pending')"
++                "(task_id, target_type, target_id, label, current_confidence, status, preprocess_outcome) "
++                "VALUES (:tid, :tt, :oid, :lbl, :conf, 'pending', :po)"
+             ),
+-            {"tid": tid, "tt": tt, "oid": uuid.UUID(oid), "lbl": label, "conf": conf},
++            {"tid": tid, "tt": tt, "oid": uuid.UUID(oid), "lbl": label, "conf": conf, "po": preprocess_outcome},
+         )
+         await s.commit()
+         return tid
+ 
+ 
+ async def _insert_connection(oid, *, src_cn="杏仁核", src_en="Amygdala", tgt_cn="海马", tgt_en="Hippocampus", confidence=0.35):
+     async with AsyncSessionLocal() as s:
+         await s.execute(
+             text(
+                 "INSERT INTO mirror_region_connections "
+@@ -89,20 +89,36 @@ def test_list_tasks_returns_cn_en_and_confidence():
+                 assert task["display_name_cn"] == "杏仁核 → 海马"
+                 assert task["display_name_en"] == "Amygdala → Hippocampus"
+                 assert task["display_confidence"] == 0.35
+                 assert task["display_name_source"] == "mirror_live"
+                 assert task["display_confidence_source"] == "mirror_live"
+         _run(case())
+     finally:
+         _run(_cleanup(task_ids, [oid]))
+ 
+ 
++def test_list_tasks_exposes_preprocess_outcome():
++    oid = str(uuid.uuid4())
++    task_ids: list[str] = []
++    try:
++        task_ids.append(_run(_insert_task("connection", oid, label="BLA → IL", conf=None, preprocess_outcome="non_neural_target")))
++
++        async def case():
++            async with AsyncSessionLocal() as s:
++                resp = await pes.list_paper_evidence_tasks(s, limit=10)
++                task = next(t for t in resp["items"] if t["id"] == task_ids[0])
++                assert task["preprocess_outcome"] == "non_neural_target"
++        _run(case())
++    finally:
++        _run(_cleanup(task_ids, []))
++
++
+ def test_get_task_returns_display_fields():
+     oid = str(uuid.uuid4())
+     task_ids: list[str] = []
+     try:
+         _run(_insert_connection(oid, confidence=0.35))
+         task_ids.append(_run(_insert_task("connection", oid, label=str(uuid.uuid4()), conf=None)))
+ 
+         async def case():
+             async with AsyncSessionLocal() as s:
+                 resp = await pes.get_batch_task(s, task_ids[0])
+diff --git a/frontend/src/api/endpoints.ts b/frontend/src/api/endpoints.ts
+index d3191f1..6c40474 100644
+--- a/frontend/src/api/endpoints.ts
++++ b/frontend/src/api/endpoints.ts
+@@ -5699,20 +5699,22 @@ export interface PaperEvidenceTask {
+   /** 唯一任务项的 id(一对一:任务=对象;回退/review 关联用) */
+   item_id: string | null
+   /** 任务级对象展示名(中文;镜像行实时,缺失回退快照/兜底) */
+   display_name_cn: string | null
+   /** 任务级对象展示名(英文;仅镜像行实时) */
+   display_name_en: string | null
+   /** 任务级展示置信度(实时 → 快照 → null=未评分) */
+   display_confidence: number | null
+   display_name_source: 'mirror_live' | 'task_snapshot' | 'fallback' | 'missing'
+   display_confidence_source: 'mirror_live' | 'task_snapshot' | 'missing'
++  /** 唯一任务项的预处理结果(non_neural_target / evidence_negated / no_evidence_found;旧任务 null) */
++  preprocess_outcome: string | null
+   /** 统一任务工作状态(权威口径,后端由全量对象计数推导) */
+   work_status: TaskWorkStatus | string
+   /** 全量对象计数(非前端已加载子集) */
+   item_counts: TaskItemCounts
+   /** 后端真实守卫推导的操作能力 */
+   capabilities: TaskCapabilities
+   materialization_error: string | null
+   versions: Record<string, string | null> | null
+   summary: Record<string, unknown> | null
+   created_by: string | null
+diff --git a/frontend/src/pages/evidence-center/components/taskStatus.ts b/frontend/src/pages/evidence-center/components/taskStatus.ts
+index 0776b0a..3219999 100644
+--- a/frontend/src/pages/evidence-center/components/taskStatus.ts
++++ b/frontend/src/pages/evidence-center/components/taskStatus.ts
+@@ -136,16 +136,23 @@ export const WORK_STATUS_LABELS: Record<string, string> = {
+ export function workStatusTone(ws: string): string {
+   switch (ws) {
+     case 'processing': return 'info'
+     case 'paused': case 'awaiting_review': return 'warn'
+     case 'partially_failed': case 'failed': return 'bad'
+     case 'completed': return 'ok'
+     case 'cancelled': case 'empty': default: return 'muted'
+   }
+ }
+ 
++/** 预处理结果中文标签(对象卡/任务卡徽章) */
++export const PREPROCESS_OUTCOME_LABELS: Record<string, string> = {
++  non_neural_target: '结构性不存在:靶标为非神经结构',
++  evidence_negated: '证据否定',
++  no_evidence_found: '无证据',
++}
++
+ /** 任务卡排序:处理中 → 待验证 → 已暂停 → 部分失败 → 失败 → 已完成 → 空 → 已取消 */
+ export function workStatusRank(ws: string): number {
+   const order = ['processing', 'awaiting_review', 'paused', 'partially_failed', 'failed', 'completed', 'empty', 'cancelled']
+   const i = order.indexOf(ws)
+   return i === -1 ? 9 : i
+ }
+diff --git a/frontend/src/pages/evidence-center/modules/EvidenceCandidatesModule.test.tsx b/frontend/src/pages/evidence-center/modules/EvidenceCandidatesModule.test.tsx
+index 92bc9c7..96f5cb3 100644
+--- a/frontend/src/pages/evidence-center/modules/EvidenceCandidatesModule.test.tsx
++++ b/frontend/src/pages/evidence-center/modules/EvidenceCandidatesModule.test.tsx
+@@ -194,20 +194,34 @@ describe('EvidenceCandidatesModule', () => {
+       requested_concurrency: 4,
+       active_concurrency: 0,
+       cancel_requested: false,
+       created_at: '2026-08-12T00:00:00Z',
+       updated_at: '2026-08-12T00:00:00Z',
+       progress_percent: 100,
+       items: [],
+     })
+   })
+ 
++  it('非神经靶标对象:提示条替代候选工作区(检索区/统计条/候选列表均不渲染)', async () => {
++    vi.mocked(endpoints.listPaperEvidenceTaskItems).mockResolvedValue({
++      items: [{ ...ITEM, preprocess_outcome: 'non_neural_target' }],
++    })
++    renderModule()
++    const banner = await screen.findByTestId('evidence-non-neural-banner')
++    expect(banner.textContent).toContain('非神经结构')
++    expect(banner.textContent).toContain('已标记为不存在')
++    // 候选工作区整体被替代:检索区与候选列表不渲染
++    expect(screen.queryByText(/查找相关论文/)).toBeNull()
++    expect(screen.queryByTestId('evidence-stats-bar')).toBeNull()
++    expect(screen.queryByText('A Study of R1 to R2 Projection')).toBeNull()
++  })
++
+   it('不再自渲染左队列(队列由页面级 ObjectQueue 渲染)', async () => {
+     renderModule()
+     await waitFor(() => expect(endpoints.listPaperEvidenceTaskItems).toHaveBeenCalledWith('t1', { limit: 100 }))
+     expect(screen.queryByTestId('candidates-queue')).toBeNull()
+     expect(screen.queryByTestId('candidates-queue-item')).toBeNull()
+   })
+ 
+   it('不再自渲染 ClaimView(已移至页面左栏;模块中栏仅保留检索/统计条/候选列表)', async () => {
+     renderModule()
+     await waitFor(() => expect(screen.getByText('A Study of R1 to R2 Projection')).toBeTruthy())
+diff --git a/frontend/src/pages/evidence-center/modules/EvidenceCandidatesModule.tsx b/frontend/src/pages/evidence-center/modules/EvidenceCandidatesModule.tsx
+index 94c3c34..a659dad 100644
+--- a/frontend/src/pages/evidence-center/modules/EvidenceCandidatesModule.tsx
++++ b/frontend/src/pages/evidence-center/modules/EvidenceCandidatesModule.tsx
+@@ -456,20 +456,23 @@ export function EvidenceCandidatesModule() {
+   // useMemo:保证引用稳定(否则作为 summary 计算依赖会触发无限重渲染循环)
+   const claimComponents = useMemo(() => dto?.claim_components ?? [], [dto])
+ 
+   // ─── 搜索区(当前对象存在即可手动重新搜索;有候选论文时默认折叠为一条,可展开重新搜索) ───
+   const manualTarget = useMemo(() =>
+     current
+       ? { target_type: current.target_type, target_id: current.target_id }
+       : null,
+   [current?.target_type, current?.target_id])
+ 
++  // 非神经靶标治理:对象在预处理阶段已判定为解剖学上不存在(脑室/脑脊液等),整个候选工作区替换为提示条
++  const nonNeuralTarget = current?.preprocess_outcome === 'non_neural_target'
++
+   const queryTerms = useMemo(() => {
+     if (!dto) return []
+     return [dto.source_region, dto.target_region, dto.relation, dto.function_context, dto.circuit_context]
+       .filter((t): t is string => Boolean(t))
+       .filter((t, i, arr) => arr.indexOf(t) === i)
+   }, [dto])
+ 
+   /** 可见推荐词(用户 × 清除后不再展示) */
+   const visibleQueryTerms = useMemo(
+     () => queryTerms.filter(t => !clearedTerms.has(t)),
+@@ -979,20 +982,24 @@ export function EvidenceCandidatesModule() {
+                     journal: evidencePaper.journal,
+                     year: evidencePaper.year,
+                   }}
+                   components={claimComponents}
+                   passages={evidencePassages}
+                   selectedHashes={selectedHashes}
+                   onTogglePassage={handleTogglePassage}
+                   onBack={() => setEvidenceViewPaperId(null)}
+                 />
+               </>
++            ) : nonNeuralTarget ? (
++              <div className="ontology-page-message evidence-non-neural-banner" data-testid="evidence-non-neural-banner">
++                该对象靶标为非神经结构(脑室/脑脊液等),解剖学上不存在投射连接,已标记为不存在。
++              </div>
+             ) : (
+               <>
+                 {manualTarget && (
+                   <PaperSearchPanel
+                     collapsed={hasSearchResults && !searchExpanded}
+                     busy={manualBusy}
+                     query={manualQuery}
+                     onQueryChange={setManualQuery}
+                     onSearch={handleManualSearch}
+                     onRestoreRecommended={handleRestoreRecommended}
+diff --git a/frontend/src/pages/evidence-center/modules/EvidenceTasksModule.test.tsx b/frontend/src/pages/evidence-center/modules/EvidenceTasksModule.test.tsx
+index ef57a68..1a7895c 100644
+--- a/frontend/src/pages/evidence-center/modules/EvidenceTasksModule.test.tsx
++++ b/frontend/src/pages/evidence-center/modules/EvidenceTasksModule.test.tsx
+@@ -20,20 +20,21 @@ function makeTask(overrides: Record<string, unknown>) {
+     total_items: 1, processed_items: 0, awaiting_review_items: 1, failed_items: 0,
+     review_status: 'not_started', granularity_level: 'macro', estimated_target_count: 1,
+     materialized_target_count: 1, scope: 'low_confidence', mode: 'function', max_papers_per_object: 3,
+     created_at: '2026-08-17T00:00:00Z', created_by: null, started_at: null, finished_at: null,
+     error_message: null, materialization_status: 'completed', materialization_cursor: null,
+     materialization_error: null, confidence_lt: null, only_oa: false,
+     stop_after_strong_support: false, summary: null, scope_type: 'filter',
+     filter_snapshot: null, versions: null,
+     display_name_cn: '杏仁核 → 海马', display_name_en: 'Amygdala → Hippocampus',
+     display_confidence: 0.35, display_name_source: 'mirror_live', display_confidence_source: 'mirror_live',
++    preprocess_outcome: null,
+     work_status: 'awaiting_review',
+     item_counts: { total: 1, processing: 0, pending: 0, awaiting_review: 1, completed: 0, skipped: 0, failed: 0, cancelled: 0 },
+     capabilities: { can_continue_review: true, can_pause: false, can_resume: false, can_retry_failed: false, can_view_results: false },
+     ...overrides,
+   }
+ }
+ 
+ function renderModule(hash = '#/evidence-center?module=tasks') {
+   window.location.hash = hash
+   return render(<EvidenceCenterProvider><EvidenceTasksModule /></EvidenceCenterProvider>)
+@@ -54,20 +55,30 @@ describe('EvidenceTasksModule(对象级任务卡:命名/跳转/排序/筛选)',
+   it('卡片标题=中文 (英文),副行类型+置信度,徽章状态', async () => {
+     vi.mocked(endpoints.listPaperEvidenceTasks).mockResolvedValue({ items: [makeTask({})], total: 1 })
+     renderModule()
+     const card = await screen.findByTestId('evidence-task-card-t1')
+     expect(within(card).getByText('杏仁核 → 海马 (Amygdala → Hippocampus)')).toBeTruthy()
+     expect(within(card).getByText('连接')).toBeTruthy()
+     expect(within(card).getByText('置信度 35%')).toBeTruthy()
+     expect(within(card).getByText('待验证')).toBeTruthy()
+   })
+ 
++  it('非神经靶标任务卡显示「结构性不存在」徽章', async () => {
++    vi.mocked(endpoints.listPaperEvidenceTasks).mockResolvedValue({
++      items: [makeTask({ id: 't-nn', target_id: 'c1', display_name_cn: '右旁中央 → 右侧脑室', work_status: 'awaiting_review', preprocess_outcome: 'non_neural_target' })],
++      total: 1,
++    })
++    renderModule()
++    const card = await screen.findByTestId('evidence-task-card-t-nn')
++    expect(within(card).getByText(/结构性不存在/)).toBeTruthy()
++  })
++
+   it('中文缺失仅英文;name 备注作第三行不替换标题', async () => {
+     vi.mocked(endpoints.listPaperEvidenceTasks).mockResolvedValue({
+       items: [makeTask({ display_name_cn: null, display_name_en: 'Amygdala → Hippocampus', name: '重新评分 · x · projection' })],
+       total: 1,
+     })
+     renderModule()
+     const card = await screen.findByTestId('evidence-task-card-t1')
+     expect(within(card).getByText('Amygdala → Hippocampus')).toBeTruthy()
+     expect(within(card).getByText('重新评分 · x · projection')).toBeTruthy()
+     expect(screen.queryByText('重新评分 · x · projection (Amygdala → Hippocampus)')).toBeNull()
+diff --git a/frontend/src/pages/evidence-center/modules/EvidenceTasksModule.tsx b/frontend/src/pages/evidence-center/modules/EvidenceTasksModule.tsx
+index 40394fe..4f0ad30 100644
+--- a/frontend/src/pages/evidence-center/modules/EvidenceTasksModule.tsx
++++ b/frontend/src/pages/evidence-center/modules/EvidenceTasksModule.tsx
+@@ -8,20 +8,21 @@ import {
+   type PaperEvidenceTask,
+ } from '../../../api/endpoints'
+ import { ApiError } from '../../../api/client'
+ import { useGlobalGranularity } from '../../../hooks/useGlobalGranularity'
+ import { useEvidenceCenter } from '../EvidenceCenterContext'
+ import { navigateToEvidenceCandidates } from '../evidenceCenterUrl'
+ import { CreateBatchTaskDialog } from '../components/CreateBatchTaskDialog'
+ import { EmptyState } from '../components/EmptyState'
+ import { ConfirmDialog } from '../../../components/ConfirmDialog'
+ import {
++  PREPROCESS_OUTCOME_LABELS,
+   TARGET_TYPE_LABELS,
+   WORK_STATUS_LABELS,
+   formatConfidencePercent,
+   objectCardTitle,
+   workStatusTone,
+ } from '../components/taskStatus'
+ import { useEvidenceTaskItems } from '../components/useEvidenceTaskItems'
+ import { useTaskItemsRefresh } from '../components/taskItemsRefreshContext'
+ 
+ type CardAction = 'resume' | 'pause' | 'retry' | 'continue' | 'view'
+@@ -113,20 +114,25 @@ function TaskCard({ task, busy, onJump, onResume, onPause, onRetry }: {
+       <div className="evidence-task-card-head">
+         <span className="evidence-task-card-title">{title}</span>
+         <span className={`evidence-task-chip evidence-task-chip-${workStatusTone(ws)}`}>
+           {WORK_STATUS_LABELS[ws] ?? ws}
+         </span>
+       </div>
+       <div className="evidence-task-card-meta">
+         <span className="evidence-task-card-type">{typeLabel}</span>
+         <span className="evidence-task-card-confidence">{formatConfidencePercent(task.display_confidence)}</span>
+       </div>
++      {(task.preprocess_outcome === 'non_neural_target' || task.preprocess_outcome === 'evidence_negated') && (
++        <div className="evidence-task-chip evidence-task-chip-bad" data-testid={`evidence-task-outcome-${task.id}`}>
++          {PREPROCESS_OUTCOME_LABELS[task.preprocess_outcome]}
++        </div>
++      )}
+       {task.name && <div className="evidence-task-card-remark">{task.name}</div>}
+       {(primary || secondary) && (
+         <div className="evidence-task-card-actions">
+           {primary && button(primary)}
+           {secondary && button(secondary)}
+         </div>
+       )}
+     </div>
+   )
+ }
+diff --git a/frontend/src/styles.css b/frontend/src/styles.css
+index b554928..5466211 100644
+--- a/frontend/src/styles.css
++++ b/frontend/src/styles.css
+@@ -11257,20 +11257,23 @@ input[type="range"]::-webkit-slider-thumb {
+   border: 1px solid var(--border);
+   border-radius: 8px;
+   background: var(--white);
+   color: var(--text);
+   cursor: pointer;
+ }
+ .ontology-page-tab-active { background: var(--primary, #2563eb); border-color: var(--primary, #2563eb); color: #fff; }
+ .ontology-page-granularity { margin-left: auto; font-size: 12px; color: var(--muted); }
+ .ontology-page-filters { display: flex; align-items: center; gap: 8px; }
+ .ontology-page-message { padding: 8px 12px; background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 8px; font-size: 12px; color: #1d4ed8; }
++.evidence-non-neural-banner {
++  margin-bottom: 12px;
++}
+ .ontology-empty { padding: 18px; text-align: center; color: var(--muted); font-size: 13px; }
+ .ontology-term-table { width: 100%; font-size: 12px; }
+ .ontology-term-code { font-family: monospace; color: var(--muted); }
+ .ontology-term-actions { display: flex; gap: 6px; }
+ .ontology-status { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 600; }
+ .ontology-status-active { background: #dcfce7; color: #15803d; }
+ .ontology-status-proposed { background: #fef3c7; color: #b45309; }
+ .ontology-status-deprecated { background: #fee2e2; color: #b91c1c; }
+ .ontology-status-not_aligned { background: #f1f5f9; color: #64748b; }
+ .ontology-page-pager { display: flex; align-items: center; gap: 12px; justify-content: flex-end; margin-top: 10px; font-size: 12px; color: var(--muted); }

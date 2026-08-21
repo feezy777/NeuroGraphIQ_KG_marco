@@ -13,6 +13,8 @@ interface Block {
   label: string
   value: string
   icon: string
+  nameEn?: string
+  nameCn?: string
 }
 
 /** component_type → 块图标(字符体系,与「→」「·」等既有排版保持一致) */
@@ -40,7 +42,9 @@ export function ClaimSummaryPanel({ claimText, components, targetType, granulari
         label: COMPONENT_LABEL[c.component_type] ?? '信息',
         value: c.statement,
         icon: BLOCK_ICON[c.component_type] ?? '•',
-      })
+        nameEn: (c.metadata as any)?.name_en || '',
+        nameCn: (c.metadata as any)?.name_cn || '',
+      } as Block)
     }
     return out
   }, [components, targetType])
@@ -71,6 +75,12 @@ export function ClaimSummaryPanel({ claimText, components, targetType, granulari
               <div className="evidence-claim-block-body">
                 <div className="evidence-claim-block-label">{b.label}</div>
                 <div className="evidence-claim-block-value">{b.value}</div>
+                {b.nameEn && (
+                  <div className="evidence-claim-block-names">
+                    {b.nameCn && <span className="evidence-claim-block-cn">{b.nameCn}</span>}
+                    <span className="evidence-claim-block-en">{b.nameEn}</span>
+                  </div>
+                )}
               </div>
             </div>
           ))}

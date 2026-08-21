@@ -522,8 +522,8 @@ def test_mock_provider_circuit_name_cn_overlay(monkeypatch):
     response = LlmProviderResponse(
         provider="deepseek",
         model="deepseek-chat",
-        raw_text='{"field_updates":[{"field_name":"name_cn","value":"????","confidence":0.9}]}',
-        parsed_json={"field_updates": [{"field_name": "name_cn", "value": "????", "confidence": 0.9}]},
+        raw_text='{"field_updates":[{"field_name":"name_cn","value":"海马回路","confidence":0.9}]}',
+        parsed_json={"field_updates": [{"field_name": "name_cn", "value": "海马回路", "confidence": 0.9}]},
         usage=LlmProviderUsage(prompt_tokens=1, completion_tokens=1, total_tokens=2),
         finish_reason="stop",
         request_payload_redacted={},
@@ -553,7 +553,7 @@ def test_mock_provider_circuit_name_cn_overlay(monkeypatch):
     assert resp.updated_count >= 1
     # Check overlay was written
     overlay = circuit.normalized_payload_json.get("formal_field_overlay", {})
-    assert overlay.get("name_cn") == "????"
+    assert overlay.get("name_cn") == "海马回路"
     # item.field_name must be the formal field name
     applied_items = [f for f in resp.field_updates if f.field_name == "name_cn"]
     assert len(applied_items) >= 1
@@ -1083,8 +1083,8 @@ def test_mock_provider_summary_applied_overlay_count(monkeypatch):
     response = LlmProviderResponse(
         provider="deepseek",
         model="deepseek-chat",
-        raw_text='{"field_updates":[{"field_name":"name_cn","value":"?????","confidence":0.82}]}',
-        parsed_json={"field_updates": [{"field_name": "name_cn", "value": "?????", "confidence": 0.82}]},
+        raw_text='{"field_updates":[{"field_name":"name_cn","value":"杏仁核回路","confidence":0.82}]}',
+        parsed_json={"field_updates": [{"field_name": "name_cn", "value": "杏仁核回路", "confidence": 0.82}]},
         usage=LlmProviderUsage(),
         finish_reason="stop",
         request_payload_redacted={},
@@ -1633,8 +1633,8 @@ def test_circuit_function_mock_provider_writes_function_term_cn(monkeypatch):
     response = LlmProviderResponse(
         provider="deepseek",
         model="deepseek-chat",
-        raw_text='{"field_updates":[{"field_name":"function_term_cn","value":"??????","confidence":0.9}]}',
-        parsed_json={"field_updates": [{"field_name": "function_term_cn", "value": "??????", "confidence": 0.9}]},
+        raw_text='{"field_updates":[{"field_name":"function_term_cn","value":"记忆编码功能","confidence":0.9}]}',
+        parsed_json={"field_updates": [{"field_name": "function_term_cn", "value": "记忆编码功能", "confidence": 0.9}]},
         usage=LlmProviderUsage(prompt_tokens=1, completion_tokens=1, total_tokens=2),
         finish_reason="stop",
         request_payload_redacted={},
@@ -1657,7 +1657,7 @@ def test_circuit_function_mock_provider_writes_function_term_cn(monkeypatch):
             selected_fields=["function_term_cn"],
         )
         resp = asyncio.run(run_universal_field_completion(session, req))
-    assert cf.function_term_cn == "??????"
+    assert cf.function_term_cn == "记忆编码功能"
     assert resp.updated_count >= 1
     assert any(f.field_name == "function_term_cn" for f in resp.field_updates)
 
@@ -1998,8 +1998,8 @@ def test_batch_prompt_handles_multiple_targets(monkeypatch):
         raw_text="{}",
         parsed_json={
             "field_updates": [
-                {"target_id": str(c1.id), "field_name": "name_cn", "value": "???", "confidence": 0.9},
-                {"target_id": str(c2.id), "field_name": "name_cn", "value": "???", "confidence": 0.9},
+                {"target_id": str(c1.id), "field_name": "name_cn", "value": "海马回路", "confidence": 0.9},
+                {"target_id": str(c2.id), "field_name": "name_cn", "value": "杏仁核回路", "confidence": 0.9},
             ]
         },
         usage=LlmProviderUsage(prompt_tokens=10, completion_tokens=10, total_tokens=20),

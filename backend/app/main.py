@@ -19,6 +19,9 @@ from sqlalchemy import text
 from app.config import get_settings
 from app.routers import (
     candidate,
+    canonical_circuit,
+    canonical_connection,
+    canonical_region,
     candidate_pool,
     connection_pool,
     database_admin,
@@ -45,7 +48,9 @@ from app.routers import (
     mirror_promotion,
     mirror_review,
     mirror_validation,
+    multiscale,
     ontology,
+    ontology_query,
     promotion,
     raw_parsing,
     resource_files,
@@ -180,6 +185,25 @@ async def log_startup_version() -> None:
                 log.info("[startup] paper-evidence batch recovery: reset=%s resumed_tasks=%s", recovered, len(task_ids))
     except Exception:  # noqa: BLE001
         log.exception("[startup] paper-evidence batch recovery failed (non-fatal)")
+
+    try:
+        from app.database import AsyncSessionLocal
+        from app.services import paper_evidence_extraction_run_service as extraction_run_svc
+
+        if AsyncSessionLocal is not None:
+            async with AsyncSessionLocal() as session:
+                resume_ids = await extraction_run_svc.recover_interrupted_runs(session)
+            for run_id in resume_ids:
+                asyncio.get_event_loop().create_task(
+                    extraction_run_svc.execute_run_background(run_id)
+                )
+            if resume_ids:
+                log.info(
+                    "[startup] paper-evidence extraction-run recovery: resumed=%s",
+                    len(resume_ids),
+                )
+    except Exception:  # noqa: BLE001
+        log.exception("[startup] paper-evidence extraction-run recovery failed (non-fatal)")
 
 
 @app.get("/api/health", tags=["Health"])
@@ -341,6 +365,19 @@ app.include_router(
     workbench_pipeline.router, prefix="/api/workbench", tags=["Workbench Pipeline"]
 )
 app.include_router(ontology.router, prefix="/api/ontology", tags=["Ontology"])
+app.include_router(ontology_query.router)
+app.include_router(
+    multiscale.router, prefix="/api/multiscale", tags=["Multiscale Atlas / Cell / Molecular"]
+)
+app.include_router(
+    canonical_region.router, prefix="/api/canonical-regions", tags=["Canonical Brain Regions"]
+)
+app.include_router(
+    canonical_connection.router, prefix="/api/canonical-connections", tags=["Canonical Connections"]
+)
+app.include_router(
+    canonical_circuit.router, prefix="/api/canonical-circuits", tags=["Canonical Circuits"]
+)
 app.include_router(
     symptom_query.router, prefix="/api/symptom-query", tags=["Symptom Query"]
 )

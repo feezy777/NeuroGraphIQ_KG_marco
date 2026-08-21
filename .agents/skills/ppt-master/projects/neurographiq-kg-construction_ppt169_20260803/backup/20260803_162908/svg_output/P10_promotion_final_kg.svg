@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 720" data-pptx-page-role="content"><defs><filter id="g"><feGaussianBlur stdDeviation="2" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs><g id="bg" data-pptx-bounds="0 0 1280 720" data-pptx-role="background"><rect width="1280" height="720" fill="#0D1117"/><line x1="0" y1="108" x2="1280" y2="108" stroke="#212D40" stroke-width="0.5"/><text x="80" y="700" font-family="Microsoft YaHei" font-size="14" fill="#586069">NeuroGraphIQ KG V3</text></g><g id="c" data-pptx-bounds="40 120 1200 560">
+<rect x="40" y="120" width="4" height="48" fill="#58A6FF" /><text x="60" y="155" font-family="Microsoft YaHei" font-weight="bold" font-size="40" fill="#FFFFFF">晋升与 Final KG：唯一事实库</text>
+<text x="40" y="190" font-family="Microsoft YaHei" font-size="18" fill="#8B949E">Mirror KG (审核通过) → Promotion 服务 → Final KG（8 表一一映射 · 强确认不可逆）</text>
+<!-- Triple model -->
+<rect x="40" y="215" width="1180" height="55" rx="2" fill="#1A365D"/><text x="630" y="240" text-anchor="middle" font-family="Microsoft YaHei" font-weight="bold" font-size="20" fill="#FFFFFF">第一层: 实体层 (Nodes) — BrainRegion · Function · Circuit · Step · Projection</text><text x="630" y="260" text-anchor="middle" font-family="Microsoft YaHei" font-size="14" fill="#79C0FF">AAL3/Macro96 脑区 · 功能标注 · 回路 · 步骤 · 投射/连接</text>
+<rect x="40" y="285" width="1180" height="75" rx="2" fill="#1C3A6E"/>
+<text x="630" y="310" text-anchor="middle" font-family="Microsoft YaHei" font-weight="bold" font-size="20" fill="#FFFFFF">第二层: 关系层 (Predicates) — 12 种标准谓词</text>
+<text x="630" y="335" text-anchor="middle" font-family="Consolas" font-size="15" fill="#58A6FF">structurally_connects_to  |  functionally_connects_to  |  projects_to  |  has_function</text>
+<text x="630" y="353" text-anchor="middle" font-family="Consolas" font-size="15" fill="#79C0FF">has_projection_function  |  has_circuit_function  |  has_step  |  involves_region  |  contains_projection</text>
+<rect x="40" y="375" width="1180" height="55" rx="2" fill="#204A90"/>
+<text x="630" y="400" text-anchor="middle" font-family="Microsoft YaHei" font-weight="bold" font-size="20" fill="#FFFFFF">第三层: 统一查询层 — final_kg_triples (subject, predicate, object) · 确定性 Triple Consolidation</text>
+<text x="630" y="420" text-anchor="middle" font-family="Microsoft YaHei" font-size="14" fill="#79C0FF">不调 LLM · CONNECTION_TO_PREDICATE 确定性映射 · 晋升后自动触发</text>
+<!-- Granularity -->
+<text x="40" y="470" font-family="Microsoft YaHei" font-size="18" fill="#8B949E">五层粒度隔离: </text>
+<g transform="translate(260, 455)">
+<rect x="0" y="5" width="150" height="28" rx="2" fill="#1A365D"/><text x="75" y="24" text-anchor="middle" font-family="Consolas" font-size="13" fill="#58A6FF">macro_clinical</text>
+<rect x="160" y="5" width="140" height="28" rx="2" fill="#1C2333"/><text x="230" y="24" text-anchor="middle" font-family="Consolas" font-size="13" fill="#586069">meso_anatomical</text>
+<rect x="310" y="5" width="140" height="28" rx="2" fill="#1C2333"/><text x="380" y="24" text-anchor="middle" font-family="Consolas" font-size="13" fill="#586069">sub_connectivity</text>
+<rect x="460" y="5" width="120" height="28" rx="2" fill="#1C2333"/><text x="520" y="24" text-anchor="middle" font-family="Consolas" font-size="13" fill="#586069">fine_cyto</text>
+<rect x="590" y="5" width="140" height="28" rx="2" fill="#1C2333"/><text x="660" y="24" text-anchor="middle" font-family="Consolas" font-size="13" fill="#586069">molecular_attr</text>
+</g>
+<text x="40" y="520" font-family="Microsoft YaHei" font-size="16" fill="#FFA657">跨粒度关系: 显式 Mapping (exact_match / part_of / overlaps) · 禁止名称相似度自动合并</text>
+</g></svg>

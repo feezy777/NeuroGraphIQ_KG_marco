@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 720" data-pptx-page-role="content"><defs><filter id="g"><feGaussianBlur stdDeviation="2" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs><g id="bg" data-pptx-bounds="0 0 1280 720" data-pptx-role="background"><rect width="1280" height="720" fill="#0D1117"/><line x1="0" y1="108" x2="1280" y2="108" stroke="#212D40" stroke-width="0.5"/><text x="80" y="700" font-family="Microsoft YaHei" font-size="14" fill="#586069">NeuroGraphIQ KG V3</text></g><g id="c" data-pptx-bounds="40 120 1200 560">
+<rect x="40" y="120" width="4" height="48" fill="#58A6FF" /><text x="60" y="155" font-family="Microsoft YaHei" font-weight="bold" font-size="40" fill="#FFFFFF">Mirror KG：预正式知识中转层</text>
+<text x="40" y="190" font-family="Microsoft YaHei" font-size="18" fill="#8B949E">解决 LLM 多 run/多 pack 重叠提取 · 重跑版本差异 · 审核员重复数据困境</text>
+<rect x="40" y="215" width="380" height="190" rx="2" fill="#161B22" stroke="#30363D" stroke-width="0.5"/>
+<rect x="40" y="215" width="380" height="4" fill="#58A6FF"/>
+<text x="60" y="255" font-family="Microsoft YaHei" font-weight="bold" font-size="22" fill="#58A6FF">写入时去重合并</text>
+<text x="60" y="290" font-family="Microsoft YaHei" font-size="17" fill="#C9D1D9">每种实体定义 Canonical Key</text>
+<text x="60" y="318" font-family="Microsoft YaHei" font-size="17" fill="#C9D1D9">写入时自动匹配与合并</text>
+<text x="60" y="346" font-family="Microsoft YaHei" font-size="17" fill="#C9D1D9">高置信度胜出 + 双溯源保留</text>
+<text x="60" y="374" font-family="Microsoft YaHei" font-size="17" fill="#C9D1D9">已审核/已晋升/跨粒度永不自动合并</text>
+<rect x="440" y="215" width="380" height="190" rx="2" fill="#161B22" stroke="#30363D" stroke-width="0.5"/>
+<rect x="440" y="215" width="380" height="4" fill="#FFA657"/>
+<text x="460" y="255" font-family="Microsoft YaHei" font-weight="bold" font-size="22" fill="#FFA657">双模型盲审</text>
+<text x="460" y="290" font-family="Microsoft YaHei" font-size="17" fill="#C9D1D9">DeepSeek + Kimi 独立审核</text>
+<text x="460" y="318" font-family="Microsoft YaHei" font-size="17" fill="#C9D1D9">两模型互相不可见对方结果</text>
+<text x="460" y="346" font-family="Microsoft YaHei" font-size="17" fill="#C9D1D9">consensus → 加速审核通道</text>
+<text x="460" y="374" font-family="Microsoft YaHei" font-size="17" fill="#C9D1D9">conflict → 升级人工裁决</text>
+<rect x="820" y="215" width="380" height="190" rx="2" fill="#161B22" stroke="#30363D" stroke-width="0.5"/>
+<rect x="820" y="215" width="380" height="4" fill="#38A169"/>
+<text x="840" y="255" font-family="Microsoft YaHei" font-weight="bold" font-size="22" fill="#38A169">回路-投射交叉验证</text>
+<text x="840" y="290" font-family="Microsoft YaHei" font-size="17" fill="#C9D1D9">正向: 回路→步骤→投射</text>
+<text x="840" y="318" font-family="Microsoft YaHei" font-size="17" fill="#C9D1D9">反向: 投射→回路</text>
+<text x="840" y="346" font-family="Microsoft YaHei" font-size="17" fill="#C9D1D9">双向确定性比对(不调LLM)</text>
+<text x="840" y="374" font-family="Microsoft YaHei" font-size="17" fill="#C9D1D9">bidirectionally_supported / conflict</text>
+<text x="40" y="445" font-family="Microsoft YaHei" font-size="20" fill="#8B949E">Canonical Key 体系</text>
+<g transform="translate(40, 460)">
+<rect x="0" y="0" width="380" height="30" rx="2" fill="#161B22"/><text x="10" y="20" font-family="Microsoft YaHei" font-weight="bold" font-size="15" fill="#8B949E">实体</text><text x="160" y="20" font-family="Microsoft YaHei" font-weight="bold" font-size="15" fill="#8B949E">Canonical Key</text>
+<rect x="0" y="32" width="380" height="26" rx="2" fill="#1C2333"/><text x="10" y="50" font-family="Microsoft YaHei" font-size="14" fill="#C9D1D9">连接</text><text x="160" y="50" font-family="Consolas" font-size="13" fill="#58A6FF">(src, tgt, type, dir) 无向时排序</text>
+<rect x="0" y="60" width="380" height="26" rx="2" fill="#1C2333"/><text x="10" y="78" font-family="Microsoft YaHei" font-size="14" fill="#C9D1D9">回路</text><text x="160" y="78" font-family="Consolas" font-size="13" fill="#58A6FF">(name, atlas, granularity)</text>
+<rect x="0" y="88" width="380" height="26" rx="2" fill="#1C2333"/><text x="10" y="106" font-family="Microsoft YaHei" font-size="14" fill="#C9D1D9">回路步骤</text><text x="160" y="106" font-family="Consolas" font-size="13" fill="#58A6FF">(circuit_id, step_order)</text>
+<rect x="400" y="0" width="380" height="30" rx="2" fill="#161B22"/><text x="410" y="20" font-family="Microsoft YaHei" font-weight="bold" font-size="15" fill="#8B949E">合并策略</text>
+<rect x="400" y="32" width="380" height="82" rx="2" fill="#1C2333"/>
+<text x="420" y="52" font-family="Microsoft YaHei" font-size="14" fill="#C9D1D9">· 高置信度胜出 → 更新字段+双溯源</text>
+<text x="420" y="74" font-family="Microsoft YaHei" font-size="14" fill="#C9D1D9">· 低/等置信度 → 跳过+追加run_id</text>
+<text x="420" y="96" font-family="Microsoft YaHei" font-size="14" fill="#FFA657">· 已审核/已晋升/跨atlas → 永不合并</text>
+</g>
+</g></svg>

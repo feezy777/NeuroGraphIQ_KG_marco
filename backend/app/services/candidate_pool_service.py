@@ -2,13 +2,49 @@
 
 from __future__ import annotations
 
+import hashlib
 import uuid
 
-from sqlalchemy import func, select, delete
+from sqlalchemy import func, select, delete, text
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.candidate_pool import CandidatePool, CandidatePoolMembership
 from app.models.candidate import CandidateBrainRegion
+
+
+def _chunked(seq: list, size: int = 1000):
+    """Yield fixed-size chunks to stay under the 65535 bind-parameter limit."""
+    for i in range(0, len(seq), size):
+        yield seq[i : i + size]
+
+
+def _scope_lock_pair(*parts: str) -> tuple[int, int]:
+    raw = "|".join(str(p or "") for p in parts)
+    digest = hashlib.md5(raw.encode("utf-8")).digest()
+    k1 = int.from_bytes(digest[:8], "big") & 0x7FFFFFFF
+    k2 = int.from_bytes(digest[8:16], "big") & 0x7FFFFFFF
+    return k1, k2
+
+
+async def _lock_pool_scope(
+    session: AsyncSession,
+    *,
+    source_atlas: str,
+    granularity_level: str,
+    granularity_family: str | None,
+) -> None:
+    """Serialize pool mutations for a scope to prevent deadlocks/duplicate races."""
+    k1, k2 = _scope_lock_pair(
+        "candidate_pool", source_atlas, granularity_level, granularity_family
+    )
+    await session.execute(text("SELECT pg_advisory_xact_lock(:k1, :k2)"), {"k1": k1, "k2": k2})
+
+
+async def _lock_pool_by_id(session: AsyncSession, pool_id: uuid.UUID) -> None:
+    """Serialize mutations of a single pool (used by add/remove members)."""
+    k1, k2 = _scope_lock_pair("candidate_pool_pool", str(pool_id))
+    await session.execute(text("SELECT pg_advisory_xact_lock(:k1, :k2)"), {"k1": k1, "k2": k2})
 
 
 def _compute_pair_count(n: int) -> int:
@@ -29,11 +65,19 @@ async def create_pool(
     granularity_family: str | None,
 ) -> CandidatePool:
     """Create a candidate pool with initial members."""
-    q = select(CandidateBrainRegion).where(CandidateBrainRegion.id.in_(candidate_ids))
+    await _lock_pool_scope(
+        session,
+        source_atlas=source_atlas,
+        granularity_level=granularity_level,
+        granularity_family=granularity_family,
+    )
+    deduped_ids = list(dict.fromkeys(candidate_ids))
+    q = select(CandidateBrainRegion).where(CandidateBrainRegion.id.in_(deduped_ids))
     result = await session.execute(q)
     candidates = list(result.scalars().all())
     if len(candidates) < 2:
         raise ValueError("At least 2 valid candidate IDs are required")
+    valid_ids = [c.id for c in candidates]
 
     pool = CandidatePool(
         name=name,
@@ -42,17 +86,20 @@ async def create_pool(
         source_atlas=source_atlas or candidates[0].source_atlas,
         granularity_level=granularity_level or candidates[0].granularity_level,
         granularity_family=granularity_family or candidates[0].granularity_family,
-        candidate_count=len(candidate_ids),
-        pair_count=_compute_pair_count(len(candidate_ids)),
+        candidate_count=len(valid_ids),
+        pair_count=_compute_pair_count(len(valid_ids)),
     )
     session.add(pool)
     await session.flush()
 
-    for cid in candidate_ids:
+    for cid in valid_ids:
         session.add(CandidatePoolMembership(pool_id=pool.id, candidate_id=cid))
 
     await session.flush()
-    await session.refresh(pool, ["memberships"])
+    # Refresh server-generated columns (created_at/updated_at) together with
+    # memberships; a memberships-only refresh leaves onupdate columns expired
+    # and Pydantic validation raises MissingGreenlet.
+    await session.refresh(pool, ["memberships", "created_at", "updated_at"])
     return pool
 
 
@@ -111,19 +158,39 @@ async def add_members(
     pool_id: uuid.UUID,
     candidate_ids: list[uuid.UUID],
 ) -> CandidatePool:
+    await _lock_pool_by_id(session, pool_id)
     pool = await get_pool(session, pool_id)
     if pool is None:
         raise KeyError(f"Pool {pool_id} not found")
 
     existing = {m.candidate_id for m in pool.memberships}
-    new_ids = [cid for cid in candidate_ids if cid not in existing]
-    for cid in new_ids:
-        session.add(CandidatePoolMembership(pool_id=pool_id, candidate_id=cid))
+    new_ids = [cid for cid in dict.fromkeys(candidate_ids) if cid not in existing]
+    if new_ids:
+        # Idempotent, chunked insert: concurrent duplicate submissions must not
+        # fail with UniqueViolation, and huge batches must stay under the
+        # 65535 bind-parameter limit.
+        for chunk in _chunked(new_ids):
+            stmt = pg_insert(CandidatePoolMembership).values(
+                [
+                    {
+                        "id": uuid.uuid4(),
+                        "pool_id": pool_id,
+                        "candidate_id": cid,
+                    }
+                    for cid in chunk
+                ]
+            ).on_conflict_do_nothing(index_elements=["pool_id", "candidate_id"])
+            await session.execute(stmt)
 
-    pool.candidate_count = len(existing) + len(new_ids)
+    count_q = (
+        select(func.count())
+        .select_from(CandidatePoolMembership)
+        .where(CandidatePoolMembership.pool_id == pool_id)
+    )
+    pool.candidate_count = int((await session.execute(count_q)).scalar_one())
     pool.pair_count = _compute_pair_count(pool.candidate_count)
     await session.flush()
-    await session.refresh(pool, ["memberships"])
+    await session.refresh(pool, ["memberships", "created_at", "updated_at"])
     return pool
 
 
@@ -132,21 +199,23 @@ async def remove_members(
     pool_id: uuid.UUID,
     candidate_ids: list[uuid.UUID],
 ) -> CandidatePool:
+    await _lock_pool_by_id(session, pool_id)
     pool = await get_pool(session, pool_id)
     if pool is None:
         raise KeyError(f"Pool {pool_id} not found")
 
-    await session.execute(
-        delete(CandidatePoolMembership).where(
-            CandidatePoolMembership.pool_id == pool_id,
-            CandidatePoolMembership.candidate_id.in_(candidate_ids),
+    for chunk in _chunked(list(dict.fromkeys(candidate_ids)), 5000):
+        await session.execute(
+            delete(CandidatePoolMembership).where(
+                CandidatePoolMembership.pool_id == pool_id,
+                CandidatePoolMembership.candidate_id.in_(chunk),
+            )
         )
-    )
     remaining = {m.candidate_id for m in pool.memberships} - set(candidate_ids)
     pool.candidate_count = len(remaining)
     pool.pair_count = _compute_pair_count(pool.candidate_count)
     await session.flush()
-    await session.refresh(pool, ["memberships"])
+    await session.refresh(pool, ["memberships", "created_at", "updated_at"])
     return pool
 
 
@@ -216,11 +285,27 @@ async def replace_pool_for_scope(
         pool.candidate_count = len(deduped_ids)
         pool.pair_count = _compute_pair_count(len(deduped_ids))
 
-    for cid in deduped_ids:
-        session.add(CandidatePoolMembership(pool_id=pool.id, candidate_id=cid))
+    for chunk in _chunked(deduped_ids):
+        stmt = pg_insert(CandidatePoolMembership).values(
+            [
+                {
+                    "id": uuid.uuid4(),
+                    "pool_id": pool.id,
+                    "candidate_id": cid,
+                }
+                for cid in chunk
+            ]
+        ).on_conflict_do_nothing(index_elements=["pool_id", "candidate_id"])
+        await session.execute(stmt)
 
-    await session.flush()
-    await session.refresh(pool, ["memberships"])
+    count_q = (
+        select(func.count())
+        .select_from(CandidatePoolMembership)
+        .where(CandidatePoolMembership.pool_id == pool.id)
+    )
+    pool.candidate_count = int((await session.execute(count_q)).scalar_one())
+    pool.pair_count = _compute_pair_count(pool.candidate_count)
+    await session.refresh(pool, ["memberships", "created_at", "updated_at"])
     return pool
 
 

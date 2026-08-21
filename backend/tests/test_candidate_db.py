@@ -14,6 +14,7 @@ from app.schemas.import_batch import (
     ImportBatchStatus,
     validate_import_batch_transition,
 )
+from app.services import candidate_service
 from app.services.candidate_service import (
     DuplicateCandidateGenerationError,
     GENERATOR_KEY,
@@ -102,6 +103,25 @@ def test_duplicate_candidate_generation_error_shape():
     assert err.batch_id == bid
     assert err.parse_run_id == prid
     assert err.existing_run_id == rid
+
+
+def test_brain_regions_search_param_passes_to_service(monkeypatch):
+    """GET /api/candidates/brain-regions?search=… → 透传给 service（名称关键字过滤）。"""
+    from fastapi.testclient import TestClient
+
+    from app.main import app
+
+    client = TestClient(app, raise_server_exceptions=False)
+    captured: dict = {}
+
+    async def _list(*_args, **kwargs):
+        captured.update(kwargs)
+        return [], 0
+
+    monkeypatch.setattr(candidate_service, "list_candidate_regions", _list)
+    resp = client.get("/api/candidates/brain-regions", params={"search": "Hippo"})
+    assert resp.status_code == 200
+    assert captured["search"] == "Hippo"
 
 
 def test_candidate_options_endpoint():

@@ -13,7 +13,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.candidate import CandidateBrainRegion
@@ -47,7 +47,6 @@ from app.services.ontology_vocab_cache import (
     get_vocab_codes,
     refresh_vocab_cache,
 )
-from app.services.ontology_service import ground_written_records
 from app.services.llm_providers import UnknownProviderError, get_llm_provider
 from app.services.settings_service import get_deepseek_runtime_config, get_kimi_runtime_config
 
@@ -353,7 +352,11 @@ async def _function_exists(
     batch_id: uuid.UUID | None,
     source_atlas: str,
     granularity_level: str,
+    term_id: uuid.UUID | None = None,
 ) -> bool:
+    """P1.4: existence check prefers the canonical term_id; the normalized text
+    is only a fallback for unresolved texts. Semantic qualifiers (category /
+    relation_type) are always part of the key."""
     blocked = {MirrorPromotionStatus.failed, MirrorPromotionStatus.blocked}
     q = select(MirrorRegionFunction.id).where(
         MirrorRegionFunction.region_candidate_id == region_id,
@@ -365,10 +368,20 @@ async def _function_exists(
         MirrorRegionFunction.review_status != MirrorReviewStatus.rejected,
         MirrorRegionFunction.mirror_status != MirrorStatus.superseded,
     )
+    if term_id is not None:
+        q = q.where(MirrorRegionFunction.term_id == term_id)
+    else:
+        q = q.where(
+            MirrorRegionFunction.function_term.isnot(None),
+            MirrorRegionFunction.function_term != "",
+            func.lower(MirrorRegionFunction.function_term) == function_term_key,
+        )
     if resource_id:
         q = q.where(MirrorRegionFunction.resource_id == resource_id)
     if batch_id:
         q = q.where(MirrorRegionFunction.batch_id == batch_id)
+    if term_id is not None:
+        return (await session.execute(q.limit(1))).scalar_one_or_none() is not None
 
     rows = (await session.execute(q)).scalars().all()
     if not rows:
@@ -409,6 +422,13 @@ async def persist_function_mirror_records(
         if key in seen:
             skipped += 1
             continue
+        # P1.4: identity is the canonical term_id; text only when unresolved.
+        from app.services.function_term_service import resolve_or_propose_function_term
+
+        term_res = await resolve_or_propose_function_term(
+            session, fn["function_term"], created_by="extraction",
+            source="region_function_exists",
+        )
         if await _function_exists(
             session,
             region_id=region_id,
@@ -419,6 +439,7 @@ async def persist_function_mirror_records(
             batch_id=run.batch_id,
             source_atlas=run.source_atlas or "",
             granularity_level=run.granularity_level or "",
+            term_id=term_res.term_id,
         ):
             skipped += 1
             seen.add(key)
@@ -451,34 +472,8 @@ async def persist_function_mirror_records(
         created_fns.append(mirror_fn)
         seen.add(key)
 
-        if create_triples:
-            predicate = RELATION_TO_PREDICATE.get(relation, "associated_with_function")
-            triple_payload = MirrorKgTripleCreate(
-                subject_type=TripleSubjectType.region_candidate,
-                subject_id=region_id,
-                subject_label=_region_label(region_c),
-                predicate=predicate,
-                object_type=TripleObjectType.function,
-                object_id=None,
-                object_label=fn["function_term"],
-                triple_scope=TripleScope.same_granularity,
-                resource_id=run.resource_id,
-                batch_id=run.batch_id,
-                llm_run_id=run.id,
-                llm_item_id=item.id,
-                source_mirror_function_id=mirror_fn.id,
-                granularity_level=run.granularity_level or "",
-                granularity_family=run.granularity_family,
-                source_atlas=run.source_atlas or "",
-                source_version=run.source_version,
-                confidence=fn.get("confidence"),
-                evidence_text=fn.get("evidence_text"),
-                uncertainty_reason=fn.get("uncertainty_reason"),
-                raw_payload_json={"function": fn},
-                normalized_payload_json={"predicate": predicate, "function_term": fn["function_term"]},
-            )
-            await mirror_kg_service.create_mirror_triple(session, triple_payload)
-            triples += 1
+        # P1.6/P1.8: Function Triples are produced by the incremental projection
+        # (create_mirror_function reconciles the subject) — no direct write here.
 
         if create_evidence and fn.get("evidence_text"):
             ev_payload = MirrorEvidenceRecordCreate(
@@ -496,12 +491,17 @@ async def persist_function_mirror_records(
             await mirror_kg_service.create_mirror_evidence(session, ev_payload)
             evidence += 1
 
-    await ground_written_records(
-        session,
-        target_type="region_function",
-        rows=created_fns,
-        created_by="extraction",
-    )
+    # P1.3: unified write-time anchoring (create_mirror_function already anchors;
+    # this pass is an idempotent safety net covering merged rows as well).
+    from app.services.function_term_service import anchor_function_relation
+
+    for fn_row in created_fns:
+        await anchor_function_relation(
+            session,
+            target_type="region_function",
+            row=fn_row,
+            created_by="extraction",
+        )
     return created, skipped, triples, evidence, warnings
 
 

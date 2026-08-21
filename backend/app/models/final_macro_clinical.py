@@ -100,6 +100,9 @@ class FinalCircuitFunction(Base):
     granularity_level: Mapped[str] = mapped_column(String(32), nullable=False)
     granularity_family: Mapped[str | None] = mapped_column(String(64), nullable=True)
     function_term: Mapped[str] = mapped_column(String(512), nullable=False)
+    term_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("ontology_terms.id", ondelete="SET NULL"), nullable=True
+    )
     function_category: Mapped[str] = mapped_column(String(64), nullable=False, default="unknown")
     relation_type: Mapped[str] = mapped_column(String(64), nullable=False, default="associated_with")
     confidence: Mapped[float | None] = mapped_column(Numeric, nullable=True)
@@ -132,6 +135,9 @@ class FinalProjectionFunction(Base):
     granularity_level: Mapped[str] = mapped_column(String(32), nullable=False)
     granularity_family: Mapped[str | None] = mapped_column(String(64), nullable=True)
     function_term: Mapped[str] = mapped_column(String(512), nullable=False)
+    term_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("ontology_terms.id", ondelete="SET NULL"), nullable=True
+    )
     function_category: Mapped[str] = mapped_column(String(64), nullable=False, default="unknown")
     relation_type: Mapped[str] = mapped_column(String(64), nullable=False, default="associated_with")
     confidence: Mapped[float | None] = mapped_column(Numeric, nullable=True)

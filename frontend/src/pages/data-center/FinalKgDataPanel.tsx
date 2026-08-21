@@ -28,7 +28,6 @@ const SUB_TABS: FinalKgSubTab[] = [
   'region_function',
   'circuit_function',
   'triple',
-  'evidence',
 ]
 
 const TAB_TO_TARGET: Record<FinalKgSubTab, string> = {
@@ -40,7 +39,6 @@ const TAB_TO_TARGET: Record<FinalKgSubTab, string> = {
   region_function: 'region_function',
   circuit_function: 'circuit_function',
   triple: 'triple',
-  evidence: 'evidence',
 }
 
 const TAB_LABELS: Record<FinalKgSubTab, string> = {
@@ -52,7 +50,6 @@ const TAB_LABELS: Record<FinalKgSubTab, string> = {
   region_function: 'Final Region Functions',
   circuit_function: 'Final Circuit Functions',
   triple: 'Final Triples',
-  evidence: 'Final Evidence',
 }
 
 export function FinalKgDataPanel({ finalTab, onFinalTabChange, granularityLevel }: Props) {

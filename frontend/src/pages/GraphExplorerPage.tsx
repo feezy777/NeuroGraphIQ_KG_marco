@@ -2,6 +2,8 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import * as d3 from 'd3'
 import { useGlobalGranularity } from '../hooks/useGlobalGranularity'
 import { ForceGraph, GNode, GEdge, LegendItem } from '../components/ForceGraph'
+import { FinalKgGraphPage } from './graph-explorer/FinalKgGraphPage'
+import { buildHashUrl, readHashQueryParams } from '../utils/pipelineNavigation'
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -49,9 +51,9 @@ function normalize(raw: RawGraph): { nodes: GNode[]; edges: GEdge[] } {
   return { nodes: [...nm.values()], edges }
 }
 
-// ── Page ────────────────────────────────────────────────────────────────────
+// ── Legacy Graph View（原 GraphExplorerPage 主体，保持不变）──────────────────────
 
-export function GraphExplorerPage() {
+function LegacyGraphView() {
   const [tab, setTab] = useState<'focus' | 'global' | 'data'>('global')
   const [raw, setRaw] = useState<RawGraph | null>(null)
   const [loading, setLoading] = useState(true)
@@ -110,14 +112,11 @@ export function GraphExplorerPage() {
   if (err) return <div style={{ padding: 40, color: '#dc2626' }}>错误: {err}</div>
 
   return (
-    <div style={{ padding: 16, height: 'calc(100vh - 60px)', display: 'flex', flexDirection: 'column' }}>
+    <div style={{ padding: 16, height: '100%', display: 'flex', flexDirection: 'column' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-        <div>
-          <h2 style={{ margin: 0, fontSize: 18 }}>🧠 图谱探索</h2>
-          <p style={{ color: '#888', fontSize: 12, margin: '2px 0 0' }}>
-            {raw ? `粒度: ${granularity} · ${raw.stats.regions||0} 脑区 · ${raw.stats.connections||0} 连接` : ''}
-          </p>
-        </div>
+        <p style={{ color: '#888', fontSize: 12, margin: 0 }}>
+          {raw ? `粒度: ${granularity} · ${raw.stats.regions||0} 脑区 · ${raw.stats.connections||0} 连接` : ''}
+        </p>
         <div style={{ display: 'flex', gap: 4 }}>
           <button className="btn btn-sm" onClick={() => setReloadTick(t => t + 1)} disabled={refreshing} title="重新拉取最新数据">
             {refreshing ? '⏳ 刷新中' : '🔄 刷新'}
@@ -163,6 +162,64 @@ export function GraphExplorerPage() {
       <div style={{flex:1,border:'1px solid var(--border)',borderRadius:8,overflow:'hidden',background:'#f8fafc'}}
         onClick={tab==='focus'?()=>setFocusNode(null):undefined}>
         {tab==='data'?<DataView edges={visEdges} graph={graph}/>:<ForceGraph nodes={visNodes} edges={visEdges} focusNode={focusNode} onNodeClick={tab==='focus'?setFocusNode:undefined} edgeColors={EDGE_COLOR} edgeDashes={EDGE_DASH} nodeColors={NODE_COLOR} nodeRadii={NODE_R} legendItems={LEGEND_ITEMS} confOpacity={confOpacity}/>}
+      </div>
+    </div>
+  )
+}
+
+// ── Page（双 Tab 入口：Legacy Graph / Canonical KG）───────────────────────────
+
+export type GraphExplorerView = 'legacy' | 'canonical'
+
+/**
+ * 图谱探索页：
+ * - Legacy Graph  保留原有 d3 力导向图（kg_* 数据，行为不变）
+ * - Canonical KG  新版 Canonical KG Explorer（final_* 数据）
+ * Tab 状态写入 URL：/graph-explorer?view=legacy | ?view=canonical，刷新后保持。
+ */
+export function GraphExplorerPage() {
+  const [view, setView] = useState<GraphExplorerView>(() => {
+    const query = readHashQueryParams()
+    return query.view === 'canonical' ? 'canonical' : 'legacy'
+  })
+
+  const switchView = useCallback((next: GraphExplorerView) => {
+    setView(next)
+    window.location.hash = buildHashUrl('/graph-explorer', { view: next })
+  }, [])
+
+  return (
+    <div style={{ height: 'calc(100vh - 60px)', display: 'flex', flexDirection: 'column' }}>
+      <div style={{ padding: '8px 16px', display: 'flex', alignItems: 'center', gap: 16, borderBottom: '1px solid var(--border)' }}>
+        <h2 style={{ margin: 0, fontSize: 18 }}>🧠 图谱探索</h2>
+        <div role="tablist" aria-label="图谱视图" style={{ display: 'flex', gap: 4 }}>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={view === 'legacy'}
+            className={`btn btn-sm${view === 'legacy' ? ' btn-primary' : ''}`}
+            onClick={() => switchView('legacy')}
+          >
+            Legacy Graph
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={view === 'canonical'}
+            className={`btn btn-sm${view === 'canonical' ? ' btn-primary' : ''}`}
+            onClick={() => switchView('canonical')}
+          >
+            Canonical KG
+          </button>
+        </div>
+        <span style={{ fontSize: 11, color: '#888' }}>
+          {view === 'legacy'
+            ? '经典 d3 力导向图（kg_* 数据）'
+            : '本体知识图谱（final_* 数据 · 确定性布局）'}
+        </span>
+      </div>
+      <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+        {view === 'legacy' ? <LegacyGraphView /> : <FinalKgGraphPage />}
       </div>
     </div>
   )

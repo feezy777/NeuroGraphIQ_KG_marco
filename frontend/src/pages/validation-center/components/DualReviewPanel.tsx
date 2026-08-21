@@ -4,16 +4,6 @@ import { CircuitSelector } from './CircuitSelector'
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
-interface DualReviewCandidate {
-  id: string
-  circuit_name: string
-  circuit_type: string
-  rule_overall_status?: string
-  reviewer_a_decision?: string
-  reviewer_b_decision?: string
-  adjudication_status?: string
-}
-
 interface RunSummary {
   id: string
   granularity_level: string
@@ -272,10 +262,6 @@ function StartDualReview({
 }: {
   granularityLevel?: string
 }) {
-  const [items, setItems] = useState<DualReviewCandidate[]>([])
-  const [total, setTotal] = useState(0)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [actionLoading, setActionLoading] = useState(false)
   const [actionMessage, setActionMessage] = useState<string | null>(null)
@@ -287,33 +273,6 @@ function StartDualReview({
   useEffect(() => {
     return () => { if (pollRef.current) clearInterval(pollRef.current) }
   }, [])
-
-  const fetchData = useCallback(async () => {
-    setLoading(true)
-    setError(null)
-    try {
-      const params = new URLSearchParams()
-      params.set('limit', '50')
-      if (granularityLevel) params.set('granularity_level', granularityLevel)
-      const res = await fetch(`/api/validation/circuit/review-queue?${params}`)
-      if (!res.ok) throw new Error(`API错误: ${res.status}`)
-      const data = await res.json()
-      setItems(data.items || [])
-      setTotal(data.total || data.items?.length || 0)
-    } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : '加载失败')
-    } finally {
-      setLoading(false)
-    }
-  }, [granularityLevel])
-
-  useEffect(() => { fetchData() }, [fetchData])
-
-  const toggleSelect = (id: string) => {
-    const next = new Set(selected)
-    if (next.has(id)) next.delete(id); else next.add(id)
-    setSelected(next)
-  }
 
   const doAction = useCallback(async (endpoint: string, label: string) => {
     if (selected.size === 0) return
@@ -350,14 +309,12 @@ function StartDualReview({
             if (pr.status === 'completed' || pr.status === 'failed' || pr.status === 'cancelled') {
               clearInterval(pollRef.current!); pollRef.current = null
               setReviewProgress(p => p ? {...p, status: pr.status} : null)
-              fetchData()
             }
           } catch { clearInterval(pollRef.current!); pollRef.current = null }
         }, 2000)
       } else {
         setActionMessage(`${label} 已完成`)
         setTimeout(() => setActionMessage(null), 5000)
-        fetchData()
       }
     } catch (e: unknown) {
       setActionMessage(e instanceof Error ? e.message : '操作失败')
@@ -365,13 +322,13 @@ function StartDualReview({
     } finally {
       setActionLoading(false)
     }
-  }, [selected, fetchData])
+  }, [selected])
 
   return (
-    <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+    <div style={{ height: '100%', display: 'flex', flexDirection: 'column', padding: '0 8px' }}>
       {actionMessage && (
         <div style={{
-          margin: '8px 16px 0', padding: '6px 12px', borderRadius: 'var(--radius)', fontSize: 13, flexShrink: 0,
+          margin: '8px 0', padding: '6px 12px', borderRadius: 'var(--radius)', fontSize: 13, flexShrink: 0,
           background: actionMessage.includes('失败') ? '#fff2f0' : '#f6ffed',
           color: actionMessage.includes('失败') ? 'var(--danger)' : 'var(--success)',
         }}>
@@ -379,65 +336,16 @@ function StartDualReview({
         </div>
       )}
 
-      {error && (
-        <div className="vw-error" style={{ margin: '8px 16px 0', flexShrink: 0 }}>
-          {error}
-          <button className="btn btn-sm btn-outline" onClick={fetchData} style={{ marginLeft: 8 }}>重试</button>
-        </div>
-      )}
-
-      <div style={{ flex: 1, overflow: 'auto', padding: '0 16px' }}>
-        <div className="vr-table-wrap">
-          <table className="vr-table">
-            <thead>
-              <tr>
-                <th className="vr-th-check">
-                  <input type="checkbox"
-                    checked={selected.size === items.length && items.length > 0}
-                    onChange={() => {
-                      if (selected.size === items.length) setSelected(new Set())
-                      else setSelected(new Set(items.map(i => i.id)))
-                    }}
-                  />
-                </th>
-                <th>名称</th>
-                <th className="vr-th-type">类型</th>
-                <th className="vr-th-status">规则</th>
-                <th className="vr-th-status">审 A</th>
-                <th className="vr-th-status">审 B</th>
-                <th className="vr-th-status">裁决</th>
-              </tr>
-            </thead>
-            <tbody>
-              {items.length === 0 ? (
-                <tr><td colSpan={7} className="vr-empty">
-                  <p style={{ color: 'var(--text-muted)' }}>暂无可送入双模型盲审的回路</p>
-                </td></tr>
-              ) : items.map((item, i) => (
-                <tr key={item.id}
-                  className={`vr-row${i % 2 === 1 ? ' even' : ''}${selected.has(item.id) ? ' selected' : ''}`}
-                  onClick={() => toggleSelect(item.id)}
-                >
-                  <td className="vr-td-check" onClick={e => e.stopPropagation()}>
-                    <input type="checkbox" checked={selected.has(item.id)} onChange={() => toggleSelect(item.id)} />
-                  </td>
-                  <td className="vr-td-label" style={{ maxWidth: 280, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {item.circuit_name?.slice(0, 60) || item.id.slice(0, 12)}
-                  </td>
-                  <td><span className="vr-badge">{item.circuit_type || '?'}</span></td>
-                  <td>{badgeHtml(item.rule_overall_status)}</td>
-                  <td>{badgeHtml(item.reviewer_a_decision)}</td>
-                  <td>{badgeHtml(item.reviewer_b_decision)}</td>
-                  <td>{badgeHtml(item.adjudication_status)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+      <div style={{ flex: 1, overflow: 'hidden' }}>
+        <CircuitSelector
+          granularityLevel={granularityLevel}
+          selected={selected}
+          onSelectionChange={setSelected}
+        />
       </div>
 
       {selected.size > 0 && (
-        <div className="vr-action-bar" style={{ flexShrink: 0 }}>
+        <div className="vr-action-bar" style={{ flexShrink: 0, marginTop: 8 }}>
           <span>已选 {selected.size} 项</span>
           <div className="vr-action-sep" />
           <button className="btn btn-sm btn-primary" onClick={() => doAction('/api/validation/circuit/selection/dual-review', '双模型审核')} disabled={actionLoading}>

@@ -347,7 +347,15 @@ def test_promote_connection_writes_final():
 
 
 def test_promote_function_writes_final():
+    from app.models.ontology import OntologyTerm
+
     fn = _function()
+    # P1.7: Final requires a canonical active Function term
+    term = OntologyTerm(
+        id=uuid.uuid4(), term_code="ng:func:motor_control",
+        canonical_term_en="motor control", term_type="function", status="active",
+    )
+    fn.term_id = term.id
     run = mps.create_promotion_run(
         target_types=["function"],
         scope_json={},
@@ -361,12 +369,20 @@ def test_promote_function_writes_final():
     session = AsyncMock()
     session.add = MagicMock()
     session.flush = AsyncMock()
+
+    async def _get(model, pk):
+        if model is OntologyTerm and pk == term.id:
+            return term
+        return None
+
+    session.get = AsyncMock(side_effect=_get)
     with patch.object(mps, "promote_evidence_for_target", AsyncMock(return_value=1)):
         rec, final = asyncio.run(
             mps.promote_function(session, obj=fn, run=run, review_record_id=uuid.uuid4(), warnings=[])
         )
     assert rec.status == "promoted"
     assert final.source_mirror_function_id == fn.id
+    assert final.term_id == term.id  # P1.7 canonical term carried into Final
 
 
 def test_promote_circuit_writes_final_and_regions():

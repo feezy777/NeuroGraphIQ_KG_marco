@@ -210,10 +210,12 @@ export function EvidenceCenterProvider({ children, embedded }: { children: React
     },
     [apply],
   )
-  // 关闭对象:清 task_item_id+target,保留当前 task(三.5)
+  // 关闭对象:清 task_item_id+target,保留当前 task,中间回到任务卡片(三.5)
+  // 必须同时切回 tasks:候选模块在 module=candidates 且无 target 时会自动回选首个 item 并回写 target,
+  // 只有卸载候选模块(中间回到任务卡片)才能保证「返回任务」后 target 不再被回写
   const closeTarget = useCallback(
     () => {
-      apply({ taskItemId: null, targetType: null, targetId: null })
+      apply({ module: 'tasks', taskItemId: null, targetType: null, targetId: null })
     },
     [apply],
   )

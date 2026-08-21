@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 720" width="1280" height="720">
+  <g id="background"><rect width="1280" height="720" fill="#FFFFFF"/></g>
+  <g id="header"><text x="56" y="70" font-family="Cambria, SimSun, serif" font-size="34" font-weight="700" fill="#1A365D">Mirror KG 在正式知识之前完成去重、模型共识与结构交叉验证</text><text x="56" y="102" font-family="Microsoft YaHei, Arial, sans-serif" font-size="14" fill="#5F6F7F">它不是临时表，而是承担治理责任的安全域</text></g>
+  <g id="parent">
+    <rect x="56" y="142" width="1168" height="478" rx="8" fill="#F4F7FA" stroke="#3182CE" stroke-width="2" stroke-dasharray="8,4"/>
+    <text x="640" y="176" text-anchor="middle" font-family="Microsoft YaHei, Arial, sans-serif" font-size="16" font-weight="700" fill="#3182CE">MIRROR KG GOVERNANCE DOMAIN</text>
+  </g>
+  <g id="canonical-key">
+    <rect x="86" y="210" width="340" height="350" rx="8" fill="#FFFFFF" stroke="#CBD5DF"/>
+    <rect x="86" y="210" width="340" height="58" fill="#1A365D"/><text x="256" y="247" text-anchor="middle" font-family="Microsoft YaHei, Arial, sans-serif" font-size="22" font-weight="700" fill="#FFFFFF">Canonical Key 去重</text>
+    <text x="116" y="316" font-family="Microsoft YaHei, Arial, sans-serif" font-size="18" fill="#243447">写入时生成规范键</text>
+    <text x="116" y="360" font-family="Microsoft YaHei, Arial, sans-serif" font-size="18" fill="#243447">高置信度记录胜出</text>
+    <text x="116" y="404" font-family="Microsoft YaHei, Arial, sans-serif" font-size="18" fill="#243447">双溯源同时保留</text>
+    <line x1="116" y1="438" x2="396" y2="438" stroke="#CBD5DF"/>
+    <text x="116" y="482" font-family="Microsoft YaHei, Arial, sans-serif" font-size="16" font-weight="700" fill="#DD6B20">已审核 / 已晋升 / 跨粒度</text>
+    <text x="116" y="516" font-family="Microsoft YaHei, Arial, sans-serif" font-size="16" font-weight="700" fill="#DD6B20">永不自动合并</text>
+  </g>
+  <g id="blind-review">
+    <rect x="470" y="210" width="340" height="350" rx="8" fill="#FFFFFF" stroke="#CBD5DF"/>
+    <rect x="470" y="210" width="340" height="58" fill="#3182CE"/><text x="640" y="247" text-anchor="middle" font-family="Microsoft YaHei, Arial, sans-serif" font-size="22" font-weight="700" fill="#FFFFFF">双模型盲审</text>
+    <text x="500" y="316" font-family="Microsoft YaHei, Arial, sans-serif" font-size="18" fill="#243447">DeepSeek 独立复核</text>
+    <text x="500" y="360" font-family="Microsoft YaHei, Arial, sans-serif" font-size="18" fill="#243447">Kimi 独立复核</text>
+    <rect x="500" y="402" width="128" height="50" rx="8" fill="#38A169"/><text x="564" y="434" text-anchor="middle" font-family="Arial, sans-serif" font-size="16" font-weight="700" fill="#FFFFFF">consensus</text>
+    <rect x="652" y="402" width="128" height="50" rx="8" fill="#DD6B20"/><text x="716" y="434" text-anchor="middle" font-family="Arial, sans-serif" font-size="16" font-weight="700" fill="#FFFFFF">conflict</text>
+    <text x="500" y="500" font-family="Microsoft YaHei, Arial, sans-serif" font-size="16" font-weight="700" fill="#38A169">共识：加速人工审核</text>
+    <text x="500" y="532" font-family="Microsoft YaHei, Arial, sans-serif" font-size="16" font-weight="700" fill="#DD6B20">冲突：升级专家处理</text>
+  </g>
+  <g id="cross-validation">
+    <rect x="854" y="210" width="340" height="350" rx="8" fill="#FFFFFF" stroke="#CBD5DF"/>
+    <rect x="854" y="210" width="340" height="58" fill="#38A169"/><text x="1024" y="247" text-anchor="middle" font-family="Microsoft YaHei, Arial, sans-serif" font-size="22" font-weight="700" fill="#FFFFFF">结构交叉验证</text>
+    <text x="884" y="316" font-family="Microsoft YaHei, Arial, sans-serif" font-size="18" fill="#243447">回路 → 步骤 → 投射</text>
+    <text x="884" y="360" font-family="Microsoft YaHei, Arial, sans-serif" font-size="18" fill="#243447">投射 → 回路反查</text>
+    <line x1="884" y1="396" x2="1164" y2="396" stroke="#CBD5DF"/>
+    <text x="884" y="444" font-family="Microsoft YaHei, Arial, sans-serif" font-size="18" fill="#243447">检查顺序完整性</text>
+    <text x="884" y="486" font-family="Microsoft YaHei, Arial, sans-serif" font-size="18" fill="#243447">检查端点一致性</text>
+    <text x="884" y="528" font-family="Microsoft YaHei, Arial, sans-serif" font-size="18" fill="#243447">检查跨表引用</text>
+  </g>
+  <g id="takeaway"><rect x="56" y="640" width="1168" height="40" fill="#1A365D"/><text x="640" y="666" text-anchor="middle" font-family="Microsoft YaHei, Arial, sans-serif" font-size="18" font-weight="700" fill="#FFFFFF">Mirror 的价值：允许自动化高吞吐，同时把不可逆错误挡在 Final KG 之外。</text></g>
+  <g id="footer"><text x="1224" y="706" text-anchor="end" font-family="Arial, sans-serif" font-size="11" fill="#8492A0">09</text></g>
+</svg>

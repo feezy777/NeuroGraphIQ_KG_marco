@@ -108,13 +108,13 @@ def test_build_epmc_query_uses_synonym_or_groups():
     }
     q = pes._build_epmc_query(context)
     # default is ABSTRACT-only (less noise); BODY variant available as fallback
-    assert 'ABSTRACT:"BLA" OR ABSTRACT:"basolateral amygdala"' in q
-    assert 'ABSTRACT:"infralimbic cortex" OR ABSTRACT:"IL"' in q
-    assert 'ABSTRACT:"fear extinction" OR ABSTRACT:"extinction learning"' in q
+    assert '(TITLE:"BLA" OR ABSTRACT:"BLA") OR (TITLE:"basolateral amygdala" OR ABSTRACT:"basolateral amygdala")' in q
+    assert 'TITLE:"infralimbic cortex" OR ABSTRACT:"infralimbic cortex"' in q and 'TITLE:"IL" OR ABSTRACT:"IL"' in q
+    assert 'TITLE:"fear extinction" OR ABSTRACT:"fear extinction"' in q and 'TITLE:"extinction learning" OR ABSTRACT:"extinction learning"' in q
     assert 'BODY:' not in q
     assert q.count(" AND ") == 2
     q_wide = pes._build_epmc_query(context, abstract_only=False)
-    assert 'ABSTRACT:"BLA" OR BODY:"BLA"' in q_wide
+    assert '(TITLE:"BLA" OR ABSTRACT:"BLA") OR BODY:"BLA"' in q_wide
 
 
 def test_synonym_hit_boost_and_section_prior():
@@ -546,9 +546,9 @@ def test_deepseek_prompt_contains_direction_and_verbatim_rules(monkeypatch):
     assert result["passages"] == []
     prompt = provider.last_user_prompt
     assert "Direction matters" in prompt
-    assert "Keyword co-occurrence is NOT evidence" in prompt
-    assert "never invent" in prompt
-    assert "copy exactly" in prompt
+    assert "关键词共现也作为弱证据返回" in prompt
+    assert "不要改写或捏造" in prompt
+    assert "逐字复制原文" in prompt
     assert "focus:p1" in prompt
 
 

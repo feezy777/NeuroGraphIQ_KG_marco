@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 720" width="1280" height="720">
+  <g id="background"><rect width="1280" height="720" fill="#F7FAFC" /></g>
+  <g id="header">
+  <rect x="56" y="42" width="8" height="40" fill="#1F9FB5" />
+  <text x="80" y="72" font-family="Microsoft YaHei, Arial, sans-serif" font-size="34" font-weight="700" fill="#17324D">项目定位：多粒度脑区知识基础设施</text>
+  <text x="80" y="104" font-family="Microsoft YaHei, Arial, sans-serif" font-size="16" fill="#5A6A7A">三列定位＋五级粒度隔离（宏观临床已落地）</text>
+  </g>
+  <g><path fill="#FFFFFF" stroke="#CBD5E0" d="M66,140 H414 A10,10 0 0 1 424,150 V350 A10,10 0 0 1 414,360 H66 A10,10 0 0 1 56,350 V150 A10,10 0 0 1 66,140 Z" />
+  <g transform="translate(84.0, 168.0) scale(1.3333333333333333)" fill="none" stroke="none" stroke-width="2">
+    <path d="M8 18a2 2 0 1 0 -4 0a2 2 0 0 0 4 0" />
+    <path d="M20 6a2 2 0 1 0 -4 0a2 2 0 0 0 4 0" />
+    <path d="M8 6a2 2 0 1 0 -4 0a2 2 0 0 0 4 0" />
+    <path d="M20 18a2 2 0 1 0 -4 0a2 2 0 0 0 4 0" />
+    <path d="M14 12a2 2 0 1 0 -4 0a2 2 0 0 0 4 0" />
+    <path d="M7.5 7.5l3 3" />
+    <path d="M7.5 16.5l3 -3" />
+    <path d="M13.5 13.5l3 3" />
+    <path d="M16.5 7.5l-3 3" />
+  </g><text x="132" y="192" font-family="Microsoft YaHei, Arial, sans-serif" font-size="20" font-weight="700" fill="#17324D">目标</text><text x="84" y="260" font-family="Microsoft YaHei, Arial, sans-serif" font-size="22" font-weight="700" fill="#243447">多粒度图谱</text></g>
+  <g><path fill="#FFFFFF" stroke="#CBD5E0" d="M458,140 H806 A10,10 0 0 1 816,150 V350 A10,10 0 0 1 806,360 H458 A10,10 0 0 1 448,350 V150 A10,10 0 0 1 458,140 Z" />
+  <g transform="translate(476.0, 168.0) scale(1.3333333333333333)" fill="none" stroke="none" stroke-width="2">
+    <path d="M3 19a2 2 0 1 0 4 0a2 2 0 0 0 -4 0" />
+    <path d="M19 7a2 2 0 1 0 0 -4a2 2 0 0 0 0 4" />
+    <path d="M11 19h5.5a3.5 3.5 0 0 0 0 -7h-8a3.5 3.5 0 0 1 0 -7h4.5" />
+  </g><text x="524" y="192" font-family="Microsoft YaHei, Arial, sans-serif" font-size="20" font-weight="700" fill="#17324D">任务</text><text x="476" y="260" font-family="Microsoft YaHei, Arial, sans-serif" font-size="22" font-weight="700" fill="#243447">全链路构建与治理</text></g>
+  <g><path fill="#FFFFFF" stroke="#CBD5E0" d="M850,140 H1198 A10,10 0 0 1 1208,150 V350 A10,10 0 0 1 1198,360 H850 A10,10 0 0 1 840,350 V150 A10,10 0 0 1 850,140 Z" />
+  <g transform="translate(868.0, 168.0) scale(1.3333333333333333)" fill="none" stroke="none" stroke-width="2">
+    <path d="M12 4l-8 4l8 4l8 -4l-8 -4" />
+    <path d="M4 12l8 4l8 -4" />
+    <path d="M4 16l8 4l8 -4" />
+  </g><text x="916" y="192" font-family="Microsoft YaHei, Arial, sans-serif" font-size="20" font-weight="700" fill="#17324D">架构</text><text x="868" y="260" font-family="Microsoft YaHei, Arial, sans-serif" font-size="22" font-weight="700" fill="#243447">五级粒度 Schema 隔离</text></g>
+  <g id="grain"><text x="56" y="420" font-family="Microsoft YaHei, Arial, sans-serif" font-size="18" font-weight="700" fill="#17324D">五级粒度条</text>
+  <path fill="#2F855A" stroke="#CBD5E0" d="M66,450 H262 A10,10 0 0 1 272,460 V600 A10,10 0 0 1 262,610 H66 A10,10 0 0 1 56,600 V460 A10,10 0 0 1 66,450 Z" /><text x="164" y="510" text-anchor="middle" font-family="Microsoft YaHei, Arial, sans-serif" font-size="18" font-weight="700" fill="#FFFFFF">宏观临床</text><text x="164" y="545" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" fill="#FFFFFF">AAL3 / Macro96</text><text x="164" y="580" text-anchor="middle" font-family="Microsoft YaHei, Arial, sans-serif" font-size="14" fill="#FFFFFF">已落地</text>
+  <path fill="#EDF2F7" stroke="#CBD5E0" d="M298,450 H494 A10,10 0 0 1 504,460 V600 A10,10 0 0 1 494,610 H298 A10,10 0 0 1 288,600 V460 A10,10 0 0 1 298,450 Z" /><text x="396" y="510" text-anchor="middle" font-family="Microsoft YaHei, Arial, sans-serif" font-size="18" font-weight="700" fill="#243447">介观解剖</text><text x="396" y="545" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" fill="#243447">HCP-MMP</text><text x="396" y="580" text-anchor="middle" font-family="Microsoft YaHei, Arial, sans-serif" font-size="14" fill="#243447">规划</text>
+  <path fill="#EDF2F7" stroke="#CBD5E0" d="M530,450 H726 A10,10 0 0 1 736,460 V600 A10,10 0 0 1 726,610 H530 A10,10 0 0 1 520,600 V460 A10,10 0 0 1 530,450 Z" /><text x="628" y="510" text-anchor="middle" font-family="Microsoft YaHei, Arial, sans-serif" font-size="18" font-weight="700" fill="#243447">亚区连接</text><text x="628" y="545" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" fill="#243447">Brainnetome</text><text x="628" y="580" text-anchor="middle" font-family="Microsoft YaHei, Arial, sans-serif" font-size="14" fill="#243447">规划</text>
+  <path fill="#EDF2F7" stroke="#CBD5E0" d="M762,450 H958 A10,10 0 0 1 968,460 V600 A10,10 0 0 1 958,610 H762 A10,10 0 0 1 752,600 V460 A10,10 0 0 1 762,450 Z" /><text x="860" y="510" text-anchor="middle" font-family="Microsoft YaHei, Arial, sans-serif" font-size="18" font-weight="700" fill="#243447">细胞构筑</text><text x="860" y="545" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" fill="#243447">Julich</text><text x="860" y="580" text-anchor="middle" font-family="Microsoft YaHei, Arial, sans-serif" font-size="14" fill="#243447">规划</text>
+  <path fill="#EDF2F7" stroke="#CBD5E0" d="M994,450 H1190 A10,10 0 0 1 1200,460 V600 A10,10 0 0 1 1190,610 H994 A10,10 0 0 1 984,600 V460 A10,10 0 0 1 994,450 Z" /><text x="1092" y="510" text-anchor="middle" font-family="Microsoft YaHei, Arial, sans-serif" font-size="18" font-weight="700" fill="#243447">分子属性</text><text x="1092" y="545" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" fill="#243447">Allen</text><text x="1092" y="580" text-anchor="middle" font-family="Microsoft YaHei, Arial, sans-serif" font-size="14" fill="#243447">规划</text>
+  </g>
+  <g id="footer"><text x="1224" y="696" text-anchor="end" font-family="Arial, sans-serif" font-size="12" fill="#8492A0">3</text></g>
+</svg>

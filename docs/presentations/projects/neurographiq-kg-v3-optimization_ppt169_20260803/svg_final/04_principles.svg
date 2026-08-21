@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 720" width="1280" height="720">
+  <g id="background"><rect width="1280" height="720" fill="#F7FAFC" /></g>
+  <g id="header">
+  <rect x="56" y="42" width="8" height="40" fill="#1F9FB5" />
+  <text x="80" y="72" font-family="Microsoft YaHei, Arial, sans-serif" font-size="34" font-weight="700" fill="#17324D">九项硬约束</text>
+  <text x="80" y="104" font-family="Microsoft YaHei, Arial, sans-serif" font-size="16" fill="#5A6A7A">没有审核记录，就不得进入下一环节</text>
+  </g>
+  <g id="left"><path fill="#FFFFFF" stroke="#CBD5E0" d="M66,140 H606 A10,10 0 0 1 616,150 V630 A10,10 0 0 1 606,640 H66 A10,10 0 0 1 56,630 V150 A10,10 0 0 1 66,140 Z" />
+  <path fill="#EDF2F7" d="M92,160 H580 A8,8 0 0 1 588,168 V208 A8,8 0 0 1 580,216 H92 A8,8 0 0 1 84,208 V168 A8,8 0 0 1 92,160 Z" /><text x="108" y="196" font-family="Arial, sans-serif" font-size="20" font-weight="700" fill="#1F9FB5">01</text><text x="168" y="196" font-family="Microsoft YaHei, Arial, sans-serif" font-size="20" fill="#243447">LLM 隔离</text>
+  <path fill="#EDF2F7" d="M92,240 H580 A8,8 0 0 1 588,248 V288 A8,8 0 0 1 580,296 H92 A8,8 0 0 1 84,288 V248 A8,8 0 0 1 92,240 Z" /><text x="108" y="276" font-family="Arial, sans-serif" font-size="20" font-weight="700" fill="#1F9FB5">02</text><text x="168" y="276" font-family="Microsoft YaHei, Arial, sans-serif" font-size="20" fill="#243447">统一入口</text>
+  <path fill="#EDF2F7" d="M92,320 H580 A8,8 0 0 1 588,328 V368 A8,8 0 0 1 580,376 H92 A8,8 0 0 1 84,368 V328 A8,8 0 0 1 92,320 Z" /><text x="108" y="356" font-family="Arial, sans-serif" font-size="20" font-weight="700" fill="#1F9FB5">03</text><text x="168" y="356" font-family="Microsoft YaHei, Arial, sans-serif" font-size="20" fill="#243447">双重审核</text>
+  <path fill="#EDF2F7" d="M92,400 H580 A8,8 0 0 1 588,408 V448 A8,8 0 0 1 580,456 H92 A8,8 0 0 1 84,448 V408 A8,8 0 0 1 92,400 Z" /><text x="108" y="436" font-family="Arial, sans-serif" font-size="20" font-weight="700" fill="#1F9FB5">04</text><text x="168" y="436" font-family="Microsoft YaHei, Arial, sans-serif" font-size="20" fill="#243447">正式库纯净</text>
+  <path fill="#EDF2F7" d="M92,480 H580 A8,8 0 0 1 588,488 V528 A8,8 0 0 1 580,536 H92 A8,8 0 0 1 84,528 V488 A8,8 0 0 1 92,480 Z" /><text x="108" y="516" font-family="Arial, sans-serif" font-size="20" font-weight="700" fill="#1F9FB5">05</text><text x="168" y="516" font-family="Microsoft YaHei, Arial, sans-serif" font-size="20" fill="#243447">全链路溯源</text>
+  </g>
+  <g id="right"><path fill="#FFFFFF" stroke="#CBD5E0" d="M674,140 H1214 A10,10 0 0 1 1224,150 V630 A10,10 0 0 1 1214,640 H674 A10,10 0 0 1 664,630 V150 A10,10 0 0 1 674,140 Z" />
+  <path fill="#EDF2F7" d="M700,160 H1188 A8,8 0 0 1 1196,168 V208 A8,8 0 0 1 1188,216 H700 A8,8 0 0 1 692,208 V168 A8,8 0 0 1 700,160 Z" /><text x="716" y="196" font-family="Arial, sans-serif" font-size="20" font-weight="700" fill="#1F9FB5">06</text><text x="776" y="196" font-family="Microsoft YaHei, Arial, sans-serif" font-size="20" fill="#243447">粒度隔离</text>
+  <path fill="#EDF2F7" d="M700,240 H1188 A8,8 0 0 1 1196,248 V288 A8,8 0 0 1 1188,296 H700 A8,8 0 0 1 692,288 V248 A8,8 0 0 1 700,240 Z" /><text x="716" y="276" font-family="Arial, sans-serif" font-size="20" font-weight="700" fill="#1F9FB5">07</text><text x="776" y="276" font-family="Microsoft YaHei, Arial, sans-serif" font-size="20" fill="#243447">显式映射</text>
+  <path fill="#EDF2F7" d="M700,320 H1188 A8,8 0 0 1 1196,328 V368 A8,8 0 0 1 1188,376 H700 A8,8 0 0 1 692,368 V328 A8,8 0 0 1 700,320 Z" /><text x="716" y="356" font-family="Arial, sans-serif" font-size="20" font-weight="700" fill="#1F9FB5">08</text><text x="776" y="356" font-family="Microsoft YaHei, Arial, sans-serif" font-size="20" fill="#243447">输出留痕</text>
+  <path fill="#EDF2F7" d="M700,400 H1188 A8,8 0 0 1 1196,408 V448 A8,8 0 0 1 1188,456 H700 A8,8 0 0 1 692,448 V408 A8,8 0 0 1 700,400 Z" /><text x="716" y="436" font-family="Arial, sans-serif" font-size="20" font-weight="700" fill="#1F9FB5">09</text><text x="776" y="436" font-family="Microsoft YaHei, Arial, sans-serif" font-size="20" fill="#243447">全程日志</text>
+  </g>
+  <g id="footer"><text x="1224" y="696" text-anchor="end" font-family="Arial, sans-serif" font-size="12" fill="#8492A0">4</text></g>
+</svg>

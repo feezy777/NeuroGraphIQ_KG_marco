@@ -55,7 +55,7 @@ async def _insert_connection(name_cn="旧名称"):
     return cid
 
 
-async def _attach(cid, *, direction="supports", note=None, level="direct", model_direction="supports", model_assessment="model says support"):
+async def _attach(cid, *, direction="supports", note=None, level="direct", model_direction="supports", model_assessment="model says support", source=SOURCE):
     async with AsyncSessionLocal() as s:
         paper = await pes.ensure_paper_source(s, {**PAPER, "abstract": SOURCE, "fulltext": ""})
         await s.commit()
@@ -68,8 +68,8 @@ async def _attach(cid, *, direction="supports", note=None, level="direct", model
                     "section_title": "Abstract",
                     "paragraph_id": "abstract_p001",
                     "paragraph_index": 0,
-                    "passage_text": SOURCE,
-                    "text_hash": pes.passage_hash(SOURCE),
+                    "passage_text": source,
+                    "text_hash": pes.passage_hash(source),
                     "locator": "abstract:paragraph:0",
                 }
             ],
@@ -77,7 +77,7 @@ async def _attach(cid, *, direction="supports", note=None, level="direct", model
         await s.commit()
         with (
             patch.object(pes, "verify_paper", new=AsyncMock(return_value=PAPER)),
-            patch.object(pes, "_load_source", new=AsyncMock(return_value=(SOURCE, "abstract"))),
+            patch.object(pes, "_load_source", new=AsyncMock(return_value=(source, "abstract"))),
         ):
             result = await pes.attach_evidence(
                 s,
@@ -92,7 +92,7 @@ async def _attach(cid, *, direction="supports", note=None, level="direct", model
                 reviewer_confidence=0.78,
                 passages=[{
                     "source_scope": "abstract",
-                    "passage": SOURCE,
+                    "passage": source,
                     "direction": "supports",
                     "reason": "r",
                     "confidence": 0.85,
@@ -177,14 +177,36 @@ def test_claim_and_coverage_snapshot_attached():
         _run(_cleanup(cid, uuid.uuid4()))
 
 
-def test_override_requires_reviewer_note():
+def test_override_without_note_auto_generates_note():
+    """S8:生产行为已改为方向与覆盖不一致且无备注时自动生成备注(不再拒绝)。"""
     cid = _run(_insert_connection())
     try:
-        # coverage=support but reviewer=contradicts without note -> rejected
-        with pytest.raises(ValueError, match="reviewer_note is required"):
-            _run(_attach(cid, direction="contradicts", note=None))
-        # with note -> accepted and recorded
-        result, paper_id = _run(_attach(cid, direction="contradicts", note="human disagrees with coverage"))
+        # coverage=support but reviewer=contradicts without note -> 自动生成备注并记录
+        result, paper_id = _run(_attach(cid, direction="contradicts", note=None))
+        eid = uuid.UUID(result["evidence_id"])
+
+        async def check_auto():
+            async with AsyncSessionLocal() as s:
+                row = (
+                    await s.execute(
+                        text(
+                            "SELECT reviewer_note, evidence_direction FROM mirror_evidence_records WHERE id=:eid"
+                        ),
+                        {"eid": eid},
+                    )
+                ).first()
+                assert row[1] == "contradicts"
+                assert row[0] and "人工判定为 contradicts" in row[0]
+
+        _run(check_auto())
+        # with note -> accepted and recorded(换一段原文避免去重)
+        result2, paper_id2 = _run(_attach(
+            cid,
+            direction="contradicts",
+            note="human disagrees with coverage",
+            source=SOURCE + "\n\nA follow-up control experiment confirmed the same pattern.",
+        ))
+        result, paper_id = result2, paper_id2
         eid = uuid.UUID(result["evidence_id"])
 
         async def check():
@@ -308,7 +330,7 @@ def test_model_support_reviewer_partial_is_preserved():
 
 
 def test_mixed_coverage_to_reviewer_support_requires_note():
-    async def attach_mixed(cid, note=None):
+    async def attach_mixed(cid, note=None, source=MIXED_SOURCE, contradicts_text="Activation of BLA terminals did not alter extinction learning."):
         async with AsyncSessionLocal() as s:
             paper = await pes.ensure_paper_source(s, {**PAPER, "abstract": SOURCE, "fulltext": ""})
             await s.commit()
@@ -321,8 +343,8 @@ def test_mixed_coverage_to_reviewer_support_requires_note():
                         "section_title": "Abstract",
                         "paragraph_id": "abstract_p001",
                         "paragraph_index": 0,
-                        "passage_text": MIXED_SOURCE,
-                        "text_hash": pes.passage_hash(MIXED_SOURCE),
+                        "passage_text": source,
+                        "text_hash": pes.passage_hash(source),
                         "locator": "abstract:paragraph:0",
                     }
                 ],
@@ -330,7 +352,7 @@ def test_mixed_coverage_to_reviewer_support_requires_note():
             await s.commit()
             with (
                 patch.object(pes, "verify_paper", new=AsyncMock(return_value=PAPER)),
-                patch.object(pes, "_load_source", new=AsyncMock(return_value=(MIXED_SOURCE, "abstract"))),
+                patch.object(pes, "_load_source", new=AsyncMock(return_value=(source, "abstract"))),
             ):
                 result = await pes.attach_evidence(
                     s,
@@ -346,7 +368,7 @@ def test_mixed_coverage_to_reviewer_support_requires_note():
                     passages=[
                         {
                             "source_scope": "abstract",
-                            "passage": MIXED_SOURCE,
+                            "passage": source,
                             "direction": "supports",
                             "reason": "support",
                             "confidence": 0.85,
@@ -355,7 +377,7 @@ def test_mixed_coverage_to_reviewer_support_requires_note():
                         },
                         {
                             "source_scope": "abstract",
-                            "passage": "Activation of BLA terminals did not alter extinction learning.",
+                            "passage": contradicts_text,
                             "direction": "contradicts",
                             "reason": "deny",
                             "confidence": 0.6,
@@ -389,9 +411,10 @@ def test_mixed_coverage_to_reviewer_support_requires_note():
                 return paper.id
 
         paper_id = _run(setup_paper())
-        with pytest.raises(ValueError, match="reviewer_note is required"):
-            _run(attach_mixed(cid, note=None))
-        result = _run(attach_mixed(cid, note="reviewer overrides model conflict"))
+        # S8:生产行为已改为自动生成备注(不再拒绝)
+        auto_result = _run(attach_mixed(cid, note=None))
+        assert auto_result.get("evidence_id")
+        result = _run(attach_mixed(cid, note="reviewer overrides model conflict", source=MIXED_SOURCE + "\n\nAn additional independent replication confirmed this.", contradicts_text="An additional independent replication confirmed this."))
         eid = uuid.UUID(result["evidence_id"])
 
         async def check():

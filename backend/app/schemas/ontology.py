@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -125,7 +125,7 @@ class AlignmentReviewRequest(BaseModel):
 class PaperSearchRequest(BaseModel):
     target_type: str
     target_id: uuid.UUID
-    limit: int = Field(default=5, ge=1, le=20)
+    limit: int = Field(default=10, ge=1, le=50)
     mode: str = "function"
     query_override: str | None = None
 
@@ -135,6 +135,7 @@ class PaperRef(BaseModel):
     doi: str | None = None
     pmcid: str | None = None
     title: str | None = None
+    abstract: str | None = None
 
 
 class ExtractSelectedRequest(BaseModel):
@@ -281,6 +282,10 @@ class ReviewResolveRequest(BaseModel):
 
 class TranslateRequest(BaseModel):
     text: str = Field(min_length=1, max_length=4000)
+
+
+class TranslateBatchRequest(BaseModel):
+    texts: list[str] = Field(min_length=1, max_length=20)
 
 
 class GroundingRead(BaseModel):
@@ -430,6 +435,16 @@ class EvidenceReviewOut(BaseModel):
     evidence_id: str | None = None
     created_at: str | None = None
     updated_at: str | None = None
+    # S7B 版本链与派生字段
+    revision_no: int = 1
+    supersedes_review_id: str | None = None
+    superseded_at: str | None = None
+    superseded_by: str | None = None
+    rollback_reason: str | None = None
+    is_current: bool = True
+    effective_promotion_status: str = "not_promoted"
+    can_rollback_rescore: bool = False
+    rollback_block_reason: str | None = None
     passages: list[EvidenceReviewPassageOut] = Field(default_factory=list)
 
 
@@ -438,6 +453,106 @@ class EvidenceReviewListResponse(BaseModel):
     total: int
 
 
+class RollbackRescoreRequest(BaseModel):
+    reason: str
+    idempotency_key: str | None = None
+
+
+class RollbackRescoreNavigation(BaseModel):
+    module: str = "tasks"
+    task_id: str
+    task_item_id: str
+    target_type: str
+    target_id: str
+
+
+class RollbackRescoreResponse(BaseModel):
+    source_review_id: str
+    new_review_id: str | None = None
+    task_id: str | None = None
+    task_item_id: str | None = None
+    target_type: str
+    target_id: str
+    revision_no: int
+    promotion_rollback: str
+    navigation: RollbackRescoreNavigation
+
+
+class ReviewHistoryItem(BaseModel):
+    review_id: str
+    revision_no: int
+    review_status: str
+    promotion_status: str
+    effective_promotion_status: str
+    reviewer_direction: str | None = None
+    reviewer_confidence: float | None = None
+    reviewed_at: str | None = None
+    approved_at: str | None = None
+    rejected_at: str | None = None
+    is_current: bool = True
+    superseded_at: str | None = None
+    superseded_by: str | None = None
+    rollback_reason: str | None = None
+
+
+class ReviewHistoryResponse(BaseModel):
+    source_review_id: str
+    items: list[ReviewHistoryItem]
+
+
 class EvidenceReviewReturnRequest(BaseModel):
     reason: str = Field(min_length=1, max_length=2000)
     returned_by: str | None = None
+
+
+# ---------------- O1.2 Function Hierarchy ----------------
+
+class HierarchyRelationCreateRequest(BaseModel):
+    child_term_id: uuid.UUID
+    parent_term_id: uuid.UUID
+    status: str = "proposed"
+    source: str | None = None
+    confidence: float | None = None
+    provenance: dict[str, Any] = Field(default_factory=dict)
+
+
+class HierarchyNodeRead(BaseModel):
+    term_id: uuid.UUID
+    term_code: str | None = None
+    canonical_term_en: str | None = None
+    canonical_term_cn: str | None = None
+    term_status: str | None = None
+
+
+class HierarchyRelationRead(BaseModel):
+    id: uuid.UUID
+    child: HierarchyNodeRead
+    predicate: str
+    parent: HierarchyNodeRead
+    status: str
+    source: str | None = None
+    confidence: float | None = None
+    provenance: dict[str, Any] = Field(default_factory=dict)
+
+
+class HierarchyPathRead(BaseModel):
+    node: HierarchyNodeRead
+    depth: int
+    path: list[str] = Field(default_factory=list)
+
+
+class HierarchyRelationListResponse(BaseModel):
+    items: list[HierarchyRelationRead]
+    total: int
+
+
+class HierarchyPathsResponse(BaseModel):
+    items: list[HierarchyPathRead]
+    total: int
+
+
+# O1.2 hierarchy DTOs reference each other under `from __future__ import
+# annotations` — force schema resolution so FastAPI OpenAPI generation works.
+for _m in (HierarchyNodeRead, HierarchyRelationRead, HierarchyPathsResponse,
+           HierarchyRelationCreateRequest, HierarchyRelationListResponse):
+    _m.model_rebuild()

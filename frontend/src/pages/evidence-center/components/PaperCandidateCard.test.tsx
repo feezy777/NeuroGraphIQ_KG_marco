@@ -15,7 +15,7 @@ const SEARCH_PAPER: CandidatePaperData = {
   abstractAvailable: true,
   fulltextAvailable: true,
   matchReason: '标题与 R1/R2 高度匹配',
-  matchScore: 0.93,
+  matchScore: 93,
   extracted: false,
   modelDirection: null,
   modelAssessment: null,
@@ -66,7 +66,13 @@ describe('PaperCandidateCard(未提取搜索卡)', () => {
     expect(match.textContent).toContain('匹配 93%')
     expect(match.textContent).toContain('标题与 R1/R2 高度匹配')
     expect(screen.getByText('PMID 99999999')).toBeTruthy()
-    expect(screen.getByText('DOI 10.9999/abc')).toBeTruthy()
+    // 新卡片:PMID/DOI 为链接徽章(值在 href 中),DOI 徽章文本为「DOI」
+    expect(screen.getByRole('link', { name: 'PMID 99999999' })).toHaveProperty(
+      'href',
+      'https://pubmed.ncbi.nlm.nih.gov/99999999/',
+    )
+    const doiLink = screen.getByRole('link', { name: 'DOI' }) as HTMLAnchorElement
+    expect(doiLink.href).toBe('https://doi.org/10.9999/abc')
     expect(screen.getByText('摘要')).toBeTruthy()
     expect(screen.getByText('OA 全文')).toBeTruthy()
   })

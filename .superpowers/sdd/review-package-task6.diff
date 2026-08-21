@@ -1,0 +1,33 @@
+8966daddf65530b947f4f5c03eeeeddb5a12acb5 feat(evidence): unified task label uses object display name
+---DIFF---
+diff --git a/backend/app/routers/unified_tasks.py b/backend/app/routers/unified_tasks.py
+index 8363a65..7624957 100644
+--- a/backend/app/routers/unified_tasks.py
++++ b/backend/app/routers/unified_tasks.py
+@@ -226,21 +226,25 @@ async def list_unified_tasks(
+             return []
+ 
+     async def _paper_evidence():
+         try:
+             data = await pes.list_paper_evidence_tasks(session, limit=limit, offset=0, status=status)
+             return [
+                 UnifiedTaskItem(
+                     id=item["id"],
+                     type="paper_evidence",
+                     status=item["status"],
+-                    label=f"论文佐证 · {item['target_type']}",
++                    label=(
++                        item.get("display_name_cn")
++                        or item.get("display_name_en")
++                        or f"论文佐证 · {item['target_type']}"
++                    ),
+                     target_type=item["target_type"],
+                     target_count=item["total_items"],
+                     provider="deepseek+europepmc",
+                     model_name=None,
+                     created_at=item["created_at"] or "",
+                     started_at=item["started_at"],
+                     completed_at=item["finished_at"],
+                     meta={
+                         "processed_items": item["processed_items"],
+                         "awaiting_review_items": item["awaiting_review_items"],

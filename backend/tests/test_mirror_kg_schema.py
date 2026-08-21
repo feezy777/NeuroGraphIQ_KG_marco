@@ -329,6 +329,26 @@ def test_mirror_connections_api_list_empty_or_ok():
         assert "total" in body
 
 
+def test_list_circuits_passes_candidate_id(monkeypatch):
+    """GET /api/mirror-kg/circuits?candidate_id=… → 透传给 service（成员关系过滤）。"""
+    from fastapi.testclient import TestClient
+
+    from app.main import app
+
+    client = TestClient(app, raise_server_exceptions=False)
+    candidate_id = uuid.uuid4()
+    captured: dict = {}
+
+    async def _list(*_args, **kwargs):
+        captured.update(kwargs)
+        return [], 0
+
+    monkeypatch.setattr(mirror_kg_service, "list_mirror_circuits", _list)
+    resp = client.get("/api/mirror-kg/circuits", params={"candidate_id": str(candidate_id)})
+    assert resp.status_code == 200
+    assert captured["candidate_id"] == candidate_id
+
+
 def test_mirror_connections_api_create_validation():
     from fastapi.testclient import TestClient
 

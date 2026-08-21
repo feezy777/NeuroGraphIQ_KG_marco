@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 720" data-pptx-page-role="content">
+  <defs><filter id="g"><feGaussianBlur stdDeviation="2" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs>
+  <g id="bg" data-pptx-bounds="0 0 1280 720" data-pptx-role="background"><rect width="1280" height="720" fill="#0D1117"/><line x1="0" y1="108" x2="1280" y2="108" stroke="#212D40" stroke-width="0.5"/><text x="80" y="700" font-family="Microsoft YaHei" font-size="14" fill="#586069">NeuroGraphIQ KG V3</text></g>
+  <g id="c" data-pptx-bounds="40 120 1200 560">
+    <rect x="40" y="120" width="4" height="48" fill="#58A6FF" />
+    <text x="60" y="155" font-family="Microsoft YaHei" font-weight="bold" font-size="40" fill="#FFFFFF">第一阶段：资源导入与候选生成</text>
+    <text x="40" y="200" font-family="Microsoft YaHei" font-weight="bold" font-size="22" fill="#79C0FF">AAL3 链路</text>
+    <rect x="40" y="215" width="200" height="44" rx="2" fill="#1C2333"/><text x="140" y="242" text-anchor="middle" font-family="Microsoft YaHei" font-size="17" fill="#C9D1D9">AAL3 XML 文件</text>
+    <text x="250" y="243" font-family="Consolas" font-size="22" fill="#30363D">→</text>
+    <rect x="280" y="215" width="200" height="44" rx="2" fill="#1A365D"/><text x="380" y="242" text-anchor="middle" font-family="Consolas" font-size="15" fill="#58A6FF">aal3_xml parser</text>
+    <text x="490" y="243" font-family="Consolas" font-size="22" fill="#30363D">→</text>
+    <rect x="520" y="215" width="240" height="44" rx="2" fill="#161B22"/><text x="640" y="237" text-anchor="middle" font-family="Microsoft YaHei" font-size="15" fill="#C9D1D9">raw_aal3_region_labels</text><text x="640" y="254" text-anchor="middle" font-family="Consolas" font-size="13" fill="#58A6FF">166 ROI</text>
+    <text x="770" y="243" font-family="Consolas" font-size="22" fill="#30363D">→</text>
+    <rect x="800" y="215" width="280" height="44" rx="2" fill="#1C2333"/><text x="940" y="237" text-anchor="middle" font-family="Microsoft YaHei" font-size="15" fill="#C9D1D9">generate-candidates</text><text x="940" y="254" text-anchor="middle" font-family="Microsoft YaHei" font-size="13" fill="#8B949E">→ candidate_brain_regions</text>
+
+    <text x="40" y="300" font-family="Microsoft YaHei" font-weight="bold" font-size="22" fill="#FFA657">Macro96 链路</text>
+    <rect x="40" y="315" width="200" height="44" rx="2" fill="#1C2333"/><text x="140" y="342" text-anchor="middle" font-family="Microsoft YaHei" font-size="17" fill="#C9D1D9">Brain volume list.xlsx</text>
+    <text x="250" y="343" font-family="Consolas" font-size="22" fill="#30363D">→</text>
+    <rect x="280" y="315" width="200" height="44" rx="2" fill="#1A365D"/><text x="380" y="342" text-anchor="middle" font-family="Consolas" font-size="15" fill="#58A6FF">macro96_xlsx parser</text>
+    <text x="490" y="343" font-family="Consolas" font-size="22" fill="#30363D">→</text>
+    <rect x="520" y="315" width="240" height="44" rx="2" fill="#161B22"/><text x="640" y="337" text-anchor="middle" font-family="Microsoft YaHei" font-size="15" fill="#C9D1D9">raw_macro96_region_rows</text><text x="640" y="354" text-anchor="middle" font-family="Consolas" font-size="13" fill="#FFA657">96 脑区</text>
+    <text x="770" y="343" font-family="Consolas" font-size="22" fill="#30363D">→</text>
+    <rect x="800" y="315" width="280" height="44" rx="2" fill="#1C2333"/><text x="940" y="337" text-anchor="middle" font-family="Microsoft YaHei" font-size="15" fill="#C9D1D9">generate-macro96-candidates</text><text x="940" y="354" text-anchor="middle" font-family="Microsoft YaHei" font-size="13" fill="#8B949E">→ candidate_brain_regions</text>
+
+    <text x="40" y="410" font-family="Microsoft YaHei" font-size="20" fill="#8B949E">关键机制</text>
+    <rect x="40" y="428" width="370" height="80" rx="2" fill="#1C2333" stroke="#30363D" stroke-width="0.5"/>
+    <text x="60" y="458" font-family="Microsoft YaHei" font-weight="bold" font-size="18" fill="#58A6FF">导入批次 (Import Batch)</text>
+    <text x="60" y="485" font-family="Microsoft YaHei" font-size="15" fill="#8B949E">核心追踪单元 · 解析器兼容性检查 · 事件日志 &amp; 回滚</text>
+    <rect x="430" y="428" width="370" height="80" rx="2" fill="#1C2333" stroke="#30363D" stroke-width="0.5"/>
+    <text x="450" y="458" font-family="Microsoft YaHei" font-weight="bold" font-size="18" fill="#79C0FF">幂等解析 + 完整溯源</text>
+    <text x="450" y="485" font-family="Microsoft YaHei" font-size="15" fill="#8B949E">唯一索引防重复 · source_atlas / version / batch_id / resource_id</text>
+    <rect x="820" y="428" width="370" height="80" rx="2" fill="#1C2333" stroke="#30363D" stroke-width="0.5"/>
+    <text x="840" y="458" font-family="Microsoft YaHei" font-weight="bold" font-size="18" fill="#58A6FF">候选池 (Candidate Pool)</text>
+    <text x="840" y="485" font-family="Microsoft YaHei" font-size="15" fill="#8B949E">跨批次汇总 · 按粒度/图谱筛选 · LLM 批量提取数据基础</text>
+
+    <g><text x="640" y="560" text-anchor="middle" font-family="Microsoft YaHei" font-size="17" fill="#58A6FF">AAL3 和 Macro96 双链路独立 · 禁止混用 Generator · 候选池跨批次汇总</text></g>
+  </g>
+</svg>

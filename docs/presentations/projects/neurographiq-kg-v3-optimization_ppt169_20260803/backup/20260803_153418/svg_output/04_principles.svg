@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 720" width="1280" height="720">
+  <g id="background"><rect width="1280" height="720" fill="#F7FAFC"/></g>
+  <g id="header">
+  <rect x="56" y="42" width="8" height="40" fill="#1F9FB5"/>
+  <text x="80" y="72" font-family="Microsoft YaHei, Arial, sans-serif" font-size="34" font-weight="700" fill="#17324D">九项硬约束</text>
+  <text x="80" y="104" font-family="Microsoft YaHei, Arial, sans-serif" font-size="16" fill="#5A6A7A">没有审核记录，就不得进入下一环节</text>
+  </g>
+  <g id="left"><rect x="56" y="140" width="560" height="500" rx="10" fill="#FFFFFF" stroke="#CBD5E0"/>
+  <rect x="84" y="160" width="504" height="56" rx="8" fill="#EDF2F7"/><text x="108" y="196" font-family="Arial, sans-serif" font-size="20" font-weight="700" fill="#1F9FB5">01</text><text x="168" y="196" font-family="Microsoft YaHei, Arial, sans-serif" font-size="20" fill="#243447">LLM 隔离</text>
+  <rect x="84" y="240" width="504" height="56" rx="8" fill="#EDF2F7"/><text x="108" y="276" font-family="Arial, sans-serif" font-size="20" font-weight="700" fill="#1F9FB5">02</text><text x="168" y="276" font-family="Microsoft YaHei, Arial, sans-serif" font-size="20" fill="#243447">统一入口</text>
+  <rect x="84" y="320" width="504" height="56" rx="8" fill="#EDF2F7"/><text x="108" y="356" font-family="Arial, sans-serif" font-size="20" font-weight="700" fill="#1F9FB5">03</text><text x="168" y="356" font-family="Microsoft YaHei, Arial, sans-serif" font-size="20" fill="#243447">双重审核</text>
+  <rect x="84" y="400" width="504" height="56" rx="8" fill="#EDF2F7"/><text x="108" y="436" font-family="Arial, sans-serif" font-size="20" font-weight="700" fill="#1F9FB5">04</text><text x="168" y="436" font-family="Microsoft YaHei, Arial, sans-serif" font-size="20" fill="#243447">正式库纯净</text>
+  <rect x="84" y="480" width="504" height="56" rx="8" fill="#EDF2F7"/><text x="108" y="516" font-family="Arial, sans-serif" font-size="20" font-weight="700" fill="#1F9FB5">05</text><text x="168" y="516" font-family="Microsoft YaHei, Arial, sans-serif" font-size="20" fill="#243447">全链路溯源</text>
+  </g>
+  <g id="right"><rect x="664" y="140" width="560" height="500" rx="10" fill="#FFFFFF" stroke="#CBD5E0"/>
+  <rect x="692" y="160" width="504" height="56" rx="8" fill="#EDF2F7"/><text x="716" y="196" font-family="Arial, sans-serif" font-size="20" font-weight="700" fill="#1F9FB5">06</text><text x="776" y="196" font-family="Microsoft YaHei, Arial, sans-serif" font-size="20" fill="#243447">粒度隔离</text>
+  <rect x="692" y="240" width="504" height="56" rx="8" fill="#EDF2F7"/><text x="716" y="276" font-family="Arial, sans-serif" font-size="20" font-weight="700" fill="#1F9FB5">07</text><text x="776" y="276" font-family="Microsoft YaHei, Arial, sans-serif" font-size="20" fill="#243447">显式映射</text>
+  <rect x="692" y="320" width="504" height="56" rx="8" fill="#EDF2F7"/><text x="716" y="356" font-family="Arial, sans-serif" font-size="20" font-weight="700" fill="#1F9FB5">08</text><text x="776" y="356" font-family="Microsoft YaHei, Arial, sans-serif" font-size="20" fill="#243447">输出留痕</text>
+  <rect x="692" y="400" width="504" height="56" rx="8" fill="#EDF2F7"/><text x="716" y="436" font-family="Arial, sans-serif" font-size="20" font-weight="700" fill="#1F9FB5">09</text><text x="776" y="436" font-family="Microsoft YaHei, Arial, sans-serif" font-size="20" fill="#243447">全程日志</text>
+  </g>
+  <g id="footer"><text x="1224" y="696" text-anchor="end" font-family="Arial, sans-serif" font-size="12" fill="#8492A0">4</text></g>
+</svg>

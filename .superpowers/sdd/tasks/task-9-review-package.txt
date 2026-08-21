@@ -1,0 +1,1172 @@
+96e58ba feat(evidence): 证据晋升模块(EvidencePromotionModule)-唯一 attach 入口
+===STAT===
+ .../src/pages/data-center/EvidenceReviewModal.tsx  |   4 +-
+ .../components/EvidenceDetailDrawer.tsx            | 169 +++++++++
+ .../{AttachDialog.tsx => PromotionDialog.tsx}      |   4 +-
+ .../modules/EvidencePromotionModule.test.tsx       | 303 ++++++++++++++++
+ .../modules/EvidencePromotionModule.tsx            | 386 +++++++++++++++++++++
+ frontend/src/styles.css                            | 171 +++++++++
+ 6 files changed, 1033 insertions(+), 4 deletions(-)
+===DIFF===
+diff --git a/frontend/src/pages/data-center/EvidenceReviewModal.tsx b/frontend/src/pages/data-center/EvidenceReviewModal.tsx
+index 3a49cc9..54a2e71 100644
+--- a/frontend/src/pages/data-center/EvidenceReviewModal.tsx
++++ b/frontend/src/pages/data-center/EvidenceReviewModal.tsx
+@@ -14,21 +14,21 @@ import {
+   translateEvidenceText,
+   validatePassageSelection,
+   writeEvidenceAudit,
+   type AttachPreviewResponse,
+   type EvidencePassageInput,
+   type EvidenceTargetDto,
+   type PaperEvidenceItem,
+   type PaperSearchResponse,
+ } from '../../api/endpoints'
+ import { ConfirmDialog } from '../../components/ConfirmDialog'
+-import { AttachDialog } from '../evidence-center/components/AttachDialog'
++import { PromotionDialog } from '../evidence-center/components/PromotionDialog'
+ import { candidatePassagesToWorkbench } from '../evidence-center/components/candidatePassages'
+ import { ClaimPanel } from '../evidence-center/components/ClaimPanel'
+ import { CoveragePanel } from '../evidence-center/components/CoveragePanel'
+ import { PassageEvidenceCard } from '../evidence-center/components/PassageEvidenceCard'
+ import { ReviewerPanel } from '../evidence-center/components/ReviewerPanel'
+ import { aggregateTmpDirection, computeTmpCoverage } from '../evidence-center/components/claimCoverage'
+ import {
+   DIRECTION_LABEL,
+   type ClaimComponent,
+   type Direction,
+@@ -1116,21 +1116,21 @@ export function EvidenceReviewModal({ open, onClose, initialItems, initialTaskId
+         {saveState === 'saved' && <span className="ew-ok">已保存</span>}
+         {saveState === 'error' && (
+           <>
+             <span className="ew-bad">保存失败</span>
+             <button type="button" className="btn btn-xs" onClick={() => saveDraft()}>重试保存</button>
+           </>
+         )}
+         <span className="ew-meta" title={attachDisabledReason}>{attachDisabled ? `ⓘ ${attachDisabledReason}` : '确认论文证据'}</span>
+         <button type="button" data-testid="ew-attach" className="btn btn-primary btn-sm" disabled={attachDisabled} onClick={() => setConfirmOpen(true)}>确认论文证据</button>
+       </div>
+-      <AttachDialog
++      <PromotionDialog
+         open={confirmOpen}
+         targetLabel={current?.label ?? ''}
+         claimText={claimText}
+         paper={{ title: selectedPaper?.title, pmid: selectedPaper?.pmid, doi: selectedPaper?.doi }}
+         passages={selectedPassages}
+         components={claimComponents}
+         direction={direction}
+         preview={preview}
+         busy={busy === 'attach'}
+         onConfirm={attach}
+diff --git a/frontend/src/pages/evidence-center/components/EvidenceDetailDrawer.tsx b/frontend/src/pages/evidence-center/components/EvidenceDetailDrawer.tsx
+new file mode 100644
+index 0000000..d369773
+--- /dev/null
++++ b/frontend/src/pages/evidence-center/components/EvidenceDetailDrawer.tsx
+@@ -0,0 +1,169 @@
++import { useState } from 'react'
++import type { PaperEvidenceItem } from '../../../api/endpoints'
++import { ConfirmDialog } from '../../../components/ConfirmDialog'
++import { COMPONENT_LABEL, DIRECTION_LABEL, LEVEL_LABEL } from './types'
++
++interface Props {
++  open: boolean
++  evidence: PaperEvidenceItem | null
++  onClose: () => void
++  onRollback: (reason: string) => void
++}
++
++const VERIFICATION_LABEL: Record<string, string> = {
++  verified: '已验证',
++  invalidated: '已失效',
++  pending: '待处理',
++  under_review: '复核中',
++}
++
++function fmtConfidence(v: number | null | undefined): string {
++  return v == null ? '—' : v.toFixed(2)
++}
++
++function fmtDate(v: string | null | undefined): string {
++  if (!v) return '—'
++  try {
++    return new Date(v).toLocaleString('zh-CN', { hour12: false })
++  } catch {
++    return v
++  }
++}
++
++/** 论文证据详情抽屉:claim snapshot / 论文 / coverage / reviewer 决策 / passages;有效证据可回滚 */
++export function EvidenceDetailDrawer({ open, evidence, onClose, onRollback }: Props) {
++  const [reason, setReason] = useState('')
++  const [confirmOpen, setConfirmOpen] = useState(false)
++  if (!open || !evidence) return null
++
++  const invalidated = Boolean(evidence.invalidated_at)
++  const coverage = evidence.coverage_summary_snapshot
++  const claimComponents = evidence.claim_components_snapshot ?? []
++  const passages = evidence.passages ?? []
++
++  return (
++    <div className="evidence-drawer-overlay" onClick={onClose}>
++      <aside
++        className="evidence-drawer"
++        role="dialog"
++        aria-label="证据详情"
++        data-testid="evidence-detail-drawer"
++        onClick={e => e.stopPropagation()}
++      >
++        <header className="evidence-drawer-head">
++          <h4 className="evidence-drawer-title">证据详情</h4>
++          <button type="button" className="evidence-drawer-close" aria-label="关闭" onClick={onClose}>×</button>
++        </header>
++        <div className="evidence-drawer-body evidence-detail-body">
++          <section className="evidence-detail-section">
++            <h5 className="evidence-detail-section-title">Claim 快照</h5>
++            <p className="evidence-detail-claim">{evidence.claim_text_snapshot ?? evidence.evidence_text ?? '—'}</p>
++            {claimComponents.length > 0 && (
++              <div className="evidence-detail-chips">
++                {claimComponents.map(c => (
++                  <span key={c.component_type} className="evidence-detail-chip">
++                    <b>{COMPONENT_LABEL[c.component_type] ?? c.component_type}</b>
++                    <span>{c.statement}</span>
++                  </span>
++                ))}
++              </div>
++            )}
++          </section>
++
++          <section className="evidence-detail-section">
++            <h5 className="evidence-detail-section-title">论文信息</h5>
++            <div className="evidence-detail-meta">
++              <div className="evidence-detail-meta-row"><span>标题</span><strong>{evidence.title ?? '—'}</strong></div>
++              <div className="evidence-detail-meta-row"><span>期刊</span><span>{evidence.journal ?? '—'}{evidence.year ? ` (${evidence.year})` : ''}</span></div>
++              <div className="evidence-detail-meta-row"><span>PMID / DOI</span><span>{evidence.pmid ?? '—'} / {evidence.doi ?? '—'}</span></div>
++              <div className="evidence-detail-meta-row"><span>晋升时间</span><span>{fmtDate(evidence.created_at)}</span></div>
++              <div className="evidence-detail-meta-row">
++                <span>验证状态</span>
++                <span className={invalidated ? 'ew-bad' : 'ew-ok'}>
++                  {VERIFICATION_LABEL[evidence.verification_status ?? ''] ?? evidence.verification_status ?? '—'}
++                  {invalidated ? `（${fmtDate(evidence.invalidated_at)}）` : ''}
++                </span>
++              </div>
++              {evidence.invalidation_reason && (
++                <div className="evidence-detail-meta-row"><span>失效原因</span><span>{evidence.invalidation_reason}</span></div>
++              )}
++            </div>
++          </section>
++
++          {coverage && (
++            <section className="evidence-detail-section">
++              <h5 className="evidence-detail-section-title">覆盖摘要</h5>
++              <div className="evidence-detail-meta">
++                <div className="evidence-detail-meta-row"><span>覆盖度</span><span>{Math.round(coverage.coverage_ratio * 100)}%</span></div>
++                <div className="evidence-detail-meta-row"><span>总方向</span><span>{DIRECTION_LABEL[coverage.overall_direction as keyof typeof DIRECTION_LABEL] ?? coverage.overall_direction}</span></div>
++                <div className="evidence-detail-meta-row"><span>支持组件</span><span>{coverage.supported_components.map(c => COMPONENT_LABEL[c] ?? c).join('、') || '—'}</span></div>
++                <div className="evidence-detail-meta-row"><span>未覆盖组件</span><span>{coverage.uncovered_components.map(c => COMPONENT_LABEL[c] ?? c).join('、') || '—'}</span></div>
++                <div className="evidence-detail-meta-row"><span>结论</span><span>{coverage.full_claim_supported ? '完整支持 Claim' : coverage.has_conflict ? '存在冲突' : '部分支持'}</span></div>
++              </div>
++            </section>
++          )}
++
++          <section className="evidence-detail-section">
++            <h5 className="evidence-detail-section-title">Reviewer 决策</h5>
++            <div className="evidence-detail-meta">
++              <div className="evidence-detail-meta-row"><span>人工方向</span><span>{DIRECTION_LABEL[evidence.direction as keyof typeof DIRECTION_LABEL] ?? evidence.direction ?? '—'}</span></div>
++              <div className="evidence-detail-meta-row"><span>证据等级</span><span>{LEVEL_LABEL[evidence.evidence_level as keyof typeof LEVEL_LABEL] ?? evidence.evidence_level ?? '—'}</span></div>
++              <div className="evidence-detail-meta-row"><span>模型方向</span><span>{DIRECTION_LABEL[evidence.model_direction as keyof typeof DIRECTION_LABEL] ?? evidence.model_direction ?? '—'}</span></div>
++              <div className="evidence-detail-meta-row"><span>人工备注</span><span>{evidence.reviewer_note ?? '—'}</span></div>
++              <div className="evidence-detail-meta-row">
++                <span>置信度调整</span>
++                <span>{evidence.confidence_adjustment_status ?? '—'}{evidence.suggested_confidence != null ? `（建议 ${fmtConfidence(evidence.suggested_confidence)}）` : ''}</span>
++              </div>
++            </div>
++          </section>
++
++          <section className="evidence-detail-section">
++            <h5 className="evidence-detail-section-title">证明片段（{passages.length}）</h5>
++            {passages.length === 0 && <p className="ew-meta">无片段详情</p>}
++            {passages.map(p => (
++              <div key={p.id} className="evidence-detail-passage">
++                <div className="evidence-detail-passage-meta">
++                  <span className={`ew-${p.direction === 'contradicts' ? 'bad' : 'ok'}`}>{DIRECTION_LABEL[p.direction as keyof typeof DIRECTION_LABEL] ?? p.direction}</span>
++                  <span className="ew-meta">{p.source_scope}{p.section_title ? ` · ${p.section_title}` : ''}{p.source_locator ? ` · ${p.source_locator}` : ''}</span>
++                  {!p.source_verified && <span className="ew-bad">未核验</span>}
++                </div>
++                <p className="ew-passage-en">{p.passage}</p>
++                {p.translation_zh && <p className="ew-passage-zh">{p.translation_zh}</p>}
++                {p.reason && <p className="ew-meta">理由：{p.reason}</p>}
++              </div>
++            ))}
++          </section>
++
++          <div className="evidence-detail-actions">
++            {!invalidated && (
++              <button type="button" className="btn btn-sm btn-danger" onClick={() => setConfirmOpen(true)}>回滚</button>
++            )}
++          </div>
++        </div>
++        <ConfirmDialog
++          open={confirmOpen}
++          title="回滚论文证据"
++          message="回滚后该证据将从知识对象移除，置信度将恢复。请填写回滚原因："
++          confirmLabel="确认回滚"
++          danger
++          onConfirm={() => {
++            const trimmed = reason.trim()
++            if (!trimmed) return
++            setConfirmOpen(false)
++            setReason('')
++            onRollback(trimmed)
++          }}
++          onCancel={() => setConfirmOpen(false)}
++        >
++          <textarea
++            className="filter-input"
++            value={reason}
++            onChange={e => setReason(e.target.value)}
++            placeholder="回滚原因（必填）"
++            rows={3}
++          />
++        </ConfirmDialog>
++      </aside>
++    </div>
++  )
++}
+diff --git a/frontend/src/pages/evidence-center/components/AttachDialog.tsx b/frontend/src/pages/evidence-center/components/PromotionDialog.tsx
+similarity index 94%
+rename from frontend/src/pages/evidence-center/components/AttachDialog.tsx
+rename to frontend/src/pages/evidence-center/components/PromotionDialog.tsx
+index 42268e5..3540555 100644
+--- a/frontend/src/pages/evidence-center/components/AttachDialog.tsx
++++ b/frontend/src/pages/evidence-center/components/PromotionDialog.tsx
+@@ -15,21 +15,21 @@ interface Props {
+   paper: PaperMeta
+   passages: WorkbenchPassage[]
+   components: ClaimComponent[]
+   direction: Direction
+   preview: AttachPreviewResponse | null
+   busy: boolean
+   onConfirm: () => void
+   onClose: () => void
+ }
+ 
+-export function AttachDialog({ open, targetLabel, claimText, paper, passages, components, direction, preview, busy, onConfirm, onClose }: Props) {
++export function PromotionDialog({ open, targetLabel, claimText, paper, passages, components, direction, preview, busy, onConfirm, onClose }: Props) {
+   if (!open) return null
+   return (
+     <div className="ontology-modal-overlay" onClick={onClose}>
+       <div className="ontology-modal" onClick={e => e.stopPropagation()} data-testid="ew-attach-dialog">
+         <div className="ontology-modal-header">
+           <span className="ontology-card-title">确认论文证据</span>
+           <button type="button" className="btn btn-xs" onClick={onClose}>关闭</button>
+         </div>
+         <div className="ontology-modal-body">
+           <div className="ontology-detail-row"><span>当前对象</span><strong>{targetLabel}</strong></div>
+@@ -45,18 +45,18 @@ export function AttachDialog({ open, targetLabel, claimText, paper, passages, co
+             {passages.map((p, i) => (
+               <p key={p.hash} className="ew-meta">
+                 {i + 1}. {p.direction === 'contradicts' ? '反驳' : '佐证'}：
+                 {(p.supported_components || []).map(c => COMPONENT_LABEL[c] ?? c).join('、') || '—'} — {p.passage.slice(0, 120)}{p.passage.length > 120 ? '…' : ''}
+               </p>
+             ))}
+           </details>
+           {preview && !preview.allow && preview.block_reasons.map((r, i) => <div key={i} className="ew-bad">{r}</div>)}
+           <p className="ew-meta">确认后将创建正式论文证据，并更新当前知识对象置信度。所有操作可在证据记录中追溯并可回滚。</p>
+           <div className="ontology-modal-actions">
+-            <button type="button" data-testid="ew-confirm-attach" className="btn btn-sm" disabled={!preview?.allow || busy} onClick={onConfirm}>确认入库</button>
++            <button type="button" data-testid="ew-confirm-attach" className="btn btn-sm" disabled={!preview?.allow || busy} onClick={onConfirm}>确认晋升</button>
+             <button type="button" className="btn btn-sm" onClick={onClose}>取消</button>
+           </div>
+         </div>
+       </div>
+     </div>
+   )
+ }
+diff --git a/frontend/src/pages/evidence-center/modules/EvidencePromotionModule.test.tsx b/frontend/src/pages/evidence-center/modules/EvidencePromotionModule.test.tsx
+new file mode 100644
+index 0000000..795b439
+--- /dev/null
++++ b/frontend/src/pages/evidence-center/modules/EvidencePromotionModule.test.tsx
+@@ -0,0 +1,303 @@
++import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
++import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
++import * as endpoints from '../../../api/endpoints'
++import type { PaperEvidenceItem } from '../../../api/endpoints'
++import { EvidenceCenterProvider } from '../EvidenceCenterContext'
++import type { EvidenceLevel, WorkbenchPassage } from '../components/types'
++import { EvidencePromotionModule } from './EvidencePromotionModule'
++
++vi.mock('../../../api/endpoints', () => ({
++  getEvidenceTarget: vi.fn(),
++  attachPaperEvidencePreview: vi.fn(),
++  attachPaperEvidence: vi.fn(),
++  listPaperEvidence: vi.fn(),
++  rollbackPaperEvidence: vi.fn(),
++}))
++
++const DRAFT_KEY = 'evidence-center.review-draft.r1-r2'
++const HASH = '#/evidence-center?module=promotion&task_id=t1&target_type=connection&target_id=r1-r2'
++
++const PASSAGE_VERIFIED: WorkbenchPassage = {
++  hash: 'h1',
++  paper_id: 'paper-1',
++  paper_passage_id: 'pp1',
++  source_scope: 'abstract',
++  section_title: null,
++  paragraph_index: 0,
++  paragraph_id: null,
++  passage: 'We observed that R1 projects to R2 in the macaque.',
++  translation_zh: null,
++  direction: 'supports',
++  evidence_level: 'direct',
++  reason: '直接支持',
++  confidence: 0.9,
++  semantic_confidence: 0.82,
++  source_locator: 'pmc:123:sec1',
++  source_verified: true,
++  source_verification_method: 'exact',
++  supported_components: ['relation'],
++}
++
++/** T8 人工审核写回的完整草稿(含人工决策值) */
++const DRAFT = {
++  passages: [PASSAGE_VERIFIED],
++  modelDirection: 'supports',
++  modelAssessment: '支持连接存在',
++  paperTitle: 'A Study of R1 to R2 Projection',
++  pmid: '12345678',
++  reviewerDirection: 'supports' as const,
++  reviewerEvidenceLevel: 'direct' as EvidenceLevel,
++  reviewerConfidence: '0.8',
++  note: '人工核对通过，允许晋升',
++}
++
++const DTO = {
++  target_type: 'connection',
++  target_id: 'r1-r2',
++  granularity: 'macro_clinical',
++  display_name: 'R1 → R2',
++  source_region: 'R1',
++  target_region: 'R2',
++  canonical_terms: [],
++  relation: 'projects_to',
++  directionality: '',
++  circuit_context: '',
++  function_context: '',
++  current_confidence: 0.7,
++  existing_evidence: 2,
++  structured_claim: {},
++  claim_text: 'R1 投射到 R2 且影响功能',
++  claim_components: [
++    { component_type: 'relation', statement: '存在投射关系', required: true, metadata: {} },
++    { component_type: 'source_region', statement: '源脑区为 R1', required: true, metadata: {} },
++  ],
++  claim_version: 'v1',
++}
++
++const PREVIEW = {
++  target_type: 'connection',
++  target_id: 'r1-r2',
++  current_confidence: 0.7,
++  direction: 'supports',
++  reviewer_confidence: 0.8,
++  final_confidence: 0.85,
++  cap: 0.85,
++  selected_passage_count: 1,
++  duplicate_passage_count: 0,
++  evidence_text_preview: '...',
++  allow: true,
++  block_reasons: [] as string[],
++}
++
++const EVIDENCE_ACTIVE: PaperEvidenceItem = {
++  evidence_id: 'ev-1',
++  evidence_text: 'R1 投射到 R2（直接支持）',
++  direction: 'supports',
++  evidence_level: 'direct',
++  model_direction: 'supports',
++  model_assessment: '支持连接存在',
++  reviewer_note: '支持正式入库',
++  claim_version: 'v1',
++  claim_text_snapshot: 'R1 投射到 R2 且影响功能',
++  claim_components_snapshot: [
++    { component_type: 'relation', statement: '存在投射关系', required: true, metadata: {} },
++  ],
++  coverage_summary_snapshot: {
++    required_components: ['relation'],
++    supported_components: ['relation'],
++    contradicted_components: [],
++    uncovered_components: [],
++    coverage_ratio: 1,
++    has_conflict: false,
++    full_claim_supported: true,
++    overall_direction: 'supports',
++  },
++  coverage_formula_version: 'v2',
++  verification_status: 'verified',
++  pmid: '12345678',
++  doi: null,
++  title: 'A Study of R1 to R2 Projection',
++  journal: 'Nature',
++  year: 2024,
++  created_at: '2026-08-01T00:00:00Z',
++  invalidated_at: null,
++  invalidation_reason: null,
++  passage_count: 1,
++  links: { pubmed: 'https://pubmed.ncbi.nlm.nih.gov/12345678/', doi: null },
++  passages: [{
++    id: 'p1',
++    source_scope: 'abstract',
++    section_title: null,
++    paragraph_index: 0,
++    passage: 'We observed that R1 projects to R2 in the macaque.',
++    translation_zh: null,
++    direction: 'supports',
++    reason: '直接支持',
++    confidence: 0.9,
++    source_locator: 'pmc:123:sec1',
++    source_verified: true,
++    source_verification_method: 'exact',
++    supported_components: ['relation'],
++    is_selected: true,
++  }],
++}
++
++const EVIDENCE_INVALIDATED: PaperEvidenceItem = {
++  ...EVIDENCE_ACTIVE,
++  evidence_id: 'ev-2',
++  verification_status: 'invalidated',
++  invalidated_at: '2026-08-02T00:00:00Z',
++  invalidation_reason: '人工撤销',
++}
++
++function renderModule(hash = HASH) {
++  window.location.hash = hash
++  return render(
++    <EvidenceCenterProvider>
++      <EvidencePromotionModule />
++    </EvidenceCenterProvider>,
++  )
++}
++
++describe('EvidencePromotionModule', () => {
++  afterEach(() => {
++    cleanup()
++    window.location.hash = ''
++    sessionStorage.clear()
++  })
++
++  beforeEach(() => {
++    vi.clearAllMocks()
++    sessionStorage.setItem(DRAFT_KEY, JSON.stringify(DRAFT))
++    vi.mocked(endpoints.getEvidenceTarget).mockResolvedValue(DTO)
++    vi.mocked(endpoints.attachPaperEvidencePreview).mockResolvedValue(PREVIEW)
++    vi.mocked(endpoints.attachPaperEvidence).mockResolvedValue({
++      evidence_id: 'ev-new',
++      target_type: 'connection',
++      target_id: 'r1-r2',
++      confidence: 0.8,
++      final_confidence: 0.85,
++      verification_status: 'verified',
++      confidence_adjustment_status: 'adjusted',
++      passage_count: 1,
++      paper: { links: { pubmed: null, doi: null } },
++    })
++    vi.mocked(endpoints.listPaperEvidence).mockResolvedValue({ items: [EVIDENCE_ACTIVE, EVIDENCE_INVALIDATED] })
++    vi.mocked(endpoints.rollbackPaperEvidence).mockResolvedValue({
++      evidence_id: 'ev-1',
++      status: 'invalidated',
++      changed: true,
++      confidence: 0.7,
++    })
++  })
++
++  it('待晋升:从 draft 渲染 Claim/论文/Reviewer 决策/当前与预计 confidence(预览)', async () => {
++    renderModule()
++    await waitFor(() => expect(screen.getByText('待晋升')).toBeTruthy())
++    // Claim
++    expect(screen.getByText('R1 投射到 R2 且影响功能')).toBeTruthy()
++    // 论文(待晋升卡片 + 已晋升列表行可能同名,取首个匹配即可)
++    expect(screen.getAllByText('A Study of R1 to R2 Projection').length).toBeGreaterThan(0)
++    // Reviewer 决策(人工方向/等级/置信度/备注)
++    expect(screen.getByText('人工核对通过，允许晋升')).toBeTruthy()
++    expect(screen.getByText(/直接证据/)).toBeTruthy()
++    // 当前 confidence(ClaimPanel 数据源 getEvidenceTarget)
++    expect(screen.getByText(/当前置信度 0\.7/)).toBeTruthy()
++    // 预计后 confidence(attachPaperEvidencePreview)
++    expect(endpoints.attachPaperEvidencePreview).toHaveBeenCalledWith(expect.objectContaining({
++      target_type: 'connection',
++      target_id: 'r1-r2',
++      pmid: '12345678',
++      direction: 'supports',
++      reviewer_confidence: 0.8,
++      passages: expect.arrayContaining([expect.objectContaining({
++        source_verified: true,
++        passage: PASSAGE_VERIFIED.passage,
++      })]),
++    }), expect.anything())
++    await waitFor(() => expect(screen.getByText(/预计晋升后置信度 0\.85/)).toBeTruthy())
++  })
++
++  it('「确认晋升」→ PromotionDialog(文案为 确认晋升)→ attachPaperEvidence body 断言', async () => {
++    renderModule()
++    await waitFor(() => expect(endpoints.attachPaperEvidencePreview).toHaveBeenCalled())
++    fireEvent.click(screen.getAllByRole('button', { name: '确认晋升' })[0])
++    expect(screen.getByTestId('ew-attach-dialog')).toBeTruthy()
++    const confirmBtn = screen.getByTestId('ew-confirm-attach') as HTMLButtonElement
++    expect(confirmBtn.textContent).toContain('确认晋升')
++    expect(confirmBtn.textContent).not.toContain('确认入库')
++    await waitFor(() => expect(confirmBtn.disabled).toBe(false))
++    fireEvent.click(confirmBtn)
++    await waitFor(() =>
++      expect(endpoints.attachPaperEvidence).toHaveBeenCalledWith(expect.objectContaining({
++        target_type: 'connection',
++        target_id: 'r1-r2',
++        pmid: '12345678',
++        direction: 'supports',
++        evidence_level: 'direct',
++        model_direction: 'supports',
++        model_assessment: '支持连接存在',
++        reviewer_note: '人工核对通过，允许晋升',
++        reviewer_confidence: 0.8,
++        passages: expect.arrayContaining([expect.objectContaining({
++          source_verified: true,
++          passage: PASSAGE_VERIFIED.passage,
++          supported_components: ['relation'],
++        })]),
++      })),
++    )
++  })
++
++  it('晋升成功:清 draft + listPaperEvidence 重新加载(已晋升列表刷新)', async () => {
++    renderModule()
++    await waitFor(() => expect(endpoints.attachPaperEvidencePreview).toHaveBeenCalled())
++    fireEvent.click(screen.getAllByRole('button', { name: '确认晋升' })[0])
++    const confirmBtn = screen.getByTestId('ew-confirm-attach') as HTMLButtonElement
++    await waitFor(() => expect(confirmBtn.disabled).toBe(false))
++    fireEvent.click(confirmBtn)
++    await waitFor(() => expect(endpoints.attachPaperEvidence).toHaveBeenCalled())
++    await waitFor(() => expect(endpoints.listPaperEvidence).toHaveBeenCalledTimes(2))
++    expect(sessionStorage.getItem(DRAFT_KEY)).toBeNull()
++    // 待晋升组消失(草稿已清)
++    expect(screen.queryByText('人工核对通过，允许晋升')).toBeNull()
++  })
++
++  it('已晋升:点击记录打开 EvidenceDetailDrawer;「回滚」→ ConfirmDialog 输入原因 → rollbackPaperEvidence', async () => {
++    renderModule()
++    await waitFor(() => expect(screen.getByText('已晋升')).toBeTruthy())
++    fireEvent.click(screen.getAllByTestId('promotion-evidence-row')[0])
++    await waitFor(() => expect(screen.getByTestId('evidence-detail-drawer')).toBeTruthy())
++    // drawer 展示 reviewer 决策/备注/claim snapshot
++    expect(screen.getByText('支持正式入库')).toBeTruthy()
++    expect(screen.getAllByText(/直接证据/).length).toBeGreaterThan(0)
++    // 回滚流程:原因输入 + 确认
++    fireEvent.click(screen.getByRole('button', { name: '回滚' }))
++    const ta = screen.getByPlaceholderText(/回滚原因/) as HTMLTextAreaElement
++    fireEvent.change(ta, { target: { value: '证据不充分' } })
++    fireEvent.click(screen.getByRole('button', { name: '确认回滚' }))
++    await waitFor(() =>
++      expect(endpoints.rollbackPaperEvidence).toHaveBeenCalledWith('ev-1', '证据不充分'),
++    )
++  })
++
++  it('已失效:渲染 invalidated 记录,详情抽屉只读(无回滚按钮)', async () => {
++    renderModule()
++    await waitFor(() => expect(screen.getByText('已失效')).toBeTruthy())
++    // 行内失效原因与日期同文本节点,用正则匹配
++    expect(screen.getAllByText(/人工撤销/).length).toBeGreaterThan(0)
++    fireEvent.click(screen.getAllByTestId('promotion-invalidated-row')[0])
++    await waitFor(() => expect(screen.getByTestId('evidence-detail-drawer')).toBeTruthy())
++    expect(screen.queryByRole('button', { name: '回滚' })).toBeNull()
++    // 抽屉 meta 区单独展示失效原因
++    expect(screen.getAllByText(/人工撤销/).length).toBeGreaterThan(0)
++  })
++
++  it('禁止项:无搜索控件 / 无 Europe PMC', async () => {
++    renderModule()
++    await waitFor(() => expect(screen.getByText('待晋升')).toBeTruthy())
++    expect(screen.queryByPlaceholderText(/检索/)).toBeNull()
++    expect(screen.queryByPlaceholderText(/关键词/)).toBeNull()
++    expect(screen.queryByText(/Europe PMC/)).toBeNull()
++    expect(screen.queryByText('确认入库')).toBeNull()
++  })
++})
+diff --git a/frontend/src/pages/evidence-center/modules/EvidencePromotionModule.tsx b/frontend/src/pages/evidence-center/modules/EvidencePromotionModule.tsx
+new file mode 100644
+index 0000000..cc5827f
+--- /dev/null
++++ b/frontend/src/pages/evidence-center/modules/EvidencePromotionModule.tsx
+@@ -0,0 +1,386 @@
++import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
++import {
++  attachPaperEvidence,
++  attachPaperEvidencePreview,
++  getEvidenceTarget,
++  listPaperEvidence,
++  rollbackPaperEvidence,
++  type AttachPreviewResponse,
++  type EvidenceTargetDto,
++  type PaperEvidenceItem,
++} from '../../../api/endpoints'
++import { useEvidenceCenter } from '../EvidenceCenterContext'
++import { ClaimPanel } from '../components/ClaimPanel'
++import { EvidenceDetailDrawer } from '../components/EvidenceDetailDrawer'
++import { PromotionDialog } from '../components/PromotionDialog'
++import type { Direction, EvidenceLevel, WorkbenchPassage } from '../components/types'
++import { DIRECTION_LABEL, LEVEL_LABEL } from '../components/types'
++
++const DRAFT_PREFIX = 'evidence-center.review-draft.'
++
++/** T8 人工审核模块写回的完整草稿(含人工决策值) */
++interface ReviewDraft {
++  passages: WorkbenchPassage[]
++  modelDirection: Direction | null
++  modelAssessment: string | null
++  paperTitle: string
++  pmid: string
++  doi?: string | null
++  translations?: Record<string, string>
++  reviewerDirection?: Direction
++  reviewerEvidenceLevel?: EvidenceLevel
++  reviewerConfidence?: string
++  note?: string
++}
++
++function fmtDate(v: string | null | undefined): string {
++  if (!v) return '—'
++  try {
++    return new Date(v).toLocaleString('zh-CN', { hour12: false })
++  } catch {
++    return v
++  }
++}
++
++/** 证据晋升模块:唯一 attach 入口。待晋升(审核草稿)/已晋升/已失效(按 invalidated_at 分组) */
++export function EvidencePromotionModule() {
++  const { state, queue, setQueue } = useEvidenceCenter()
++  const [dto, setDto] = useState<EvidenceTargetDto | null>(null)
++  const [draft, setDraft] = useState<ReviewDraft | null>(null)
++  const [items, setItems] = useState<PaperEvidenceItem[]>([])
++  const [preview, setPreview] = useState<AttachPreviewResponse | null>(null)
++  const [previewBusy, setPreviewBusy] = useState(false)
++  const [confirmOpen, setConfirmOpen] = useState(false)
++  const [attachBusy, setAttachBusy] = useState(false)
++  const [detailEvidence, setDetailEvidence] = useState<PaperEvidenceItem | null>(null)
++  const [rollbackBusy, setRollbackBusy] = useState(false)
++  const [message, setMessage] = useState<string | null>(null)
++  const abortRef = useRef<AbortController | null>(null)
++
++  const targetType = state.targetType
++  const targetId = state.targetId
++
++  // ─── 待晋升草稿恢复(有 reviewerDirection 且含已核验片段) ───
++  useEffect(() => {
++    setDraft(null)
++    setPreview(null)
++    setDetailEvidence(null)
++    setMessage(null)
++    if (!targetId) return
++    const raw = sessionStorage.getItem(`${DRAFT_PREFIX}${targetId}`)
++    if (!raw) return
++    try {
++      const d = JSON.parse(raw) as Partial<ReviewDraft>
++      const hasDirection = Boolean(d.reviewerDirection)
++      const hasVerifiedPassages = Array.isArray(d.passages) && d.passages.some(p => p.source_verified)
++      if (hasDirection && hasVerifiedPassages) {
++        setDraft(d as ReviewDraft)
++      }
++    } catch {
++      // 草稿损坏时忽略,保持空态
++    }
++  }, [targetId])
++
++  // ─── Claim 数据 + 已晋升/已失效列表 ───
++  const loadList = useCallback(async () => {
++    if (!targetType || !targetId) {
++      setItems([])
++      return
++    }
++    try {
++      const r = await listPaperEvidence({ target_type: targetType, target_id: targetId, limit: 50 })
++      setItems(r.items)
++    } catch {
++      setItems([])
++    }
++  }, [targetType, targetId])
++
++  useEffect(() => {
++    if (!targetType || !targetId) {
++      setDto(null)
++      setItems([])
++      return
++    }
++    let cancelled = false
++    setDto(null)
++    getEvidenceTarget(targetType, targetId)
++      .then(d => { if (!cancelled) setDto(d) })
++      .catch(() => { if (!cancelled) setDto(null) })
++    void loadList()
++    return () => { cancelled = true }
++  }, [targetType, targetId, loadList])
++
++  const selectedPassages = useMemo(
++    () => (draft?.passages ?? []).filter(p => p.source_verified),
++    [draft],
++  )
++
++  // ─── 预计后置信度预览(草稿就绪后自动计算) ───
++  const runPreview = useCallback(async () => {
++    if (!targetType || !targetId || !draft?.pmid) return
++    if (selectedPassages.length === 0) {
++      setPreview(null)
++      return
++    }
++    setPreviewBusy(true)
++    abortRef.current?.abort()
++    abortRef.current = new AbortController()
++    try {
++      const r = await attachPaperEvidencePreview({
++        target_type: targetType,
++        target_id: targetId,
++        pmid: draft.pmid,
++        direction: draft.reviewerDirection ?? 'supports',
++        reviewer_confidence: parseFloat(draft.reviewerConfidence ?? '0.8') || 0,
++        passages: selectedPassages.map(p => ({
++          source_scope: p.source_scope,
++          paragraph_index: p.paragraph_index,
++          passage: p.passage,
++          direction: p.direction,
++          reason: p.reason,
++          confidence: p.confidence,
++          source_locator: p.source_locator,
++          source_verified: true,
++          supported_components: p.supported_components,
++        })),
++      }, abortRef.current.signal)
++      setPreview(r)
++    } catch (err) {
++      // 被新一轮预览 abort 的旧请求不算失败
++      if ((err as Error)?.name !== 'AbortError') {
++        setMessage(`置信度预览失败：${err instanceof Error ? err.message : String(err)}`)
++      }
++      setPreview(null)
++    } finally {
++      setPreviewBusy(false)
++    }
++  }, [targetType, targetId, draft, selectedPassages])
++
++  useEffect(() => { void runPreview() }, [runPreview])
++
++  // ─── 晋升:PromotionDialog 确认 → attach → 清 draft + 刷新列表 + 更新 queue ───
++  const handlePromote = useCallback(async () => {
++    if (!targetType || !targetId || !draft) return
++    setAttachBusy(true)
++    setMessage(null)
++    try {
++      await attachPaperEvidence({
++        target_type: targetType,
++        target_id: targetId,
++        pmid: draft.pmid,
++        direction: draft.reviewerDirection ?? 'supports',
++        evidence_level: draft.reviewerEvidenceLevel ?? 'indirect',
++        model_direction: draft.modelDirection ?? null,
++        model_assessment: draft.modelAssessment ?? null,
++        reviewer_note: draft.note ?? null,
++        reviewer_confidence: parseFloat(draft.reviewerConfidence ?? '0.8') || 0,
++        passages: selectedPassages.map(p => ({
++          source_scope: p.source_scope,
++          paragraph_index: p.paragraph_index,
++          passage: p.passage,
++          direction: p.direction,
++          reason: p.reason,
++          confidence: p.confidence,
++          source_locator: p.source_locator,
++          source_verified: true,
++          supported_components: p.supported_components,
++        })),
++      })
++      sessionStorage.removeItem(`${DRAFT_PREFIX}${targetId}`)
++      setDraft(null)
++      setPreview(null)
++      setConfirmOpen(false)
++      setMessage('证据已晋升并应用到知识对象')
++      setQueue(queue.map(q =>
++        q.target_type === targetType && q.target_id === targetId ? { ...q, status: 'completed' } : q,
++      ))
++      await loadList()
++    } catch (err) {
++      setMessage(`晋升失败：${err instanceof Error ? err.message : String(err)}`)
++    } finally {
++      setAttachBusy(false)
++    }
++  }, [targetType, targetId, draft, selectedPassages, queue, setQueue, loadList])
++
++  // ─── 回滚:抽屉内 ConfirmDialog 输入原因 → rollback → 刷新列表 ───
++  const handleRollback = useCallback(async (reason: string) => {
++    const ev = detailEvidence
++    if (!ev) return
++    setRollbackBusy(true)
++    setMessage(null)
++    try {
++      await rollbackPaperEvidence(ev.evidence_id, reason)
++      setDetailEvidence(null)
++      setMessage('证据已回滚')
++      await loadList()
++    } catch (err) {
++      setMessage(`回滚失败：${err instanceof Error ? err.message : String(err)}`)
++    } finally {
++      setRollbackBusy(false)
++    }
++  }, [detailEvidence, loadList])
++
++  const queueEntry = queue.find(q => q.target_type === targetType && q.target_id === targetId)
++  const currentConfidence = dto?.current_confidence ?? queueEntry?.confidence ?? null
++
++  const promoted = useMemo(() => items.filter(i => !i.invalidated_at), [items])
++  const invalidated = useMemo(() => items.filter(i => i.invalidated_at), [items])
++
++  if (!targetType || !targetId) {
++    return (
++      <div className="evidence-promotion">
++        <div className="evidence-promotion-empty">
++          请先从「佐证任务」或「证据候选」进入一个目标对象。
++        </div>
++      </div>
++    )
++  }
++
++  return (
++    <div className="evidence-promotion" data-testid="evidence-promotion">
++      {message && <div className="ontology-page-message">{message}</div>}
++
++      {draft && selectedPassages.length > 0 && (
++        <section className="evidence-promotion-group" data-testid="promotion-pending-group">
++          <div className="evidence-promotion-group-head">
++            <span className="evidence-promotion-group-title">待晋升</span>
++            <span className="evidence-promotion-group-count">1</span>
++            <span className="ew-meta">来自人工审核草稿（已确认方向）</span>
++          </div>
++          <div className="evidence-promotion-card">
++            <ClaimPanel
++              claimText={dto?.claim_text ?? ''}
++              components={dto?.claim_components ?? []}
++              confidence={dto?.current_confidence ?? null}
++              evidenceCount={dto?.existing_evidence ?? 0}
++              targetType={targetType}
++              granularity={dto?.granularity ?? ''}
++            />
++            <div className="evidence-promotion-paper">
++              <h4>论文</h4>
++              <strong>{draft.paperTitle || '—'}</strong>
++              <span className="ew-meta">PMID {draft.pmid || '—'}{draft.doi ? ` · DOI ${draft.doi}` : ''}</span>
++              {draft.modelAssessment && <p className="ew-meta">模型评估：{draft.modelAssessment}</p>}
++            </div>
++            <div className="evidence-promotion-decision">
++              <h4>Reviewer 决策</h4>
++              <div className="evidence-promotion-decision-rows">
++                <div className="evidence-promotion-decision-row">
++                  <span>人工方向</span>
++                  <strong>{DIRECTION_LABEL[draft.reviewerDirection ?? 'supports']}</strong>
++                  {draft.modelDirection && <em>AI 推荐：{DIRECTION_LABEL[draft.modelDirection]}</em>}
++                </div>
++                <div className="evidence-promotion-decision-row">
++                  <span>证据等级</span>
++                  <strong>{LEVEL_LABEL[draft.reviewerEvidenceLevel ?? 'indirect']}</strong>
++                </div>
++                <div className="evidence-promotion-decision-row">
++                  <span>Reviewer 置信度</span>
++                  <strong>{draft.reviewerConfidence ?? '—'}</strong>
++                </div>
++                <div className="evidence-promotion-decision-row">
++                  <span>人工备注</span>
++                  <span>{draft.note || '—'}</span>
++                </div>
++                <div className="evidence-promotion-decision-row">
++                  <span>所选片段</span>
++                  <span>{selectedPassages.length} 段（均已核验原文）</span>
++                </div>
++                <div className="evidence-promotion-decision-row" data-testid="promotion-confidence">
++                  <span>预计后置信度</span>
++                  <strong>{previewBusy ? '计算中…' : `当前 ${currentConfidence ?? '—'} → 预计晋升后置信度 ${preview?.final_confidence ?? '—'}`}</strong>
++                </div>
++              </div>
++            </div>
++            <div className="evidence-promotion-actions">
++              <button
++                type="button"
++                className="btn btn-sm btn-primary"
++                data-testid="promotion-open-dialog"
++                onClick={() => setConfirmOpen(true)}
++              >
++                确认晋升
++              </button>
++            </div>
++          </div>
++        </section>
++      )}
++
++      <section className="evidence-promotion-group" data-testid="promotion-promoted-group">
++        <div className="evidence-promotion-group-head">
++          <span className="evidence-promotion-group-title">已晋升</span>
++          <span className="evidence-promotion-group-count">{promoted.length}</span>
++        </div>
++        {promoted.length === 0 && (
++          <div className="evidence-promotion-empty">暂无已晋升的论文证据</div>
++        )}
++        {promoted.map(ev => (
++          <div
++            key={ev.evidence_id}
++            className="evidence-promotion-row"
++            data-testid="promotion-evidence-row"
++            onClick={() => setDetailEvidence(ev)}
++          >
++            <div className="evidence-promotion-row-main">
++              <strong>{ev.title ?? ev.evidence_text}</strong>
++              <span className="ew-meta">
++                {DIRECTION_LABEL[ev.direction as keyof typeof DIRECTION_LABEL] ?? ev.direction ?? '—'} · PMID {ev.pmid ?? '—'} · {fmtDate(ev.created_at)}
++              </span>
++            </div>
++            <span className="ew-ok">已晋升</span>
++          </div>
++        ))}
++      </section>
++
++      <section className="evidence-promotion-group" data-testid="promotion-invalidated-group">
++        <div className="evidence-promotion-group-head">
++          <span className="evidence-promotion-group-title">已失效</span>
++          <span className="evidence-promotion-group-count">{invalidated.length}</span>
++        </div>
++        {invalidated.length === 0 && (
++          <div className="evidence-promotion-empty">暂无已失效的论文证据</div>
++        )}
++        {invalidated.map(ev => (
++          <div
++            key={ev.evidence_id}
++            className="evidence-promotion-row evidence-promotion-row-invalidated"
++            data-testid="promotion-invalidated-row"
++            onClick={() => setDetailEvidence(ev)}
++          >
++            <div className="evidence-promotion-row-main">
++              <strong>{ev.title ?? ev.evidence_text}</strong>
++              <span className="ew-meta">
++                {ev.invalidation_reason ?? '—'} · {fmtDate(ev.invalidated_at)}
++              </span>
++            </div>
++            <span className="ew-bad">已失效</span>
++          </div>
++        ))}
++      </section>
++
++      {draft && (
++        <PromotionDialog
++          open={confirmOpen}
++          targetLabel={queueEntry?.label ?? targetId}
++          claimText={dto?.claim_text ?? ''}
++          paper={{ title: draft.paperTitle, pmid: draft.pmid, doi: draft.doi ?? null }}
++          passages={selectedPassages}
++          components={dto?.claim_components ?? []}
++          direction={draft.reviewerDirection ?? 'supports'}
++          preview={preview}
++          busy={attachBusy}
++          onConfirm={() => void handlePromote()}
++          onClose={() => setConfirmOpen(false)}
++        />
++      )}
++
++      <EvidenceDetailDrawer
++        open={detailEvidence !== null}
++        evidence={detailEvidence}
++        onClose={() => setDetailEvidence(null)}
++        onRollback={reason => void handleRollback(reason)}
++      />
++      {rollbackBusy && <div className="ew-busy">回滚中…</div>}
++    </div>
++  )
++}
+diff --git a/frontend/src/styles.css b/frontend/src/styles.css
+index b44a7de..a85cc85 100644
+--- a/frontend/src/styles.css
++++ b/frontend/src/styles.css
+@@ -11792,10 +11792,181 @@ input[type="range"]::-webkit-slider-thumb {
+   padding: 4px 10px;
+   border: 1px solid var(--border);
+   border-radius: 14px;
+   font-size: 12px;
+   cursor: pointer;
+   background: var(--white);
+   color: var(--text);
+ }
+ .ew-dir-chip:hover { border-color: var(--primary); background: #f8fafc; }
+ .ew-dir-chip-active { background: #eff6ff; border-color: var(--primary); color: var(--primary); font-weight: 600; }
++
++/* ── 证据晋升模块(EvidencePromotionModule) ───────────────────────────────── */
++.evidence-promotion { display: flex; flex-direction: column; gap: 16px; }
++.evidence-promotion-group {
++  background: var(--white);
++  border: 1px solid var(--border);
++  border-radius: var(--card-radius);
++  box-shadow: var(--shadow);
++  padding: 12px 14px;
++  display: flex;
++  flex-direction: column;
++  gap: 10px;
++}
++.evidence-promotion-group-head { display: flex; align-items: center; gap: 8px; }
++.evidence-promotion-group-title { font-size: 14px; font-weight: 600; color: var(--text); }
++.evidence-promotion-group-title::before {
++  content: '';
++  display: inline-block;
++  width: 4px;
++  height: 14px;
++  border-radius: 2px;
++  background: var(--primary);
++  margin-right: 8px;
++  vertical-align: -2px;
++}
++.evidence-promotion-group-count {
++  background: #eff6ff;
++  color: var(--primary);
++  border-radius: 999px;
++  padding: 1px 8px;
++  font-size: 11px;
++  font-weight: 600;
++}
++.evidence-promotion-card {
++  border: 1px solid var(--border);
++  border-radius: 10px;
++  padding: 12px;
++  display: flex;
++  flex-direction: column;
++  gap: 10px;
++  background: #fafcff;
++}
++.evidence-promotion-paper {
++  border: 1px solid var(--border);
++  border-radius: 10px;
++  padding: 10px 12px;
++  display: flex;
++  flex-direction: column;
++  gap: 4px;
++  background: var(--white);
++}
++.evidence-promotion-paper h4 { margin: 0 0 2px; font-size: 13px; }
++.evidence-promotion-paper strong { font-size: 13px; color: var(--text); }
++.evidence-promotion-decision {
++  border: 1px solid var(--border);
++  border-radius: 10px;
++  padding: 10px 12px;
++  background: var(--white);
++  display: flex;
++  flex-direction: column;
++  gap: 8px;
++}
++.evidence-promotion-decision h4 { margin: 0; font-size: 13px; }
++.evidence-promotion-decision-rows { display: flex; flex-direction: column; gap: 6px; }
++.evidence-promotion-decision-row {
++  display: flex;
++  align-items: baseline;
++  gap: 10px;
++  font-size: 12px;
++}
++.evidence-promotion-decision-row > span { color: var(--text-muted); flex-shrink: 0; min-width: 88px; }
++.evidence-promotion-decision-row > strong { color: var(--text); font-weight: 600; }
++.evidence-promotion-decision-row > em {
++  font-style: normal;
++  font-size: 11px;
++  color: var(--text-muted);
++  background: #f1f5f9;
++  border: 1px dashed var(--border);
++  border-radius: 10px;
++  padding: 0 8px;
++}
++.evidence-promotion-actions { display: flex; gap: 8px; justify-content: flex-end; }
++.evidence-promotion-row {
++  display: flex;
++  align-items: center;
++  justify-content: space-between;
++  gap: 12px;
++  border: 1px solid var(--border);
++  border-radius: 10px;
++  padding: 10px 12px;
++  cursor: pointer;
++  background: var(--white);
++  transition: border-color .15s ease, box-shadow .15s ease;
++}
++.evidence-promotion-row:hover { border-color: var(--primary); box-shadow: var(--shadow); }
++.evidence-promotion-row-invalidated { background: #fbfbfb; opacity: .85; }
++.evidence-promotion-row-invalidated:hover { opacity: 1; }
++.evidence-promotion-row-main { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
++.evidence-promotion-row-main strong {
++  font-size: 13px;
++  color: var(--text);
++  white-space: nowrap;
++  overflow: hidden;
++  text-overflow: ellipsis;
++}
++.evidence-promotion-empty {
++  padding: 20px 12px;
++  text-align: center;
++  color: var(--text-muted);
++  font-size: 13px;
++  background: var(--white);
++  border: 1px dashed var(--border);
++  border-radius: var(--card-radius);
++}
++
++/* ── 证据详情抽屉(EvidenceDetailDrawer) ─────────────────────────────────── */
++.evidence-detail-body { gap: 14px; }
++.evidence-detail-section {
++  border: 1px solid var(--border);
++  border-radius: 10px;
++  padding: 10px 12px;
++  background: var(--white);
++  display: flex;
++  flex-direction: column;
++  gap: 8px;
++}
++.evidence-detail-section-title {
++  font-size: 13px;
++  font-weight: 600;
++  color: var(--text);
++  margin: 0;
++}
++.evidence-detail-section-title::before {
++  content: '';
++  display: inline-block;
++  width: 4px;
++  height: 13px;
++  border-radius: 2px;
++  background: var(--primary);
++  margin-right: 8px;
++  vertical-align: -2px;
++}
++.evidence-detail-claim { font-size: 14px; font-weight: 600; color: var(--text); line-height: 1.6; margin: 0; }
++.evidence-detail-chips { display: flex; flex-wrap: wrap; gap: 6px; }
++.evidence-detail-chip {
++  display: inline-flex;
++  align-items: baseline;
++  gap: 6px;
++  font-size: 12px;
++  background: #eff6ff;
++  border: 1px solid #bfdbfe;
++  border-radius: 10px;
++  padding: 3px 10px;
++}
++.evidence-detail-chip b { color: var(--primary); }
++.evidence-detail-meta { display: flex; flex-direction: column; gap: 6px; }
++.evidence-detail-meta-row { display: flex; gap: 10px; font-size: 12px; min-width: 0; }
++.evidence-detail-meta-row > span:first-child { color: var(--text-muted); flex-shrink: 0; min-width: 96px; }
++.evidence-detail-meta-row > span:last-child { color: var(--text); overflow-wrap: anywhere; }
++.evidence-detail-meta-row > strong { color: var(--text); overflow-wrap: anywhere; }
++.evidence-detail-passage {
++  border: 1px solid var(--border);
++  border-radius: 8px;
++  padding: 8px 10px;
++  display: flex;
++  flex-direction: column;
++  gap: 4px;
++  background: #fafcff;
++}
++.evidence-detail-passage-meta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
++.evidence-detail-actions { display: flex; gap: 8px; justify-content: flex-end; }

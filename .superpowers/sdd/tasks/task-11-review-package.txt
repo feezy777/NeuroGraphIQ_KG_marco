@@ -1,0 +1,101 @@
+1c48f87 refactor(evidence-center): 清理旧 evidence-workbench 目录
+===STAT===
+ .../evidence-center/components/ReviewerPanel.tsx   | 90 ----------------------
+ 1 file changed, 90 deletions(-)
+===DIFF===
+diff --git a/frontend/src/pages/evidence-center/components/ReviewerPanel.tsx b/frontend/src/pages/evidence-center/components/ReviewerPanel.tsx
+deleted file mode 100644
+index 071ba4f..0000000
+--- a/frontend/src/pages/evidence-center/components/ReviewerPanel.tsx
++++ /dev/null
+@@ -1,90 +0,0 @@
+-import type { AttachPreviewResponse } from '../../../api/endpoints'
+-import type { Direction, EvidenceLevel } from './types'
+-import { DIRECTION_LABEL, LEVEL_HINT, LEVEL_LABEL } from './types'
+-
+-interface Props {
+-  direction: Direction
+-  modelDirection: Direction | null
+-  onDirectionChange: (d: Direction) => void
+-  evidenceLevel: EvidenceLevel
+-  onEvidenceLevelChange: (l: EvidenceLevel) => void
+-  confidence: string
+-  onConfidenceChange: (v: string) => void
+-  note: string
+-  onNoteChange: (v: string) => void
+-  selectedCount: number
+-  preview: AttachPreviewResponse | null
+-  previewBusy: boolean
+-}
+-
+-function ConfidenceRuleText({ direction, preview }: { direction: Direction; preview: AttachPreviewResponse | null }) {
+-  if (direction === 'not_found') {
+-    return <div className="ew-bad">不能作为正式论文佐证入库</div>
+-  }
+-  if (direction === 'contradicts' || direction === 'mixed') {
+-    return <div className="ew-bad">不会自动修改当前置信度，将进入验证中心待复核</div>
+-  }
+-  if (!preview) return null
+-  return (
+-    <div className="ew-preview">
+-      <h4>置信度预览</h4>
+-      <div className="ew-preview-flow">{preview.current_confidence ?? '—'} → {preview.final_confidence ?? '—'}（上限 {preview.cap ?? '—'}）</div>
+-      <div className="ew-meta">
+-        {direction === 'supports' && '公式：min(0.85, max(当前, 人工推荐))'}
+-        {direction === 'partial' && '公式：min(0.75, max(当前, 人工推荐))'}
+-      </div>
+-      <div className="ew-meta">已选片段 {preview.selected_passage_count} · 重复 {preview.duplicate_passage_count}</div>
+-      {preview.block_reasons.map((r, i) => <div key={i} className="ew-bad">{r}</div>)}
+-    </div>
+-  )
+-}
+-
+-export function ReviewerPanel({
+-  direction,
+-  modelDirection,
+-  onDirectionChange,
+-  evidenceLevel,
+-  onEvidenceLevelChange,
+-  confidence,
+-  onConfidenceChange,
+-  note,
+-  onNoteChange,
+-  selectedCount,
+-  preview,
+-  previewBusy,
+-}: Props) {
+-  return (
+-    <div className="ew-right-inner" data-testid="ew-reviewer-panel">
+-      <h4>人工审核</h4>
+-      <div className="ew-field">
+-        <label>人工方向（模型：{modelDirection ? DIRECTION_LABEL[modelDirection] : '—'}）</label>
+-        {(['supports', 'partial', 'contradicts', 'mixed', 'not_found'] as const).map(d => (
+-          <label key={d} className="ew-radio"><input type="radio" name="dir" checked={direction === d} onChange={() => onDirectionChange(d)} /> {DIRECTION_LABEL[d]}</label>
+-        ))}
+-      </div>
+-      <div className="ew-field">
+-        <label>整篇证据等级</label>
+-        <select className="filter-select" value={evidenceLevel} title={LEVEL_HINT[evidenceLevel]}
+-          onChange={e => onEvidenceLevelChange(e.target.value as EvidenceLevel)}>
+-          {(['direct', 'indirect', 'interpretive', 'background'] as const).map(l => (
+-            <option key={l} value={l}>{LEVEL_LABEL[l]}</option>
+-          ))}
+-        </select>
+-      </div>
+-      <div className="ew-field">
+-        <label>Reviewer Confidence（0–0.85）</label>
+-        <input type="range" min={0} max={0.85} step={0.01} value={Math.min(0.85, parseFloat(confidence) || 0)}
+-          onChange={e => onConfidenceChange(e.target.value)} />
+-        <input className="filter-input" value={confidence} onChange={e => onConfidenceChange(e.target.value)} />
+-        <span className="ew-meta">DeepSeek semantic confidence 仅供参考，不是图谱 confidence。</span>
+-      </div>
+-      <div className="ew-field">
+-        <label>人工备注</label>
+-        <textarea className="filter-input" value={note} onChange={e => onNoteChange(e.target.value)} placeholder="为什么接受/调整方向/修改组件等（可选）" />
+-      </div>
+-      <div className="ew-field"><label>已选片段</label><span className="ew-meta">{selectedCount} 段（仅统计通过原文校验的片段）</span></div>
+-      {previewBusy && <div className="ew-busy">正在计算置信度预览…</div>}
+-      <ConfidenceRuleText direction={direction} preview={preview} />
+-    </div>
+-  )
+-}

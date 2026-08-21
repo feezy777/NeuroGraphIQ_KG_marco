@@ -54,6 +54,7 @@ from app.services import llm_connection_extraction_service as conn_svc
 from app.services import llm_projection_function_extraction_service as proj_fn_svc
 from app.services import mirror_kg_service
 from app.services.llm_extraction_prompt_engineering import CONNECTION_FAILURE_STATUSES
+from app.services.llm_providers import get_llm_provider
 from app.services.llm_status_utils import is_semantic_failure, is_semantic_no_edges
 from app.services.llm_workflow_cancel_registry import (
     is_cancelling,
@@ -85,6 +86,11 @@ CIRCUIT_TO_FUNCTIONS_ENABLED = True
 
 LARGE_PAIR_COUNT_WARNING_THRESHOLD = 200
 LARGE_CANDIDATE_WARNING_THRESHOLD = 50
+
+# Max objects resolved from Mirror scope for downstream steps (projections,
+# circuits, triples). Raised for full-corpus extraction (60k+ connections);
+# id-only queries keep this cheap.
+SCOPE_RESOLUTION_LIMIT = 500_000
 
 WORKFLOW_STEP_DEFS: dict[str, list[dict[str, Any]]] = {
     CompositeWorkflowType.connection_with_function: [
@@ -478,6 +484,7 @@ async def invoke_connection_extraction(
         dry_run=body.dry_run,
         max_candidate_pairs=body.max_candidate_pairs,
         pair_strategy=body.pair_strategy,
+        pairs_per_pack=body.pairs_per_pack,
         center_candidate_id=body.center_candidate_id,
         allowed_connection_types=body.allowed_connection_types,
         create_mirror_records=body.create_mirror_records,
@@ -1359,7 +1366,7 @@ async def _resolve_projection_ids(
             return list(created_ids)
 
     scope = _scope_from_request(request)
-    items, _ = await mirror_kg_service.list_mirror_connections(
+    ids = await mirror_kg_service.list_mirror_connection_ids(
         session,
         resource_id=scope.resource_id,
         batch_id=scope.batch_id,
@@ -1367,23 +1374,23 @@ async def _resolve_projection_ids(
         granularity_level=scope.granularity_level,
         granularity_family=scope.granularity_family,
         llm_run_id=llm_run_id,
-        limit=10000,
+        limit=SCOPE_RESOLUTION_LIMIT,
         offset=0,
     )
-    if items:
-        return [c.id for c in items]
+    if ids:
+        return ids
 
-    items, _ = await mirror_kg_service.list_mirror_connections(
+    ids = await mirror_kg_service.list_mirror_connection_ids(
         session,
         resource_id=scope.resource_id,
         batch_id=scope.batch_id,
         source_atlas=scope.source_atlas,
         granularity_level=scope.granularity_level,
         granularity_family=scope.granularity_family,
-        limit=10000,
+        limit=SCOPE_RESOLUTION_LIMIT,
         offset=0,
     )
-    return [c.id for c in items]
+    return ids
 
 
 async def _resolve_circuit_ids(
@@ -1416,7 +1423,7 @@ async def _resolve_circuit_ids(
 
     if llm_run_id:
         scope = _scope_from_request(request)
-        items, _ = await mirror_kg_service.list_mirror_circuits(
+        ids = await mirror_kg_service.list_mirror_circuit_ids(
             session,
             resource_id=scope.resource_id,
             batch_id=scope.batch_id,
@@ -1424,11 +1431,11 @@ async def _resolve_circuit_ids(
             granularity_level=scope.granularity_level,
             granularity_family=scope.granularity_family,
             llm_run_id=llm_run_id,
-            limit=10000,
+            limit=SCOPE_RESOLUTION_LIMIT,
             offset=0,
         )
-        if items:
-            return _dedupe_uuid_list([c.id for c in items])
+        if ids:
+            return _dedupe_uuid_list(ids)
 
     # Never fall back to "all circuits in scope" — that reprocesses the entire
     # molecular corpus for steps/functions after a no-op / all-duplicate batch.
@@ -2312,7 +2319,7 @@ async def run_triple_generation_workflow(
             source_types=["connection", "function", "circuit"],
             scope=scope,
             dry_run=request.dry_run,
-            limit=10000,
+            limit=SCOPE_RESOLUTION_LIMIT,
         )
         if result.warnings:
             warnings.extend(result.warnings)
@@ -2546,7 +2553,12 @@ async def retry_failed_packs(
     sorted_pair_ids = sorted(pair_id_list)
 
     # Chunk into packs using the same size as the connection extraction service
-    PACK_SIZE = conn_svc.DEFAULT_PAIRS_PER_PACK_OVERRIDE
+    orig_pairs_per_pack = (run.request_json or {}).get("pairs_per_pack")
+    PACK_SIZE = (
+        int(orig_pairs_per_pack)
+        if isinstance(orig_pairs_per_pack, int) and orig_pairs_per_pack > 0
+        else conn_svc.DEFAULT_PAIRS_PER_PACK_OVERRIDE
+    )
     pack_pair_buckets: list[list[str]] = [
         sorted_pair_ids[i : i + PACK_SIZE]
         for i in range(0, len(sorted_pair_ids), PACK_SIZE)

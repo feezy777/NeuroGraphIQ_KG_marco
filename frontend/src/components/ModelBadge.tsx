@@ -9,9 +9,10 @@ interface ModelInfo {
 
 const MODEL_REGISTRY: Record<string, ModelInfo> = {
   // DeepSeek models
-  'deepseek-chat':    { label: 'DeepSeek V3',   color: '#0d9488', bg: '#f0fdfa', border: '#99f6e4' },
-  'deepseek-v4-pro':  { label: 'DeepSeek V4P',  color: '#4f46e5', bg: '#eef2ff', border: '#c7d2fe' },
-  'deepseek-reasoner':{ label: 'DeepSeek R1',   color: '#7c3aed', bg: '#f5f3ff', border: '#ddd6fe' },
+  'deepseek-chat':       { label: 'DeepSeek V3',    color: '#0d9488', bg: '#f0fdfa', border: '#99f6e4' },
+  'deepseek-v4-pro':     { label: 'DeepSeek V4P',   color: '#4f46e5', bg: '#eef2ff', border: '#c7d2fe' },
+  'deepseek-v4-flash':   { label: 'DeepSeek V4F',   color: '#f59e0b', bg: '#fffbeb', border: '#fde68a' },
+  'deepseek-reasoner':   { label: 'DeepSeek R1',    color: '#7c3aed', bg: '#f5f3ff', border: '#ddd6fe' },
   // Kimi models
   'moonshot-v1-auto': { label: 'Kimi',          color: '#059669', bg: '#ecfdf5', border: '#a7f3d0' },
   'moonshot-v1-8k':   { label: 'Kimi 8K',       color: '#16a34a', bg: '#f0fdf4', border: '#bbf7d0' },

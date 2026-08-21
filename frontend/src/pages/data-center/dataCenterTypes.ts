@@ -8,7 +8,7 @@ export type DataCenterTabId =
   | 'exports'
 
 export type RawDataSubTab = 'aal3' | 'macro96'
-export type MirrorKgSubTab = 'connections' | 'functions' | 'circuits' | 'triples' | 'evidence'
+export type MirrorKgSubTab = 'connections' | 'functions' | 'circuits' | 'triples'
 export type MacroClinicalSubTab =
   | 'circuit_steps'
   | 'projection_functions'
@@ -25,7 +25,6 @@ export type FinalKgSubTab =
   | 'region_function'
   | 'circuit_function'
   | 'triple'
-  | 'evidence'
 
 export interface DataCenterCounts {
   rawAal3Count: number

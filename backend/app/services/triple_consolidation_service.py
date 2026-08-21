@@ -21,6 +21,7 @@ from app.models.mirror_kg import (
     MirrorRegionConnection,
     MirrorRegionFunction,
 )
+from app.models.mirror_macro_clinical import MirrorCircuitFunction, MirrorProjectionFunction
 from app.schemas.mirror_kg import (
     Directionality,
     MirrorKgTripleCreate,
@@ -32,13 +33,18 @@ from app.schemas.mirror_kg import (
     TripleSubjectType,
 )
 from app.services import mirror_kg_service
+from app.services.function_term_service import (
+    FunctionTermResolution,
+    VALID_TRIPLE_TERM_STATES,
+    load_canonical_term_map,
+)
 
 MAX_CONSOLIDATION_LIMIT = 5000
 DEFAULT_CONSOLIDATION_LIMIT = 1000
 PREVIEW_LIMIT = 100
 CREATED_BY = "system:triple_consolidation"
 
-VALID_SOURCE_TYPES = frozenset({"connection", "function", "circuit"})
+VALID_SOURCE_TYPES = frozenset({"connection", "function", "projection_function", "circuit"})
 
 DEFAULT_SKIP_MIRROR_STATUSES = frozenset({
     MirrorStatus.human_rejected,
@@ -408,6 +414,42 @@ async def collect_source_functions(
     ]
 
 
+async def collect_source_projection_functions(
+    session: AsyncSession,
+    *,
+    scope: ConsolidationScope,
+    projection_function_ids: list[uuid.UUID] | None,
+    mirror_statuses: list[str] | None,
+    review_statuses: list[str] | None,
+    promotion_statuses: list[str] | None,
+    limit: int,
+) -> list[MirrorProjectionFunction]:
+    """P1.5: projection functions are an official Function Triple source."""
+    if projection_function_ids:
+        rows: list[MirrorProjectionFunction] = []
+        for pfid in projection_function_ids:
+            row = await session.get(MirrorProjectionFunction, pfid)
+            if row is None:
+                raise ExplicitIdNotFoundError("projection_function", str(pfid))
+            _validate_source_scope(row, scope, "projection_function")
+            rows.append(row)
+        return rows
+
+    q = _apply_scope_to_query(select(MirrorProjectionFunction), MirrorProjectionFunction, scope)
+    q = q.limit(limit)
+    all_rows = list((await session.execute(q)).scalars().all())
+    return [
+        r for r in all_rows
+        if _source_passes_filters(
+            r,
+            mirror_statuses=mirror_statuses,
+            review_statuses=review_statuses,
+            promotion_statuses=promotion_statuses,
+            explicit=False,
+        )
+    ]
+
+
 async def collect_source_circuits(
     session: AsyncSession,
     *,
@@ -417,7 +459,7 @@ async def collect_source_circuits(
     review_statuses: list[str] | None,
     promotion_statuses: list[str] | None,
     limit: int,
-) -> tuple[list[MirrorRegionCircuit], list[MirrorCircuitRegion]]:
+) -> tuple[list[MirrorRegionCircuit], list[MirrorCircuitRegion], list[MirrorCircuitFunction]]:
     if circuit_ids:
         circuits: list[MirrorRegionCircuit] = []
         all_regions: list[MirrorCircuitRegion] = []
@@ -433,7 +475,7 @@ async def collect_source_circuits(
                 )).scalars().all()
             )
             all_regions.extend(regions)
-        return circuits, all_regions
+        return circuits, all_regions, []
 
     q = _apply_scope_to_query(select(MirrorRegionCircuit), MirrorRegionCircuit, scope)
     q = q.limit(limit)
@@ -448,14 +490,50 @@ async def collect_source_circuits(
         )
     ]
     if not circuits:
-        return [], []
+        return [], [], []
     circuit_id_list = [c.id for c in circuits]
     regions = list(
         (await session.execute(
             select(MirrorCircuitRegion).where(MirrorCircuitRegion.circuit_id.in_(circuit_id_list))
         )).scalars().all()
     )
-    return circuits, regions
+    return circuits, regions, []
+
+
+async def collect_source_circuit_functions(
+    session: AsyncSession,
+    *,
+    scope: ConsolidationScope,
+    circuit_ids: list[uuid.UUID] | None,
+    mirror_statuses: list[str] | None,
+    review_statuses: list[str] | None,
+    promotion_statuses: list[str] | None,
+    limit: int,
+) -> list[MirrorCircuitFunction]:
+    """P1.4: circuit→function triples are sourced from mirror_circuit_functions
+    (the sole authority), never from mirror_region_circuits.function_association."""
+    if circuit_ids:
+        rows = list(
+            (await session.execute(
+                select(MirrorCircuitFunction).where(
+                    MirrorCircuitFunction.circuit_id.in_(circuit_ids)
+                )
+            )).scalars().all()
+        )
+    else:
+        q = _apply_scope_to_query(select(MirrorCircuitFunction), MirrorCircuitFunction, scope)
+        q = q.limit(limit)
+        rows = list((await session.execute(q)).scalars().all())
+    return [
+        r for r in rows
+        if _source_passes_filters(
+            r,
+            mirror_statuses=mirror_statuses,
+            review_statuses=review_statuses,
+            promotion_statuses=promotion_statuses,
+            explicit=False,
+        )
+    ]
 
 
 async def _load_candidate_map(
@@ -522,11 +600,33 @@ def build_connection_triple_candidates(
     return candidates, skipped_invalid
 
 
+def _canonical_object(
+    fn,
+    canonical_map: dict[uuid.UUID, FunctionTermResolution],
+) -> tuple[uuid.UUID, str, str | None] | None:
+    """Resolve a relation's term_id to a projectable (id, label, code).
+
+    P1.5 guard: deprecated / invalid_type / merged-residue / unresolved terms
+    are never projected as a Function object.
+    """
+    if fn.term_id is None:
+        return None
+    res = canonical_map.get(fn.term_id)
+    if res is None or not res.is_function_term:
+        return None
+    if res.state not in VALID_TRIPLE_TERM_STATES:
+        return None
+    return res.term_id, res.canonical_name or "", res.term_code
+
+
 def build_function_triple_candidates(
     functions: list[MirrorRegionFunction],
     candidate_map: dict[uuid.UUID, CandidateBrainRegion],
     warnings: list[str],
+    *,
+    canonical_map: dict[uuid.UUID, FunctionTermResolution],
 ) -> tuple[list[TripleCandidate], int]:
+    """P1.5: region Function Triples are entity-ized (object_id = canonical term)."""
     candidates: list[TripleCandidate] = []
     skipped_invalid = 0
     for fn in functions:
@@ -540,6 +640,15 @@ def build_function_triple_candidates(
             skipped_invalid += 1
             warnings.append(f"function {fn.id} skipped: empty function_term")
             continue
+        canon = _canonical_object(fn, canonical_map)
+        if canon is None:
+            skipped_invalid += 1
+            warnings.append(
+                f"function {fn.id} skipped: no projectable canonical term "
+                f"(term_id={fn.term_id})"
+            )
+            continue
+        obj_id, obj_label, term_code = canon
         region_c = candidate_map.get(region_id)
         if region_c is None:
             warnings.append(f"function {fn.id}: region label fallback used")
@@ -550,8 +659,8 @@ def build_function_triple_candidates(
             subject_label=_region_label(region_c, region_id),
             predicate=predicate,
             object_type=TripleObjectType.function,
-            object_id=None,
-            object_label=term,
+            object_id=obj_id,
+            object_label=obj_label,
             resource_id=fn.resource_id,
             batch_id=fn.batch_id,
             llm_run_id=fn.llm_run_id,
@@ -568,7 +677,74 @@ def build_function_triple_candidates(
             review_status=fn.review_status,
             source_type="function",
             source_id=str(fn.id),
-            raw_payload_json={"source": "function", "function_id": str(fn.id)},
+            raw_payload_json={
+                "source": "function",
+                "function_id": str(fn.id),
+                "term_id": str(obj_id),
+                "term_code": term_code,
+                "source_text": term,
+            },
+        ))
+    return candidates, skipped_invalid
+
+
+def build_projection_function_triple_candidates(
+    functions: list[MirrorProjectionFunction],
+    warnings: list[str],
+    *,
+    canonical_map: dict[uuid.UUID, FunctionTermResolution],
+) -> tuple[list[TripleCandidate], int]:
+    """P1.5: projection Function Triples (subject = projection/connection)."""
+    candidates: list[TripleCandidate] = []
+    skipped_invalid = 0
+    for fn in functions:
+        term = (fn.function_term or "").strip()
+        if not term:
+            skipped_invalid += 1
+            warnings.append(f"projection_function {fn.id} skipped: empty function_term")
+            continue
+        canon = _canonical_object(fn, canonical_map)
+        if canon is None:
+            skipped_invalid += 1
+            warnings.append(
+                f"projection_function {fn.id} skipped: no projectable canonical term "
+                f"(term_id={fn.term_id})"
+            )
+            continue
+        obj_id, obj_label, term_code = canon
+        predicate = RELATION_TO_PREDICATE.get(fn.relation_type, "associated_with_function")
+        candidates.append(TripleCandidate(
+            subject_type=TripleSubjectType.connection,
+            subject_id=fn.projection_id,
+            subject_label=str(fn.projection_id)[:8],
+            predicate=predicate,
+            object_type=TripleObjectType.function,
+            object_id=obj_id,
+            object_label=obj_label,
+            resource_id=fn.resource_id,
+            batch_id=fn.batch_id,
+            llm_run_id=fn.llm_run_id,
+            llm_item_id=fn.llm_item_id,
+            source_mirror_connection_id=fn.projection_id,
+            granularity_level=fn.granularity_level,
+            granularity_family=fn.granularity_family,
+            source_atlas=fn.source_atlas,
+            source_version=fn.source_version,
+            confidence=float(fn.confidence) if fn.confidence is not None else None,
+            evidence_text=fn.evidence_text,
+            uncertainty_reason=fn.uncertainty_reason,
+            mirror_status=fn.mirror_status,
+            review_status=fn.review_status,
+            source_type="projection_function",
+            source_id=str(fn.id),
+            raw_payload_json={
+                "source": "projection_function",
+                "projection_function_id": str(fn.id),
+                "projection_id": str(fn.projection_id),
+                "term_id": str(obj_id),
+                "term_code": term_code,
+                "source_text": term,
+            },
         ))
     return candidates, skipped_invalid
 
@@ -576,14 +752,18 @@ def build_function_triple_candidates(
 def build_circuit_triple_candidates(
     circuits: list[MirrorRegionCircuit],
     circuit_regions: list[MirrorCircuitRegion],
+    circuit_functions: list[MirrorCircuitFunction],
     candidate_map: dict[uuid.UUID, CandidateBrainRegion],
     warnings: list[str],
+    *,
+    canonical_map: dict[uuid.UUID, FunctionTermResolution],
 ) -> tuple[list[TripleCandidate], int]:
     candidates: list[TripleCandidate] = []
     skipped_invalid = 0
     regions_by_circuit: dict[uuid.UUID, list[MirrorCircuitRegion]] = {}
     for cr in circuit_regions:
         regions_by_circuit.setdefault(cr.circuit_id, []).append(cr)
+    circuit_by_id: dict[uuid.UUID, MirrorRegionCircuit] = {c.id: c for c in circuits}
 
     for circuit in circuits:
         name = (circuit.circuit_name or "").strip()
@@ -593,7 +773,7 @@ def build_circuit_triple_candidates(
             continue
         regions = regions_by_circuit.get(circuit.id, [])
         if not regions:
-            warnings.append(f"circuit {circuit.id}: no circuit_regions; function triple only if association set")
+            warnings.append(f"circuit {circuit.id}: no circuit_regions")
 
         for cr in regions:
             rid = cr.region_candidate_id
@@ -629,34 +809,63 @@ def build_circuit_triple_candidates(
                 raw_payload_json={"source": "circuit", "circuit_id": str(circuit.id), "circuit_region_id": str(cr.id)},
             ))
 
-        func_assoc = (circuit.function_association or "").strip()
-        if func_assoc:
-            candidates.append(TripleCandidate(
-                subject_type=TripleSubjectType.circuit,
-                subject_id=circuit.id,
-                subject_label=name,
-                predicate="associated_with_function",
-                object_type=TripleObjectType.function,
-                object_id=None,
-                object_label=func_assoc,
-                resource_id=circuit.resource_id,
-                batch_id=circuit.batch_id,
-                llm_run_id=circuit.llm_run_id,
-                llm_item_id=circuit.llm_item_id,
-                source_mirror_circuit_id=circuit.id,
-                granularity_level=circuit.granularity_level,
-                granularity_family=circuit.granularity_family,
-                source_atlas=circuit.source_atlas,
-                source_version=circuit.source_version,
-                confidence=float(circuit.confidence) if circuit.confidence is not None else None,
-                evidence_text=circuit.evidence_text,
-                uncertainty_reason=circuit.uncertainty_reason,
-                mirror_status=circuit.mirror_status,
-                review_status=circuit.review_status,
-                source_type="circuit",
-                source_id=str(circuit.id),
-                raw_payload_json={"source": "circuit", "circuit_id": str(circuit.id), "function_association": func_assoc},
-            ))
+    # P1.4/P1.5: circuit→function triples come from mirror_circuit_functions
+    # (the sole authority), entity-ized to the canonical term.
+    for fn in circuit_functions:
+        circuit = circuit_by_id.get(fn.circuit_id)
+        if circuit is None:
+            skipped_invalid += 1
+            warnings.append(f"circuit_function {fn.id} skipped: circuit {fn.circuit_id} not in scope")
+            continue
+        term_en = (fn.function_term_en or "").strip()
+        if not term_en:
+            skipped_invalid += 1
+            warnings.append(f"circuit_function {fn.id} skipped: empty function_term_en")
+            continue
+        canon = _canonical_object(fn, canonical_map)
+        if canon is None:
+            skipped_invalid += 1
+            warnings.append(
+                f"circuit_function {fn.id} skipped: no projectable canonical term "
+                f"(term_id={fn.term_id})"
+            )
+            continue
+        obj_id, obj_label, term_code = canon
+        candidates.append(TripleCandidate(
+            subject_type=TripleSubjectType.circuit,
+            subject_id=circuit.id,
+            subject_label=circuit.circuit_name,
+            predicate="associated_with_function",
+            object_type=TripleObjectType.function,
+            object_id=obj_id,
+            object_label=obj_label,
+            resource_id=fn.resource_id or circuit.resource_id,
+            batch_id=fn.batch_id or circuit.batch_id,
+            llm_run_id=fn.llm_run_id,
+            llm_item_id=fn.llm_item_id,
+            source_mirror_circuit_id=circuit.id,
+            granularity_level=fn.granularity_level or circuit.granularity_level,
+            granularity_family=fn.granularity_family or circuit.granularity_family,
+            source_atlas=fn.source_atlas or circuit.source_atlas,
+            source_version=fn.source_version or circuit.source_version,
+            confidence=float(fn.confidence) if fn.confidence is not None else (
+                float(circuit.confidence) if circuit.confidence is not None else None
+            ),
+            evidence_text=fn.evidence_text or circuit.evidence_text,
+            uncertainty_reason=fn.uncertainty_reason or circuit.uncertainty_reason,
+            mirror_status=fn.mirror_status,
+            review_status=fn.review_status,
+            source_type="circuit",
+            source_id=str(fn.id),
+            raw_payload_json={
+                "source": "circuit_function",
+                "circuit_id": str(circuit.id),
+                "circuit_function_id": str(fn.id),
+                "term_id": str(obj_id),
+                "term_code": term_code,
+                "source_text": term_en,
+            },
+        ))
     return candidates, skipped_invalid
 
 
@@ -692,13 +901,14 @@ async def consolidate_mirror_triples(
     promotion_statuses: list[str] | None = None,
     connection_ids: list[uuid.UUID] | None = None,
     function_ids: list[uuid.UUID] | None = None,
+    projection_function_ids: list[uuid.UUID] | None = None,
     circuit_ids: list[uuid.UUID] | None = None,
     include_existing: bool = False,
     dry_run: bool = True,
     limit: int = DEFAULT_CONSOLIDATION_LIMIT,
 ) -> ConsolidationResult:
     if source_types is None:
-        types = ["connection", "function", "circuit"]
+        types = ["connection", "function", "projection_function", "circuit"]
     elif not source_types:
         raise EmptySourceTypesError()
     else:
@@ -715,8 +925,10 @@ async def consolidate_mirror_triples(
 
     connections: list[MirrorRegionConnection] = []
     functions: list[MirrorRegionFunction] = []
+    projection_functions: list[MirrorProjectionFunction] = []
     circuits: list[MirrorRegionCircuit] = []
     circuit_regions: list[MirrorCircuitRegion] = []
+    circuit_functions: list[MirrorCircuitFunction] = []
 
     if "connection" in types:
         connections = await collect_source_connections(
@@ -738,8 +950,27 @@ async def consolidate_mirror_triples(
             promotion_statuses=promotion_statuses,
             limit=limit,
         )
+    if "projection_function" in types:
+        projection_functions = await collect_source_projection_functions(
+            session,
+            scope=sc,
+            projection_function_ids=projection_function_ids,
+            mirror_statuses=mirror_statuses,
+            review_statuses=review_statuses,
+            promotion_statuses=promotion_statuses,
+            limit=limit,
+        )
     if "circuit" in types:
         circuits, circuit_regions = await collect_source_circuits(
+            session,
+            scope=sc,
+            circuit_ids=circuit_ids,
+            mirror_statuses=mirror_statuses,
+            review_statuses=review_statuses,
+            promotion_statuses=promotion_statuses,
+            limit=limit,
+        )
+        circuit_functions = await collect_source_circuit_functions(
             session,
             scope=sc,
             circuit_ids=circuit_ids,
@@ -752,8 +983,10 @@ async def consolidate_mirror_triples(
     result.source_counts = {
         "connections": len(connections),
         "functions": len(functions),
+        "projection_functions": len(projection_functions),
         "circuits": len(circuits),
         "circuit_regions": len(circuit_regions),
+        "circuit_functions": len(circuit_functions),
     }
 
     candidate_ids: set[uuid.UUID] = set()
@@ -771,6 +1004,12 @@ async def consolidate_mirror_triples(
 
     candidate_map = await _load_candidate_map(session, candidate_ids)
 
+    # P1.5: resolve all function relation term_ids once (entity-ized objects).
+    function_term_ids = {
+        r.term_id for r in functions + projection_functions + circuit_functions if r.term_id
+    }
+    canonical_map = await load_canonical_term_map(session, function_term_ids)
+
     all_candidates: list[TripleCandidate] = []
     skipped_invalid = 0
 
@@ -779,11 +1018,22 @@ async def consolidate_mirror_triples(
         all_candidates.extend(conn_cands)
         skipped_invalid += skip
     if functions:
-        fn_cands, skip = build_function_triple_candidates(functions, candidate_map, warnings)
+        fn_cands, skip = build_function_triple_candidates(
+            functions, candidate_map, warnings, canonical_map=canonical_map
+        )
         all_candidates.extend(fn_cands)
         skipped_invalid += skip
+    if projection_functions:
+        pf_cands, skip = build_projection_function_triple_candidates(
+            projection_functions, warnings, canonical_map=canonical_map
+        )
+        all_candidates.extend(pf_cands)
+        skipped_invalid += skip
     if circuits:
-        circ_cands, skip = build_circuit_triple_candidates(circuits, circuit_regions, candidate_map, warnings)
+        circ_cands, skip = build_circuit_triple_candidates(
+            circuits, circuit_regions, circuit_functions, candidate_map, warnings,
+            canonical_map=canonical_map,
+        )
         all_candidates.extend(circ_cands)
         skipped_invalid += skip
 

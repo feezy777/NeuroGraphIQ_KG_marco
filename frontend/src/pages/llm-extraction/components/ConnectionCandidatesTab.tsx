@@ -1,7 +1,7 @@
 import { useMemo, useState, useCallback, useEffect, useRef } from 'react'
 import { DataTable, type Column } from '../../../components/DataTable'
 import { StatusBadge } from '../../../components/StatusBadge'
-import { listMirrorConnections, type MirrorRegionConnection } from '../../../api/endpoints'
+import { listMirrorConnectionIds, listMirrorConnections, type MirrorRegionConnection } from '../../../api/endpoints'
 
 const PAGE_SIZE_OPTIONS = [50, 100, 200]
 const DEFAULT_PAGE_SIZE = 50
@@ -102,11 +102,11 @@ export function ConnectionCandidatesTab({
     allSelectedRef.current = true
     // Load all filtered results to select everything
     setLoading(true)
-    const params: Record<string, any> = { limit: 10000 }
+    const params: Record<string, any> = { limit: 500000 }
     if (sourceAtlas) params.source_atlas = sourceAtlas
     if (granularityLevel) params.granularity_level = granularityLevel
-    listMirrorConnections(params).then(res => {
-      setSelectedIds(new Set(res.items.map(r => r.id)))
+    listMirrorConnectionIds(params).then(res => {
+      setSelectedIds(new Set(res.ids))
       setLoading(false)
     }).catch(() => setLoading(false))
   }, [sourceAtlas, granularityLevel])

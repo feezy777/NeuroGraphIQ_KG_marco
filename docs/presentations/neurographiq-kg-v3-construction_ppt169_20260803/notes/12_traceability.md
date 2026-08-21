@@ -1,0 +1,1 @@
+知识进入消费端之后，系统仍然能够解释每一个事实的来历。反向溯源共有八个清晰阶段：从 Final fact 找到对应 Promotion，再找到专家 Review 和规则或模型 Validation；继续向前可以定位具体 Extraction item、所属 Run、输入 Candidate，最后回到 Import Batch 和原始 Resource。Run 与 Candidate 必须分开，因为前者记录某次模型执行的环境、Prompt 和供应商信息，后者记录进入执行前的结构化输入；Import 与 Resource 也承担批次操作和静态来源两种不同责任。这条链同时保留原始响应、模型版本、Prompt、批次和资源定位。评委如果给出一个有争议的三元组，我们可以逐级展示它如何被产生、复核、批准，并确定应在哪一层修正。

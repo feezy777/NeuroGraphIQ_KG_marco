@@ -1,0 +1,994 @@
+{
+  "schema": "ppt-master.svg-quality-report.v1",
+  "stage": "final",
+  "target": "D:\\Tool\\Coding\\IDE\\PyCharm\\NeuroGraphIQ_KG_V3_1\\.claude\\skills\\ppt-master\\projects\\neurographiq-kg-construction_ppt169_20260803",
+  "source_fingerprint": {
+    "algorithm": "sha256",
+    "digest": "0451168a75ef05b53735fdf524873d44d6bcf391f04c26c7533797fe260f1d9f",
+    "file_count": 14,
+    "files": [
+      {
+        "file": "P01_cover.svg",
+        "sha256": "78b21b320ad78c071e878c1277be7be98605f342b24a0f11c646fc0b9b288144"
+      },
+      {
+        "file": "P02_problem_motivation.svg",
+        "sha256": "5d95d2d8d9c486c2b925ee65473abfc0549e8d88f7366fa0a216e5886c68b9d5"
+      },
+      {
+        "file": "P03_knowledge_layers.svg",
+        "sha256": "2e3a4d70a77da80bb28de44e5ae2a03df19fa2300b85f562b32725c57ac60769"
+      },
+      {
+        "file": "P04_pipeline_overview.svg",
+        "sha256": "733a8e7148386d7baa91042a12f6937f7c460822b366289c39370f838d66c4c9"
+      },
+      {
+        "file": "P05_import_candidates.svg",
+        "sha256": "ac74d6b8d736ac500f8a582b3d3cb4a7f2f6abbf4ed8fd183ecc434425de7718"
+      },
+      {
+        "file": "P06_rule_validation.svg",
+        "sha256": "20915e69276e054a34949b535d3b58fbfaeb5cb03776c4758849fa3e99143972"
+      },
+      {
+        "file": "P07_llm_extraction.svg",
+        "sha256": "3f929f7793513b2765f55acbe27c8dcc4dc9c9b4d20f97e334770e9b50d6319d"
+      },
+      {
+        "file": "P08_mirror_kg.svg",
+        "sha256": "d32df18032859a50391f57815c292197d61ed27cf0c2a2687cd6ddcc9fe3e3ac"
+      },
+      {
+        "file": "P09_validation_center.svg",
+        "sha256": "288bd0d8bcbb49b34798c67233aeb2c2cae35e5de4b66cb23573c8c904034dda"
+      },
+      {
+        "file": "P10_promotion_final_kg.svg",
+        "sha256": "ea501d2553a1758e4143f96d6e40cc69ccea159158c1d628a7ea6a66fd2c429d"
+      },
+      {
+        "file": "P11_consumption_provenance.svg",
+        "sha256": "2ba0218c3698e97ccb34a7b8ca9dfb3846867427f0cb40433ada58ae0213a107"
+      },
+      {
+        "file": "P12_innovation.svg",
+        "sha256": "6b66b8b2f9b342c87ea0be122b066158dad8eb6f2fcbb23ece75f8e5a447b8ae"
+      },
+      {
+        "file": "P13_status.svg",
+        "sha256": "2633a1046d27f9e0989f3bb76251443be709cb7d5a705319215e95b180d89a32"
+      },
+      {
+        "file": "P14_thank_you.svg",
+        "sha256": "8f35c4081961870f65ee0493a351602f73301efb294ce28ad690d2c994159f83"
+      }
+    ]
+  },
+  "summary": {
+    "total": 14,
+    "passed": 3,
+    "warnings": 8,
+    "errors": 5
+  },
+  "issue_types": {
+    "Other": 3,
+    "illustration_locked_image_missing_spec_error": 1,
+    "pptx_structure_error": 1
+  },
+  "categories": {
+    "blocking": {
+      "count": 5,
+      "issues": [
+        {
+          "file": "P02_problem_motivation.svg",
+          "message": "<g> cannot use filter; supported native targets are rect, circle, image, path, text, and an exact single clipped-image carrier group"
+        },
+        {
+          "file": "P03_knowledge_layers.svg",
+          "message": "<g> cannot use filter; supported native targets are rect, circle, image, path, text, and an exact single clipped-image carrier group"
+        },
+        {
+          "file": "P04_pipeline_overview.svg",
+          "message": "<g> cannot use filter; supported native targets are rect, circle, image, path, text, and an exact single clipped-image carrier group"
+        },
+        {
+          "scope": "illustration",
+          "message": "none is listed in spec_lock.md images but has no placed row in Design Spec §VIII."
+        },
+        {
+          "scope": "pptx_structure",
+          "message": "spec_lock.md generated PowerPoint theme contract is missing: colors"
+        }
+      ]
+    },
+    "introduced": {
+      "count": 10,
+      "issues": [
+        {
+          "file": "P01_cover.svg",
+          "message": "Fidelity warning: <g> uses group opacity='0.04'. The converter distributes this alpha to descendants and cannot preserve isolated group compositing; generated SVG should prefer descendant alpha. Existing input remains convertible and does not require modification."
+        },
+        {
+          "file": "P01_cover.svg",
+          "message": "Fidelity warning: <g> uses group opacity='0.08'. The converter distributes this alpha to descendants and cannot preserve isolated group compositing; generated SVG should prefer descendant alpha. Existing input remains convertible and does not require modification."
+        },
+        {
+          "file": "P02_problem_motivation.svg",
+          "message": "Detected 3 paragraph-like line run(s) split across sibling <text> elements (<g id=\"content\"> x=60.0, y=280.0..332.0, 3 lines; <g id=\"content\"> x=440.0, y=280.0..332.0, 3 lines; <g id=\"content\"> x=820.0, y=280.0..332.0, 3 lines). If each run is one prose paragraph, combine it into one <text>: keep its first line as direct text and use direct <tspan> children with the parent x and positive relative dy values for later lines. An all-<tspan> form may start with dy=\"0\". Keep semantically independent text frames separate."
+        },
+        {
+          "file": "P05_import_candidates.svg",
+          "message": "<text> exceeds <g id=\"c\"> data-pptx-bounds on the horizontal axis: content (840.0, 472.2)-(1258.1, 490.2), container (40.0, 120.0)-(1240.0, 680.0), overflow horizontal 1.5%, vertical 0.0%; expand the root module bounds into available non-overlapping space; otherwise reflow the text"
+        },
+        {
+          "file": "P06_rule_validation.svg",
+          "message": "Detected 3 paragraph-like line run(s) split across sibling <text> elements (<g id=\"c\"> x=40.0, y=390.0..430.0, 2 lines; <g id=\"c\"> x=60.0, y=523.0..551.0, 2 lines; <g id=\"c\"> x=640.0, y=523.0..551.0, 2 lines). If each run is one prose paragraph, combine it into one <text>: keep its first line as direct text and use direct <tspan> children with the parent x and positive relative dy values for later lines. An all-<tspan> form may start with dy=\"0\". Keep semantically independent text frames separate."
+        },
+        {
+          "file": "P08_mirror_kg.svg",
+          "message": "Detected 3 paragraph-like line run(s) split across sibling <text> elements (<g id=\"c\"> x=60.0, y=290.0..374.0, 4 lines; <g id=\"c\"> x=460.0, y=290.0..374.0, 4 lines; <g id=\"c\"> x=840.0, y=290.0..374.0, 4 lines). If each run is one prose paragraph, combine it into one <text>: keep its first line as direct text and use direct <tspan> children with the parent x and positive relative dy values for later lines. An all-<tspan> form may start with dy=\"0\". Keep semantically independent text frames separate."
+        },
+        {
+          "file": "P09_validation_center.svg",
+          "message": "Detected 3 paragraph-like line run(s) split across sibling <text> elements (<g id=\"c\"> x=60.0, y=346.0..402.0, 3 lines; <g id=\"c\"> x=450.0, y=346.0..402.0, 3 lines; <g id=\"c\"> x=840.0, y=346.0..402.0, 3 lines). If each run is one prose paragraph, combine it into one <text>: keep its first line as direct text and use direct <tspan> children with the parent x and positive relative dy values for later lines. An all-<tspan> form may start with dy=\"0\". Keep semantically independent text frames separate."
+        },
+        {
+          "file": "P11_consumption_provenance.svg",
+          "message": "Detected 4 paragraph-like line run(s) split across sibling <text> elements (<g id=\"c\"> x=60.0, y=275.0..331.0, 3 lines; <g id=\"c\"> x=350.0, y=275.0..331.0, 3 lines; <g id=\"c\"> x=640.0, y=275.0..331.0, 3 lines; +1 more). If each run is one prose paragraph, combine it into one <text>: keep its first line as direct text and use direct <tspan> children with the parent x and positive relative dy values for later lines. An all-<tspan> form may start with dy=\"0\". Keep semantically independent text frames separate."
+        },
+        {
+          "file": "P12_innovation.svg",
+          "message": "Detected 6 paragraph-like line run(s) split across sibling <text> elements (<g id=\"c\"> x=60.0, y=265.0..349.0, 4 lines; <g id=\"c\"> x=450.0, y=265.0..349.0, 4 lines; <g id=\"c\"> x=840.0, y=265.0..349.0, 4 lines; +3 more). If each run is one prose paragraph, combine it into one <text>: keep its first line as direct text and use direct <tspan> children with the parent x and positive relative dy values for later lines. An all-<tspan> form may start with dy=\"0\". Keep semantically independent text frames separate."
+        },
+        {
+          "file": "P14_thank_you.svg",
+          "message": "Fidelity warning: <g> uses group opacity='0.06'. The converter distributes this alpha to descendants and cannot preserve isolated group compositing; generated SVG should prefer descendant alpha. Existing input remains convertible and does not require modification."
+        }
+      ]
+    },
+    "inherited": {
+      "count": 0,
+      "issues": []
+    },
+    "source-import": {
+      "count": 0,
+      "summary": {
+        "warning_count": 0,
+        "by_code": {}
+      }
+    }
+  },
+  "drift": {
+    "colors": {
+      "#0D1117": [
+        "P01_cover.svg",
+        "P02_problem_motivation.svg",
+        "P03_knowledge_layers.svg",
+        "P04_pipeline_overview.svg",
+        "P05_import_candidates.svg",
+        "P06_rule_validation.svg",
+        "P07_llm_extraction.svg",
+        "P08_mirror_kg.svg",
+        "P09_validation_center.svg",
+        "P10_promotion_final_kg.svg",
+        "P11_consumption_provenance.svg",
+        "P12_innovation.svg",
+        "P13_status.svg",
+        "P14_thank_you.svg"
+      ],
+      "#161B22": [
+        "P01_cover.svg",
+        "P02_problem_motivation.svg",
+        "P04_pipeline_overview.svg",
+        "P05_import_candidates.svg",
+        "P06_rule_validation.svg",
+        "P08_mirror_kg.svg",
+        "P09_validation_center.svg",
+        "P11_consumption_provenance.svg",
+        "P12_innovation.svg",
+        "P14_thank_you.svg"
+      ],
+      "#1A365D": [
+        "P03_knowledge_layers.svg",
+        "P04_pipeline_overview.svg",
+        "P05_import_candidates.svg",
+        "P07_llm_extraction.svg",
+        "P09_validation_center.svg",
+        "P10_promotion_final_kg.svg",
+        "P11_consumption_provenance.svg",
+        "P12_innovation.svg"
+      ],
+      "#1C2333": [
+        "P02_problem_motivation.svg",
+        "P03_knowledge_layers.svg",
+        "P04_pipeline_overview.svg",
+        "P05_import_candidates.svg",
+        "P06_rule_validation.svg",
+        "P08_mirror_kg.svg",
+        "P10_promotion_final_kg.svg",
+        "P13_status.svg"
+      ],
+      "#1C3A6E": [
+        "P03_knowledge_layers.svg",
+        "P04_pipeline_overview.svg",
+        "P07_llm_extraction.svg",
+        "P10_promotion_final_kg.svg",
+        "P11_consumption_provenance.svg"
+      ],
+      "#1E4080": [
+        "P03_knowledge_layers.svg",
+        "P04_pipeline_overview.svg"
+      ],
+      "#204A90": [
+        "P03_knowledge_layers.svg",
+        "P04_pipeline_overview.svg",
+        "P07_llm_extraction.svg",
+        "P10_promotion_final_kg.svg",
+        "P11_consumption_provenance.svg"
+      ],
+      "#212D40": [
+        "P01_cover.svg",
+        "P02_problem_motivation.svg",
+        "P03_knowledge_layers.svg",
+        "P04_pipeline_overview.svg",
+        "P05_import_candidates.svg",
+        "P06_rule_validation.svg",
+        "P07_llm_extraction.svg",
+        "P08_mirror_kg.svg",
+        "P09_validation_center.svg",
+        "P10_promotion_final_kg.svg",
+        "P11_consumption_provenance.svg",
+        "P12_innovation.svg",
+        "P13_status.svg",
+        "P14_thank_you.svg"
+      ],
+      "#2858A0": [
+        "P03_knowledge_layers.svg",
+        "P04_pipeline_overview.svg",
+        "P11_consumption_provenance.svg"
+      ],
+      "#30363D": [
+        "P02_problem_motivation.svg",
+        "P04_pipeline_overview.svg",
+        "P05_import_candidates.svg",
+        "P06_rule_validation.svg",
+        "P08_mirror_kg.svg",
+        "P09_validation_center.svg",
+        "P11_consumption_provenance.svg",
+        "P12_innovation.svg",
+        "P13_status.svg"
+      ],
+      "#3068B0": [
+        "P03_knowledge_layers.svg",
+        "P04_pipeline_overview.svg",
+        "P09_validation_center.svg",
+        "P11_consumption_provenance.svg",
+        "P12_innovation.svg"
+      ],
+      "#3878C0": [
+        "P03_knowledge_layers.svg",
+        "P04_pipeline_overview.svg",
+        "P11_consumption_provenance.svg",
+        "P12_innovation.svg"
+      ],
+      "#38A169": [
+        "P04_pipeline_overview.svg",
+        "P06_rule_validation.svg",
+        "P07_llm_extraction.svg",
+        "P08_mirror_kg.svg",
+        "P12_innovation.svg",
+        "P13_status.svg"
+      ],
+      "#586069": [
+        "P01_cover.svg",
+        "P02_problem_motivation.svg",
+        "P03_knowledge_layers.svg",
+        "P04_pipeline_overview.svg",
+        "P05_import_candidates.svg",
+        "P06_rule_validation.svg",
+        "P07_llm_extraction.svg",
+        "P08_mirror_kg.svg",
+        "P09_validation_center.svg",
+        "P10_promotion_final_kg.svg",
+        "P11_consumption_provenance.svg",
+        "P12_innovation.svg",
+        "P13_status.svg",
+        "P14_thank_you.svg"
+      ],
+      "#58A6FF": [
+        "P01_cover.svg",
+        "P02_problem_motivation.svg",
+        "P03_knowledge_layers.svg",
+        "P04_pipeline_overview.svg",
+        "P05_import_candidates.svg",
+        "P06_rule_validation.svg",
+        "P07_llm_extraction.svg",
+        "P08_mirror_kg.svg",
+        "P09_validation_center.svg",
+        "P10_promotion_final_kg.svg",
+        "P11_consumption_provenance.svg",
+        "P12_innovation.svg",
+        "P13_status.svg",
+        "P14_thank_you.svg"
+      ],
+      "#79C0FF": [
+        "P01_cover.svg",
+        "P02_problem_motivation.svg",
+        "P03_knowledge_layers.svg",
+        "P05_import_candidates.svg",
+        "P07_llm_extraction.svg",
+        "P10_promotion_final_kg.svg",
+        "P11_consumption_provenance.svg",
+        "P14_thank_you.svg"
+      ],
+      "#8B949E": [
+        "P01_cover.svg",
+        "P02_problem_motivation.svg",
+        "P03_knowledge_layers.svg",
+        "P04_pipeline_overview.svg",
+        "P05_import_candidates.svg",
+        "P06_rule_validation.svg",
+        "P07_llm_extraction.svg",
+        "P08_mirror_kg.svg",
+        "P09_validation_center.svg",
+        "P10_promotion_final_kg.svg",
+        "P11_consumption_provenance.svg",
+        "P13_status.svg",
+        "P14_thank_you.svg"
+      ],
+      "#C9D1D9": [
+        "P02_problem_motivation.svg",
+        "P04_pipeline_overview.svg",
+        "P05_import_candidates.svg",
+        "P06_rule_validation.svg",
+        "P08_mirror_kg.svg",
+        "P09_validation_center.svg",
+        "P11_consumption_provenance.svg",
+        "P12_innovation.svg",
+        "P13_status.svg"
+      ],
+      "#FF7B72": [
+        "P02_problem_motivation.svg",
+        "P04_pipeline_overview.svg",
+        "P06_rule_validation.svg",
+        "P12_innovation.svg"
+      ],
+      "#FFA657": [
+        "P02_problem_motivation.svg",
+        "P03_knowledge_layers.svg",
+        "P05_import_candidates.svg",
+        "P06_rule_validation.svg",
+        "P07_llm_extraction.svg",
+        "P08_mirror_kg.svg",
+        "P09_validation_center.svg",
+        "P10_promotion_final_kg.svg",
+        "P11_consumption_provenance.svg",
+        "P12_innovation.svg",
+        "P13_status.svg"
+      ],
+      "#FFFFFF": [
+        "P01_cover.svg",
+        "P02_problem_motivation.svg",
+        "P03_knowledge_layers.svg",
+        "P04_pipeline_overview.svg",
+        "P05_import_candidates.svg",
+        "P06_rule_validation.svg",
+        "P07_llm_extraction.svg",
+        "P08_mirror_kg.svg",
+        "P09_validation_center.svg",
+        "P10_promotion_final_kg.svg",
+        "P11_consumption_provenance.svg",
+        "P12_innovation.svg",
+        "P13_status.svg",
+        "P14_thank_you.svg"
+      ]
+    },
+    "fonts": {
+      "Microsoft YaHei": [
+        "P01_cover.svg",
+        "P02_problem_motivation.svg",
+        "P03_knowledge_layers.svg",
+        "P04_pipeline_overview.svg",
+        "P05_import_candidates.svg",
+        "P06_rule_validation.svg",
+        "P07_llm_extraction.svg",
+        "P08_mirror_kg.svg",
+        "P09_validation_center.svg",
+        "P10_promotion_final_kg.svg",
+        "P11_consumption_provenance.svg",
+        "P12_innovation.svg",
+        "P13_status.svg",
+        "P14_thank_you.svg"
+      ]
+    },
+    "sizes": {
+      "36": [
+        "P01_cover.svg"
+      ],
+      "64": [
+        "P14_thank_you.svg"
+      ],
+      "68": [
+        "P01_cover.svg"
+      ]
+    }
+  },
+  "project_issues": {
+    "template": [],
+    "animation": [],
+    "illustration": [
+      {
+        "severity": "error",
+        "kind": "locked_image_missing_spec",
+        "message": "none is listed in spec_lock.md images but has no placed row in Design Spec §VIII."
+      }
+    ],
+    "communication_trace": [],
+    "pptx_structure": [
+      {
+        "severity": "error",
+        "message": "spec_lock.md generated PowerPoint theme contract is missing: colors"
+      }
+    ]
+  },
+  "files": [
+    {
+      "file": "P01_cover.svg",
+      "path": "D:\\Tool\\Coding\\IDE\\PyCharm\\NeuroGraphIQ_KG_V3_1\\.claude\\skills\\ppt-master\\projects\\neurographiq-kg-construction_ppt169_20260803\\svg_output\\P01_cover.svg",
+      "exists": true,
+      "errors": [],
+      "warnings": [
+        "Fidelity warning: <g> uses group opacity='0.04'. The converter distributes this alpha to descendants and cannot preserve isolated group compositing; generated SVG should prefer descendant alpha. Existing input remains convertible and does not require modification.",
+        "Fidelity warning: <g> uses group opacity='0.08'. The converter distributes this alpha to descendants and cannot preserve isolated group compositing; generated SVG should prefer descendant alpha. Existing input remains convertible and does not require modification."
+      ],
+      "info": {
+        "viewbox": "0 0 1280 720",
+        "fonts": [
+          "Microsoft YaHei"
+        ],
+        "text_elements": 4,
+        "tspan_elements": 0,
+        "contextual_values": {
+          "colors": [
+            "#0D1117",
+            "#161B22",
+            "#212D40",
+            "#586069",
+            "#58A6FF",
+            "#79C0FF",
+            "#8B949E",
+            "#FFFFFF"
+          ],
+          "font_families": [
+            "Microsoft YaHei"
+          ]
+        },
+        "sparse_typography_sizes": {
+          "36": 1,
+          "68": 1
+        }
+      },
+      "passed": true,
+      "source_sha256": "78b21b320ad78c071e878c1277be7be98605f342b24a0f11c646fc0b9b288144"
+    },
+    {
+      "file": "P02_problem_motivation.svg",
+      "path": "D:\\Tool\\Coding\\IDE\\PyCharm\\NeuroGraphIQ_KG_V3_1\\.claude\\skills\\ppt-master\\projects\\neurographiq-kg-construction_ppt169_20260803\\svg_output\\P02_problem_motivation.svg",
+      "exists": true,
+      "errors": [
+        "<g> cannot use filter; supported native targets are rect, circle, image, path, text, and an exact single clipped-image carrier group"
+      ],
+      "warnings": [
+        "Detected 3 paragraph-like line run(s) split across sibling <text> elements (<g id=\"content\"> x=60.0, y=280.0..332.0, 3 lines; <g id=\"content\"> x=440.0, y=280.0..332.0, 3 lines; <g id=\"content\"> x=820.0, y=280.0..332.0, 3 lines). If each run is one prose paragraph, combine it into one <text>: keep its first line as direct text and use direct <tspan> children with the parent x and positive relative dy values for later lines. An all-<tspan> form may start with dy=\"0\". Keep semantically independent text frames separate."
+      ],
+      "info": {
+        "viewbox": "0 0 1280 720",
+        "fonts": [
+          "Consolas",
+          "Microsoft YaHei"
+        ],
+        "text_elements": 26,
+        "tspan_elements": 0,
+        "contextual_values": {
+          "colors": [
+            "#0D1117",
+            "#161B22",
+            "#1C2333",
+            "#212D40",
+            "#30363D",
+            "#586069",
+            "#58A6FF",
+            "#79C0FF",
+            "#8B949E",
+            "#C9D1D9",
+            "#FF7B72",
+            "#FFA657",
+            "#FFFFFF"
+          ],
+          "font_families": [
+            "Microsoft YaHei"
+          ]
+        }
+      },
+      "passed": false,
+      "source_sha256": "5d95d2d8d9c486c2b925ee65473abfc0549e8d88f7366fa0a216e5886c68b9d5"
+    },
+    {
+      "file": "P03_knowledge_layers.svg",
+      "path": "D:\\Tool\\Coding\\IDE\\PyCharm\\NeuroGraphIQ_KG_V3_1\\.claude\\skills\\ppt-master\\projects\\neurographiq-kg-construction_ppt169_20260803\\svg_output\\P03_knowledge_layers.svg",
+      "exists": true,
+      "errors": [
+        "<g> cannot use filter; supported native targets are rect, circle, image, path, text, and an exact single clipped-image carrier group"
+      ],
+      "warnings": [],
+      "info": {
+        "viewbox": "0 0 1280 720",
+        "fonts": [
+          "Consolas",
+          "Microsoft YaHei"
+        ],
+        "text_elements": 22,
+        "tspan_elements": 0,
+        "contextual_values": {
+          "colors": [
+            "#0D1117",
+            "#1A365D",
+            "#1C2333",
+            "#1C3A6E",
+            "#1E4080",
+            "#204A90",
+            "#212D40",
+            "#2858A0",
+            "#3068B0",
+            "#3878C0",
+            "#586069",
+            "#58A6FF",
+            "#79C0FF",
+            "#8B949E",
+            "#FFA657",
+            "#FFFFFF"
+          ],
+          "font_families": [
+            "Microsoft YaHei"
+          ]
+        }
+      },
+      "passed": false,
+      "source_sha256": "2e3a4d70a77da80bb28de44e5ae2a03df19fa2300b85f562b32725c57ac60769"
+    },
+    {
+      "file": "P04_pipeline_overview.svg",
+      "path": "D:\\Tool\\Coding\\IDE\\PyCharm\\NeuroGraphIQ_KG_V3_1\\.claude\\skills\\ppt-master\\projects\\neurographiq-kg-construction_ppt169_20260803\\svg_output\\P04_pipeline_overview.svg",
+      "exists": true,
+      "errors": [
+        "<g> cannot use filter; supported native targets are rect, circle, image, path, text, and an exact single clipped-image carrier group"
+      ],
+      "warnings": [],
+      "info": {
+        "viewbox": "0 0 1280 720",
+        "fonts": [
+          "Consolas",
+          "Microsoft YaHei"
+        ],
+        "text_elements": 36,
+        "tspan_elements": 0,
+        "contextual_values": {
+          "colors": [
+            "#0D1117",
+            "#161B22",
+            "#1A365D",
+            "#1C2333",
+            "#1C3A6E",
+            "#1E4080",
+            "#204A90",
+            "#212D40",
+            "#2858A0",
+            "#30363D",
+            "#3068B0",
+            "#3878C0",
+            "#38A169",
+            "#586069",
+            "#58A6FF",
+            "#8B949E",
+            "#C9D1D9",
+            "#FF7B72",
+            "#FFFFFF"
+          ],
+          "font_families": [
+            "Microsoft YaHei"
+          ]
+        }
+      },
+      "passed": false,
+      "source_sha256": "733a8e7148386d7baa91042a12f6937f7c460822b366289c39370f838d66c4c9"
+    },
+    {
+      "file": "P05_import_candidates.svg",
+      "path": "D:\\Tool\\Coding\\IDE\\PyCharm\\NeuroGraphIQ_KG_V3_1\\.claude\\skills\\ppt-master\\projects\\neurographiq-kg-construction_ppt169_20260803\\svg_output\\P05_import_candidates.svg",
+      "exists": true,
+      "errors": [],
+      "warnings": [
+        "<text> exceeds <g id=\"c\"> data-pptx-bounds on the horizontal axis: content (840.0, 472.2)-(1258.1, 490.2), container (40.0, 120.0)-(1240.0, 680.0), overflow horizontal 1.5%, vertical 0.0%; expand the root module bounds into available non-overlapping space; otherwise reflow the text"
+      ],
+      "info": {
+        "viewbox": "0 0 1280 720",
+        "fonts": [
+          "Consolas",
+          "Microsoft YaHei"
+        ],
+        "text_elements": 30,
+        "tspan_elements": 0,
+        "contextual_values": {
+          "colors": [
+            "#0D1117",
+            "#161B22",
+            "#1A365D",
+            "#1C2333",
+            "#212D40",
+            "#30363D",
+            "#586069",
+            "#58A6FF",
+            "#79C0FF",
+            "#8B949E",
+            "#C9D1D9",
+            "#FFA657",
+            "#FFFFFF"
+          ],
+          "font_families": [
+            "Microsoft YaHei"
+          ]
+        }
+      },
+      "passed": true,
+      "source_sha256": "ac74d6b8d736ac500f8a582b3d3cb4a7f2f6abbf4ed8fd183ecc434425de7718"
+    },
+    {
+      "file": "P06_rule_validation.svg",
+      "path": "D:\\Tool\\Coding\\IDE\\PyCharm\\NeuroGraphIQ_KG_V3_1\\.claude\\skills\\ppt-master\\projects\\neurographiq-kg-construction_ppt169_20260803\\svg_output\\P06_rule_validation.svg",
+      "exists": true,
+      "errors": [],
+      "warnings": [
+        "Detected 3 paragraph-like line run(s) split across sibling <text> elements (<g id=\"c\"> x=40.0, y=390.0..430.0, 2 lines; <g id=\"c\"> x=60.0, y=523.0..551.0, 2 lines; <g id=\"c\"> x=640.0, y=523.0..551.0, 2 lines). If each run is one prose paragraph, combine it into one <text>: keep its first line as direct text and use direct <tspan> children with the parent x and positive relative dy values for later lines. An all-<tspan> form may start with dy=\"0\". Keep semantically independent text frames separate."
+      ],
+      "info": {
+        "viewbox": "0 0 1280 720",
+        "fonts": [
+          "Consolas",
+          "Microsoft YaHei"
+        ],
+        "text_elements": 26,
+        "tspan_elements": 0,
+        "contextual_values": {
+          "colors": [
+            "#0D1117",
+            "#161B22",
+            "#1C2333",
+            "#212D40",
+            "#30363D",
+            "#38A169",
+            "#586069",
+            "#58A6FF",
+            "#8B949E",
+            "#C9D1D9",
+            "#FF7B72",
+            "#FFA657",
+            "#FFFFFF"
+          ],
+          "font_families": [
+            "Microsoft YaHei"
+          ]
+        }
+      },
+      "passed": true,
+      "source_sha256": "20915e69276e054a34949b535d3b58fbfaeb5cb03776c4758849fa3e99143972"
+    },
+    {
+      "file": "P07_llm_extraction.svg",
+      "path": "D:\\Tool\\Coding\\IDE\\PyCharm\\NeuroGraphIQ_KG_V3_1\\.claude\\skills\\ppt-master\\projects\\neurographiq-kg-construction_ppt169_20260803\\svg_output\\P07_llm_extraction.svg",
+      "exists": true,
+      "errors": [],
+      "warnings": [],
+      "info": {
+        "viewbox": "0 0 1280 720",
+        "fonts": [
+          "Microsoft YaHei"
+        ],
+        "text_elements": 13,
+        "tspan_elements": 0,
+        "contextual_values": {
+          "colors": [
+            "#0D1117",
+            "#1A365D",
+            "#1C3A6E",
+            "#204A90",
+            "#212D40",
+            "#38A169",
+            "#586069",
+            "#58A6FF",
+            "#79C0FF",
+            "#8B949E",
+            "#FFA657",
+            "#FFFFFF"
+          ],
+          "font_families": [
+            "Microsoft YaHei"
+          ]
+        }
+      },
+      "passed": true,
+      "source_sha256": "3f929f7793513b2765f55acbe27c8dcc4dc9c9b4d20f97e334770e9b50d6319d"
+    },
+    {
+      "file": "P08_mirror_kg.svg",
+      "path": "D:\\Tool\\Coding\\IDE\\PyCharm\\NeuroGraphIQ_KG_V3_1\\.claude\\skills\\ppt-master\\projects\\neurographiq-kg-construction_ppt169_20260803\\svg_output\\P08_mirror_kg.svg",
+      "exists": true,
+      "errors": [],
+      "warnings": [
+        "Detected 3 paragraph-like line run(s) split across sibling <text> elements (<g id=\"c\"> x=60.0, y=290.0..374.0, 4 lines; <g id=\"c\"> x=460.0, y=290.0..374.0, 4 lines; <g id=\"c\"> x=840.0, y=290.0..374.0, 4 lines). If each run is one prose paragraph, combine it into one <text>: keep its first line as direct text and use direct <tspan> children with the parent x and positive relative dy values for later lines. An all-<tspan> form may start with dy=\"0\". Keep semantically independent text frames separate."
+      ],
+      "info": {
+        "viewbox": "0 0 1280 720",
+        "fonts": [
+          "Consolas",
+          "Microsoft YaHei"
+        ],
+        "text_elements": 31,
+        "tspan_elements": 0,
+        "contextual_values": {
+          "colors": [
+            "#0D1117",
+            "#161B22",
+            "#1C2333",
+            "#212D40",
+            "#30363D",
+            "#38A169",
+            "#586069",
+            "#58A6FF",
+            "#8B949E",
+            "#C9D1D9",
+            "#FFA657",
+            "#FFFFFF"
+          ],
+          "font_families": [
+            "Microsoft YaHei"
+          ]
+        }
+      },
+      "passed": true,
+      "source_sha256": "d32df18032859a50391f57815c292197d61ed27cf0c2a2687cd6ddcc9fe3e3ac"
+    },
+    {
+      "file": "P09_validation_center.svg",
+      "path": "D:\\Tool\\Coding\\IDE\\PyCharm\\NeuroGraphIQ_KG_V3_1\\.claude\\skills\\ppt-master\\projects\\neurographiq-kg-construction_ppt169_20260803\\svg_output\\P09_validation_center.svg",
+      "exists": true,
+      "errors": [],
+      "warnings": [
+        "Detected 3 paragraph-like line run(s) split across sibling <text> elements (<g id=\"c\"> x=60.0, y=346.0..402.0, 3 lines; <g id=\"c\"> x=450.0, y=346.0..402.0, 3 lines; <g id=\"c\"> x=840.0, y=346.0..402.0, 3 lines). If each run is one prose paragraph, combine it into one <text>: keep its first line as direct text and use direct <tspan> children with the parent x and positive relative dy values for later lines. An all-<tspan> form may start with dy=\"0\". Keep semantically independent text frames separate."
+      ],
+      "info": {
+        "viewbox": "0 0 1280 720",
+        "fonts": [
+          "Microsoft YaHei"
+        ],
+        "text_elements": 23,
+        "tspan_elements": 0,
+        "contextual_values": {
+          "colors": [
+            "#0D1117",
+            "#161B22",
+            "#1A365D",
+            "#212D40",
+            "#30363D",
+            "#3068B0",
+            "#586069",
+            "#58A6FF",
+            "#8B949E",
+            "#C9D1D9",
+            "#FFA657",
+            "#FFFFFF"
+          ],
+          "font_families": [
+            "Microsoft YaHei"
+          ]
+        }
+      },
+      "passed": true,
+      "source_sha256": "288bd0d8bcbb49b34798c67233aeb2c2cae35e5de4b66cb23573c8c904034dda"
+    },
+    {
+      "file": "P10_promotion_final_kg.svg",
+      "path": "D:\\Tool\\Coding\\IDE\\PyCharm\\NeuroGraphIQ_KG_V3_1\\.claude\\skills\\ppt-master\\projects\\neurographiq-kg-construction_ppt169_20260803\\svg_output\\P10_promotion_final_kg.svg",
+      "exists": true,
+      "errors": [],
+      "warnings": [],
+      "info": {
+        "viewbox": "0 0 1280 720",
+        "fonts": [
+          "Consolas",
+          "Microsoft YaHei"
+        ],
+        "text_elements": 17,
+        "tspan_elements": 0,
+        "contextual_values": {
+          "colors": [
+            "#0D1117",
+            "#1A365D",
+            "#1C2333",
+            "#1C3A6E",
+            "#204A90",
+            "#212D40",
+            "#586069",
+            "#58A6FF",
+            "#79C0FF",
+            "#8B949E",
+            "#FFA657",
+            "#FFFFFF"
+          ],
+          "font_families": [
+            "Microsoft YaHei"
+          ]
+        }
+      },
+      "passed": true,
+      "source_sha256": "ea501d2553a1758e4143f96d6e40cc69ccea159158c1d628a7ea6a66fd2c429d"
+    },
+    {
+      "file": "P11_consumption_provenance.svg",
+      "path": "D:\\Tool\\Coding\\IDE\\PyCharm\\NeuroGraphIQ_KG_V3_1\\.claude\\skills\\ppt-master\\projects\\neurographiq-kg-construction_ppt169_20260803\\svg_output\\P11_consumption_provenance.svg",
+      "exists": true,
+      "errors": [],
+      "warnings": [
+        "Detected 4 paragraph-like line run(s) split across sibling <text> elements (<g id=\"c\"> x=60.0, y=275.0..331.0, 3 lines; <g id=\"c\"> x=350.0, y=275.0..331.0, 3 lines; <g id=\"c\"> x=640.0, y=275.0..331.0, 3 lines; +1 more). If each run is one prose paragraph, combine it into one <text>: keep its first line as direct text and use direct <tspan> children with the parent x and positive relative dy values for later lines. An all-<tspan> form may start with dy=\"0\". Keep semantically independent text frames separate."
+      ],
+      "info": {
+        "viewbox": "0 0 1280 720",
+        "fonts": [
+          "Consolas",
+          "Microsoft YaHei"
+        ],
+        "text_elements": 37,
+        "tspan_elements": 0,
+        "contextual_values": {
+          "colors": [
+            "#0D1117",
+            "#161B22",
+            "#1A365D",
+            "#1C3A6E",
+            "#204A90",
+            "#212D40",
+            "#2858A0",
+            "#30363D",
+            "#3068B0",
+            "#3878C0",
+            "#586069",
+            "#58A6FF",
+            "#79C0FF",
+            "#8B949E",
+            "#C9D1D9",
+            "#FFA657",
+            "#FFFFFF"
+          ],
+          "font_families": [
+            "Microsoft YaHei"
+          ]
+        }
+      },
+      "passed": true,
+      "source_sha256": "2ba0218c3698e97ccb34a7b8ca9dfb3846867427f0cb40433ada58ae0213a107"
+    },
+    {
+      "file": "P12_innovation.svg",
+      "path": "D:\\Tool\\Coding\\IDE\\PyCharm\\NeuroGraphIQ_KG_V3_1\\.claude\\skills\\ppt-master\\projects\\neurographiq-kg-construction_ppt169_20260803\\svg_output\\P12_innovation.svg",
+      "exists": true,
+      "errors": [],
+      "warnings": [
+        "Detected 6 paragraph-like line run(s) split across sibling <text> elements (<g id=\"c\"> x=60.0, y=265.0..349.0, 4 lines; <g id=\"c\"> x=450.0, y=265.0..349.0, 4 lines; <g id=\"c\"> x=840.0, y=265.0..349.0, 4 lines; +3 more). If each run is one prose paragraph, combine it into one <text>: keep its first line as direct text and use direct <tspan> children with the parent x and positive relative dy values for later lines. An all-<tspan> form may start with dy=\"0\". Keep semantically independent text frames separate."
+      ],
+      "info": {
+        "viewbox": "0 0 1280 720",
+        "fonts": [
+          "Microsoft YaHei"
+        ],
+        "text_elements": 32,
+        "tspan_elements": 0,
+        "contextual_values": {
+          "colors": [
+            "#0D1117",
+            "#161B22",
+            "#1A365D",
+            "#212D40",
+            "#30363D",
+            "#3068B0",
+            "#3878C0",
+            "#38A169",
+            "#586069",
+            "#58A6FF",
+            "#C9D1D9",
+            "#FF7B72",
+            "#FFA657",
+            "#FFFFFF"
+          ],
+          "font_families": [
+            "Microsoft YaHei"
+          ]
+        }
+      },
+      "passed": true,
+      "source_sha256": "6b66b8b2f9b342c87ea0be122b066158dad8eb6f2fcbb23ece75f8e5a447b8ae"
+    },
+    {
+      "file": "P13_status.svg",
+      "path": "D:\\Tool\\Coding\\IDE\\PyCharm\\NeuroGraphIQ_KG_V3_1\\.claude\\skills\\ppt-master\\projects\\neurographiq-kg-construction_ppt169_20260803\\svg_output\\P13_status.svg",
+      "exists": true,
+      "errors": [],
+      "warnings": [],
+      "info": {
+        "viewbox": "0 0 1280 720",
+        "fonts": [
+          "Consolas",
+          "Microsoft YaHei"
+        ],
+        "text_elements": 31,
+        "tspan_elements": 0,
+        "contextual_values": {
+          "colors": [
+            "#0D1117",
+            "#1C2333",
+            "#212D40",
+            "#30363D",
+            "#38A169",
+            "#586069",
+            "#58A6FF",
+            "#8B949E",
+            "#C9D1D9",
+            "#FFA657",
+            "#FFFFFF"
+          ],
+          "font_families": [
+            "Microsoft YaHei"
+          ]
+        }
+      },
+      "passed": true,
+      "source_sha256": "2633a1046d27f9e0989f3bb76251443be709cb7d5a705319215e95b180d89a32"
+    },
+    {
+      "file": "P14_thank_you.svg",
+      "path": "D:\\Tool\\Coding\\IDE\\PyCharm\\NeuroGraphIQ_KG_V3_1\\.claude\\skills\\ppt-master\\projects\\neurographiq-kg-construction_ppt169_20260803\\svg_output\\P14_thank_you.svg",
+      "exists": true,
+      "errors": [],
+      "warnings": [
+        "Fidelity warning: <g> uses group opacity='0.06'. The converter distributes this alpha to descendants and cannot preserve isolated group compositing; generated SVG should prefer descendant alpha. Existing input remains convertible and does not require modification."
+      ],
+      "info": {
+        "viewbox": "0 0 1280 720",
+        "fonts": [
+          "Microsoft YaHei"
+        ],
+        "text_elements": 4,
+        "tspan_elements": 0,
+        "contextual_values": {
+          "colors": [
+            "#0D1117",
+            "#161B22",
+            "#212D40",
+            "#586069",
+            "#58A6FF",
+            "#79C0FF",
+            "#8B949E",
+            "#FFFFFF"
+          ],
+          "font_families": [
+            "Microsoft YaHei"
+          ]
+        },
+        "sparse_typography_sizes": {
+          "64": 1
+        }
+      },
+      "passed": true,
+      "source_sha256": "8f35c4081961870f65ee0493a351602f73301efb294ce28ad690d2c994159f83"
+    }
+  ]
+}

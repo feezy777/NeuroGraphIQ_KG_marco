@@ -6264,7 +6264,7 @@ export function LlmExtractionPage() {
             if (selectedCount < 1) { setCandidateMinError('请至少选择 1 个脑区'); return }
             setShowFullExtractModal(true)
           }}
-          onExtractConnection={() => {
+          onExtractConnection={async () => {
             const tab = candidateSource === 'connection' ? 'connection' : 'region'
             const presetId = QUICK_CARD_PRESET_MAP[tab]?.conn
             if (!presetId) return
@@ -6273,6 +6273,31 @@ export function LlmExtractionPage() {
             console.log('[llm-preset][selected]', buildPresetLogPayload(tab, preset, { pool_id: pool?.id, candidate_count: selectedCount }))
             if (tab === 'connection') {
               if (selectedCount < 1) { setCandidateMinError('请至少选择 1 条连接'); return }
+              // Sync the connection pool first so the modal never opens empty.
+              const connIds = [...new Set(selectedCandidateIds.filter(Boolean))]
+              if (connIds.length < 1) {
+                setCandidateMinError('未能获取选中的连接 ID，请重新勾选')
+                return
+              }
+              try {
+                const result = await setPoolConnections(connIds)
+                console.log('[llm-preset] setPoolConnections SUCCESS:', {
+                  poolId: result.id,
+                  memberCount: result.memberships?.length ?? 0,
+                  connectionCount: result.connection_count,
+                })
+              } catch (err) {
+                const msg = err instanceof Error ? err.message : String(err)
+                console.error('[llm-preset] setPoolConnections FAILED:', {
+                  msg,
+                  connCount: connIds.length,
+                  scopeSourceAtlas: sess.source_atlas,
+                  scopeGranularity: granularity,
+                  connIdSample: connIds.slice(0, 3).map((s: string) => s.slice(0, 12)),
+                })
+                setCandidateMinError(`连接池同步失败: ${msg}`)
+                return
+              }
             } else {
               if (selectedCount < 2) { setCandidateMinError('请至少选择 2 个脑区'); return }
             }

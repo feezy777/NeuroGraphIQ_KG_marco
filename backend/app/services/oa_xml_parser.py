@@ -48,9 +48,12 @@ def normalize_section_title(raw: str) -> str:
     return title or "Other"
 
 
-def _slug(value: str) -> str:
+def _slug(value: str, max_len: int = 64) -> str:
     slug = re.sub(r"[^a-z0-9]+", "_", (value or "").lower()).strip("_")
-    return slug or "untitled"
+    slug = slug or "untitled"
+    # paper_passages.paragraph_id / locator are varchar(128); long section
+    # titles must be truncated or inserts fail with StringDataRightTruncation.
+    return slug[:max_len]
 
 
 def _local(tag: str) -> str:
@@ -111,7 +114,7 @@ def parse_oa_xml(xml_text: str) -> list[dict]:
         section_counts[norm_title] = section_counts.get(norm_title, 0) + 1
         idx = section_counts[norm_title] - 1
         if node_id:
-            paragraph_id = node_id
+            paragraph_id = node_id[:128]
         else:
             paragraph_id = f"{_slug(norm_title)}_p{idx + 1:03d}_{_text_hash_prefix(text_value)}"
         start = char_offset

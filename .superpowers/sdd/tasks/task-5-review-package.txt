@@ -1,0 +1,444 @@
+d585d05 feat(evidence-center): 佐证任务模块
+===STAT===
+ .../modules/EvidenceTasksModule.test.tsx           | 111 +++++++++++++
+ .../modules/EvidenceTasksModule.tsx                | 184 ++++++++++++++++++++-
+ frontend/src/styles.css                            | 108 ++++++++++++
+ 3 files changed, 402 insertions(+), 1 deletion(-)
+===DIFF===
+diff --git a/frontend/src/pages/evidence-center/modules/EvidenceTasksModule.test.tsx b/frontend/src/pages/evidence-center/modules/EvidenceTasksModule.test.tsx
+new file mode 100644
+index 0000000..01e3047
+--- /dev/null
++++ b/frontend/src/pages/evidence-center/modules/EvidenceTasksModule.test.tsx
+@@ -0,0 +1,111 @@
++import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
++import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
++import * as endpoints from '../../../api/endpoints'
++import { EvidenceCenterProvider } from '../EvidenceCenterContext'
++import { EvidenceTasksModule } from './EvidenceTasksModule'
++
++vi.mock('../../../api/endpoints', () => ({
++  listPaperEvidenceTasks: vi.fn(),
++  getPaperEvidenceTask: vi.fn(),
++  createPaperEvidenceBatch: vi.fn(),
++  previewEvidenceBatchScope: vi.fn(),
++}))
++
++const TASK = {
++  id: 't1', target_type: 'connection', name: '任务一', status: 'pending',
++  total_items: 2, processed_items: 0, awaiting_review_items: 2, failed_items: 0,
++  review_status: 'not_started', granularity_level: 'macro',
++  estimated_target_count: 2, materialized_target_count: 2,
++  scope: 'filter', mode: 'existence', max_papers_per_object: 3,
++  created_at: '2026-08-10T00:00:00Z', created_by: null,
++  started_at: null, finished_at: null, error_message: null, materialization_status: 'completed',
++  materialization_cursor: null, materialization_error: null, confidence_lt: null,
++  only_oa: false, stop_after_strong_support: false, summary: null,
++  scope_type: 'filter', filter_snapshot: null, versions: null,
++}
++
++/** 匹配 "标签 <b>值</b>" 结构的统计文本(直接文本子节点不含 <b> 内数值) */
++const stat = (label: string, value: number) =>
++  screen.getByText((_content, el) => el?.textContent === `${label} ${value}`)
++
++describe('EvidenceTasksModule', () => {
++  afterEach(() => { cleanup(); window.location.hash = '' })
++  beforeEach(() => {
++    vi.clearAllMocks()
++    vi.mocked(endpoints.listPaperEvidenceTasks).mockResolvedValue({ items: [TASK], total: 1 })
++    vi.mocked(endpoints.getPaperEvidenceTask).mockResolvedValue({ task: TASK, counts: {} })
++    vi.mocked(endpoints.previewEvidenceBatchScope).mockResolvedValue({ estimated_target_count: 2, over_limit: false, message: null })
++    vi.mocked(endpoints.createPaperEvidenceBatch).mockResolvedValue({ task_id: 'new1', target_count: 2, skipped_active_targets: 0, auto_started: true })
++  })
++
++  it('渲染任务列表与状态分组', async () => {
++    render(<EvidenceCenterProvider><EvidenceTasksModule /></EvidenceCenterProvider>)
++    await waitFor(() => expect(screen.getByText('任务一')).toBeTruthy())
++    // 状态分组标题
++    expect(screen.getByText('待处理')).toBeTruthy()
++    // 任务行:对象类型 / 任务级数字(待审=2) / 佐证数(待审+已处理=2)
++    expect(screen.getByText('connection')).toBeTruthy()
++    expect(stat('待审', 2)).toBeTruthy()
++    expect(stat('佐证数', 2)).toBeTruthy()
++    expect(stat('已处理', 0)).toBeTruthy()
++    expect(stat('失败数', 0)).toBeTruthy()
++    // 预处理/审核状态
++    expect(screen.getByText('预处理 · 待预处理')).toBeTruthy()
++    expect(screen.getByText('审核 · 未开始审核')).toBeTruthy()
++  })
++
++  it('创建批量预处理打开对话框,可关闭', async () => {
++    render(<EvidenceCenterProvider><EvidenceTasksModule /></EvidenceCenterProvider>)
++    await waitFor(() => expect(screen.getByText('创建批量预处理')).toBeTruthy())
++    fireEvent.click(screen.getByText('创建批量预处理'))
++    expect(screen.getByTestId('create-batch-dialog')).toBeTruthy()
++    fireEvent.click(screen.getByText('关闭'))
++    expect(screen.queryByTestId('create-batch-dialog')).toBeNull()
++  })
++
++  it('多状态任务进入对应分组(待人工审核/已审核/失败)', async () => {
++    const tAwaiting = { ...TASK, id: 't2', name: '任务二', status: 'completed', awaiting_review_items: 3, review_status: 'in_progress' }
++    const tReviewed = { ...TASK, id: 't4', name: '任务四', status: 'completed', awaiting_review_items: 0, review_status: 'completed' }
++    const tFailed = { ...TASK, id: 't3', name: '任务三', status: 'failed', failed_items: 2, awaiting_review_items: 0 }
++    vi.mocked(endpoints.listPaperEvidenceTasks).mockResolvedValue({ items: [TASK, tAwaiting, tReviewed, tFailed], total: 4 })
++    render(<EvidenceCenterProvider><EvidenceTasksModule /></EvidenceCenterProvider>)
++    await waitFor(() => expect(screen.getByText('任务四')).toBeTruthy())
++    expect(screen.getByText('待处理')).toBeTruthy()
++    expect(screen.getByText('待人工审核')).toBeTruthy()
++    expect(screen.getByText('已审核')).toBeTruthy()
++    expect(screen.getByText('失败')).toBeTruthy()
++    // 已完成组:无任务落组(任务四被"已审核"优先吸收)
++    expect(screen.queryByText('已完成')).toBeNull()
++  })
++
++  it('打开任务跳转候选模块(URL 带 task_id)', async () => {
++    render(<EvidenceCenterProvider><EvidenceTasksModule /></EvidenceCenterProvider>)
++    await waitFor(() => expect(screen.getByText('任务一')).toBeTruthy())
++    fireEvent.click(screen.getByText('打开任务'))
++    await waitFor(() => expect(window.location.hash).toContain('module=candidates'))
++    expect(window.location.hash).toContain('task_id=t1')
++  })
++
++  it('开始人工处理跳转候选模块', async () => {
++    render(<EvidenceCenterProvider><EvidenceTasksModule /></EvidenceCenterProvider>)
++    await waitFor(() => expect(screen.getByText('任务一')).toBeTruthy())
++    fireEvent.click(screen.getByText('开始人工处理'))
++    await waitFor(() => expect(window.location.hash).toContain('module=candidates'))
++    expect(window.location.hash).toContain('task_id=t1')
++    expect(endpoints.getPaperEvidenceTask).toHaveBeenCalledWith('t1')
++  })
++
++  it('加载失败显示错误并可重试', async () => {
++    vi.mocked(endpoints.listPaperEvidenceTasks).mockRejectedValueOnce(new Error('503 backend down'))
++    render(<EvidenceCenterProvider><EvidenceTasksModule /></EvidenceCenterProvider>)
++    await waitFor(() => expect(screen.getByText(/任务加载失败/)).toBeTruthy())
++    fireEvent.click(screen.getByText('重试'))
++    await waitFor(() => expect(screen.getByText('任务一')).toBeTruthy())
++  })
++
++  it('空列表显示空态提示', async () => {
++    vi.mocked(endpoints.listPaperEvidenceTasks).mockResolvedValue({ items: [], total: 0 })
++    render(<EvidenceCenterProvider><EvidenceTasksModule /></EvidenceCenterProvider>)
++    await waitFor(() => expect(screen.getByText(/暂无佐证任务/)).toBeTruthy())
++  })
++})
+diff --git a/frontend/src/pages/evidence-center/modules/EvidenceTasksModule.tsx b/frontend/src/pages/evidence-center/modules/EvidenceTasksModule.tsx
+index 23a70fd..6c669f5 100644
+--- a/frontend/src/pages/evidence-center/modules/EvidenceTasksModule.tsx
++++ b/frontend/src/pages/evidence-center/modules/EvidenceTasksModule.tsx
+@@ -1,3 +1,185 @@
++import { useCallback, useEffect, useState } from 'react'
++import { getPaperEvidenceTask, listPaperEvidenceTasks, type PaperEvidenceTask } from '../../../api/endpoints'
++import { useGlobalGranularity } from '../../../hooks/useGlobalGranularity'
++import { useEvidenceCenter } from '../EvidenceCenterContext'
++import { CreateBatchTaskDialog } from '../components/CreateBatchTaskDialog'
++
++interface StatusGroup {
++  key: string
++  label: string
++  match: (t: PaperEvidenceTask) => boolean
++}
++
++/** 状态分组(任务只落入第一个命中的分组,避免重复展示) */
++const STATUS_GROUPS: StatusGroup[] = [
++  { key: 'pending', label: '待处理', match: t => t.status === 'pending' },
++  { key: 'preprocessing', label: '预处理中', match: t => ['running', 'paused'].includes(t.status) },
++  { key: 'awaiting', label: '待人工审核', match: t => t.awaiting_review_items > 0 },
++  { key: 'reviewed', label: '已审核', match: t => t.review_status === 'completed' },
++  { key: 'done', label: '已完成', match: t => t.status === 'completed' && t.awaiting_review_items === 0 },
++  { key: 'failed', label: '失败', match: t => t.failed_items > 0 || t.status === 'failed' },
++]
++
++const STATUS_LABELS: Record<string, string> = {
++  pending: '待预处理',
++  running: '运行中',
++  paused: '已暂停',
++  completed: '预处理完成',
++  failed: '预处理失败',
++}
++
++const REVIEW_LABELS: Record<string, string> = {
++  not_started: '未开始审核',
++  processing: '审核中',
++  in_progress: '审核中',
++  completed: '审核完成',
++}
++
++function statusTone(status: string): string {
++  switch (status) {
++    case 'completed': return 'ok'
++    case 'failed': return 'bad'
++    case 'paused': return 'warn'
++    case 'running': return 'info'
++    default: return 'muted'
++  }
++}
++
++function reviewTone(reviewStatus: string | null): string {
++  if (reviewStatus === 'completed') return 'ok'
++  if (reviewStatus === 'processing' || reviewStatus === 'in_progress') return 'info'
++  return 'muted'
++}
++
++function TaskRow({ task, onStartReview, onOpen }: {
++  task: PaperEvidenceTask
++  onStartReview: () => void
++  onOpen: () => void
++}) {
++  const statusLabel = STATUS_LABELS[task.status] ?? task.status
++  const reviewLabel = REVIEW_LABELS[task.review_status ?? ''] ?? task.review_status ?? '—'
++  const evidenceCount = task.awaiting_review_items + task.processed_items
++  return (
++    <div className="evidence-task-row">
++      <div className="evidence-task-main">
++        <span className="evidence-task-name">{task.name || task.target_type}</span>
++        <span className="evidence-task-type">{task.target_type}</span>
++      </div>
++      <div className="evidence-task-stats">
++        <span className="evidence-task-stat">已处理 <b>{task.processed_items}</b></span>
++        <span className="evidence-task-stat">待审 <b>{task.awaiting_review_items}</b></span>
++        <span className="evidence-task-stat">失败数 <b>{task.failed_items}</b></span>
++        <span className="evidence-task-stat">佐证数 <b>{evidenceCount}</b></span>
++      </div>
++      <div className="evidence-task-chips">
++        <span className={`evidence-task-chip evidence-task-chip-${statusTone(task.status)}`}>预处理 · {statusLabel}</span>
++        <span className={`evidence-task-chip evidence-task-chip-${reviewTone(task.review_status)}`}>审核 · {reviewLabel}</span>
++      </div>
++      <div className="evidence-task-actions">
++        <button type="button" className="btn btn-xs btn-primary" onClick={onStartReview}>开始人工处理</button>
++        {task.awaiting_review_items > 0 && (
++          <button type="button" className="btn btn-xs" onClick={onOpen}>跳转待审核</button>
++        )}
++        <button type="button" className="btn btn-xs" onClick={onOpen}>打开任务</button>
++      </div>
++    </div>
++  )
++}
++
+ export function EvidenceTasksModule() {
+-  return <div className="evidence-module-placeholder">佐证任务模块(建设中)</div>
++  const { openTask } = useEvidenceCenter()
++  const { granularity } = useGlobalGranularity()
++  const [tasks, setTasks] = useState<PaperEvidenceTask[]>([])
++  const [loading, setLoading] = useState(true)
++  const [error, setError] = useState<string | null>(null)
++  const [createOpen, setCreateOpen] = useState(false)
++
++  const loadTasks = useCallback(async () => {
++    setLoading(true)
++    setError(null)
++    try {
++      const r = await listPaperEvidenceTasks()
++      setTasks(r.items)
++    } catch (err) {
++      setError(err instanceof Error ? err.message : String(err))
++    } finally {
++      setLoading(false)
++    }
++  }, [])
++
++  useEffect(() => { void loadTasks() }, [loadTasks])
++
++  // 任务无 target_id 列表,简化为 openTask(taskId) 跳候选模块;先拉一次详情刷新统计
++  const handleStartReview = useCallback(async (task: PaperEvidenceTask) => {
++    try { await getPaperEvidenceTask(task.id) } catch { /* 详情失败不阻塞跳转 */ }
++    openTask(task.id)
++  }, [openTask])
++
++  // 每个任务只落入第一个命中的分组(按 STATUS_GROUPS 顺序优先)
++  const assignedKeys = new Set<string>()
++  const groups = STATUS_GROUPS
++    .map(g => ({
++      ...g,
++      tasks: tasks.filter(t => {
++        if (assignedKeys.has(t.id)) return false
++        if (g.match(t)) { assignedKeys.add(t.id); return true }
++        return false
++      }),
++    }))
++    .filter(g => g.tasks.length > 0)
++
++  return (
++    <div className="evidence-task-module">
++      <div className="evidence-task-toolbar">
++        <div className="evidence-task-toolbar-title">
++          <h3>任务列表</h3>
++          <p className="evidence-module-hint">
++            {tasks.length > 0 ? `共 ${tasks.length} 个任务,按处理状态分组展示。` : '按处理状态分组展示。'}
++          </p>
++        </div>
++        <div className="evidence-task-toolbar-actions">
++          <button type="button" className="btn btn-sm" onClick={() => void loadTasks()}>刷新</button>
++          <button type="button" className="btn btn-sm btn-primary" onClick={() => setCreateOpen(true)}>创建批量预处理</button>
++        </div>
++      </div>
++
++      {loading && <div className="evidence-task-loading">加载中…</div>}
++      {!loading && error && (
++        <div className="evidence-task-error">
++          <p>任务加载失败:{error}</p>
++          <button type="button" className="btn btn-sm" onClick={() => void loadTasks()}>重试</button>
++        </div>
++      )}
++      {!loading && !error && tasks.length === 0 && (
++        <div className="evidence-task-empty">暂无佐证任务,点击右上角「创建批量预处理」创建第一个任务。</div>
++      )}
++      {!loading && !error && tasks.length > 0 && (
++        <div className="evidence-task-groups">
++          {groups.map(group => (
++            <section key={group.key} className="evidence-task-group">
++              <div className="evidence-task-group-head">
++                <span className="evidence-task-group-title">{group.label}</span>
++                <span className="evidence-task-group-count">{group.tasks.length}</span>
++              </div>
++              {group.tasks.map(task => (
++                <TaskRow
++                  key={task.id}
++                  task={task}
++                  onStartReview={() => void handleStartReview(task)}
++                  onOpen={() => openTask(task.id)}
++                />
++              ))}
++            </section>
++          ))}
++        </div>
++      )}
++
++      <CreateBatchTaskDialog
++        open={createOpen}
++        granularity={granularity}
++        onClose={() => setCreateOpen(false)}
++        onCreated={() => { setCreateOpen(false); void loadTasks() }}
++      />
++    </div>
++  )
+ }
+diff --git a/frontend/src/styles.css b/frontend/src/styles.css
+index 12cd19c..9d3d241 100644
+--- a/frontend/src/styles.css
++++ b/frontend/src/styles.css
+@@ -11346,16 +11346,124 @@ input[type="range"]::-webkit-slider-thumb {
+ .ew-paper { padding: 8px; border: 1px solid var(--border); border-radius: 8px; margin-bottom: 6px; cursor: pointer; }
+ .ew-paper-active { border-color: var(--primary); box-shadow: 0 0 0 1px var(--primary); }
+ .ew-oa { background: #dcfce7; color: #15803d; border-radius: 8px; padding: 1px 6px; font-size: 10px; }
+ .ew-passage { border: 1px solid var(--border); border-radius: 8px; padding: 8px; margin-bottom: 8px; }
+ .ew-passage-invalid { border-color: var(--danger); background: #fff1f0; }
+ .ew-passage-en { font-size: 12px; background: #f8fafc; padding: 6px; border-radius: 6px; margin: 6px 0; }
+ .ew-passage-zh { font-size: 12px; color: #334155; background: #f0f9ff; padding: 6px; border-radius: 6px; margin: 4px 0; }
+ .ew-trans { width: 100%; min-height: 54px; font-size: 12px; }
+ .ew-ok { color: var(--success); font-weight: 600; font-size: 11px; }
+ .ew-bad { color: var(--danger); font-weight: 600; font-size: 11px; }
++.ew-warn { color: var(--warning, #b8860b); font-weight: 600; font-size: 11px; }
++.ew-dimension-badge { color: var(--primary); background: rgba(59, 130, 246, .1); border: 1px solid rgba(59, 130, 246, .35); border-radius: 4px; padding: 0 6px; font-size: 11px; font-weight: 600; }
+ .ew-right { border-left: 1px solid var(--border); overflow-y: auto; padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+ .ew-field { display: flex; flex-direction: column; gap: 4px; font-size: 12px; }
+ .ew-radio { display: inline-flex; align-items: center; gap: 4px; margin-right: 10px; }
+ .ew-preview { background: #f8fafc; border: 1px solid var(--border); border-radius: 10px; padding: 10px; }
+ .ew-preview-flow { font-size: 14px; font-weight: 700; }
+ .ew-bottom { display: flex; gap: 8px; padding: 10px 16px; border-top: 1px solid var(--border); align-items: center; }
++
++/* ── Evidence Center (佐证中心) ─────────────────────────────────────────── */
++.evidence-center { display: flex; flex-direction: column; gap: 12px; }
++.evidence-center-header {
++  display: flex;
++  align-items: center;
++  justify-content: space-between;
++  gap: 12px;
++  flex-wrap: wrap;
++  padding: 10px 14px;
++  background: var(--white);
++  border: 1px solid var(--border);
++  border-radius: var(--card-radius);
++  box-shadow: var(--shadow);
++}
++.evidence-module-nav { display: flex; gap: 8px; flex-wrap: wrap; }
++.evidence-module-btn {
++  border: 1px solid var(--border);
++  background: #f1f5f9;
++  color: var(--text-muted);
++  border-radius: 999px;
++  padding: 6px 16px;
++  font-size: 13px;
++  font-weight: 500;
++  cursor: pointer;
++  transition: all .15s ease;
++}
++.evidence-module-btn:hover { color: var(--primary); border-color: var(--primary); background: #eff6ff; }
++.evidence-module-btn.active { background: var(--primary); border-color: var(--primary); color: #fff; box-shadow: 0 2px 8px rgba(22, 119, 255, .35); }
++.evidence-center-body { display: flex; flex-direction: column; gap: 12px; }
++.evidence-module-hint { font-size: 12px; color: var(--text-muted); line-height: 1.6; }
++
++/* 佐证任务模块 */
++.evidence-task-module { display: flex; flex-direction: column; gap: 12px; }
++.evidence-task-toolbar { display: flex; align-items: flex-end; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
++.evidence-task-toolbar-title h3 { font-size: 15px; color: var(--text); margin-bottom: 2px; }
++.evidence-task-toolbar-actions { display: flex; gap: 8px; }
++.evidence-task-groups { display: flex; flex-direction: column; gap: 14px; }
++.evidence-task-group {
++  background: var(--white);
++  border: 1px solid var(--border);
++  border-radius: var(--card-radius);
++  padding: 12px 14px;
++  box-shadow: var(--shadow);
++}
++.evidence-task-group-head { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
++.evidence-task-group-title { font-size: 13px; font-weight: 600; color: var(--text); }
++.evidence-task-group-title::before {
++  content: '';
++  display: inline-block;
++  width: 4px;
++  height: 14px;
++  border-radius: 2px;
++  background: var(--primary);
++  margin-right: 8px;
++  vertical-align: -2px;
++}
++.evidence-task-group-count { background: #eff6ff; color: var(--primary); border-radius: 999px; padding: 1px 8px; font-size: 11px; font-weight: 600; }
++.evidence-task-row {
++  display: flex;
++  align-items: center;
++  gap: 16px;
++  flex-wrap: wrap;
++  padding: 10px 12px;
++  border: 1px solid var(--border);
++  border-radius: 10px;
++  margin-bottom: 8px;
++  transition: border-color .15s ease, box-shadow .15s ease;
++}
++.evidence-task-row:hover { border-color: var(--primary); box-shadow: var(--shadow); }
++.evidence-task-row:last-child { margin-bottom: 0; }
++.evidence-task-main { display: flex; flex-direction: column; gap: 4px; min-width: 160px; }
++.evidence-task-name { font-size: 14px; font-weight: 600; color: var(--text); }
++.evidence-task-type {
++  display: inline-block;
++  align-self: flex-start;
++  font-size: 11px;
++  font-weight: 600;
++  color: var(--primary);
++  background: rgba(59, 130, 246, .1);
++  border: 1px solid rgba(59, 130, 246, .35);
++  border-radius: 4px;
++  padding: 0 6px;
++}
++.evidence-task-stats { display: flex; gap: 14px; flex-wrap: wrap; }
++.evidence-task-stat { font-size: 12px; color: var(--text-muted); }
++.evidence-task-stat b { color: var(--text); font-size: 13px; margin-left: 2px; }
++.evidence-task-chips { display: flex; gap: 6px; flex-wrap: wrap; }
++.evidence-task-chip { font-size: 11px; font-weight: 600; border-radius: 6px; padding: 2px 8px; }
++.evidence-task-chip-ok { color: #15803d; background: #dcfce7; }
++.evidence-task-chip-bad { color: var(--danger); background: #fff1f0; }
++.evidence-task-chip-warn { color: #b45309; background: #fef3c7; }
++.evidence-task-chip-info { color: var(--primary); background: #eff6ff; }
++.evidence-task-chip-muted { color: var(--text-muted); background: #f1f5f9; }
++.evidence-task-actions { margin-left: auto; display: flex; gap: 8px; }
++.evidence-task-loading { padding: 40px 20px; text-align: center; color: var(--text-muted); }
++.evidence-task-error { padding: 24px; text-align: center; color: var(--danger); display: flex; flex-direction: column; gap: 10px; align-items: center; }
++.evidence-task-empty {
++  padding: 40px 20px;
++  text-align: center;
++  color: var(--text-muted);
++  font-size: 13px;
++  background: var(--white);
++  border: 1px dashed var(--border);
++  border-radius: var(--card-radius);
++}

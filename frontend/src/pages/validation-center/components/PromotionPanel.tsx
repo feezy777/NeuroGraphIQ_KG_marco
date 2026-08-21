@@ -84,6 +84,26 @@ export function PromotionPanel({ granularityLevel }: Props) {
 
   useEffect(() => { fetchData() }, [fetchData])
 
+  const [selectAllLoading, setSelectAllLoading] = useState(false)
+
+  const handleSelectAll = useCallback(async () => {
+    setSelectAllLoading(true)
+    try {
+      const params = new URLSearchParams()
+      params.set('limit', '10000')
+      if (granularityLevel) params.set('granularity_level', granularityLevel)
+      const res = await fetch(`/api/validation/circuit/promotion/queue?${params}`)
+      if (!res.ok) throw new Error(`API错误: ${res.status}`)
+      const data = await res.json()
+      const allIds = (data.items || []).map((item: any) => item.id)
+      setSelected(new Set(allIds))
+    } catch {
+      // silently fail
+    } finally {
+      setSelectAllLoading(false)
+    }
+  }, [granularityLevel])
+
   const toggleSelect = (id: string) => {
     const next = new Set(selected)
     if (next.has(id)) next.delete(id); else next.add(id)
@@ -183,7 +203,22 @@ export function PromotionPanel({ granularityLevel }: Props) {
     <div className="vr-panel">
       <div className="vr-header">
         <h3 style={{ margin: 0, fontSize: 15, fontWeight: 600 }}>晋升管理</h3>
-        <span className="vr-total">共 {total} 条可晋升</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span className="vr-total">共 {total} 条可晋升</span>
+          <button
+            className="btn btn-sm btn-outline"
+            onClick={handleSelectAll}
+            disabled={selectAllLoading || total === 0}
+            style={{ fontSize: 12 }}
+          >
+            {selectAllLoading ? '加载中…' : '全选所有'}
+          </button>
+          {selected.size > 0 && (
+            <button className="btn btn-sm btn-outline" onClick={() => setSelected(new Set())} style={{ fontSize: 12 }}>
+              清除 ({selected.size})
+            </button>
+          )}
+        </div>
       </div>
 
       {actionMessage && (

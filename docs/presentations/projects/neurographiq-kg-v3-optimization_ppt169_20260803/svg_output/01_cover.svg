@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 720" width="1280" height="720">
+  <g id="background"><rect width="1280" height="720" fill="#F7FAFC"/><image href="../images/cover_neural_graph.png" x="640" y="0" width="640" height="720" preserveAspectRatio="xMidYMid slice"/><rect x="0" y="0" width="720" height="720" fill="#F7FAFC"/><rect x="700" y="0" width="40" height="720" fill="#F7FAFC"/></g>
+  <g id="content">
+  <use data-icon="tabler-outline/brain" x="56" y="120" width="48" height="48" stroke="#1F9FB5" fill="none" stroke-width="2"/>
+  <text x="56" y="240" font-family="Arial, sans-serif" font-size="48" font-weight="700" fill="#17324D">NeuroGraphIQ KG V3</text>
+  <text x="56" y="300" font-family="Microsoft YaHei, Arial, sans-serif" font-size="28" font-weight="700" fill="#243447">多粒度脑区知识图谱构建过程</text>
+  <rect x="56" y="340" width="560" height="2" fill="#1F9FB5"/>
+  <text x="56" y="400" font-family="Microsoft YaHei, Arial, sans-serif" font-size="20" fill="#5A6A7A">核心命题：让 LLM 成为受控提取工具，而不是知识终审者</text>
+  <text x="56" y="460" font-family="Microsoft YaHei, Arial, sans-serif" font-size="16" fill="#8492A0">学术汇报，信任构建与治理闭环</text>
+  </g>
+  <g id="footer"><text x="1224" y="696" text-anchor="end" font-family="Arial, sans-serif" font-size="12" fill="#8492A0">1</text></g>
+</svg>

@@ -15,6 +15,8 @@ export interface ExtractionProgressPanelProps {
   showRetry?: boolean
   showPause?: boolean
   workflowType?: string
+  provider?: string | null
+  modelName?: string | null
   isDryRun?: boolean
   dryRunPlan?: unknown
   lastDryRunPayload?: Record<string, unknown> | null
@@ -80,6 +82,8 @@ export function ExtractionProgressPanel({
   showRetry = false,
   showPause = true,
   workflowType,
+  provider,
+  modelName,
   isDryRun = false,
   dryRunPlan,
   lastDryRunPayload,
@@ -96,6 +100,8 @@ export function ExtractionProgressPanel({
   const remSec = progress.estimatedRemainingSec ?? (avgSec !== null ? avgSec * Math.max(0, progress.totalPacks - progress.processedPacks) : null)
 
   const showProgressView = !dryRunPlan && !isTerminalWorkflowStatus(progress.workflowStatus)
+  const providerLabel = provider || 'DeepSeek'
+  const modelLabel = modelName || ''
 
   // ── Render: progress ────────────────────────────────────────────────────
   if (showProgressView) {
@@ -123,9 +129,9 @@ export function ExtractionProgressPanel({
                 : progress.workflowStatus === 'queued' || progress.workflowStatus === 'pending'
                   ? '排队中...'
                   : running && progress.inFlightPacks > 0
-                    ? `DeepSeek v4 pro 并发提取（${progress.concurrency || 1} 路）`
+                    ? `${providerLabel}${modelLabel ? ' ' + modelLabel : ''} 提取中（并发 ${progress.concurrency || 1} 路）`
                     : running && processed === 0
-                      ? '正在等待首批 DeepSeek 响应...'
+                      ? `正在等待首批 ${providerLabel} 响应...`
                       : running && processed > 0
                         ? '提取中...'
                         : progress.workflowStatus === 'succeeded'
@@ -151,7 +157,7 @@ export function ExtractionProgressPanel({
                     ? `已完成 ${processed}/${total} 包`
                     : progress.inFlightPacks > 0
                       ? `${progress.inFlightPacks} 运行中 · ${total - (progress.inFlightPacks || 0)} 排队`
-                      : '正在等待首批 DeepSeek 响应...'}
+                      : `正在等待首批 ${providerLabel} 响应...`}
               </span>
               <span style={{ fontWeight: 600 }}>
                 {Math.round(progressPct)}% · {elapsedStr(progress.elapsedSec)}

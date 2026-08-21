@@ -11,7 +11,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm.attributes import flag_modified
@@ -147,12 +147,15 @@ async def _find_existing_function_for_merge(
     relation_type: str,
     source_atlas: str | None = None,
     granularity_level: str | None = None,
+    term_id: uuid.UUID | None = None,
 ) -> MirrorRegionFunction | None:
     """Find a non-superseded, non-promoted existing function with the same matching key.
 
     Matches on region_candidate_id + function_category + relation_type, then
-    filters candidates by case-insensitive function_term equality. Excludes records
-    that are rejected, failed/promoted, or superseded.
+    filters by the canonical term_id (P1.3: identity is term_id-based, never
+    text-based). Unresolved texts (term_id None) fall back to case-insensitive
+    function_term equality so re-extraction still dedups. Excludes records that
+    are rejected, failed/promoted, or superseded.
     """
     blocked_review = frozenset({MirrorReviewStatus.rejected})
     blocked_promo = frozenset({MirrorPromotionStatus.failed, MirrorPromotionStatus.promoted})
@@ -165,10 +168,15 @@ async def _find_existing_function_for_merge(
         MirrorRegionFunction.relation_type == relation_type,
         MirrorRegionFunction.review_status.notin_(blocked_review),
         MirrorRegionFunction.promotion_status.notin_(blocked_promo),
-        MirrorRegionFunction.function_term.isnot(None),
-        MirrorRegionFunction.function_term != "",
-        func.lower(MirrorRegionFunction.function_term) == func_term_norm,
     )
+    if term_id is not None:
+        base = base.where(MirrorRegionFunction.term_id == term_id)
+    else:
+        base = base.where(
+            MirrorRegionFunction.function_term.isnot(None),
+            MirrorRegionFunction.function_term != "",
+            func.lower(MirrorRegionFunction.function_term) == func_term_norm,
+        )
     if source_atlas:
         base = base.where(MirrorRegionFunction.source_atlas == source_atlas)
     if granularity_level:
@@ -367,6 +375,33 @@ async def create_mirror_connection(
         return existing
 
 
+def _apply_confidence_filter(select_stmt, model, confidence_min=None, confidence_max=None, confidence_include_null=False):
+    """Apply confidence range + null-inclusion filter on any mirror model with a ``confidence`` column.
+
+    Range conditions are AND-ed: ``confidence_min <= x AND x <= confidence_max``.
+    The null-inclusion is OR-ed with the range: ``(range) OR (confidence IS NULL)``.
+    """
+    range_conds = []
+    if confidence_min is not None:
+        range_conds.append(model.confidence >= confidence_min)
+    if confidence_max is not None:
+        range_conds.append(model.confidence <= confidence_max)
+
+    if not range_conds and not confidence_include_null:
+        return select_stmt
+
+    if range_conds and confidence_include_null:
+        # (confidence >= min AND confidence <= max) OR confidence IS NULL
+        select_stmt = select_stmt.where(or_(and_(*range_conds), model.confidence.is_(None)))
+    elif range_conds:
+        # confidence >= min AND confidence <= max
+        select_stmt = select_stmt.where(and_(*range_conds))
+    else:
+        # confidence IS NULL only
+        select_stmt = select_stmt.where(model.confidence.is_(None))
+    return select_stmt
+
+
 async def list_mirror_connections(
     session: AsyncSession,
     *,
@@ -382,6 +417,9 @@ async def list_mirror_connections(
     llm_item_id: uuid.UUID | None = None,
     candidate_id: uuid.UUID | None = None,
     search: str | None = None,
+    confidence_min: float | None = None,
+    confidence_max: float | None = None,
+    confidence_include_null: bool = False,
     limit: int = 50,
     offset: int = 0,
 ) -> tuple[list[MirrorRegionConnection], int]:
@@ -414,6 +452,7 @@ async def list_mirror_connections(
             )
         )
     base = _apply_search(base, MirrorRegionConnection, search)
+    base = _apply_confidence_filter(base, MirrorRegionConnection, confidence_min, confidence_max, confidence_include_null)
     count_q = select(func.count()).select_from(base.subquery())
     total = int((await session.execute(count_q)).scalar_one())
     rows = (
@@ -481,6 +520,16 @@ async def update_mirror_connection(
             setattr(row, key, val)
     await session.flush()
     await session.refresh(row)
+    # P1.6: incremental projection (term / text / qualifier may have changed)
+    from app.services.function_triple_projection_service import (
+        reconcile_function_subject,
+    )
+
+    await reconcile_function_subject(
+        session,
+        subject_type="region_candidate",
+        subject_id=row.region_candidate_id,
+    )
     return row
 
 
@@ -502,7 +551,20 @@ async def create_mirror_function(
     Follows the same confidence-based merge pattern as create_mirror_connection.
     The last provenance entry's ``action`` field will be ``"created"``, ``"updated"``,
     or ``"skipped"``.
+
+    P1.3: the canonical Function term is resolved before dedup, so relation
+    identity is term_id-based; every created/merged row is anchored via the
+    unified resolver.
     """
+    from app.services.function_term_service import (
+        anchor_function_relation,
+        resolve_or_propose_function_term,
+    )
+
+    term_res = await resolve_or_propose_function_term(
+        session, payload.function_term, created_by="extraction",
+        source="create_mirror_function",
+    )
     existing = await _find_existing_function_for_merge(
         session,
         region_candidate_id=payload.region_candidate_id,
@@ -511,6 +573,7 @@ async def create_mirror_function(
         relation_type=payload.relation_type,
         source_atlas=payload.source_atlas,
         granularity_level=payload.granularity_level,
+        term_id=term_res.term_id,
     )
 
     if existing is not None and existing.review_status in (
@@ -543,6 +606,8 @@ async def create_mirror_function(
             for key, val in update_fields.items():
                 if val is not None or key in ("mirror_status",):
                     setattr(existing, key, val)
+        if term_res.term_id is not None and existing.term_id != term_res.term_id:
+            existing.term_id = term_res.term_id
 
         existing_raw = dict(existing.raw_payload_json or {})
         existing_raw["provenance"] = merged_prov
@@ -551,6 +616,19 @@ async def create_mirror_function(
 
         await session.flush()
         await session.refresh(existing)
+        await anchor_function_relation(
+            session, target_type="region_function", row=existing, created_by="extraction"
+        )
+        # P1.6: incremental projection for the affected subject
+        from app.services.function_triple_projection_service import (
+            reconcile_function_subject,
+        )
+
+        await reconcile_function_subject(
+            session,
+            subject_type="region_candidate",
+            subject_id=existing.region_candidate_id,
+        )
         return existing
 
     # No existing, or existing is already in review/approved → create fresh
@@ -572,6 +650,19 @@ async def create_mirror_function(
     session.add(row)
     await session.flush()
     await session.refresh(row)
+    await anchor_function_relation(
+        session, target_type="region_function", row=row, created_by="extraction"
+    )
+    # P1.6: incremental projection for the affected subject
+    from app.services.function_triple_projection_service import (
+        reconcile_function_subject,
+    )
+
+    await reconcile_function_subject(
+        session,
+        subject_type="region_candidate",
+        subject_id=row.region_candidate_id,
+    )
     return row
 
 
@@ -590,6 +681,9 @@ async def list_mirror_functions(
     llm_item_id: uuid.UUID | None = None,
     candidate_id: uuid.UUID | None = None,
     search: str | None = None,
+    confidence_min: float | None = None,
+    confidence_max: float | None = None,
+    confidence_include_null: bool = False,
     limit: int = 50,
     offset: int = 0,
 ) -> tuple[list[MirrorRegionFunction], int]:
@@ -617,6 +711,7 @@ async def list_mirror_functions(
     if candidate_id:
         base = base.where(MirrorRegionFunction.region_candidate_id == candidate_id)
     base = _apply_search(base, MirrorRegionFunction, search)
+    base = _apply_confidence_filter(base, MirrorRegionFunction, confidence_min, confidence_max, confidence_include_null)
     count_q = select(func.count()).select_from(base.subquery())
     total = int((await session.execute(count_q)).scalar_one())
     rows = (
@@ -647,6 +742,16 @@ async def update_mirror_function(
             setattr(row, key, val)
     await session.flush()
     await session.refresh(row)
+    # P1.6: incremental projection (term / text / qualifier may have changed)
+    from app.services.function_triple_projection_service import (
+        reconcile_function_subject,
+    )
+
+    await reconcile_function_subject(
+        session,
+        subject_type="region_candidate",
+        subject_id=row.region_candidate_id,
+    )
     return row
 
 
@@ -655,8 +760,19 @@ async def delete_mirror_function(
     function_id: uuid.UUID,
 ) -> None:
     row = await get_mirror_function(session, function_id)
+    subject_id = row.region_candidate_id
     await session.delete(row)
     await session.flush()
+    # P1.6: re-projection drops the removed relation from triple lineage
+    from app.services.function_triple_projection_service import (
+        reconcile_function_subject,
+    )
+
+    await reconcile_function_subject(
+        session,
+        subject_type="region_candidate",
+        subject_id=subject_id,
+    )
 
 
 async def _find_existing_circuit_for_merge(
@@ -770,6 +886,18 @@ async def create_mirror_circuit(
 
         await session.flush()
         await session.refresh(existing)
+        # P1.4: keep mirror_circuit_functions as the authority for circuit
+        # functions — mirror the association text into a formal relation.
+        from app.services.mirror_macro_clinical_service import (
+            sync_circuit_function_from_association,
+        )
+
+        await sync_circuit_function_from_association(
+            session,
+            circuit=existing,
+            function_association=payload.function_association,
+            created_by="mirror_circuit_merge",
+        )
         return existing
 
     # No existing, or existing is already in review/approved → create fresh
@@ -811,6 +939,17 @@ async def create_mirror_circuit(
                 existing.circuit_type = data.get("circuit_type") or existing.circuit_type
                 session.add(existing)
                 await session.flush()
+            # P1.4: mirror the association text into mirror_circuit_functions.
+            from app.services.mirror_macro_clinical_service import (
+                sync_circuit_function_from_association,
+            )
+
+            await sync_circuit_function_from_association(
+                session,
+                circuit=existing,
+                function_association=data.get("function_association"),
+                created_by="mirror_circuit_create",
+            )
             return existing
         raise  # If still not found, something else is wrong
 
@@ -826,6 +965,17 @@ async def create_mirror_circuit(
         )
     await session.flush()
     await session.refresh(row)
+    # P1.4: mirror the association text into mirror_circuit_functions.
+    from app.services.mirror_macro_clinical_service import (
+        sync_circuit_function_from_association,
+    )
+
+    await sync_circuit_function_from_association(
+        session,
+        circuit=row,
+        function_association=data.get("function_association"),
+        created_by="mirror_circuit_create",
+    )
     return row
 
 
@@ -853,13 +1003,26 @@ async def list_mirror_circuits(
     promotion_status: str | None = None,
     llm_run_id: uuid.UUID | None = None,
     llm_item_id: uuid.UUID | None = None,
+    candidate_id: uuid.UUID | None = None,
     search: str | None = None,
+    confidence_min: float | None = None,
+    confidence_max: float | None = None,
+    confidence_include_null: bool = False,
     limit: int = 50,
     offset: int = 0,
 ) -> tuple[list[MirrorRegionCircuit], int]:
     base = select(MirrorRegionCircuit)
     if resource_id:
         base = base.where(MirrorRegionCircuit.resource_id == resource_id)
+    if candidate_id:
+        # 通过 mirror_circuit_regions 成员关系过滤（IN 子查询避免多成员导致的重复行）
+        base = base.where(
+            MirrorRegionCircuit.id.in_(
+                select(MirrorCircuitRegion.circuit_id).where(
+                    MirrorCircuitRegion.region_candidate_id == candidate_id
+                )
+            )
+        )
     if batch_id:
         base = base.where(MirrorRegionCircuit.batch_id == batch_id)
     if source_atlas:
@@ -879,6 +1042,7 @@ async def list_mirror_circuits(
     if llm_item_id:
         base = base.where(MirrorRegionCircuit.llm_item_id == llm_item_id)
     base = _apply_search(base, MirrorRegionCircuit, search)
+    base = _apply_confidence_filter(base, MirrorRegionCircuit, confidence_min, confidence_max, confidence_include_null)
     count_q = select(func.count()).select_from(base.subquery())
     total = int((await session.execute(count_q)).scalar_one())
     rows = (
@@ -949,6 +1113,16 @@ async def update_mirror_circuit(
             setattr(row, key, val)
     await session.flush()
     await session.refresh(row)
+    # P1.6: incremental projection (term / text / qualifier may have changed)
+    from app.services.function_triple_projection_service import (
+        reconcile_function_subject,
+    )
+
+    await reconcile_function_subject(
+        session,
+        subject_type="region_candidate",
+        subject_id=row.region_candidate_id,
+    )
     return row
 
 
@@ -1032,6 +1206,9 @@ async def list_mirror_triples(
     llm_item_id: uuid.UUID | None = None,
     predicate: str | None = None,
     search: str | None = None,
+    confidence_min: float | None = None,
+    confidence_max: float | None = None,
+    confidence_include_null: bool = False,
     limit: int = 50,
     offset: int = 0,
 ) -> tuple[list[MirrorKgTriple], int]:
@@ -1059,6 +1236,7 @@ async def list_mirror_triples(
     if predicate:
         base = base.where(MirrorKgTriple.predicate == predicate)
     base = _apply_search(base, MirrorKgTriple, search)
+    base = _apply_confidence_filter(base, MirrorKgTriple, confidence_min, confidence_max, confidence_include_null)
     count_q = select(func.count()).select_from(base.subquery())
     total = int((await session.execute(count_q)).scalar_one())
     rows = (

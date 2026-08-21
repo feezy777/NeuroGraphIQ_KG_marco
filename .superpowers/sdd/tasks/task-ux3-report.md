@@ -55,3 +55,33 @@
 
 - promoted 进度仅在晋升成功事件置位,无数据推导兜底(返回候选后如无草稿/候选片段会显示 3 而非 5;影响面小,切对象时重置)
 - 「已检索」折叠条 Query 摘要以最后使用的检索式/推荐词为准,未持久化到 URL
+
+---
+
+## 追加修复:UX V3 评审 2 项 Important
+
+### 提交
+
+- `f95c519` fix(evidence-center): 进度推导依赖候选数据 + 切对象重置手动检索状态
+
+### 修复 1:derive effect 缺 candidate_papers 依赖
+
+**问题**:`EvidenceCandidatesModule.tsx` 进度推导 effect 依赖仅 `[current?.target_id]`(有 eslint-disable)。直达 URL 进入(刷新/深链/返回导航)时,effect 先对 fallback current(`candidate_papers: []`)跑一次;items 加载后 `current?.target_id` 不变(X→X),effect 不重跑 → 已有提取片段的对象显示步骤 1「确认对象」而非 3「找到原文」。
+
+**修复**:依赖数组加入 `current?.candidate_papers` + `setProgress`(context 中为稳定 useCallback 引用),deps 完整后移除 eslint-disable;推导顺序(module → promoted/reviewed/extracted/searched)保持不变。
+
+**测试**:直达 URL 进入(target 在 URL)+ 延迟 items(手动控制 Promise 解析)→ 加载前 StepPills 高亮「确认对象」,items 到达后自动重推导高亮「找到原文」。对未修复代码验证为 RED。
+
+### 修复 2:切对象后 manual 检索状态泄漏
+
+**问题**:目标切换重置 effect 只重置选择状态,不重置 `manualQuery`/`manualResult`/`manualSelected`/`manualResults`。两个非任务对象间切换(数据中心交接队列)时,新对象显示旧对象的检索结果与 query 摘要,折叠条 [重新搜索] 会对新对象执行旧 query。
+
+**修复**:重置 effect 一并清空 `manualQuery('')`/`manualResult(null)`/`manualSelected(new Set())`/`manualResults([])`(`searchExpanded` 原本已重置)。
+
+**测试**:对象 A 检索成功(折叠条显示 A 的 query 摘要)→ hashchange 切到对象 B → 断言折叠条消失、检索区回到展开态、query 输入为空、旧结果卡移除。对未修复代码验证为 RED。
+
+### 验证
+
+- `npx vitest run src/pages/evidence-center/modules/EvidenceCandidatesModule.test.tsx src/pages/evidence-center/EvidenceCenterPage.test.tsx` → 39 passed
+- `npx vitest run`(全量)→ 168 passed(19 files)
+- `npx tsc --noEmit` → 0 errors

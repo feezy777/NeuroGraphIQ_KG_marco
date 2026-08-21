@@ -20,6 +20,7 @@ type Step = 0 | 1 | 2 | 3
 const STEP_LABELS = ['选择回路', '配置参数', 'Dry Run 预览', '执行提取']
 const DS_MODELS = [
   { value: 'deepseek-chat', label: 'deepseek-chat（推荐）' },
+  { value: 'deepseek-v4-flash', label: 'deepseek-v4-flash（最新极速版）' },
   { value: 'deepseek-v4-pro', label: 'deepseek-v4-pro（高精度）' },
   { value: 'deepseek-reasoner', label: 'deepseek-reasoner（推理模型）' },
 ]

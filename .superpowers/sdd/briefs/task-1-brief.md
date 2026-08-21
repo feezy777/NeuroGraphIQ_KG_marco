@@ -1,79 +1,68 @@
-# Task 1: Fix 1-3 — audit 递增 + retry + error_message 传播
+### Task 1: 迁移 SQL — paper_evidence_tasks 增加 target_id
 
-**Plan:** `docs/superpowers/plans/2026-06-30-pack-stats-audit-fix.md`
-**Spec:** `docs/superpowers/specs/2026-06-30-pack-stats-audit-fix-design.md`
+**Files:**
+- Create: `backend/migrations/20260817_evidence_tasks_target_id.sql`
 
-## Files
-- Modify: `backend/app/services/llm_connection_extraction_service.py`
+**Interfaces:**
+- Produces: `paper_evidence_tasks.target_id UUID NULL`(Task 3/5/7 使用)
 
-## Global Constraints
-- 最小侵入，不动数据库 schema
-- 不动 API 路由签名
-- `_process_one_pack` 返回值签名不变
-- 向后兼容
-- 全量回归不新增失败
+- [ ] **Step 1: 写迁移文件**
 
-## Changes (6 locations in one file)
-
-### Location 1: transport_error retry (line ~1261-1262)
-Change `break` to `continue`:
-```python
-                    parsed = None
-                    continue
+```sql
+-- 佐证任务一对一:任务行即对象。
+-- target_id = 对象身份;新建任务必填,旧行为 NULL(由拆分迁移回填)。
+ALTER TABLE paper_evidence_tasks ADD COLUMN IF NOT EXISTS target_id UUID;
+CREATE INDEX IF NOT EXISTS idx_paper_evidence_tasks_target ON paper_evidence_tasks (target_type, target_id);
 ```
 
-### Location 2: empty_response retry (line ~1283-1284)
-Same — change `break` to `continue`:
-```python
-                    parsed = None
-                    continue
+- [ ] **Step 2: 应用迁移(当前开发库)**
+
+Run:
+
+```bash
+cd backend && ./.venv/Scripts/python.exe -c "
+import asyncio
+from sqlalchemy import text
+from app.database import AsyncSessionLocal
+async def main():
+    sql = open('migrations/20260817_evidence_tasks_target_id.sql', encoding='utf-8').read()
+    async with AsyncSessionLocal() as s:
+        await s.execute(text(sql))
+        await s.commit()
+    print('migration applied')
+asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+asyncio.run(main())
+"
 ```
 
-### Location 3: transport_error / empty_response path (around line 1359-1361)
-Add audit counter increments before return:
-```python
-            else:
-                audit.processed_pack_count += 1
-                audit.failed_pack_count += 1
-                await _persist_pack_trace(trace)
-                return [], [], [], set(), 0
+Expected: prints `migration applied`(重跑也安全,`IF NOT EXISTS`)。
+
+- [ ] **Step 3: 验证列存在**
+
+Run:
+
+```bash
+cd backend && ./.venv/Scripts/python.exe -c "
+import asyncio
+from sqlalchemy import text
+from app.database import AsyncSessionLocal
+async def main():
+    async with AsyncSessionLocal() as s:
+        r = await s.execute(text(\"SELECT column_name FROM information_schema.columns WHERE table_name='paper_evidence_tasks' AND column_name='target_id'\"))
+        print('target_id column:', r.scalar_one_or_none())
+asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+asyncio.run(main())
+"
 ```
 
-### Location 4: parse_error path (around line 1354-1358)
-Add audit counter increments:
-```python
-        if parsed is None:
-            if trace.get("parse_error_type") not in {"transport_error", "empty_response"}:
-                audit.parse_error_count += 1
-                audit.processed_pack_count += 1
-                audit.failed_pack_count += 1
-                trace["status"] = "parse_error"
-                await _persist_pack_trace(trace)
-                return [], [], [], set(), 1
+Expected: `target_id column: target_id`
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add backend/migrations/20260817_evidence_tasks_target_id.sql
+git commit -m "feat(evidence): add paper_evidence_tasks.target_id for 1:1 object tasks"
 ```
 
-### Location 5: success path (around line 1416-1417)
-Add audit counter increments, distinguishing succeeded vs no_connection:
-```python
-        audit.processed_pack_count += 1
-        if pack_connections:
-            audit.succeeded_pack_count += 1
-        else:
-            audit.no_connection_pack_count += 1
-        await _persist_pack_trace(trace)
-        return pack_connections, pack_no, pack_warnings, handled, 0
-```
+---
 
-### Location 6: run.error_message propagation (around line 1658-1661)
-Add 1 line after item.error_message:
-```python
-    if is_semantic_failure(semantic_outcome):
-        item.status = LlmItemStatus.failed
-        item.error_message = status_warnings[0] if status_warnings else semantic_outcome
-        run.error_message = item.error_message
-        run.error_count = max(int(run.error_count or 0), 1)
-```
-
-## Verification
-- Run `pytest tests/test_connection_parse_diagnostics.py tests/test_debug_single_pack_pipeline.py -q` — must not add failures
-- Run `pytest tests/test_llm_composite_workflow.py -q` — must not add failures

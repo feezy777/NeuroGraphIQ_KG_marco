@@ -1,0 +1,1534 @@
+d067a97 style(evidence-center): token 收敛与空态统一
+===STAT===
+ .../evidence-center/components/EmptyState.tsx      |  12 +-
+ .../components/EvidenceQueuePanel.test.tsx         |   2 +-
+ .../components/EvidenceQueuePanel.tsx              |  24 ++-
+ .../evidence-center/components/ObjectQueue.tsx     |   3 +-
+ .../components/PaperEvidenceView.tsx               |   3 +-
+ .../modules/EvidenceCandidatesModule.tsx           |  10 +-
+ .../modules/EvidencePromotionModule.tsx            |  20 +--
+ .../modules/EvidenceReviewModule.tsx               |  14 +-
+ .../modules/EvidenceTasksModule.tsx                |   8 +-
+ .../evidence-center/modules/PaperLibraryModule.tsx |   8 +-
+ frontend/src/styles.css                            | 178 +++++++--------------
+ 11 files changed, 126 insertions(+), 156 deletions(-)
+===DIFF===
+diff --git a/frontend/src/pages/evidence-center/components/EmptyState.tsx b/frontend/src/pages/evidence-center/components/EmptyState.tsx
+index 8a3941a..563d6f5 100644
+--- a/frontend/src/pages/evidence-center/components/EmptyState.tsx
++++ b/frontend/src/pages/evidence-center/components/EmptyState.tsx
+@@ -1,26 +1,32 @@
+ import type { ReactNode } from 'react'
+ 
+ interface Props {
+   /** 空态图标(通常为 lucide 图标元素);缺省不渲染图标区域 */
+   icon?: ReactNode
+   title: string
+   description?: string
+   actionLabel?: string
+   onAction?: () => void
++  /** 紧凑变体(窄栏队列 / 分组内联):轻量虚线卡 */
++  compact?: boolean
++  /** 根节点 data-testid(缺省 evidence-empty) */
++  testId?: string
++  /** 操作按钮 data-testid */
++  actionTestId?: string
+ }
+ 
+ /** 统一空态:图标 + 标题 + 说明 + 可选操作按钮(证据中心各模块共用) */
+-export function EmptyState({ icon, title, description, actionLabel, onAction }: Props) {
++export function EmptyState({ icon, title, description, actionLabel, onAction, compact, testId, actionTestId }: Props) {
+   return (
+-    <div className="evidence-empty" data-testid="evidence-empty">
++    <div className={`evidence-empty${compact ? ' evidence-empty-compact' : ''}`} data-testid={testId ?? 'evidence-empty'}>
+       {icon != null && <div className="evidence-empty-icon">{icon}</div>}
+       <div className="evidence-empty-title">{title}</div>
+       {description && <div className="evidence-empty-desc">{description}</div>}
+       {actionLabel && onAction && (
+-        <button type="button" className="btn btn-sm" onClick={onAction}>
++        <button type="button" className="btn btn-sm" data-testid={actionTestId} onClick={onAction}>
+           {actionLabel}
+         </button>
+       )}
+     </div>
+   )
+ }
+diff --git a/frontend/src/pages/evidence-center/components/EvidenceQueuePanel.test.tsx b/frontend/src/pages/evidence-center/components/EvidenceQueuePanel.test.tsx
+index 0daa76a..28ca014 100644
+--- a/frontend/src/pages/evidence-center/components/EvidenceQueuePanel.test.tsx
++++ b/frontend/src/pages/evidence-center/components/EvidenceQueuePanel.test.tsx
+@@ -38,21 +38,21 @@ describe('EvidenceQueuePanel', () => {
+     expect(screen.getByTestId('evidence-queue-empty')).toBeTruthy()
+   })
+ 
+   it('待审核无匹配时显示空态(托盘图标/队列为空/当前没有待处理的对象);点击 [查看全部对象] 恢复全部条目', () => {
+     const doneOnly: QueueEntry[] = [
+       { target_type: 'region', target_id: 'b', label: '脑区B', confidence: null, status: 'completed', evidenceCount: 0 },
+       { target_type: 'region', target_id: 'c', label: '脑区C', confidence: 0.5, status: 'failed', evidenceCount: 1 },
+     ]
+     const { container } = render(<EvidenceQueuePanel queue={doneOnly} currentIndex={-1} onSelect={() => {}} />)
+     expect(screen.getByTestId('evidence-queue-empty')).toBeTruthy()
+-    expect(container.querySelector('.evidence-queue-panel-empty-icon')?.textContent).toBe('📥')
++    expect(container.querySelector('.evidence-empty-icon svg')).toBeTruthy()
+     expect(screen.getByText('队列为空')).toBeTruthy()
+     expect(screen.getByText('当前没有待处理的对象')).toBeTruthy()
+     const viewAll = screen.getByTestId('evidence-queue-view-all')
+     expect(viewAll.textContent).toContain('查看全部对象')
+     fireEvent.click(viewAll)
+     expect(screen.queryByTestId('evidence-queue-empty')).toBeNull()
+     expect(screen.getAllByTestId('evidence-queue-item')).toHaveLength(2)
+   })
+ 
+   it('当前项按原始队列下标高亮(过滤后仍正确)', () => {
+diff --git a/frontend/src/pages/evidence-center/components/EvidenceQueuePanel.tsx b/frontend/src/pages/evidence-center/components/EvidenceQueuePanel.tsx
+index d7bd192..a433875 100644
+--- a/frontend/src/pages/evidence-center/components/EvidenceQueuePanel.tsx
++++ b/frontend/src/pages/evidence-center/components/EvidenceQueuePanel.tsx
+@@ -1,11 +1,13 @@
+ import { useMemo, useState } from 'react'
++import { Inbox } from 'lucide-react'
++import { EmptyState } from './EmptyState'
+ import { QueueListItem } from './QueueListItem'
+ import { DONE_STATUSES, PENDING_STATUSES, type QueueEntry } from './types'
+ 
+ type QueueTab = 'pending' | 'done' | 'failed' | 'all'
+ 
+ interface EvidenceQueuePanelProps {
+   queue: QueueEntry[]
+   /** 当前对象下标;无匹配传 -1 */
+   currentIndex: number
+   onSelect: (entry: QueueEntry) => void
+@@ -72,28 +74,24 @@ export function EvidenceQueuePanel({ queue, currentIndex, onSelect }: EvidenceQu
+       <div className="evidence-queue-list">
+         {visible.map(e => (
+           <QueueListItem
+             key={`${e.target_type}:${e.target_id}`}
+             entry={e}
+             active={queue.indexOf(e) === currentIndex}
+             onSelect={onSelect}
+           />
+         ))}
+         {visible.length === 0 && (
+-          <div className="evidence-queue-panel-empty" data-testid="evidence-queue-empty">
+-            <div className="evidence-queue-panel-empty-icon">📥</div>
+-            <div className="evidence-queue-panel-empty-title">队列为空</div>
+-            <div className="evidence-queue-panel-empty-hint">当前没有待处理的对象</div>
+-            <button
+-              type="button"
+-              className="btn btn-primary btn-sm evidence-queue-panel-view-all"
+-              data-testid="evidence-queue-view-all"
+-              onClick={() => { setActiveTab('all'); setOnlyPending(false) }}
+-            >
+-              查看全部对象
+-            </button>
+-          </div>
++          <EmptyState
++            testId="evidence-queue-empty"
++            actionTestId="evidence-queue-view-all"
++            icon={<Inbox size={24} />}
++            title="队列为空"
++            description="当前没有待处理的对象"
++            actionLabel="查看全部对象"
++            onAction={() => { setActiveTab('all'); setOnlyPending(false) }}
++          />
+         )}
+       </div>
+     </aside>
+   )
+ }
+diff --git a/frontend/src/pages/evidence-center/components/ObjectQueue.tsx b/frontend/src/pages/evidence-center/components/ObjectQueue.tsx
+index e52dc0e..e737bbd 100644
+--- a/frontend/src/pages/evidence-center/components/ObjectQueue.tsx
++++ b/frontend/src/pages/evidence-center/components/ObjectQueue.tsx
+@@ -1,11 +1,12 @@
+ import { useMemo, useState } from 'react'
++import { EmptyState } from './EmptyState'
+ import { QueueListItem } from './QueueListItem'
+ import { DONE_STATUSES, PENDING_STATUSES, type QueueEntry } from './types'
+ 
+ interface ObjectQueueProps {
+   queue: QueueEntry[]
+   /** 当前对象下标;无匹配传 -1 */
+   currentIndex: number
+   onSelect: (entry: QueueEntry) => void
+   showStats?: boolean
+ }
+@@ -49,15 +50,15 @@ export function ObjectQueue({ queue, currentIndex, onSelect, showStats = true }:
+       </label>
+       <div className="evidence-queue-list">
+         {visible.map(e => (
+           <QueueListItem
+             key={`${e.target_type}:${e.target_id}`}
+             entry={e}
+             active={queue.indexOf(e) === currentIndex}
+             onSelect={onSelect}
+           />
+         ))}
+-        {visible.length === 0 && <div className="evidence-queue-empty">队列为空</div>}
++        {visible.length === 0 && <EmptyState compact title="队列为空" />}
+       </div>
+     </aside>
+   )
+ }
+diff --git a/frontend/src/pages/evidence-center/components/PaperEvidenceView.tsx b/frontend/src/pages/evidence-center/components/PaperEvidenceView.tsx
+index 2b52aad..855d12d 100644
+--- a/frontend/src/pages/evidence-center/components/PaperEvidenceView.tsx
++++ b/frontend/src/pages/evidence-center/components/PaperEvidenceView.tsx
+@@ -1,11 +1,12 @@
+ import { useMemo, useState } from 'react'
++import { EmptyState } from './EmptyState'
+ import type { ClaimComponent, WorkbenchPassage } from './types'
+ import { COMPONENT_LABEL } from './types'
+ import { computeTmpCoverage } from './claimCoverage'
+ import { PassageEvidenceCard } from './PassageEvidenceCard'
+ 
+ interface Props {
+   paper: {
+     paperId: string | null
+     pmid: string
+     doi: string | null
+@@ -70,21 +71,21 @@ export function PaperEvidenceView({
+             })}
+           </tbody>
+         </table>
+         <div className="evidence-coverage-footer">
+           Coverage {coverage.supported_components.length}/{coverage.required_components.length}
+         </div>
+       </div>
+ 
+       <div className="evidence-paper-passages">
+         <h4>候选佐证原文</h4>
+-        {passages.length === 0 && <div className="evidence-candidates-empty">该论文暂无候选片段</div>}
++        {passages.length === 0 && <EmptyState compact title="该论文暂无候选片段" />}
+         {passages.map(p => (
+           <PassageEvidenceCard
+             key={p.hash}
+             passage={p}
+             components={components}
+             selected={selectedHashes.has(p.hash)}
+             translation=""
+             readOnly
+             onToggleSelect={checked => onTogglePassage(p.hash, checked)}
+             onLevelChange={() => undefined}
+diff --git a/frontend/src/pages/evidence-center/modules/EvidenceCandidatesModule.tsx b/frontend/src/pages/evidence-center/modules/EvidenceCandidatesModule.tsx
+index 20ed38b..da4cb1f 100644
+--- a/frontend/src/pages/evidence-center/modules/EvidenceCandidatesModule.tsx
++++ b/frontend/src/pages/evidence-center/modules/EvidenceCandidatesModule.tsx
+@@ -1,24 +1,26 @@
+ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
++import { MousePointerClick } from 'lucide-react'
+ import {
+   extractSelectedPaperEvidence,
+   getEvidenceTarget,
+   listPaperEvidenceTaskItems,
+   searchPaperEvidence,
+   type EvidenceTargetDto,
+   type PaperEvidenceTaskItem,
+   type PaperSearchResponse,
+ } from '../../../api/endpoints'
+ import { useEvidenceCenter } from '../EvidenceCenterContext'
+ import { INITIAL_QUEUE_KEY } from '../evidenceCenterUrl'
+ import { candidatePassagesToWorkbench } from '../components/candidatePassages'
+ import { aggregateTmpDirection, computeTmpCoverage } from '../components/claimCoverage'
++import { EmptyState } from '../components/EmptyState'
+ import { PaperBatchActions } from '../components/PaperBatchActions'
+ import { PaperCandidateCard, type CandidatePaperData } from '../components/PaperCandidateCard'
+ import { PaperCandidateList } from '../components/PaperCandidateList'
+ import { PaperSearchFilters, type EvidenceMode } from '../components/PaperSearchFilters'
+ import { PaperSearchPanel } from '../components/PaperSearchPanel'
+ import { PaperStatusSummary, type CandidateStats } from '../components/PaperStatusSummary'
+ import { PaperDetailDrawer } from '../components/PaperDetailDrawer'
+ import { PaperEvidenceView } from '../components/PaperEvidenceView'
+ import { loadReviewStatus } from '../components/ReviewStatusStore'
+ import type { QueueEntry, QueueStatus, WorkbenchPassage } from '../components/types'
+@@ -554,23 +556,25 @@ export function EvidenceCandidatesModule() {
+     <div className="evidence-candidates">
+       <div className="evidence-candidates-main">
+         {loading && <div className="evidence-task-loading">加载中…</div>}
+         {!loading && error && (
+           <div className="evidence-task-error">
+             <p>候选加载失败：{error}</p>
+             <button type="button" className="btn btn-sm" onClick={() => void loadItems()}>重试</button>
+           </div>
+         )}
+         {!loading && !error && !current && (
+-          <div className="evidence-candidates-empty">
+-            请先在「佐证任务」中打开一个任务，或从上方任务列表进入。
+-          </div>
++          <EmptyState
++            icon={<MousePointerClick size={24} />}
++            title="请先在「佐证任务」中打开一个任务"
++            description="或从上方任务列表进入一个目标对象。"
++          />
+         )}
+         {!loading && !error && current && (
+           <>
+             {message && <div className="ontology-page-message">{message}</div>}
+ 
+             {evidencePaper ? (
+               <>
+                 {/* 证据视图态:状态条保留在上方,[进入人工审核] 随勾选实时可用 */}
+                 <PaperStatusSummary stats={stats} onEnterReview={handleEnterReview} />
+                 <PaperEvidenceView
+diff --git a/frontend/src/pages/evidence-center/modules/EvidencePromotionModule.tsx b/frontend/src/pages/evidence-center/modules/EvidencePromotionModule.tsx
+index 0fa08e3..a417635 100644
+--- a/frontend/src/pages/evidence-center/modules/EvidencePromotionModule.tsx
++++ b/frontend/src/pages/evidence-center/modules/EvidencePromotionModule.tsx
+@@ -1,24 +1,26 @@
+ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
++import { MousePointerClick } from 'lucide-react'
+ import {
+   attachPaperEvidence,
+   attachPaperEvidencePreview,
+   completePaperEvidenceTaskItem,
+   getEvidenceTarget,
+   listPaperEvidence,
+   rollbackPaperEvidence,
+   type AttachPreviewResponse,
+   type EvidenceTargetDto,
+   type PaperEvidenceItem,
+ } from '../../../api/endpoints'
+ import { useEvidenceCenter } from '../EvidenceCenterContext'
+ import { ClaimPanel } from '../components/ClaimPanel'
++import { EmptyState } from '../components/EmptyState'
+ import { CoveragePanel } from '../components/CoveragePanel'
+ import { EvidenceDetailDrawer } from '../components/EvidenceDetailDrawer'
+ import { PromotionDialog } from '../components/PromotionDialog'
+ import type { PromotionImpactState } from '../components/PromotionImpact'
+ import { clearReviewStatus, listReviewApproved, type ReviewStatusRecord } from '../components/ReviewStatusStore'
+ import { aggregateTmpDirection, computeTmpCoverage } from '../components/claimCoverage'
+ import type { Direction, EvidenceLevel, WorkbenchPassage } from '../components/types'
+ import { DIRECTION_LABEL, LEVEL_LABEL } from '../components/types'
+ 
+ const DRAFT_PREFIX = 'evidence-center.review-draft.'
+@@ -330,21 +332,21 @@ export function EvidencePromotionModule() {
+   const invalidated = useMemo(() => items.filter(i => i.invalidated_at), [items])
+ 
+   const pendingGroup = (
+     <section className="evidence-promotion-group" data-testid="promotion-pending-group">
+       <div className="evidence-promotion-group-head">
+         <span className="evidence-promotion-group-title">待晋升</span>
+         <span className="evidence-promotion-group-count">{pendingRecords.length}</span>
+         <span className="ew-meta">来自人工审核通过（review_approved）</span>
+       </div>
+       {pendingRecords.length === 0 && (
+-        <div className="evidence-promotion-empty">暂无待晋升的审核通过证据</div>
++        <EmptyState compact title="暂无待晋升的审核通过证据" />
+       )}
+       {pendingRecords.map(rec => {
+         const entry = queue.find(q => q.target_id === rec.targetId)
+         const selected = rec.targetId === selectedPendingId
+         return (
+           <div
+             key={rec.targetId}
+             className={`evidence-promotion-row${selected ? ' evidence-promotion-row-selected' : ''}`}
+             data-testid="promotion-pending-row"
+             onClick={() => { setMessage(null); setSelectedPendingId(rec.targetId) }}
+@@ -405,51 +407,51 @@ export function EvidencePromotionModule() {
+               <div className="evidence-promotion-decision-row" data-testid="promotion-confidence">
+                 <span>预计后置信度</span>
+                 <strong>{previewBusy ? '计算中…' : `当前 ${currentConfidence ?? '—'} → 预计晋升后置信度 ${preview?.final_confidence ?? '—'}`}</strong>
+               </div>
+             </div>
+           </div>
+           <div className="ew-meta">审核状态：review_approved · {fmtDate(selectedPending.meta.at)}</div>
+         </div>
+       )}
+       {selectedPending && !draft && (
+-        <div className="evidence-promotion-empty">
+-          该对象没有可晋升的审核草稿（可能已被清理），可在人工审核模块重新处理。
+-        </div>
++        <EmptyState compact title="该对象没有可晋升的审核草稿" description="可能已被清理，可在人工审核模块重新处理。" />
+       )}
+     </section>
+   )
+ 
+   if (!targetType || !targetId) {
+     return (
+       <div className="evidence-promotion">
+         {pendingGroup}
+-        <div className="evidence-promotion-empty">
+-          请先从「佐证任务」或「证据候选」进入一个目标对象。
+-        </div>
++        <EmptyState
++          icon={<MousePointerClick size={24} />}
++          title="请先从「佐证任务」或「证据候选」进入一个目标对象"
++          description="打开任务并选择目标对象后即可晋升审核通过的证据。"
++        />
+       </div>
+     )
+   }
+ 
+   return (
+     <div className="evidence-promotion" data-testid="evidence-promotion">
+       {message && <div className="ontology-page-message">{message}</div>}
+ 
+       {pendingGroup}
+ 
+       <section className="evidence-promotion-group" data-testid="promotion-promoted-group">
+         <div className="evidence-promotion-group-head">
+           <span className="evidence-promotion-group-title">已晋升</span>
+           <span className="evidence-promotion-group-count">{promoted.length}</span>
+         </div>
+         {promoted.length === 0 && (
+-          <div className="evidence-promotion-empty">暂无已晋升的论文证据</div>
++          <EmptyState compact title="暂无已晋升的论文证据" />
+         )}
+         {promoted.map(ev => (
+           <div
+             key={ev.evidence_id}
+             className="evidence-promotion-row"
+             data-testid="promotion-evidence-row"
+             onClick={() => setDetailEvidence(ev)}
+           >
+             <div className="evidence-promotion-row-main">
+               <strong>{ev.title ?? ev.evidence_text}</strong>
+@@ -461,21 +463,21 @@ export function EvidencePromotionModule() {
+           </div>
+         ))}
+       </section>
+ 
+       <section className="evidence-promotion-group" data-testid="promotion-invalidated-group">
+         <div className="evidence-promotion-group-head">
+           <span className="evidence-promotion-group-title">已失效</span>
+           <span className="evidence-promotion-group-count">{invalidated.length}</span>
+         </div>
+         {invalidated.length === 0 && (
+-          <div className="evidence-promotion-empty">暂无已失效的论文证据</div>
++          <EmptyState compact title="暂无已失效的论文证据" />
+         )}
+         {invalidated.map(ev => (
+           <div
+             key={ev.evidence_id}
+             className="evidence-promotion-row evidence-promotion-row-invalidated"
+             data-testid="promotion-invalidated-row"
+             onClick={() => setDetailEvidence(ev)}
+           >
+             <div className="evidence-promotion-row-main">
+               <strong>{ev.title ?? ev.evidence_text}</strong>
+diff --git a/frontend/src/pages/evidence-center/modules/EvidenceReviewModule.tsx b/frontend/src/pages/evidence-center/modules/EvidenceReviewModule.tsx
+index d6848bb..0e844c8 100644
+--- a/frontend/src/pages/evidence-center/modules/EvidenceReviewModule.tsx
++++ b/frontend/src/pages/evidence-center/modules/EvidenceReviewModule.tsx
+@@ -1,22 +1,24 @@
+ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
++import { MousePointerClick } from 'lucide-react'
+ import {
+   attachPaperEvidencePreview,
+   getEvidenceTarget,
+   saveTaskItemDraft,
+   translateEvidenceText,
+   validatePassageSelection,
+   type AttachPreviewResponse,
+   type EvidenceTargetDto,
+ } from '../../../api/endpoints'
+ import { useEvidenceCenter } from '../EvidenceCenterContext'
+ import { ClaimPanel } from '../components/ClaimPanel'
++import { EmptyState } from '../components/EmptyState'
+ import { CoveragePanel } from '../components/CoveragePanel'
+ import { PassageEvidenceCard } from '../components/PassageEvidenceCard'
+ import { loadReviewStatus, saveReviewStatus, type ReviewStatusMeta, type ReviewStatusRecord } from '../components/ReviewStatusStore'
+ import type { ReviewDecisionState } from '../components/ReviewerDecisionPanel'
+ import { aggregateTmpDirection, computeTmpCoverage } from '../components/claimCoverage'
+ import type { Direction, EvidenceLevel, WorkbenchPassage } from '../components/types'
+ 
+ const DRAFT_PREFIX = 'evidence-center.review-draft.'
+ 
+ /** T7 候选模块写入、本模块恢复/回写的审核草稿 */
+@@ -336,23 +338,25 @@ export function EvidenceReviewModule() {
+         勾选已核验片段，设置人工方向/证据等级/置信度后完成审核；审核通过 ≠ 晋升入库，将进入「证据晋升」待晋升队列。
+       </p>
+     </div>
+   )
+ 
+   if (!targetType || !targetId) {
+     return (
+       <div className="evidence-review">
+         <div className="evidence-review-main">
+           <div className="evidence-review-toolbar">{reviewToolbarTitle}</div>
+-          <div className="evidence-candidates-empty">
+-            请先从「佐证任务」或「证据候选」进入一个目标对象。
+-          </div>
++          <EmptyState
++            icon={<MousePointerClick size={24} />}
++            title="请先从「佐证任务」或「证据候选」进入一个目标对象"
++            description="打开任务并选择目标对象后即可开始人工审核。"
++          />
+         </div>
+       </div>
+     )
+   }
+ 
+   return (
+     <div className="evidence-review" data-testid="evidence-review">
+       <div className="evidence-review-main">
+         <div className="evidence-review-toolbar">
+           {reviewToolbarTitle}
+@@ -382,23 +386,21 @@ export function EvidenceReviewModule() {
+         </div>
+ 
+         {message && <div className="ontology-page-message">{message}</div>}
+ 
+         <div className="evidence-review-passages">
+           <div className="evidence-review-passages-head" data-testid="evidence-review-passages-head">
+             <h4>已选佐证原文</h4>
+             <span className="evidence-review-passages-count" data-testid="evidence-review-passages-count">{passages.length}</span>
+           </div>
+           {passages.length === 0 && (
+-            <div className="evidence-candidates-empty">
+-              暂无审核草稿。请先在「证据候选」中勾选片段并「加入人工审核」。
+-            </div>
++            <EmptyState compact title="暂无审核草稿" description="请先在「证据候选」中勾选片段并「加入人工审核」。" />
+           )}
+           {passages.map(p => (
+             <PassageEvidenceCard
+               key={p.hash}
+               passage={p}
+               components={claimComponents}
+               selected={selectedHashes.has(p.hash)}
+               translation={translations[p.hash] ?? ''}
+               onToggleSelect={checked => {
+                 setSelectedHashes(prev => {
+diff --git a/frontend/src/pages/evidence-center/modules/EvidenceTasksModule.tsx b/frontend/src/pages/evidence-center/modules/EvidenceTasksModule.tsx
+index 3b9c218..7c4f214 100644
+--- a/frontend/src/pages/evidence-center/modules/EvidenceTasksModule.tsx
++++ b/frontend/src/pages/evidence-center/modules/EvidenceTasksModule.tsx
+@@ -1,15 +1,17 @@
+ import { useCallback, useEffect, useMemo, useState } from 'react'
++import { Inbox } from 'lucide-react'
+ import { listPaperEvidenceTasks, type PaperEvidenceTask } from '../../../api/endpoints'
+ import { useGlobalGranularity } from '../../../hooks/useGlobalGranularity'
+ import { useEvidenceCenter } from '../EvidenceCenterContext'
+ import { CreateBatchTaskDialog } from '../components/CreateBatchTaskDialog'
++import { EmptyState } from '../components/EmptyState'
+ import type { TaskSummaryActions, TaskSummaryData } from '../components/TaskSummary'
+ import { TASK_REVIEW_LABELS, TASK_STATUS_LABELS, taskReviewTone, taskStatusTone } from '../components/taskStatus'
+ 
+ interface StatusGroup {
+   key: string
+   label: string
+   match: (t: PaperEvidenceTask) => boolean
+ }
+ 
+ /** 状态分组(任务只落入第一个命中的分组,避免重复展示) */
+@@ -165,21 +167,25 @@ export function EvidenceTasksModule() {
+       </div>
+ 
+       {loading && <div className="evidence-task-loading">加载中…</div>}
+       {!loading && error && (
+         <div className="evidence-task-error">
+           <p>任务加载失败:{error}</p>
+           <button type="button" className="btn btn-sm" onClick={() => void loadTasks()}>重试</button>
+         </div>
+       )}
+       {!loading && !error && tasks.length === 0 && (
+-        <div className="evidence-task-empty">暂无佐证任务,点击右上角「创建批量预处理」创建第一个任务。</div>
++        <EmptyState
++          icon={<Inbox size={24} />}
++          title="暂无佐证任务"
++          description="点击右上角「创建批量预处理」创建第一个任务。"
++        />
+       )}
+       {!loading && !error && tasks.length > 0 && (
+         <div className="evidence-task-groups">
+           {groups.map(group => (
+             <section key={group.key} className="evidence-task-group">
+               <div className="evidence-task-group-head">
+                 <span className="evidence-task-group-title">{group.label}</span>
+                 <span className="evidence-task-group-count">{group.tasks.length}</span>
+               </div>
+               {group.tasks.map(task => (
+diff --git a/frontend/src/pages/evidence-center/modules/PaperLibraryModule.tsx b/frontend/src/pages/evidence-center/modules/PaperLibraryModule.tsx
+index d030b83..a24786f 100644
+--- a/frontend/src/pages/evidence-center/modules/PaperLibraryModule.tsx
++++ b/frontend/src/pages/evidence-center/modules/PaperLibraryModule.tsx
+@@ -1,12 +1,14 @@
+ import { useCallback, useEffect, useState } from 'react'
++import { FileSearch } from 'lucide-react'
+ import { listEvidencePapers, type EvidencePaperItem } from '../../../api/endpoints'
++import { EmptyState } from '../components/EmptyState'
+ import { PaperCard } from '../components/PaperCard'
+ import { PaperDetailDrawer } from '../components/PaperDetailDrawer'
+ 
+ const PAGE_SIZE = 20
+ const YEAR_START = 2015
+ 
+ interface PaperQuery {
+   search?: string
+   oa?: boolean
+   year?: number
+@@ -118,21 +120,25 @@ export function PaperLibraryModule() {
+       </form>
+ 
+       {loading && <div className="paper-loading">加载中…</div>}
+       {!loading && error && (
+         <div className="paper-error">
+           <p>论文加载失败:{error}</p>
+           <button type="button" className="btn btn-sm" onClick={() => void handleSearch()}>重试</button>
+         </div>
+       )}
+       {!loading && !error && papers.length === 0 && (
+-        <div className="paper-empty">暂无论文,先通过「佐证任务」获取并解析论文资源。</div>
++        <EmptyState
++          icon={<FileSearch size={24} />}
++          title="暂无论文"
++          description="先通过「佐证任务」获取并解析论文资源。"
++        />
+       )}
+       {!loading && !error && papers.length > 0 && (
+         <div className="paper-list">
+           {papers.map(p => (
+             <PaperCard key={p.id} paper={p} onOpen={setSelectedPaperId} />
+           ))}
+         </div>
+       )}
+ 
+       {!loading && !error && total > 0 && (
+diff --git a/frontend/src/styles.css b/frontend/src/styles.css
+index fbfedbd..ffe069a 100644
+--- a/frontend/src/styles.css
++++ b/frontend/src/styles.css
+@@ -23,41 +23,41 @@
+   --shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+   --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.08);
+   --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.12);
+   --table-stripe: #fafbfc;
+   --table-hover: #e8f4ff;
+   --table-selected: #e6f4ff;
+   --card-radius: 10px;
+   /* Evidence Center 视觉令牌 */
+   --main-padding-y: 22px;   /* .main 垂直内边距(高度计算引用,勿单独改动) */
+   --bg-soft: #f8fafc;       /* 浅灰底:次级信息卡 / 悬停底 */
+-  --selected-bg: #eef6ff;   /* 选中行底 */
+-  --info-bg: #eff6ff;       /* 主色浅底 */
++  --info-bg: #eff6ff;       /* 主色浅底(选中行底近同,已合并) */
+   --success-bg: #dcfce7;
+   --success-fg: #15803d;
+   --warning-bg: #fef3c7;
+   --warning-fg: #b45309;
+   --danger-bg: #fff1f0;
+   --muted-bg: #f1f5f9;
+   --evidence-bg: #f5f7fa;   /* 证据中心页面背景(浅蓝灰,视觉稿) */
++  --font-mono: 'Consolas', 'Menlo', 'Courier New', monospace;
+ }
+ 
+ * { box-sizing: border-box; margin: 0; padding: 0; }
+ body {
+   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+   background: var(--bg);
+   color: var(--text);
+   font-size: 14px;
+   line-height: 1.5;
+ }
+ a { text-decoration: none; color: inherit; }
+-code { font-family: 'Consolas', 'Menlo', monospace; font-size: 12px; }
++code { font-family: var(--font-mono); font-size: 12px; }
+ 
+ /* Layout */
+ .layout {
+   display: grid;
+   grid-template-rows: var(--topbar-h) 1fr;
+   grid-template-columns: var(--sidebar-w) 1fr;
+   height: 100vh;
+   overflow: hidden;
+ }
+ .topbar {
+@@ -194,36 +194,21 @@ code { font-family: 'Consolas', 'Menlo', monospace; font-size: 12px; }
+   outline: none;
+   background: var(--white);
+   color: var(--text);
+   height: 32px;
+ }
+ .filter-input { min-width: 180px; }
+ .filter-select { cursor: pointer; min-width: 130px; }
+ .filter-input:focus, .filter-select:focus { border-color: var(--primary); }
+ .filter-label { font-size: 12px; color: var(--text-muted); }
+ 
+-/* Buttons */
+-.btn {
+-  padding: 5px 14px;
+-  border-radius: 4px;
+-  font-size: 13px;
+-  cursor: pointer;
+-  border: 1px solid var(--border);
+-  background: var(--white);
+-  color: var(--text);
+-  transition: border-color 0.12s, color 0.12s;
+-  height: 32px;
+-  display: inline-flex;
+-  align-items: center;
+-  gap: 5px;
+-}
+-.btn:hover { border-color: var(--primary); color: var(--primary); }
++/* Buttons — 统一按钮体系见 10157 行「Button system」(此处旧版 .btn 已整体覆盖,死类已删) */
+ .quick-links { display: flex; flex-wrap: wrap; gap: 8px; }
+ 
+ /* Table */
+ .table-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 8px; box-shadow: var(--shadow); }
+ table { width: 100%; border-collapse: collapse; font-size: 13px; }
+ thead { position: sticky; top: 0; z-index: 1; }
+ th { background: #f7f8fa; font-weight: 600; font-size: 12px; color: #4e5969; padding: 10px 12px; text-align: left; border-bottom: 1px solid var(--border); white-space: nowrap; letter-spacing: 0.01em; }
+ td { padding: 9px 12px; border-bottom: 1px solid #f0f0f0; color: var(--text); vertical-align: middle; }
+ tbody tr { transition: background 0.1s; }
+ tbody tr:nth-child(even) { background: var(--table-stripe); }
+@@ -726,33 +711,33 @@ tr:hover td { background: #fafbfc; cursor: pointer; }
+   margin-top: 8px;
+   max-height: 180px;
+   overflow-y: auto;
+ }
+ 
+ .resource-dependency-grid-item {
+   display: contents;
+ }
+ 
+ .resource-dependency-grid-key {
+-  font-family: var(--font-mono, monospace);
++  font-family: var(--font-mono);
+   font-size: 11px;
+   color: var(--text-muted);
+ }
+ 
+ .resource-dependency-grid-value {
+   font-weight: 600;
+   text-align: right;
+ }
+ 
+ .resource-confirmation-input {
+   border-color: #ffa39e;
+-  font-family: var(--font-mono, monospace);
++  font-family: var(--font-mono);
+ }
+ 
+ .resource-destructive-delete-form {
+   display: flex;
+   flex-direction: column;
+   gap: 8px;
+   margin-top: 12px;
+ }
+ 
+ .resource-delete-warning {
+@@ -2331,21 +2316,21 @@ tr:hover td { background: #fafbfc; cursor: pointer; }
+   width: 100%;
+   margin-bottom: 10px;
+ }
+ .rollback-confirmation-mismatch {
+   color: #cf1322;
+   font-size: 11px;
+   margin: -6px 0 10px;
+ }
+ .rollback-delete-counts {
+   font-size: 11px;
+-  font-family: var(--font-mono, monospace);
++  font-family: var(--font-mono);
+ }
+ .rollback-success-summary {
+   margin-top: 8px;
+   padding: 8px 10px;
+   border-radius: 6px;
+   background: #f6ffed;
+   border: 1px solid #b7eb8f;
+   color: #389e0d;
+   font-size: 12px;
+ }
+@@ -2422,21 +2407,21 @@ tr:hover td { background: #fafbfc; cursor: pointer; }
+ .intermediate-meta-value {
+   font-weight: 500;
+   color: var(--text);
+ }
+ .intermediate-preview-box {
+   background: #fafafa;
+   border: 1px solid var(--border);
+   border-radius: 6px;
+   padding: 8px 10px;
+   font-size: 11px;
+-  font-family: var(--font-mono, monospace);
++  font-family: var(--font-mono);
+   max-height: 320px;
+   overflow: auto;
+   white-space: pre-wrap;
+   word-break: break-all;
+ }
+ .intermediate-hint-bar {
+   background: #e6f7ff;
+   border: 1px solid #91caff;
+   border-radius: 6px;
+   padding: 8px 12px;
+@@ -2548,21 +2533,21 @@ tr:hover td { background: #fafbfc; cursor: pointer; }
+ }
+ .intermediate-run-row {
+   display: flex;
+   align-items: center;
+   gap: 8px;
+   padding: 6px 0;
+   border-bottom: 1px solid var(--border);
+   font-size: 12px;
+ }
+ .intermediate-run-row:last-child { border-bottom: none; }
+-.intermediate-run-code { font-family: var(--font-mono, monospace); color: var(--text-muted); font-size: 11px; }
++.intermediate-run-code { font-family: var(--font-mono); color: var(--text-muted); font-size: 11px; }
+ .intermediate-label-note {
+   font-size: 11px;
+   color: #389e0d;
+   background: #f6ffed;
+   border: 1px solid #b7eb8f;
+   border-radius: 4px;
+   padding: 4px 8px;
+   margin-top: 6px;
+ }
+ 
+@@ -2657,21 +2642,21 @@ tr:hover td { background: #fafbfc; cursor: pointer; }
+ .attach-success-panel {
+   background: #f6ffed;
+   border: 1px solid #b7eb8f;
+   border-radius: 6px;
+   padding: 10px 14px;
+   font-size: 12px;
+   color: #389e0d;
+   margin-top: 8px;
+ }
+ .attach-success-panel .attach-success-id {
+-  font-family: var(--font-mono, monospace);
++  font-family: var(--font-mono);
+   font-size: 11px;
+   word-break: break-all;
+ }
+ 
+ /* ??? Workbench Log Console ??????????????????????????????????????????????????? */
+ .layout.log-console-collapsed .main {
+   padding-bottom: calc(var(--main-padding-y) + var(--log-console-height-collapsed));
+ }
+ .layout.log-console-expanded .main {
+   padding-bottom: calc(var(--main-padding-y) + var(--log-console-actual-height, var(--log-console-height-expanded)));
+@@ -2823,21 +2808,21 @@ tr:hover td { background: #fafbfc; cursor: pointer; }
+ .log-level-badge.level-info { background: #111d2c; color: #69c0ff; }
+ .log-level-badge.level-debug { background: #1f1f1f; color: #888; }
+ .log-source {
+   font-size: 10px;
+   color: #888;
+   flex-shrink: 0;
+ }
+ .log-time {
+   font-size: 10px;
+   color: #666;
+-  font-family: var(--font-mono, monospace);
++  font-family: var(--font-mono);
+   flex-shrink: 0;
+ }
+ .log-title {
+   font-weight: 500;
+   flex-shrink: 0;
+   max-width: 40%;
+   overflow: hidden;
+   text-overflow: ellipsis;
+   white-space: nowrap;
+ }
+@@ -3948,21 +3933,21 @@ tr:hover td { background: #fafbfc; cursor: pointer; }
+   overflow-x: auto;
+   width: 100%;
+ }
+ 
+ .llm-run-table table,
+ .llm-item-table table {
+   min-width: 960px;
+ }
+ 
+ .llm-response-json {
+-  font-family: var(--font-mono, monospace);
++  font-family: var(--font-mono);
+   font-size: 11px;
+   background: #f5f5f5;
+   border: 1px solid var(--border);
+   border-radius: 4px;
+   padding: 8px;
+   max-height: 240px;
+   overflow: auto;
+   white-space: pre-wrap;
+   word-break: break-word;
+ }
+@@ -11291,21 +11276,21 @@ input[type="range"]::-webkit-slider-thumb {
+    dc-evidence-* / pev-*:数据中心与验证中心使用
+    ew-*:PaperEvidenceColumn(数据中心)/ PassageEvidenceCard 等候选组件使用
+    已删除死类:evidence-review-panel/body、evidence-workbench、ew-header、
+    ew-resize、ew-object-info、ew-progress、ew-step-label、ew-actions、ew-body、
+    ew-left、ew-left-tools、ew-queue-*、ew-status-*、ew-center、ew-stepper、
+    ew-step、ew-step-active/done、ew-progress-track/fill/anim/text、
+    ew-current-paper、ew-chips、ew-chip、ew-paper、ew-paper-active、ew-right、
+    ew-radio、ew-bottom ────────────────────────────────────────────────────── */
+ .dc-evidence-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; }
+ .dc-evidence-stat { background: var(--bg-soft); border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; display: flex; flex-direction: column; gap: 2px; }
+-.dc-evidence-stat strong { font-size: 18px; color: var(--primary); }
++.dc-evidence-stat strong { font-size: 16px; color: var(--primary); }
+ .dc-evidence-stat span { font-size: 11px; color: var(--text-muted); }
+ .pev-panel { padding: 12px; display: flex; flex-direction: column; gap: 10px; overflow-y: auto; }
+ .pev-list { display: flex; flex-direction: column; gap: 6px; }
+ .pev-item { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; cursor: pointer; font-size: 12px; }
+ .pev-item:hover { border-color: var(--primary); background: var(--info-bg); }
+ .pev-adjust { display: flex; flex-direction: column; gap: 2px; padding: 6px 8px; border: 1px solid var(--border); border-radius: 6px; margin-bottom: 6px; font-size: 12px; }
+ .ew-meta { font-size: 11px; color: var(--text-muted); }
+ .ew-oa { background: var(--success-bg); color: var(--success-fg); border-radius: 8px; padding: 1px 6px; font-size: 10px; }
+ .ew-busy { padding: 6px 10px; background: var(--warning-bg); border-radius: 6px; font-size: 12px; }
+ .ew-section { border: 1px solid var(--border); border-radius: var(--card-radius); padding: 10px 12px; background: var(--white); display: flex; flex-direction: column; gap: 8px; }
+@@ -11328,21 +11313,21 @@ input[type="range"]::-webkit-slider-thumb {
+   display: flex;
+   flex-direction: column;
+   gap: 8px;
+   transition: border-color .15s ease, box-shadow .15s ease;
+ }
+ .ew-passage:hover { border-color: rgba(22, 119, 255, .45); box-shadow: var(--shadow); }
+ .ew-passage-invalid { border-color: var(--danger); background: var(--danger-bg); }
+ .ew-passage-top { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 12px; }
+ .ew-passage-top label { display: inline-flex; align-items: center; gap: 4px; cursor: pointer; color: var(--text); font-weight: 500; }
+ .ew-level-badge { color: var(--primary); background: var(--info-bg); border: 1px solid rgba(22, 119, 255, .3); border-radius: 4px; padding: 0 6px; font-size: 11px; font-weight: 600; }
+-.ew-passage-direction { font-size: 11px; font-weight: 600; font-family: var(--font-mono, monospace); color: var(--text-muted); background: var(--muted-bg); border-radius: 4px; padding: 0 6px; }
++.ew-passage-direction { font-size: 11px; font-weight: 600; font-family: var(--font-mono); color: var(--text-muted); background: var(--muted-bg); border-radius: 4px; padding: 0 6px; }
+ .ew-passage-en { font-size: 13px; line-height: 1.7; color: var(--text); background: var(--bg-soft); padding: 8px 10px; border-radius: 8px; }
+ .ew-passage-zh { font-size: 12px; color: #334155; background: var(--info-bg); padding: 8px 10px; border-radius: 8px; }
+ .ew-passage-context { font-size: 12px; color: var(--text-muted); border: 1px dashed var(--border); border-radius: 8px; padding: 6px 10px; }
+ .ew-passage-context summary { cursor: pointer; font-weight: 600; }
+ .ew-passage-context p { margin: 4px 0 0; }
+ .ew-trans { width: 100%; min-height: 54px; font-size: 12px; }
+ .ew-reselect { display: flex; flex-direction: column; gap: 6px; padding: 8px; border: 1px dashed var(--border); border-radius: 8px; background: var(--bg-soft); }
+ 
+ /* ── Claim 面板(ClaimPanel) ───────────────────────────────────────────────── */
+ .ew-claim-panel { background: var(--bg-soft); }
+@@ -11399,21 +11384,21 @@ input[type="range"]::-webkit-slider-thumb {
+   /* 页面背景:浅蓝灰底 + 白色内容 Card(视觉稿) */
+   background: var(--evidence-bg);
+   border-radius: var(--radius-md);
+ }
+ .evidence-center-header {
+   display: flex;
+   align-items: center;
+   justify-content: space-between;
+   gap: 12px;
+   flex-wrap: wrap;
+-  padding: 8px 14px;
++  padding: 8px 16px;
+   background: var(--white);
+   border: 1px solid var(--border);
+   border-radius: var(--card-radius);
+   box-shadow: var(--shadow);
+ }
+ .evidence-center-layout {
+   flex: 1;
+   min-height: 0;
+   display: grid;
+   grid-template-columns: 240px minmax(640px, 1fr) 340px;
+@@ -11428,21 +11413,21 @@ input[type="range"]::-webkit-slider-thumb {
+ .evidence-left,
+ .evidence-main,
+ .evidence-right {
+   min-height: 0;
+   min-width: 0;
+   overflow-y: auto;
+   background: var(--white);
+   border: 1px solid var(--border);
+   border-radius: var(--card-radius);
+   box-shadow: var(--shadow);
+-  padding: 12px 14px;
++  padding: 12px 16px;
+ }
+ .evidence-main { display: flex; flex-direction: column; gap: 12px; }
+ /* 右栏标题统一 13px(Reviewer/Promotion/TaskSummary 面板同语言) */
+ .evidence-right-panel h4 { font-size: 13px; color: var(--text); margin-bottom: 4px; }
+ .evidence-module-hint { font-size: 12px; color: var(--text-muted); line-height: 1.6; }
+ 
+ /* ── 模块导航(顶部胶囊):选中 = 蓝实底白字;未选 = 浅灰底深灰字;高 34px 紧凑 ── */
+ .evidence-module-nav { display: flex; gap: 8px; flex-wrap: wrap; }
+ .evidence-module-btn {
+   display: inline-flex;
+@@ -11467,32 +11452,32 @@ input[type="range"]::-webkit-slider-thumb {
+   font-weight: 600;
+   box-shadow: 0 2px 8px rgba(22, 119, 255, .35);
+ }
+ 
+ /* ── 顶部信息条(ContextBar):整行浅蓝灰背景;左 [状态 Badge + 完整事实句],右 [刷新][返回数据中心] ── */
+ .evidence-context-bar {
+   display: flex;
+   align-items: center;
+   gap: 12px;
+   flex-wrap: wrap;
+-  padding: 10px 14px;
++  padding: 12px 16px;
+   background: var(--info-bg);
+   border: 1px solid var(--border);
+   border-radius: var(--card-radius);
+   box-shadow: var(--shadow);
+ }
+ .evidence-context-badge {
+   flex-shrink: 0;
+   font-size: 12px;
+   font-weight: 600;
+   color: var(--primary);
+-  background: var(--selected-bg);
++  background: var(--info-bg);
+   border: 1px solid rgba(22, 119, 255, .3);
+   border-radius: 999px;
+   padding: 3px 10px;
+   white-space: nowrap;
+ }
+ .evidence-context-fact { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-width: 0; }
+ .evidence-context-label { font-size: 13px; font-weight: 700; color: var(--text); white-space: nowrap; }
+ .evidence-context-sentence { font-size: 13px; font-weight: 500; color: var(--text); line-height: 1.5; }
+ .evidence-context-meta { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+ .evidence-context-chip {
+@@ -11550,49 +11535,48 @@ input[type="range"]::-webkit-slider-thumb {
+ .evidence-queue-title { font-size: 14px; font-weight: 700; color: var(--text); }
+ .evidence-queue-count { background: var(--info-bg); color: var(--primary); border-radius: 999px; padding: 1px 8px; font-size: 11px; font-weight: 600; }
+ .evidence-queue-stats { display: flex; gap: 6px; flex-wrap: wrap; }
+ .evidence-queue-stat { font-size: 11px; color: var(--text-muted); background: var(--bg-soft); border-radius: 6px; padding: 2px 8px; }
+ .evidence-queue-filter { font-size: 12px; color: var(--text-muted); display: flex; align-items: center; gap: 4px; cursor: pointer; user-select: none; }
+ .evidence-queue-list { display: flex; flex-direction: column; gap: 6px; }
+ .evidence-queue-item {
+   position: relative;
+   border: 1px solid var(--border);
+   border-radius: 8px;
+-  padding: 8px 10px 8px 14px;
++  padding: 8px 10px 8px 12px;
+   cursor: pointer;
+   background: var(--white);
+   transition: border-color .15s ease, background .15s ease, box-shadow .15s ease;
+ }
+ .evidence-queue-item:hover { border-color: var(--primary); box-shadow: var(--shadow); }
+ .evidence-queue-item:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
+-.evidence-queue-item-active { border-color: var(--primary); background: var(--selected-bg); }
++.evidence-queue-item-active { border-color: var(--primary); background: var(--info-bg); }
+ .evidence-queue-item-active::before {
+   content: '';
+   position: absolute;
+   left: -1px;
+   top: 6px;
+   bottom: 6px;
+   width: 3px;
+   border-radius: 2px;
+   background: var(--primary);
+ }
+ .evidence-queue-item-label { font-size: 13px; font-weight: 600; color: var(--text); }
+ .evidence-queue-item-meta { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+ .evidence-queue-item-foot { display: flex; align-items: center; justify-content: space-between; margin-top: 4px; }
+ .evidence-queue-status { font-size: 11px; font-weight: 600; border-radius: 999px; padding: 1px 8px; }
+ .evidence-queue-status-info { color: var(--primary); background: var(--info-bg); }
+ .evidence-queue-status-warn { color: var(--warning-fg); background: var(--warning-bg); }
+ .evidence-queue-status-ok { color: var(--success-fg); background: var(--success-bg); }
+ .evidence-queue-status-bad { color: var(--danger); background: var(--danger-bg); }
+ .evidence-queue-status-muted { color: var(--text-muted); background: var(--muted-bg); }
+ .evidence-queue-evidence { font-size: 11px; color: var(--text-muted); }
+-.evidence-queue-empty { font-size: 12px; color: var(--text-muted); text-align: center; padding: 16px 0; }
+ .evidence-queue-item-hint { font-size: 11px; color: var(--text-muted); background: var(--muted-bg); border-radius: 4px; padding: 3px 6px; margin-top: 5px; }
+ 
+ /* ── Claim 摘要(候选模块左栏,ClaimSummaryPanel:由 claim_components 动态生成的独立信息块) ── */
+ .evidence-claim-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+ .evidence-claim-head h4 { font-size: 14px; color: var(--text); }
+ .evidence-left .evidence-claim-head h4 { font-size: 13px; }
+ .evidence-claim-summary {
+   background: var(--white);
+   border: 1px solid var(--border);
+   border-radius: var(--card-radius);
+@@ -11655,49 +11639,32 @@ input[type="range"]::-webkit-slider-thumb {
+   font-size: 12px;
+   color: var(--text-muted);
+   padding: 4px 2px;
+   cursor: pointer;
+   white-space: nowrap;
+   transition: background .15s ease, color .15s ease;
+ }
+ .evidence-queue-panel-tab:hover { color: var(--text); }
+ .evidence-queue-panel-tab.active { background: var(--white); color: var(--primary); font-weight: 600; box-shadow: var(--shadow); }
+ .evidence-queue-panel-tab-count { font-weight: 700; }
+-.evidence-queue-panel-empty {
+-  display: flex;
+-  flex-direction: column;
+-  align-items: center;
+-  gap: 4px;
+-  margin-top: auto;
+-  padding: 26px 12px 18px;
+-  border: 1px dashed var(--border);
+-  border-radius: var(--radius-md);
+-  background: var(--bg-soft);
+-  color: var(--text-muted);
+-  text-align: center;
+-}
+-.evidence-queue-panel-empty-icon { font-size: 24px; line-height: 1; color: var(--primary); }
+-.evidence-queue-panel-empty-title { font-size: 13px; font-weight: 600; color: var(--text); }
+-.evidence-queue-panel-empty-hint { font-size: 12px; }
+-.evidence-queue-panel-view-all { margin-top: 10px; }
+ 
+ /* ── 佐证任务模块(EvidenceTasksModule) ── */
+ .evidence-task-module { display: flex; flex-direction: column; gap: 12px; }
+ .evidence-task-toolbar { display: flex; align-items: flex-end; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+ .evidence-task-toolbar-title h3 { font-size: 15px; color: var(--text); margin-bottom: 2px; }
+ .evidence-task-toolbar-actions { display: flex; gap: 8px; }
+-.evidence-task-groups { display: flex; flex-direction: column; gap: 14px; }
++.evidence-task-groups { display: flex; flex-direction: column; gap: 12px; }
+ .evidence-task-group {
+   background: var(--white);
+   border: 1px solid var(--border);
+   border-radius: var(--card-radius);
+-  padding: 12px 14px;
++  padding: 12px 16px;
+   box-shadow: var(--shadow);
+ }
+ .evidence-task-group-head { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+ .evidence-task-group-title { font-size: 13px; font-weight: 600; color: var(--text); }
+ .evidence-task-group-title::before {
+   content: '';
+   display: inline-block;
+   width: 4px;
+   height: 14px;
+   border-radius: 2px;
+@@ -11715,76 +11682,70 @@ input[type="range"]::-webkit-slider-thumb {
+   border: 1px solid var(--border);
+   border-radius: 10px;
+   margin-bottom: 8px;
+   cursor: pointer;
+   background: var(--white);
+   transition: border-color .15s ease, box-shadow .15s ease, background .15s ease;
+ }
+ .evidence-task-row:hover { border-color: var(--primary); box-shadow: var(--shadow); }
+ .evidence-task-row:last-child { margin-bottom: 0; }
+ .evidence-task-row:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
+-.evidence-task-row-selected { border-color: var(--primary); background: var(--selected-bg); }
++.evidence-task-row-selected { border-color: var(--primary); background: var(--info-bg); }
+ .evidence-task-row-selected:hover { box-shadow: none; }
+ .evidence-task-main { display: flex; flex-direction: column; gap: 4px; min-width: 160px; }
+ .evidence-task-name { font-size: 14px; font-weight: 600; color: var(--text); }
+ .evidence-task-type {
+   display: inline-block;
+   align-self: flex-start;
+   font-size: 11px;
+   font-weight: 600;
+   color: var(--primary);
+   background: var(--info-bg);
+   border: 1px solid rgba(22, 119, 255, .3);
+   border-radius: 4px;
+   padding: 0 6px;
+ }
+-.evidence-task-stats { display: flex; gap: 14px; flex-wrap: wrap; }
++.evidence-task-stats { display: flex; gap: 12px; flex-wrap: wrap; }
+ .evidence-task-stat { font-size: 12px; color: var(--text-muted); }
+ .evidence-task-stat b { color: var(--text); font-size: 13px; margin-left: 2px; }
+ .evidence-task-chips { display: flex; gap: 6px; flex-wrap: wrap; }
+ .evidence-task-chip { font-size: 11px; font-weight: 600; border-radius: 999px; padding: 2px 8px; }
+ .evidence-task-chip-ok { color: var(--success-fg); background: var(--success-bg); }
+ .evidence-task-chip-bad { color: var(--danger); background: var(--danger-bg); }
+ .evidence-task-chip-warn { color: var(--warning-fg); background: var(--warning-bg); }
+ .evidence-task-chip-info { color: var(--primary); background: var(--info-bg); }
+ .evidence-task-chip-muted { color: var(--text-muted); background: var(--muted-bg); }
+ .evidence-task-actions { margin-left: auto; display: flex; gap: 8px; }
+-.evidence-task-loading { padding: 40px 20px; text-align: center; color: var(--text-muted); }
+-.evidence-task-error { padding: 24px; text-align: center; color: var(--danger); display: flex; flex-direction: column; gap: 10px; align-items: center; }
+-.evidence-task-empty {
+-  padding: 40px 20px;
+-  text-align: center;
+-  color: var(--text-muted);
+-  font-size: 13px;
+-  background: var(--white);
+-  border: 1px dashed var(--border);
+-  border-radius: var(--card-radius);
+-}
++/* 加载/错误态(任务/候选/论文模块共用;空态统一走 .evidence-empty) */
++.evidence-task-loading,
++.paper-loading { padding: 40px 20px; text-align: center; color: var(--text-muted); }
++.evidence-task-error,
++.paper-error { padding: 24px; text-align: center; color: var(--danger); display: flex; flex-direction: column; gap: 10px; align-items: center; }
+ 
+ /* ── 右栏任务摘要(TaskSummary,S5) ── */
+ .evidence-task-summary { display: flex; flex-direction: column; gap: 10px; }
+ .evidence-task-summary h4 { margin: 0 0 4px; }
+ .evidence-task-summary-name { font-size: 14px; font-weight: 700; color: var(--text); line-height: 1.45; }
+ .evidence-task-summary-meta { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+ .evidence-task-summary-section { display: flex; flex-direction: column; gap: 8px; }
+ .evidence-progress-bar {
+   display: flex;
+   width: 100%;
+   height: 8px;
+   border-radius: 999px;
+   overflow: hidden;
+   background: var(--muted-bg);
+ }
+ .evidence-progress-seg { height: 100%; transition: width .2s ease; }
+-.evidence-progress-ok { background: #34c77b; }
+-.evidence-progress-warn { background: #f2b13b; }
+-.evidence-progress-bad { background: #f2685f; }
++.evidence-progress-ok { background: var(--success); }
++.evidence-progress-warn { background: var(--warning); }
++.evidence-progress-bad { background: var(--danger); }
+ .evidence-task-progress-stats { display: flex; gap: 12px; flex-wrap: wrap; font-size: 12px; color: var(--text-muted); }
+ .evidence-task-progress-stats b { color: var(--text); font-size: 13px; margin-left: 2px; }
+ .evidence-task-summary-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+ .evidence-summary-label { font-size: 11px; color: var(--text-muted); font-weight: 600; }
+ .evidence-summary-stats {
+   display: grid;
+   grid-template-columns: 1fr 1fr;
+   gap: 6px;
+   margin: 0;
+ }
+@@ -11827,81 +11788,61 @@ input[type="range"]::-webkit-slider-thumb {
+   color: var(--text);
+   cursor: pointer;
+   white-space: nowrap;
+ }
+ .paper-year-select { width: auto; padding: 4px 8px; }
+ .paper-list { display: flex; flex-direction: column; gap: 10px; }
+ .paper-card {
+   display: flex;
+   align-items: flex-start;
+   justify-content: space-between;
+-  gap: 14px;
++  gap: 16px;
+   flex-wrap: wrap;
+   width: 100%;
+   text-align: left;
+   background: var(--white);
+   border: 1px solid var(--border);
+   border-radius: 10px;
+-  padding: 12px 14px;
++  padding: 12px 16px;
+   cursor: pointer;
+   transition: border-color .15s ease, box-shadow .15s ease;
+ }
+ .paper-card:hover { border-color: var(--primary); box-shadow: var(--shadow); }
+ .paper-card:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
+ .paper-card-main { display: flex; flex-direction: column; gap: 4px; min-width: 200px; flex: 1; }
+ .paper-card-title { font-size: 14px; font-weight: 700; color: var(--text); line-height: 1.45; }
+ .paper-card-meta { font-size: 12px; color: var(--text-muted); }
+-.paper-card-ids { font-size: 11px; color: var(--text-muted); font-family: var(--font-mono, monospace); }
++.paper-card-ids { font-size: 11px; color: var(--text-muted); font-family: var(--font-mono); }
+ .paper-card-chips { display: flex; gap: 6px; flex-wrap: wrap; align-items: flex-start; justify-content: flex-end; max-width: 320px; }
+ .paper-badge { font-size: 11px; font-weight: 600; border-radius: 999px; padding: 2px 8px; white-space: nowrap; }
+ .paper-badge-oa { color: var(--success-fg); background: var(--success-bg); }
+ .paper-badge-avail { color: var(--primary); background: var(--info-bg); }
+ .paper-badge-muted { color: var(--text-muted); background: var(--muted-bg); }
+ .paper-pagination { display: flex; align-items: center; justify-content: center; gap: 12px; }
+ .paper-pagination-info { font-size: 12px; color: var(--text-muted); }
+-.paper-loading { padding: 40px 20px; text-align: center; color: var(--text-muted); }
+-.paper-error { padding: 24px; text-align: center; color: var(--danger); display: flex; flex-direction: column; gap: 10px; align-items: center; }
+-.paper-empty {
+-  padding: 40px 20px;
+-  text-align: center;
+-  color: var(--text-muted);
+-  font-size: 13px;
+-  background: var(--white);
+-  border: 1px dashed var(--border);
+-  border-radius: var(--card-radius);
+-}
+ 
+ /* ── 证据候选模块(EvidenceCandidatesModule) ── */
+ .evidence-candidates { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+ .evidence-candidates-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 12px; }
+ .evidence-candidates-papers { display: flex; flex-direction: column; gap: 8px; }
+ .evidence-candidates-papers-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+ .evidence-candidates-papers-head h4 { font-size: 15px; color: var(--text); }
+ /* 空态底部轻提示(批量操作 / 恢复排除) */
+ .evidence-candidates-hint { font-size: 11px; color: var(--text-muted); text-align: center; }
+-.evidence-candidates-empty {
+-  padding: 24px 12px;
+-  text-align: center;
+-  color: var(--text-muted);
+-  font-size: 13px;
+-  background: var(--white);
+-  border: 1px dashed var(--border);
+-  border-radius: var(--card-radius);
+-}
+ 
+ /* ── 检索区三层 ── */
+ .evidence-search {
+   background: var(--white);
+   border: 1px solid var(--border);
+   border-radius: var(--card-radius);
+   box-shadow: var(--shadow);
+-  padding: 12px 14px;
++  padding: 12px 16px;
+   display: flex;
+   flex-direction: column;
+   gap: 12px;
+ }
+ .evidence-search-layer { display: flex; flex-direction: column; gap: 6px; }
+ .evidence-search-layer + .evidence-search-layer {
+   border-top: 1px dashed var(--border);
+   padding-top: 12px;
+ }
+ .evidence-search-title { font-size: 13px; font-weight: 700; color: var(--text); }
+@@ -11909,21 +11850,21 @@ input[type="range"]::-webkit-slider-thumb {
+ .evidence-search-query { flex: 1; min-width: 220px; }
+ .evidence-search-year { width: 118px; }
+ .evidence-search-filter { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: var(--text); cursor: pointer; }
+ .evidence-search-terms { display: flex; gap: 6px; flex-wrap: wrap; }
+ /* 系统推荐关键词 Chip:浅蓝圆角 + ×清空,可换行 */
+ .evidence-query-term {
+   display: inline-flex;
+   align-items: center;
+   gap: 4px;
+   font-size: 11px;
+-  font-family: var(--font-mono, monospace);
++  font-family: var(--font-mono);
+   color: var(--primary);
+   background: var(--info-bg);
+   border: 1px solid rgba(22, 119, 255, .28);
+   border-radius: 999px;
+   padding: 2px 4px 2px 9px;
+ }
+ .evidence-query-term-clear {
+   display: inline-flex;
+   align-items: center;
+   justify-content: center;
+@@ -11969,21 +11910,21 @@ input[type="range"]::-webkit-slider-thumb {
+   align-items: center;
+   gap: 8px;
+   margin-left: auto;
+ }
+ 
+ /* ── 中栏状态信息条(PaperStatusSummary) ── */
+ /* 浅蓝状态条:高 48-54px,模型判断加粗 */
+ .evidence-stats-bar {
+   display: flex;
+   align-items: center;
+-  gap: 18px;
++  gap: 16px;
+   flex-wrap: wrap;
+   background: var(--info-bg);
+   border: 1px solid rgba(22, 119, 255, .22);
+   border-radius: var(--card-radius);
+   padding: 6px 14px;
+   min-height: 48px;
+ }
+ .evidence-stats-item { display: flex; align-items: baseline; gap: 6px; }
+ .evidence-stats-label { font-size: 12px; color: var(--text-muted); white-space: nowrap; }
+ .evidence-stats-value { font-size: 16px; font-weight: 700; color: var(--text); white-space: nowrap; }
+@@ -12000,42 +11941,42 @@ input[type="range"]::-webkit-slider-thumb {
+ }
+ .evidence-stats-assessment { font-size: 12px; font-weight: 600; color: var(--text); }
+ .evidence-stats-actions { margin-left: auto; display: flex; align-items: center; }
+ 
+ /* ── 候选论文分层卡(PaperCard) ── */
+ .paper-card-candidate {
+   background: var(--white);
+   border: 1px solid var(--border);
+   border-radius: var(--card-radius);
+   box-shadow: var(--shadow);
+-  padding: 10px 14px;
++  padding: 12px 16px;
+   display: flex;
+   flex-direction: column;
+   gap: 8px;
+   transition: border-color .15s ease, box-shadow .15s ease;
+ }
+ .paper-card-candidate:hover { border-color: var(--primary); }
+ .paper-card-title-row .paper-card-title { font-size: 14px; font-weight: 700; color: var(--text); line-height: 1.5; }
+ .paper-card-cite-row .paper-card-meta { font-size: 12px; color: var(--text-muted); }
+ .paper-card-match-row { display: flex; align-items: center; gap: 8px; font-size: 12px; flex-wrap: wrap; }
+ .paper-card-match-score { color: var(--success-fg); background: var(--success-bg); border-radius: 999px; padding: 1px 8px; font-weight: 600; }
+ .paper-card-match-reason { color: var(--text-muted); }
+ .paper-card-tags-row { display: flex; gap: 6px; flex-wrap: wrap; }
+ .paper-card-tag {
+   font-size: 11px;
+   font-weight: 600;
+   color: var(--text-muted);
+   background: var(--muted-bg);
+   border: 1px solid var(--border);
+   border-radius: 999px;
+   padding: 2px 8px;
+-  font-family: var(--font-mono, monospace);
++  font-family: var(--font-mono);
+ }
+ .paper-card-tag-ok { color: var(--primary); background: var(--info-bg); border-color: rgba(22, 119, 255, .28); }
+ .paper-card-tag-oa { color: var(--success-fg); background: var(--success-bg); }
+ .paper-card-result-row { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+ .paper-card-result-badge {
+   font-size: 11px;
+   font-weight: 600;
+   border-radius: 6px;
+   padding: 2px 8px;
+   color: var(--text-muted);
+@@ -12063,44 +12004,56 @@ input[type="range"]::-webkit-slider-thumb {
+   justify-content: center;
+   width: 48px;
+   height: 48px;
+   border-radius: 50%;
+   background: var(--info-bg);
+   color: var(--primary);
+ }
+ .evidence-empty-icon svg { width: 24px; height: 24px; }
+ .evidence-empty-title { font-size: 14px; font-weight: 700; color: var(--text); }
+ .evidence-empty-desc { font-size: 12px; color: var(--text-muted); max-width: 380px; line-height: 1.6; }
++/* 紧凑空态(窄栏队列 / 分组内联):轻量虚线卡,复用同一组件 */
++.evidence-empty-compact {
++  padding: 14px 12px;
++  gap: 4px;
++  background: transparent;
++}
++.evidence-empty-compact .evidence-empty-icon { width: 32px; height: 32px; }
++.evidence-empty-compact .evidence-empty-icon svg { width: 16px; height: 16px; }
++.evidence-empty-compact .evidence-empty-title { font-size: 13px; font-weight: 600; color: var(--text-muted); }
++.evidence-empty-compact .evidence-empty-desc { font-size: 12px; }
++/* 右栏队列面板:空态吸底(原 .evidence-queue-panel-empty 的定位语义) */
++.evidence-queue-panel .evidence-empty { margin-top: auto; }
+ .paper-card-actions-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; border-top: 1px dashed var(--border); padding-top: 8px; }
+ .paper-card-select { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: var(--text); cursor: pointer; }
+ 
+ /* ── 论文↔证据视图(PaperEvidenceView) ── */
+ .evidence-paper-view { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+ .evidence-paper-back { align-self: flex-start; font-size: 13px; color: var(--primary); background: none; border: none; cursor: pointer; padding: 2px 0; }
+ .evidence-paper-back:hover { text-decoration: underline; }
+ .evidence-paper-summary {
+   background: var(--white);
+   border: 1px solid var(--border);
+   border-radius: var(--card-radius);
+   box-shadow: var(--shadow);
+-  padding: 12px 14px;
++  padding: 12px 16px;
+   display: flex;
+   flex-direction: column;
+   gap: 4px;
+ }
+ .evidence-paper-title { font-size: 15px; font-weight: 700; color: var(--text); line-height: 1.5; }
+ .evidence-paper-coverage {
+   background: var(--white);
+   border: 1px solid var(--border);
+   border-radius: var(--card-radius);
+   box-shadow: var(--shadow);
+-  padding: 12px 14px;
++  padding: 12px 16px;
+   display: flex;
+   flex-direction: column;
+   gap: 8px;
+ }
+ .evidence-paper-coverage h4 { font-size: 14px; color: var(--text); }
+ .evidence-coverage-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+ .evidence-coverage-table th {
+   text-align: left;
+   font-size: 12px;
+   color: var(--text-muted);
+@@ -12229,21 +12182,21 @@ input[type="range"]::-webkit-slider-thumb {
+ .ew-dir-chip-active { background: var(--info-bg); border-color: var(--primary); color: var(--primary); font-weight: 600; }
+ .ew-dir-label { display: flex; align-items: center; gap: 6px; }
+ 
+ /* ── 证据晋升模块(EvidencePromotionModule) ── */
+ .evidence-promotion { display: flex; flex-direction: column; gap: 16px; }
+ .evidence-promotion-group {
+   background: var(--white);
+   border: 1px solid var(--border);
+   border-radius: var(--card-radius);
+   box-shadow: var(--shadow);
+-  padding: 12px 14px;
++  padding: 12px 16px;
+   display: flex;
+   flex-direction: column;
+   gap: 10px;
+ }
+ .evidence-promotion-group-head { display: flex; align-items: center; gap: 8px; }
+ .evidence-promotion-group-title { font-size: 14px; font-weight: 600; color: var(--text); }
+ .evidence-promotion-group-title::before {
+   content: '';
+   display: inline-block;
+   width: 4px;
+@@ -12326,30 +12279,21 @@ input[type="range"]::-webkit-slider-thumb {
+ .evidence-promotion-row-invalidated { background: var(--bg-soft); opacity: .85; }
+ .evidence-promotion-row-invalidated:hover { opacity: 1; }
+ .evidence-promotion-row-main { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+ .evidence-promotion-row-main strong {
+   font-size: 13px;
+   color: var(--text);
+   white-space: nowrap;
+   overflow: hidden;
+   text-overflow: ellipsis;
+ }
+-.evidence-promotion-empty {
+-  padding: 20px 12px;
+-  text-align: center;
+-  color: var(--text-muted);
+-  font-size: 13px;
+-  background: var(--white);
+-  border: 1px dashed var(--border);
+-  border-radius: var(--card-radius);
+-}
+-.evidence-promotion-row-selected { border-color: var(--primary); background: var(--selected-bg); }
++.evidence-promotion-row-selected { border-color: var(--primary); background: var(--info-bg); }
+ .evidence-promotion-row-selected:hover { box-shadow: none; }
+ 
+ /* ── 晋升影响右栏(PromotionImpact) ── */
+ .evidence-promotion-impact { display: flex; flex-direction: column; gap: 10px; }
+ .evidence-promotion-impact h4 { margin: 0; }
+ .evidence-promotion-impact .ew-promo-field {
+   display: flex;
+   align-items: center;
+   justify-content: space-between;
+   gap: 8px;
+@@ -12357,21 +12301,21 @@ input[type="range"]::-webkit-slider-thumb {
+   padding: 6px 0;
+   font-size: 12px;
+ }
+ .evidence-promotion-impact .ew-promo-field:last-of-type { border-bottom: none; }
+ .evidence-promotion-impact .ew-promo-key { color: var(--text-muted); flex-shrink: 0; }
+ .evidence-promotion-impact .ew-promo-val { font-weight: 600; color: var(--text); }
+ .evidence-promotion-impact .ew-promo-final { color: var(--primary); }
+ .evidence-promotion-impact .ew-sticky-actions { margin-top: 8px; }
+ 
+ /* ── 证据详情抽屉(EvidenceDetailDrawer) ── */
+-.evidence-detail-body { gap: 14px; }
++.evidence-detail-body { gap: 12px; }
+ .evidence-detail-section {
+   border: 1px solid var(--border);
+   border-radius: 10px;
+   padding: 10px 12px;
+   background: var(--white);
+   display: flex;
+   flex-direction: column;
+   gap: 8px;
+ }
+ .evidence-detail-section-title {
+@@ -12439,50 +12383,50 @@ input[type="range"]::-webkit-slider-thumb {
+   display: flex;
+   flex-direction: column;
+   animation: evidence-drawer-in .22s ease;
+ }
+ @keyframes evidence-drawer-in { from { transform: translateX(24px); opacity: .6; } to { transform: none; opacity: 1; } }
+ .evidence-drawer-head {
+   display: flex;
+   align-items: flex-start;
+   justify-content: space-between;
+   gap: 12px;
+-  padding: 14px 18px;
++  padding: 16px 20px;
+   border-bottom: 1px solid var(--border);
+   background: linear-gradient(180deg, var(--bg-soft), var(--white));
+ }
+ .evidence-drawer-title { font-size: 15px; font-weight: 700; color: var(--text); line-height: 1.5; flex: 1; }
+ .evidence-drawer-close {
+   border: 1px solid var(--border);
+   background: var(--white);
+   color: var(--text-muted);
+   width: 28px;
+   height: 28px;
+   border-radius: 8px;
+   font-size: 16px;
+   line-height: 1;
+   cursor: pointer;
+   transition: color .15s ease, border-color .15s ease, background .15s ease;
+ }
+ .evidence-drawer-close:hover { color: var(--primary); border-color: var(--primary); background: var(--info-bg); }
+ .evidence-drawer-close:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
+-.evidence-drawer-body { flex: 1; overflow-y: auto; padding: 16px 18px 24px; display: flex; flex-direction: column; gap: 16px; }
++.evidence-drawer-body { flex: 1; overflow-y: auto; padding: 16px 20px 24px; display: flex; flex-direction: column; gap: 16px; }
+ .paper-drawer-loading { padding: 48px 20px; text-align: center; color: var(--text-muted); }
+ .paper-drawer-error { padding: 24px; text-align: center; color: var(--danger); }
+ .paper-drawer-meta {
+   display: grid;
+   grid-template-columns: 1fr 1fr;
+-  gap: 8px 18px;
++  gap: 8px 16px;
+   background: var(--bg-soft);
+   border: 1px solid var(--border);
+   border-radius: 10px;
+-  padding: 12px 14px;
++  padding: 12px 16px;
+ }
+ .paper-drawer-meta-row { display: flex; gap: 8px; font-size: 12px; min-width: 0; }
+ .paper-drawer-meta-label { color: var(--text-muted); flex-shrink: 0; }
+ .paper-drawer-meta-label::after { content: ':'; }
+ .paper-drawer-meta-value { color: var(--text); font-weight: 500; overflow-wrap: anywhere; }
+ .paper-drawer-abstract,
+ .paper-drawer-section,
+ .paper-drawer-targets {
+   border: 1px solid var(--border);
+   border-radius: 10px;

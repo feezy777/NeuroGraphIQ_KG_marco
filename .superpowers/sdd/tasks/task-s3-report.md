@@ -46,3 +46,24 @@
 1. `ConfidencePreview.tsx` 成为死代码(未删除,留待 S4 晋升模块复用或届时清理)。
 2. 审核通过后留在原地(消息提示),未自动跳转 promotion——brief 允许二选一。
 3. 后续 S4 晋升模块可直接用 `listReviewApproved()` 过滤 `review_approved` 构建待晋升列表。
+
+---
+
+## V2-S3 Review 修复(2026-08-10,commit ce5f048)
+
+### Finding 1:本地置信度公式与后端不一致(已修复)
+`confidenceImpact.ts` 的 `final = min(cap, max(current, reviewer))` 与后端 `backend/app/services/confidence_rules.py` 语义不符,现改为完全镜像后端 `compute_adjustment`:
+- `contradicts/mixed/not_found` → `final = current`(不自动修改,apply=False),不再取 `max(current, reviewer)`。
+- `supports/partial` 且 `reviewer < current` → 弱证据分支 `final = current`(不改变),不再取 max。
+- 仅 `supports/partial` 且 `reviewer >= current` → `supports: min(0.85, reviewer)` / `partial: min(0.75, reviewer)`。
+- `computeFinalConfidence` 签名改为 `(direction, current, reviewer)`。
+
+### Finding 2:reviewer 值未钳制 [0,1](已修复)
+- `confidenceImpact.ts` 新增 `clampConfidence(value)`(NaN/Infinity → 0,否则 `clamp(0,1)`),在 `computeConfidenceImpact`/`computeFinalConfidence` 入口统一钳制,返回的 `reviewer` 字段亦为钳制值。
+- `ReviewerDecisionPanel.tsx`:`const reviewer = clampConfidence(parseFloat(confidence) || 0)`,滑块/公式均使用钳制后值。
+
+### 测试
+- `confidenceImpact.test.ts` 重写为 6 个用例:cap 规则 / reviewer>=current 分支 / 弱证据分支 / contradicts/mixed/not_found 分支 / 钳制(含 NaN/Infinity/字符串、越界入公式)/ 组合输出(current 0.7 + reviewer 0.8 + contradicts → final 0.7;current 0.95 + reviewer 0.8 + supports → final 0.95)。
+- 定向 `npx vitest run confidenceImpact.test.ts EvidenceReviewModule.test.tsx`:**2 files / 22 tests 通过**。
+- 全量 `npx vitest run`:**17 files / 128 tests 通过**;`npx tsc --noEmit`:**0 错误**。
+- `EvidenceReviewModule.test.tsx` 中 preview 优先路径(0.85)与无 preview partial 本地计算(0.75)用例均不受影响,保持通过。

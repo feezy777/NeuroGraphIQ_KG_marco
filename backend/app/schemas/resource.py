@@ -33,12 +33,18 @@ class Species(str, Enum):
 
 
 class GranularityLevel(str, Enum):
+    # BR3 multi-scale canonical levels:
     macro = "macro"
     meso = "meso"
-    micro = "micro"
+    subregion = "subregion"
+    cyto = "cyto"
     molecular = "molecular"
-    fine_cyto = "fine_cyto"
     term = "term"
+    micro = "micro"
+    # legacy values kept for existing rows:
+    sub_connectivity = "sub_connectivity"
+    molecular_attr = "molecular_attr"
+    fine_cyto = "fine_cyto"
 
 
 class GranularityFamily(str, Enum):
@@ -46,10 +52,13 @@ class GranularityFamily(str, Enum):
     meso_anatomical = "meso_anatomical"
     subregion_connectivity = "subregion_connectivity"
     cytoarchitectonic = "cytoarchitectonic"
-    fine_cyto = "fine_cyto"
     histological = "histological"
     molecular = "molecular"
     terminology = "terminology"
+    # legacy values kept for existing rows:
+    sub_connectivity = "sub_connectivity"
+    fine_cyto = "fine_cyto"
+    molecular_attr = "molecular_attr"
 
 
 class TemplateSpace(str, Enum):

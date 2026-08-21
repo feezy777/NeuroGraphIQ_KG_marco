@@ -59,6 +59,7 @@ export interface CompositeExtractionContext {
   modelName: string
   dryRun: boolean
   selectedCandidateIds: string[]
+  pairsPerPack?: number
   debugSinglePack?: boolean
   debugMaxPacks?: number | null
   scope: {
@@ -921,6 +922,7 @@ function buildCompositeRequest(
     source_atlas: ctx.scope.source_atlas,
     granularity_level: ctx.scope.granularity_level,
     granularity_family: ctx.scope.granularity_family,
+    pairs_per_pack: ctx.pairsPerPack,
     create_mirror_records: true,
     create_triples: taskId === 'composite_triple_generation',
     create_evidence: taskId !== 'composite_triple_generation',

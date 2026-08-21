@@ -1,0 +1,2349 @@
+4fbaf06 feat(evidence-center): 中栏搜索面板组件化拆分
+===STAT===
+ .../evidence-center/components/EmptyState.test.tsx |  35 +++
+ .../evidence-center/components/EmptyState.tsx      |  26 +++
+ .../components/PaperBatchActions.test.tsx          |  86 +++++++
+ .../components/PaperBatchActions.tsx               |  58 +++++
+ .../components/PaperCandidateCard.test.tsx         | 127 +++++++++++
+ .../components/PaperCandidateCard.tsx              | 120 ++++++++++
+ .../components/PaperCandidateList.test.tsx         |  60 +++++
+ .../components/PaperCandidateList.tsx              |  58 +++++
+ .../pages/evidence-center/components/PaperCard.tsx | 116 ----------
+ .../components/PaperSearchFilters.test.tsx         |  85 +++++++
+ .../components/PaperSearchFilters.tsx              |  78 +++++++
+ .../components/PaperSearchPanel.test.tsx           | 101 +++++++++
+ .../components/PaperSearchPanel.tsx                | 121 ++++++++++
+ .../components/PaperStatusSummary.test.tsx         |  64 ++++++
+ ...andidateStatsBar.tsx => PaperStatusSummary.tsx} |  10 +-
+ .../modules/EvidenceCandidatesModule.test.tsx      | 129 +++++++++--
+ .../modules/EvidenceCandidatesModule.tsx           | 250 ++++++++-------------
+ frontend/src/styles.css                            |  78 +++++--
+ 18 files changed, 1297 insertions(+), 305 deletions(-)
+===DIFF===
+diff --git a/frontend/src/pages/evidence-center/components/EmptyState.test.tsx b/frontend/src/pages/evidence-center/components/EmptyState.test.tsx
+new file mode 100644
+index 0000000..341ab33
+--- /dev/null
++++ b/frontend/src/pages/evidence-center/components/EmptyState.test.tsx
+@@ -0,0 +1,35 @@
++import { describe, expect, it, vi } from 'vitest'
++import { fireEvent, render, screen } from '@testing-library/react'
++import { EmptyState } from './EmptyState'
++
++describe('EmptyState', () => {
++  it('渲染图标 + 标题 + 说明 + 操作按钮', () => {
++    render(
++      <EmptyState
++        icon={<span data-testid="empty-icon">📄</span>}
++        title="暂无候选论文"
++        description="当前还没有找到相关论文，可尝试调整检索条件后重新搜索。"
++        actionLabel="调整检索条件"
++        onAction={vi.fn()}
++      />,
++    )
++    expect(screen.getByTestId('evidence-empty')).toBeTruthy()
++    expect(screen.getByTestId('empty-icon')).toBeTruthy()
++    expect(screen.getByText('暂无候选论文')).toBeTruthy()
++    expect(screen.getByText('当前还没有找到相关论文，可尝试调整检索条件后重新搜索。')).toBeTruthy()
++    expect(screen.getByRole('button', { name: '调整检索条件' })).toBeTruthy()
++  })
++
++  it('无 icon / 说明 / 按钮时不渲染对应区域', () => {
++    render(<EmptyState title="空" />)
++    expect(screen.getByText('空')).toBeTruthy()
++    expect(screen.queryByRole('button')).toBeNull()
++  })
++
++  it('点击操作按钮触发 onAction', () => {
++    const onAction = vi.fn()
++    render(<EmptyState title="空" actionLabel="重试" onAction={onAction} />)
++    fireEvent.click(screen.getByRole('button', { name: '重试' }))
++    expect(onAction).toHaveBeenCalledTimes(1)
++  })
++})
+diff --git a/frontend/src/pages/evidence-center/components/EmptyState.tsx b/frontend/src/pages/evidence-center/components/EmptyState.tsx
+new file mode 100644
+index 0000000..8a3941a
+--- /dev/null
++++ b/frontend/src/pages/evidence-center/components/EmptyState.tsx
+@@ -0,0 +1,26 @@
++import type { ReactNode } from 'react'
++
++interface Props {
++  /** 空态图标(通常为 lucide 图标元素);缺省不渲染图标区域 */
++  icon?: ReactNode
++  title: string
++  description?: string
++  actionLabel?: string
++  onAction?: () => void
++}
++
++/** 统一空态:图标 + 标题 + 说明 + 可选操作按钮(证据中心各模块共用) */
++export function EmptyState({ icon, title, description, actionLabel, onAction }: Props) {
++  return (
++    <div className="evidence-empty" data-testid="evidence-empty">
++      {icon != null && <div className="evidence-empty-icon">{icon}</div>}
++      <div className="evidence-empty-title">{title}</div>
++      {description && <div className="evidence-empty-desc">{description}</div>}
++      {actionLabel && onAction && (
++        <button type="button" className="btn btn-sm" onClick={onAction}>
++          {actionLabel}
++        </button>
++      )}
++    </div>
++  )
++}
+diff --git a/frontend/src/pages/evidence-center/components/PaperBatchActions.test.tsx b/frontend/src/pages/evidence-center/components/PaperBatchActions.test.tsx
+new file mode 100644
+index 0000000..d817a40
+--- /dev/null
++++ b/frontend/src/pages/evidence-center/components/PaperBatchActions.test.tsx
+@@ -0,0 +1,86 @@
++import { describe, expect, it, vi } from 'vitest'
++import { fireEvent, render, screen } from '@testing-library/react'
++import { PaperBatchActions } from './PaperBatchActions'
++
++function renderActions(overrides: Partial<Parameters<typeof PaperBatchActions>[0]> = {}) {
++  const props = {
++    allSelected: false,
++    onToggleAll: vi.fn(),
++    selectedCount: 0,
++    busy: false,
++    onExtractSelected: vi.fn(),
++    canSelect: true,
++    canCollapse: true,
++    onCollapse: vi.fn(),
++    ...overrides,
++  }
++  return render(<PaperBatchActions {...props} />)
++}
++
++describe('PaperBatchActions', () => {
++  it('渲染「批量操作」+ ☐全选 + 提取所选论文(N)', () => {
++    renderActions({ selectedCount: 2 })
++    expect(screen.getByText('批量操作')).toBeTruthy()
++    const selectAll = screen.getByRole('checkbox', { name: '全选' })
++    expect(selectAll).toBeTruthy()
++    expect(screen.getByRole('button', { name: '提取所选论文（2）' })).toBeTruthy()
++  })
++
++  it('N=0 时 [提取所选论文] 禁用', () => {
++    renderActions({ selectedCount: 0 })
++    expect((screen.getByRole('button', { name: '提取所选论文（0）' }) as HTMLButtonElement).disabled).toBe(true)
++  })
++
++  it('☐全选 勾选/取消触发 onToggleAll;全部勾选时呈选中态', () => {
++    const onToggleAll = vi.fn()
++    const { rerender } = renderActions({ onToggleAll })
++    const box = screen.getByRole('checkbox', { name: '全选' }) as HTMLInputElement
++    expect(box.checked).toBe(false)
++    fireEvent.click(box)
++    expect(onToggleAll).toHaveBeenCalledWith(true)
++    rerender(
++      <PaperBatchActions
++        allSelected={true}
++        onToggleAll={onToggleAll}
++        selectedCount={2}
++        busy={false}
++        onExtractSelected={vi.fn()}
++        canSelect={true}
++        canCollapse={true}
++        onCollapse={vi.fn()}
++      />,
++    )
++    expect((screen.getByRole('checkbox', { name: '全选' }) as HTMLInputElement).checked).toBe(true)
++    fireEvent.click(screen.getByRole('checkbox', { name: '全选' }))
++    expect(onToggleAll).toHaveBeenCalledWith(false)
++  })
++
++  it('无可选论文时 ☐全选 禁用;busy 时提取与全选均禁用', () => {
++    const { rerender } = renderActions({ canSelect: false })
++    expect((screen.getByRole('checkbox', { name: '全选' }) as HTMLInputElement).disabled).toBe(true)
++    rerender(
++      <PaperBatchActions
++        allSelected={false}
++        onToggleAll={vi.fn()}
++        selectedCount={1}
++        busy={true}
++        onExtractSelected={vi.fn()}
++        canSelect={true}
++        canCollapse={true}
++        onCollapse={vi.fn()}
++      />,
++    )
++    expect((screen.getByRole('checkbox', { name: '全选' }) as HTMLInputElement).disabled).toBe(true)
++    expect((screen.getByRole('button', { name: '提取所选论文（1）' }) as HTMLButtonElement).disabled).toBe(true)
++  })
++
++  it('[收起检索] 有结果时显示并触发 onCollapse;无结果时隐藏', () => {
++    const onCollapse = vi.fn()
++    const first = renderActions({ onCollapse })
++    fireEvent.click(screen.getByRole('button', { name: '收起检索' }))
++    expect(onCollapse).toHaveBeenCalledTimes(1)
++    first.unmount()
++    renderActions({ canCollapse: false })
++    expect(screen.queryByRole('button', { name: '收起检索' })).toBeNull()
++  })
++})
+diff --git a/frontend/src/pages/evidence-center/components/PaperBatchActions.tsx b/frontend/src/pages/evidence-center/components/PaperBatchActions.tsx
+new file mode 100644
+index 0000000..91053a8
+--- /dev/null
++++ b/frontend/src/pages/evidence-center/components/PaperBatchActions.tsx
+@@ -0,0 +1,58 @@
++interface Props {
++  /** 可见搜索结果是否全部勾选(决定 ☐全选 状态) */
++  allSelected: boolean
++  onToggleAll: (checked: boolean) => void
++  /** 当前勾选论文数(按钮文案 N) */
++  selectedCount: number
++  busy: boolean
++  onExtractSelected: () => void
++  /** 是否有可选论文(无 → ☐全选 禁用) */
++  canSelect: boolean
++  /** 是否有检索结果(决定是否显示 [收起检索]) */
++  canCollapse: boolean
++  onCollapse: () => void
++}
++
++/** 批量操作层:☐全选 + [提取所选论文(N)](N=0 禁用)+ [收起检索] */
++export function PaperBatchActions({
++  allSelected,
++  onToggleAll,
++  selectedCount,
++  busy,
++  onExtractSelected,
++  canSelect,
++  canCollapse,
++  onCollapse,
++}: Props) {
++  return (
++    <div className="evidence-search-layer">
++      <h4 className="evidence-search-title">批量操作</h4>
++      <div className="evidence-search-row">
++        <label className="evidence-search-filter">
++          <input
++            type="checkbox"
++            data-testid="paper-batch-select-all"
++            checked={allSelected && canSelect}
++            disabled={!canSelect || busy}
++            onChange={e => onToggleAll(e.target.checked)}
++          />
++          全选
++        </label>
++        <button
++          type="button"
++          className="btn btn-sm btn-primary"
++          data-testid="evidence-batch-extract"
++          disabled={busy || selectedCount === 0}
++          onClick={onExtractSelected}
++        >
++          提取所选论文（{selectedCount}）
++        </button>
++        {canCollapse && (
++          <button type="button" className="btn btn-xs" onClick={onCollapse}>
++            收起检索
++          </button>
++        )}
++      </div>
++    </div>
++  )
++}
+diff --git a/frontend/src/pages/evidence-center/components/PaperCandidateCard.test.tsx b/frontend/src/pages/evidence-center/components/PaperCandidateCard.test.tsx
+new file mode 100644
+index 0000000..d851bc8
+--- /dev/null
++++ b/frontend/src/pages/evidence-center/components/PaperCandidateCard.test.tsx
+@@ -0,0 +1,127 @@
++import { describe, expect, it, vi } from 'vitest'
++import { fireEvent, render, screen } from '@testing-library/react'
++import { PaperCandidateCard, type CandidatePaperData } from './PaperCandidateCard'
++
++const SEARCH_PAPER: CandidatePaperData = {
++  paperId: null,
++  pmid: '99999999',
++  doi: '10.9999/abc',
++  pmcid: null,
++  title: 'A Newly Found Paper',
++  journal: 'Nature',
++  year: '2025',
++  authors: 'Doe J',
++  isOa: true,
++  abstractAvailable: true,
++  fulltextAvailable: true,
++  matchReason: '标题与 R1/R2 高度匹配',
++  matchScore: 0.93,
++  extracted: false,
++  modelDirection: null,
++  modelAssessment: null,
++  coverageSummary: null,
++  passageCount: 0,
++  verifiedCount: 0,
++}
++
++const EXTRACTED_PAPER: CandidatePaperData = {
++  ...SEARCH_PAPER,
++  paperId: 'paper-1',
++  authors: null,
++  extracted: true,
++  modelDirection: 'supports',
++  modelAssessment: '支持连接存在',
++  coverageSummary: {
++    coverage_ratio: 0.5,
++    required_components: ['source_region', 'target_region', 'relation'],
++    supported_components: ['relation'],
++    contradicted_components: [],
++    uncovered_components: ['source_region', 'target_region'],
++  },
++  passageCount: 2,
++  verifiedCount: 1,
++}
++
++function renderCard(paper: CandidatePaperData, overrides: Record<string, unknown> = {}) {
++  const props = {
++    paper,
++    selected: false,
++    onToggleSelected: vi.fn(),
++    onOpenDetail: vi.fn(),
++    onExclude: vi.fn(),
++    onReExtract: vi.fn(),
++    onViewEvidence: vi.fn(),
++    reExtracting: false,
++    ...overrides,
++  }
++  return render(<PaperCandidateCard {...props} />)
++}
++
++describe('PaperCandidateCard(未提取搜索卡)', () => {
++  it('四行层级:标题 / 作者·期刊·年份 / 匹配度·理由 / PMID·DOI·摘要·OA 徽章', () => {
++    renderCard(SEARCH_PAPER)
++    expect(screen.getByText('A Newly Found Paper')).toBeTruthy()
++    expect(screen.getByText('Doe J · Nature · 2025')).toBeTruthy()
++    const match = screen.getByTestId('paper-card-match')
++    expect(match.textContent).toContain('匹配 93%')
++    expect(match.textContent).toContain('标题与 R1/R2 高度匹配')
++    expect(screen.getByText('PMID 99999999')).toBeTruthy()
++    expect(screen.getByText('DOI 10.9999/abc')).toBeTruthy()
++    expect(screen.getByText('摘要')).toBeTruthy()
++    expect(screen.getByText('OA 全文')).toBeTruthy()
++  })
++
++  it('底部操作行:☐加入提取 / 排除此候选;无提取结果区与 [查看证据候选]', () => {
++    renderCard(SEARCH_PAPER)
++    expect(screen.getByTestId('paper-card-select')).toBeTruthy()
++    expect(screen.getByRole('button', { name: '排除此候选' })).toBeTruthy()
++    expect(screen.queryByTestId('paper-card-result')).toBeNull()
++    expect(screen.queryByRole('button', { name: /查看证据候选/ })).toBeNull()
++    expect(screen.queryByRole('button', { name: /重新提取/ })).toBeNull()
++  })
++
++  it('勾选「加入提取」触发 onToggleSelected;无 paperId 时不显示 [查看详情]', () => {
++    const onToggleSelected = vi.fn()
++    renderCard(SEARCH_PAPER, { onToggleSelected })
++    fireEvent.click(screen.getByTestId('paper-card-select'))
++    expect(onToggleSelected).toHaveBeenCalledWith(true)
++    expect(screen.queryByRole('button', { name: '查看详情' })).toBeNull()
++  })
++})
++
++describe('PaperCandidateCard(已提取卡)', () => {
++  it('提取结果区:AI判断：支持 / Coverage N/M / 已核验片段 N;不挤同一行(独立行)', () => {
++    renderCard(EXTRACTED_PAPER)
++    const result = screen.getByTestId('paper-card-result')
++    expect(result.textContent).toContain('AI判断：支持')
++    expect(result.textContent).toContain('Coverage 1/3')
++    expect(result.textContent).toContain('已核验片段 1')
++    // 独立行,不与操作行混排
++    expect(screen.getByTestId('paper-card-actions-row')?.textContent).not.toContain('AI判断')
++  })
++
++  it('已提取后:[查看详情] / [排除此候选] / [查看证据候选] / [重新提取];无「加入提取」', () => {
++    const onOpenDetail = vi.fn()
++    const onViewEvidence = vi.fn()
++    const onReExtract = vi.fn()
++    renderCard(EXTRACTED_PAPER, { onOpenDetail, onViewEvidence, onReExtract })
++    fireEvent.click(screen.getByRole('button', { name: '查看详情' }))
++    expect(onOpenDetail).toHaveBeenCalledTimes(1)
++    fireEvent.click(screen.getByRole('button', { name: '查看证据候选' }))
++    expect(onViewEvidence).toHaveBeenCalledTimes(1)
++    fireEvent.click(screen.getByRole('button', { name: '重新提取' }))
++    expect(onReExtract).toHaveBeenCalledTimes(1)
++    expect(screen.queryByTestId('paper-card-select')).toBeNull()
++  })
++
++  it('coverage_summary 为空时不渲染 Coverage 徽章', () => {
++    renderCard({ ...EXTRACTED_PAPER, coverageSummary: null })
++    const result = screen.getByTestId('paper-card-result')
++    expect(result.textContent).not.toContain('Coverage')
++  })
++
++  it('重新提取中禁用按钮显示进度文案', () => {
++    renderCard(EXTRACTED_PAPER, { reExtracting: true })
++    expect((screen.getByRole('button', { name: '重新提取中…' }) as HTMLButtonElement).disabled).toBe(true)
++  })
++})
+diff --git a/frontend/src/pages/evidence-center/components/PaperCandidateCard.tsx b/frontend/src/pages/evidence-center/components/PaperCandidateCard.tsx
+new file mode 100644
+index 0000000..ea20314
+--- /dev/null
++++ b/frontend/src/pages/evidence-center/components/PaperCandidateCard.tsx
+@@ -0,0 +1,120 @@
++import { DIRECTION_LABEL, type Direction } from './types'
++
++/** 候选论文卡标准化数据(候选模块:任务候选 / 手动检索结果 / 手动提取结果共用) */
++export interface CandidatePaperData {
++  paperId: string | null
++  pmid: string
++  doi: string | null
++  pmcid: string | null
++  title: string
++  journal: string
++  year: string
++  authors: string | null
++  isOa: boolean
++  abstractAvailable: boolean
++  fulltextAvailable: boolean
++  matchReason: string | null
++  matchScore: number | null
++  /** 是否已有 AI 提取结果(决定是否显示 AI 判断/覆盖度/已核验片段 + [查看证据候选]) */
++  extracted: boolean
++  modelDirection: string | null
++  modelAssessment: string | null
++  coverageSummary: Record<string, unknown> | null
++  passageCount: number
++  verifiedCount: number
++}
++
++interface Props {
++  paper: CandidatePaperData
++  /** 加入提取 checkbox(仅未提取的搜索结果可勾选) */
++  selected: boolean
++  onToggleSelected: (checked: boolean) => void
++  onOpenDetail: () => void
++  onExclude: () => void
++  onReExtract: () => void
++  onViewEvidence: () => void
++  reExtracting: boolean
++}
++
++/** Coverage N/M 取自模型 coverage_summary 的 supported/required 组件数;无数据时返回 null */
++function coverageSummaryCounts(
++  coverage: Record<string, unknown> | null,
++): { supported: number; required: number } | null {
++  const c = coverage as { supported_components?: unknown[]; required_components?: unknown[] } | null
++  const required = c?.required_components?.length ?? 0
++  if (required === 0) return null
++  return { supported: c?.supported_components?.length ?? 0, required }
++}
++
++/** 候选论文分层卡:标题 / 作者·期刊·年份 / 匹配度·理由 / PMID·DOI·摘要·OA / 操作行(+提取结果) */
++export function PaperCandidateCard({
++  paper,
++  selected,
++  onToggleSelected,
++  onOpenDetail,
++  onExclude,
++  onReExtract,
++  onViewEvidence,
++  reExtracting,
++}: Props) {
++  const coverage = coverageSummaryCounts(paper.coverageSummary)
++  const dirLabel = paper.modelDirection
++    ? (DIRECTION_LABEL[paper.modelDirection as Direction] ?? paper.modelDirection)
++    : null
++  const citeParts = [paper.authors, paper.journal, paper.year].filter(Boolean).join(' · ')
++
++  return (
++    <div className="paper-card-candidate" data-testid="paper-card-candidate">
++      <div className="paper-card-title-row">
++        <strong className="paper-card-title">{paper.title || '(无标题)'}</strong>
++      </div>
++      <div className="paper-card-cite-row">
++        <span className="paper-card-meta">{citeParts || '—'}</span>
++      </div>
++      {(paper.matchScore != null || paper.matchReason) && (
++        <div className="paper-card-match-row" data-testid="paper-card-match">
++          {paper.matchScore != null && <span className="paper-card-match-score">匹配 {Math.round(paper.matchScore * 100)}%</span>}
++          {paper.matchReason && <span className="paper-card-match-reason">{paper.matchReason}</span>}
++        </div>
++      )}
++      <div className="paper-card-tags-row">
++        {paper.pmid && <span className="paper-card-tag">PMID {paper.pmid}</span>}
++        {paper.doi && <span className="paper-card-tag">DOI {paper.doi}</span>}
++        {paper.abstractAvailable && <span className="paper-card-tag paper-card-tag-ok">摘要</span>}
++        {paper.isOa && paper.fulltextAvailable && <span className="paper-card-tag paper-card-tag-oa">OA 全文</span>}
++      </div>
++      {paper.extracted && (
++        <div className="paper-card-result-row" data-testid="paper-card-result">
++          {dirLabel && <span className="paper-card-result-badge paper-card-result-badge-ai">AI判断：{dirLabel}</span>}
++          {coverage && <span className="paper-card-result-badge">Coverage {coverage.supported}/{coverage.required}</span>}
++          <span className="paper-card-result-badge paper-card-result-badge-ok">已核验片段 {paper.verifiedCount}</span>
++        </div>
++      )}
++      <div className="paper-card-actions-row" data-testid="paper-card-actions-row">
++        {!paper.extracted && (
++          <label className="paper-card-select">
++            <input
++              type="checkbox"
++              checked={selected}
++              data-testid="paper-card-select"
++              onChange={e => onToggleSelected(e.target.checked)}
++            />
++            加入提取
++          </label>
++        )}
++        {paper.paperId && (
++          <button type="button" className="btn btn-xs" onClick={onOpenDetail}>查看详情</button>
++        )}
++        <button type="button" className="btn btn-xs" onClick={onExclude}>排除此候选</button>
++        {paper.extracted && (
++          <button type="button" className="btn btn-xs btn-primary" onClick={onViewEvidence}>查看证据候选</button>
++        )}
++        {paper.extracted && (
++          <button type="button" className="btn btn-xs" disabled={reExtracting} onClick={onReExtract}>
++            {reExtracting ? '重新提取中…' : '重新提取'}
++          </button>
++        )}
++      </div>
++    </div>
++  )
++}
+diff --git a/frontend/src/pages/evidence-center/components/PaperCandidateList.test.tsx b/frontend/src/pages/evidence-center/components/PaperCandidateList.test.tsx
+new file mode 100644
+index 0000000..2f49041
+--- /dev/null
++++ b/frontend/src/pages/evidence-center/components/PaperCandidateList.test.tsx
+@@ -0,0 +1,60 @@
++import { describe, expect, it, vi } from 'vitest'
++import { fireEvent, render, screen } from '@testing-library/react'
++import { PaperCandidateList } from './PaperCandidateList'
++
++function renderList(overrides: Partial<Parameters<typeof PaperCandidateList>[0]> = {}) {
++  const props = {
++    total: 0,
++    searchable: true,
++    excludedCount: 0,
++    onRestoreExcluded: vi.fn(),
++    onAdjustSearch: vi.fn(),
++    children: <div data-testid="candidate-cards">cards</div>,
++    ...overrides,
++  }
++  return render(<PaperCandidateList {...props} />)
++}
++
++describe('PaperCandidateList(空态)', () => {
++  it('标题「候选论文(N)」+ 暂无候选论文 + 说明 + [调整检索条件] + 底部轻提示', () => {
++    renderList()
++    expect(screen.getByText('候选论文（0）')).toBeTruthy()
++    expect(screen.getByText('暂无候选论文')).toBeTruthy()
++    expect(screen.getByText('当前还没有找到相关论文，可尝试调整检索条件后重新搜索。')).toBeTruthy()
++    expect(screen.getByRole('button', { name: '调整检索条件' })).toBeTruthy()
++    expect(screen.getByTestId('evidence-candidates-hint').textContent).toContain('勾选论文后可批量操作')
++    expect(screen.getByTestId('evidence-candidates-hint').textContent).toContain('恢复排除')
++    expect(screen.queryByTestId('candidate-cards')).toBeNull()
++  })
++
++  it('[调整检索条件] 触发 onAdjustSearch(展开检索面板)', () => {
++    const onAdjustSearch = vi.fn()
++    renderList({ onAdjustSearch })
++    fireEvent.click(screen.getByRole('button', { name: '调整检索条件' }))
++    expect(onAdjustSearch).toHaveBeenCalledTimes(1)
++  })
++
++  it('不可手动检索时(任务候选):暂无候选证据 文案,无 [调整检索条件] 按钮', () => {
++    renderList({ searchable: false })
++    expect(screen.getByText('暂无候选证据')).toBeTruthy()
++    expect(screen.getByText('当前对象暂无候选证据，可尝试重新提取或切换其他对象。')).toBeTruthy()
++    expect(screen.queryByRole('button', { name: '调整检索条件' })).toBeNull()
++  })
++
++  it('存在被排除论文时标题旁显示 [恢复排除(N)] 并可找回', () => {
++    const onRestoreExcluded = vi.fn()
++    renderList({ excludedCount: 2, onRestoreExcluded })
++    fireEvent.click(screen.getByRole('button', { name: '恢复排除（2）' }))
++    expect(onRestoreExcluded).toHaveBeenCalledTimes(1)
++  })
++})
++
++describe('PaperCandidateList(有结果)', () => {
++  it('渲染子卡片列表,不渲染空态与轻提示', () => {
++    renderList({ total: 2 })
++    expect(screen.getByText('候选论文（2）')).toBeTruthy()
++    expect(screen.getByTestId('candidate-cards')).toBeTruthy()
++    expect(screen.queryByTestId('evidence-empty')).toBeNull()
++    expect(screen.queryByTestId('evidence-candidates-hint')).toBeNull()
++  })
++})
+diff --git a/frontend/src/pages/evidence-center/components/PaperCandidateList.tsx b/frontend/src/pages/evidence-center/components/PaperCandidateList.tsx
+new file mode 100644
+index 0000000..0cd757a
+--- /dev/null
++++ b/frontend/src/pages/evidence-center/components/PaperCandidateList.tsx
+@@ -0,0 +1,58 @@
++import type { ReactNode } from 'react'
++import { FileSearch, FileText } from 'lucide-react'
++import { EmptyState } from './EmptyState'
++
++interface Props {
++  /** 候选论文总数(标题 (N)) */
++  total: number
++  /** 是否可手动检索(searchable=false 时为空态提示任务候选场景;为 true 时显示 [调整检索条件]) */
++  searchable: boolean
++  /** 已排除论文数 */
++  excludedCount: number
++  onRestoreExcluded: () => void
++  /** [调整检索条件]:展开检索面板 */
++  onAdjustSearch: () => void
++  /** 候选卡列表(有结果时渲染) */
++  children: ReactNode
++}
++
++/** 候选论文列表:标题「候选论文(N)」+ 空态(EmptyState + 底部轻提示)/ 卡片列表 */
++export function PaperCandidateList({
++  total,
++  searchable,
++  excludedCount,
++  onRestoreExcluded,
++  onAdjustSearch,
++  children,
++}: Props) {
++  return (
++    <div className="evidence-candidates-papers">
++      <div className="evidence-candidates-papers-head">
++        <h4>候选论文（{total}）</h4>
++        {excludedCount > 0 && (
++          <button type="button" className="btn btn-xs" data-testid="evidence-restore-excluded" onClick={onRestoreExcluded}>
++            恢复排除（{excludedCount}）
++          </button>
++        )}
++      </div>
++      {total === 0 ? (
++        <>
++          <EmptyState
++            icon={searchable ? <FileSearch size={24} /> : <FileText size={24} />}
++            title={searchable ? '暂无候选论文' : '暂无候选证据'}
++            description={searchable
++              ? '当前还没有找到相关论文，可尝试调整检索条件后重新搜索。'
++              : '当前对象暂无候选证据，可尝试重新提取或切换其他对象。'}
++            actionLabel={searchable ? '调整检索条件' : undefined}
++            onAction={searchable ? onAdjustSearch : undefined}
++          />
++          <div className="evidence-candidates-hint" data-testid="evidence-candidates-hint">
++            勾选论文后可批量操作；被排除的论文可通过「恢复排除」找回。
++          </div>
++        </>
++      ) : (
++        children
++      )}
++    </div>
++  )
++}
+diff --git a/frontend/src/pages/evidence-center/components/PaperCard.tsx b/frontend/src/pages/evidence-center/components/PaperCard.tsx
+index 32bf78e..a8d06e5 100644
+--- a/frontend/src/pages/evidence-center/components/PaperCard.tsx
++++ b/frontend/src/pages/evidence-center/components/PaperCard.tsx
+@@ -1,12 +1,11 @@
+ import type { EvidencePaperItem } from '../../../api/endpoints'
+-import { DIRECTION_LABEL, type Direction } from './types'
+ 
+ interface Props {
+   paper: EvidencePaperItem
+   onOpen: (paperId: string) => void
+ }
+ 
+ function paperIdentifiers(paper: EvidencePaperItem): string[] {
+   const ids: string[] = []
+   if (paper.pmid) ids.push(`PMID ${paper.pmid}`)
+   if (paper.pmcid) ids.push(`PMC ${paper.pmcid}`)
+@@ -39,125 +38,10 @@ export function PaperCard({ paper, onOpen }: Props) {
+       <div className="paper-card-chips">
+         {paper.is_oa && <span className="paper-badge paper-badge-oa">OA</span>}
+         {paper.abstract_available && <span className="paper-badge paper-badge-avail">摘要可用</span>}
+         {paper.fulltext_available && <span className="paper-badge paper-badge-avail">全文可用</span>}
+         <span className="paper-badge paper-badge-muted">{paper.paragraph_count} 段</span>
+         <span className="paper-badge paper-badge-muted">{paper.evidence_count} 条证据</span>
+       </div>
+     </button>
+   )
+ }
+-
+-/** 候选论文卡标准化数据(候选模块:任务候选 / 手动检索结果 / 手动提取结果共用) */
+-export interface CandidatePaperData {
+-  paperId: string | null
+-  pmid: string
+-  doi: string | null
+-  pmcid: string | null
+-  title: string
+-  journal: string
+-  year: string
+-  authors: string | null
+-  isOa: boolean
+-  abstractAvailable: boolean
+-  fulltextAvailable: boolean
+-  matchReason: string | null
+-  matchScore: number | null
+-  /** 是否已有 AI 提取结果(决定是否显示 AI 判断/覆盖度/核验数 + [查看证据候选]) */
+-  extracted: boolean
+-  modelDirection: string | null
+-  modelAssessment: string | null
+-  coverageSummary: Record<string, unknown> | null
+-  passageCount: number
+-  verifiedCount: number
+-}
+-
+-interface CandidatePaperCardProps {
+-  paper: CandidatePaperData
+-  /** 加入提取 checkbox(仅未提取的搜索结果可勾选) */
+-  selected: boolean
+-  onToggleSelected: (checked: boolean) => void
+-  onOpenDetail: () => void
+-  onExclude: () => void
+-  onReExtract: () => void
+-  onViewEvidence: () => void
+-  reExtracting: boolean
+-}
+-
+-function coverageRatio(coverage: Record<string, unknown> | null): number | null {
+-  const ratio = (coverage as { coverage_ratio?: number } | null)?.coverage_ratio
+-  return typeof ratio === 'number' ? ratio : null
+-}
+-
+-/** 证据候选模块分层论文卡:标题 / 作者·期刊·年份 / 匹配信息 / 标签行 / 操作行(+提取结果) */
+-export function CandidatePaperCard({
+-  paper,
+-  selected,
+-  onToggleSelected,
+-  onOpenDetail,
+-  onExclude,
+-  onReExtract,
+-  onViewEvidence,
+-  reExtracting,
+-}: CandidatePaperCardProps) {
+-  const ratio = coverageRatio(paper.coverageSummary)
+-  const dirLabel = paper.modelDirection
+-    ? (DIRECTION_LABEL[paper.modelDirection as Direction] ?? paper.modelDirection)
+-    : null
+-  const citeParts = [paper.authors, paper.journal, paper.year].filter(Boolean).join(' · ')
+-
+-  return (
+-    <div className="paper-card-candidate" data-testid="paper-card-candidate">
+-      <div className="paper-card-title-row">
+-        <strong className="paper-card-title">{paper.title || '(无标题)'}</strong>
+-      </div>
+-      <div className="paper-card-cite-row">
+-        <span className="paper-card-meta">{citeParts || '—'}</span>
+-      </div>
+-      {(paper.matchScore != null || paper.matchReason) && (
+-        <div className="paper-card-match-row" data-testid="paper-card-match">
+-          {paper.matchScore != null && <span className="paper-card-match-score">匹配 {Math.round(paper.matchScore * 100)}%</span>}
+-          {paper.matchReason && <span className="paper-card-match-reason">{paper.matchReason}</span>}
+-        </div>
+-      )}
+-      <div className="paper-card-tags-row">
+-        {paper.pmid && <span className="paper-card-tag">PMID {paper.pmid}</span>}
+-        {paper.doi && <span className="paper-card-tag">DOI {paper.doi}</span>}
+-        {paper.abstractAvailable && <span className="paper-card-tag paper-card-tag-ok">摘要</span>}
+-        {paper.isOa && paper.fulltextAvailable && <span className="paper-card-tag paper-card-tag-oa">OA 全文</span>}
+-      </div>
+-      {paper.extracted && (
+-        <div className="paper-card-result-row" data-testid="paper-card-result">
+-          {dirLabel && <span className="paper-card-result-badge">AI 判断 {dirLabel}</span>}
+-          {ratio != null && <span className="paper-card-result-badge">覆盖度 {Math.round(ratio * 100)}%</span>}
+-          <span className="paper-card-result-badge">片段 {paper.passageCount}</span>
+-          <span className="paper-card-result-badge paper-card-result-badge-ok">已核验 {paper.verifiedCount}</span>
+-        </div>
+-      )}
+-      <div className="paper-card-actions-row">
+-        {paper.paperId && (
+-          <button type="button" className="btn btn-xs" onClick={onOpenDetail}>查看详情</button>
+-        )}
+-        {!paper.extracted && (
+-          <label className="paper-card-select">
+-            <input
+-              type="checkbox"
+-              checked={selected}
+-              data-testid="paper-card-select"
+-              onChange={e => onToggleSelected(e.target.checked)}
+-            />
+-            加入提取
+-          </label>
+-        )}
+-        <button type="button" className="btn btn-xs" onClick={onExclude}>排除此候选</button>
+-        {paper.extracted && (
+-          <button type="button" className="btn btn-xs btn-primary" onClick={onViewEvidence}>查看证据候选</button>
+-        )}
+-        {paper.extracted && (
+-          <button type="button" className="btn btn-xs" disabled={reExtracting} onClick={onReExtract}>
+-            {reExtracting ? '重新提取中…' : '重新提取'}
+-          </button>
+-        )}
+-      </div>
+-    </div>
+-  )
+-}
+diff --git a/frontend/src/pages/evidence-center/components/PaperSearchFilters.test.tsx b/frontend/src/pages/evidence-center/components/PaperSearchFilters.test.tsx
+new file mode 100644
+index 0000000..c60afa2
+--- /dev/null
++++ b/frontend/src/pages/evidence-center/components/PaperSearchFilters.test.tsx
+@@ -0,0 +1,85 @@
++import { describe, expect, it, vi } from 'vitest'
++import { fireEvent, render, screen } from '@testing-library/react'
++import { PaperSearchFilters } from './PaperSearchFilters'
++
++function renderFilters(overrides: Partial<Parameters<typeof PaperSearchFilters>[0]> = {}) {
++  const props = {
++    oaOnly: false,
++    onOaOnlyChange: vi.fn(),
++    mode: 'auto' as const,
++    onModeChange: vi.fn(),
++    year: '',
++    onYearChange: vi.fn(),
++    onRestoreDefaults: vi.fn(),
++    excludedCount: 0,
++    onRestoreExcluded: vi.fn(),
++    ...overrides,
++  }
++  return render(<PaperSearchFilters {...props} />)
++}
++
++describe('PaperSearchFilters', () => {
++  it('渲染标题「检索过滤」+ ☐仅OA / 证据模式 / 年份 / 恢复默认 / 恢复排除', () => {
++    renderFilters()
++    expect(screen.getByText('检索过滤')).toBeTruthy()
++    expect(screen.getByLabelText('仅 OA')).toBeTruthy()
++    expect(screen.getByLabelText('证据模式')).toBeTruthy()
++    expect(screen.getByLabelText('年份')).toBeTruthy()
++    expect(screen.getByRole('button', { name: '恢复默认' })).toBeTruthy()
++    expect(screen.getByRole('button', { name: '恢复排除' })).toBeTruthy()
++  })
++
++  it('☐仅OA 切换触发回调', () => {
++    const onOaOnlyChange = vi.fn()
++    renderFilters({ onOaOnlyChange })
++    fireEvent.click(screen.getByLabelText('仅 OA'))
++    expect(onOaOnlyChange).toHaveBeenCalledWith(true)
++  })
++
++  it('证据模式 select 切换触发回调(自动/存在性/功能性)', () => {
++    const onModeChange = vi.fn()
++    renderFilters({ onModeChange })
++    const select = screen.getByLabelText('证据模式') as HTMLSelectElement
++    expect(select.value).toBe('auto')
++    fireEvent.change(select, { target: { value: 'existence' } })
++    expect(onModeChange).toHaveBeenCalledWith('existence')
++  })
++
++  it('年份 select 默认不限,选择具体年份触发回调', () => {
++    const onYearChange = vi.fn()
++    renderFilters({ onYearChange })
++    const select = screen.getByLabelText('年份') as HTMLSelectElement
++    expect(select.value).toBe('')
++    fireEvent.change(select, { target: { value: '2020' } })
++    expect(onYearChange).toHaveBeenCalledWith('2020')
++  })
++
++  it('[恢复默认] 触发回调(重置仅OA/模式/年份)', () => {
++    const onRestoreDefaults = vi.fn()
++    renderFilters({ onRestoreDefaults })
++    fireEvent.click(screen.getByRole('button', { name: '恢复默认' }))
++    expect(onRestoreDefaults).toHaveBeenCalledTimes(1)
++  })
++
++  it('[恢复排除] 无排除时禁用,有排除时可点击找回', () => {
++    const onRestoreExcluded = vi.fn()
++    const { rerender } = renderFilters({ onRestoreExcluded })
++    expect((screen.getByRole('button', { name: '恢复排除' }) as HTMLButtonElement).disabled).toBe(true)
++    rerender(
++      <PaperSearchFilters
++        oaOnly={false}
++        onOaOnlyChange={vi.fn()}
++        mode="auto"
++        onModeChange={vi.fn()}
++        year=""
++        onYearChange={vi.fn()}
++        onRestoreDefaults={vi.fn()}
++        excludedCount={2}
++        onRestoreExcluded={onRestoreExcluded}
++      />,
++    )
++    expect((screen.getByRole('button', { name: '恢复排除' }) as HTMLButtonElement).disabled).toBe(false)
++    fireEvent.click(screen.getByRole('button', { name: '恢复排除' }))
++    expect(onRestoreExcluded).toHaveBeenCalledTimes(1)
++  })
++})
+diff --git a/frontend/src/pages/evidence-center/components/PaperSearchFilters.tsx b/frontend/src/pages/evidence-center/components/PaperSearchFilters.tsx
+new file mode 100644
+index 0000000..0431c66
+--- /dev/null
++++ b/frontend/src/pages/evidence-center/components/PaperSearchFilters.tsx
+@@ -0,0 +1,78 @@
++/** 佐证提取模式:auto=按对象类型自动推导 / function=功能性 / existence=存在性 */
++export type EvidenceMode = 'auto' | 'function' | 'existence'
++
++/** 年份下拉可选项(下限过滤:仅保留该年份及以后的论文) */
++const YEAR_OPTIONS = ['2018', '2019', '2020', '2021', '2022', '2023', '2024', '2025', '2026']
++
++interface Props {
++  /** 仅 OA 过滤开关 */
++  oaOnly: boolean
++  onOaOnlyChange: (checked: boolean) => void
++  /** 证据模式(自动/存在性/功能性) */
++  mode: EvidenceMode
++  onModeChange: (mode: EvidenceMode) => void
++  /** 年份下限过滤('' = 不限) */
++  year: string
++  onYearChange: (year: string) => void
++  /** 恢复默认:重置 仅OA/模式/年份 为默认值 */
++  onRestoreDefaults: () => void
++  /** 已排除论文数(>0 时提示可通过 [恢复排除] 找回) */
++  excludedCount: number
++  onRestoreExcluded: () => void
++}
++
++/** 检索过滤层:☐仅OA / 证据模式 / 年份 / [恢复默认] + [恢复排除](被排除论文找回) */
++export function PaperSearchFilters({
++  oaOnly,
++  onOaOnlyChange,
++  mode,
++  onModeChange,
++  year,
++  onYearChange,
++  onRestoreDefaults,
++  excludedCount,
++  onRestoreExcluded,
++}: Props) {
++  return (
++    <div className="evidence-search-layer">
++      <h4 className="evidence-search-title">检索过滤</h4>
++      <div className="evidence-search-row">
++        <label className="evidence-search-filter">
++          <input type="checkbox" checked={oaOnly} onChange={e => onOaOnlyChange(e.target.checked)} />
++          仅 OA
++        </label>
++        <label className="evidence-search-filter">
++          证据模式
++          <select
++            className="filter-select"
++            value={mode}
++            onChange={e => onModeChange(e.target.value as EvidenceMode)}
++          >
++            <option value="auto">自动</option>
++            <option value="existence">存在性</option>
++            <option value="function">功能性</option>
++          </select>
++        </label>
++        <label className="evidence-search-filter">
++          年份
++          <select
++            className="filter-select evidence-search-year"
++            value={year}
++            onChange={e => onYearChange(e.target.value)}
++          >
++            <option value="">不限</option>
++            {YEAR_OPTIONS.map(y => (
++              <option key={y} value={y}>{y} 年</option>
++            ))}
++          </select>
++        </label>
++        <button type="button" className="btn btn-xs" onClick={onRestoreDefaults}>
++          恢复默认
++        </button>
++        <button type="button" className="btn btn-xs" disabled={excludedCount === 0} onClick={onRestoreExcluded}>
++          恢复排除
++        </button>
++      </div>
++    </div>
++  )
++}
+diff --git a/frontend/src/pages/evidence-center/components/PaperSearchPanel.test.tsx b/frontend/src/pages/evidence-center/components/PaperSearchPanel.test.tsx
+new file mode 100644
+index 0000000..d321438
+--- /dev/null
++++ b/frontend/src/pages/evidence-center/components/PaperSearchPanel.test.tsx
+@@ -0,0 +1,101 @@
++import { describe, expect, it, vi } from 'vitest'
++import { fireEvent, render, screen } from '@testing-library/react'
++import { PaperSearchPanel } from './PaperSearchPanel'
++
++function renderPanel(overrides: Partial<Parameters<typeof PaperSearchPanel>[0]> = {}) {
++  const props = {
++    collapsed: false,
++    busy: false,
++    query: '',
++    onQueryChange: vi.fn(),
++    onSearch: vi.fn(),
++    onRestoreRecommended: vi.fn(),
++    queryTerms: ['R1', 'R2'],
++    onClearTerm: vi.fn(),
++    querySummary: 'R1 · R2',
++    onExpand: vi.fn(),
++    onCollapse: vi.fn(),
++    selectedCount: 0,
++    onExtractSelected: vi.fn(),
++    filters: <div data-testid="filters-slot">filters</div>,
++    batchActions: <div data-testid="batch-slot">batch</div>,
++    ...overrides,
++  }
++  return render(<PaperSearchPanel {...props} />)
++}
++
++describe('PaperSearchPanel(展开态)', () => {
++  it('渲染标题「查找相关论文」+ 大搜索框(推荐 placeholder)+ 重新搜索/恢复系统推荐', () => {
++    renderPanel()
++    expect(screen.getByText('查找相关论文')).toBeTruthy()
++    const input = screen.getByTestId('evidence-search-query') as HTMLInputElement
++    expect(input.placeholder).toContain('检索式 / 关键词')
++    expect(screen.getByRole('button', { name: '重新搜索' })).toBeTruthy()
++    expect(screen.getByRole('button', { name: '恢复系统推荐' })).toBeTruthy()
++  })
++
++  it('Query Chips 渲染关键词并带 × 清空按钮;点击触发 onClearTerm', () => {
++    const onClearTerm = vi.fn()
++    renderPanel({ onClearTerm })
++    const chips = screen.getAllByTestId('evidence-query-term')
++    expect(chips.map(c => c.textContent)).toEqual(expect.arrayContaining(['R1×', 'R2×']))
++    fireEvent.click(screen.getByRole('button', { name: '清空关键词 R1' }))
++    expect(onClearTerm).toHaveBeenCalledWith('R1')
++  })
++
++  it('无推荐词时隐藏 chips 行', () => {
++    renderPanel({ queryTerms: [] })
++    expect(screen.queryByTestId('evidence-search-terms')).toBeNull()
++  })
++
++  it('输入框受控;点击重新搜索/恢复系统推荐触发回调;busy 时禁用', () => {
++    const onSearch = vi.fn()
++    const onRestoreRecommended = vi.fn()
++    const onQueryChange = vi.fn()
++    renderPanel({ onSearch, onRestoreRecommended, onQueryChange, busy: true })
++    fireEvent.change(screen.getByTestId('evidence-search-query'), { target: { value: 'abc' } })
++    expect(onQueryChange).toHaveBeenCalledWith('abc')
++    expect((screen.getByRole('button', { name: '检索中…' }) as HTMLButtonElement).disabled).toBe(true)
++    expect((screen.getByRole('button', { name: '恢复系统推荐' }) as HTMLButtonElement).disabled).toBe(true)
++    fireEvent.click(screen.getByRole('button', { name: '检索中…' }))
++    expect(onSearch).not.toHaveBeenCalled()
++  })
++
++  it('展开态渲染 filters / batchActions 插槽', () => {
++    renderPanel()
++    expect(screen.getByTestId('filters-slot')).toBeTruthy()
++    expect(screen.getByTestId('batch-slot')).toBeTruthy()
++  })
++})
++
++describe('PaperSearchPanel(折叠条)', () => {
++  it('折叠态:Query 摘要 + 重新搜索 + 展开检索 + 提取所选论文(N);不渲染三层插槽', () => {
++    renderPanel({ collapsed: true, selectedCount: 3 })
++    expect(screen.getByTestId('evidence-search-collapsed')).toBeTruthy()
++    expect(screen.getByTestId('evidence-search-collapsed-query').textContent).toContain('R1 · R2')
++    expect(screen.getByRole('button', { name: '重新搜索' })).toBeTruthy()
++    expect(screen.getByRole('button', { name: '展开检索' })).toBeTruthy()
++    expect(screen.getByTestId('evidence-collapsed-extract').textContent).toContain('提取所选论文（3）')
++    expect(screen.queryByTestId('filters-slot')).toBeNull()
++    expect(screen.queryByTestId('batch-slot')).toBeNull()
++    expect(screen.queryByText('查找相关论文')).toBeNull()
++  })
++
++  it('折叠条 [展开检索] / [重新搜索] / [提取所选论文] 触发对应回调', () => {
++    const onExpand = vi.fn()
++    const onSearch = vi.fn()
++    const onExtractSelected = vi.fn()
++    renderPanel({ collapsed: true, onExpand, onSearch, onExtractSelected, selectedCount: 2 })
++    fireEvent.click(screen.getByRole('button', { name: '展开检索' }))
++    expect(onExpand).toHaveBeenCalledTimes(1)
++    fireEvent.click(screen.getByRole('button', { name: '重新搜索' }))
++    expect(onSearch).toHaveBeenCalledTimes(1)
++    fireEvent.click(screen.getByTestId('evidence-collapsed-extract'))
++    expect(onExtractSelected).toHaveBeenCalledTimes(1)
++  })
++
++  it('折叠条 [提取所选论文] 零选中或 busy 时禁用', () => {
++    renderPanel({ collapsed: true, selectedCount: 0 })
++    expect((screen.getByTestId('evidence-collapsed-extract') as HTMLButtonElement).disabled).toBe(true)
++  })
++})
+diff --git a/frontend/src/pages/evidence-center/components/PaperSearchPanel.tsx b/frontend/src/pages/evidence-center/components/PaperSearchPanel.tsx
+new file mode 100644
+index 0000000..11e1760
+--- /dev/null
++++ b/frontend/src/pages/evidence-center/components/PaperSearchPanel.tsx
+@@ -0,0 +1,121 @@
++import type { ReactNode } from 'react'
++
++interface Props {
++  /** 有检索结果且未展开 → 渲染折叠条(Query 摘要 + 重新搜索 + 展开 + 提取所选) */
++  collapsed: boolean
++  busy: boolean
++  /** 手动检索式 */
++  query: string
++  onQueryChange: (query: string) => void
++  onSearch: () => void
++  onRestoreRecommended: () => void
++  /** 系统推荐关键词 chips(已应用用户清除) */
++  queryTerms: string[]
++  onClearTerm: (term: string) => void
++  /** 折叠条 Query 摘要(手动检索式 → 推荐词 → 占位) */
++  querySummary: string
++  onExpand: () => void
++  onCollapse: () => void
++  /** 已勾选论文数(折叠条 [提取所选论文(N)] 计数) */
++  selectedCount: number
++  onExtractSelected: () => void
++  /** 检索过滤层(PaperSearchFilters) */
++  filters?: ReactNode
++  /** 批量操作层(PaperBatchActions) */
++  batchActions?: ReactNode
++}
++
++/**
++ * 中栏搜索面板:第一层「查找相关论文」(大搜索框 + 重新搜索/恢复系统推荐 + Query Chips)。
++ * 有检索结果时整体折叠为一条(Query 摘要 + 重新搜索/展开检索/提取所选论文),filters 与 batchActions 仅展开态渲染。
++ */
++export function PaperSearchPanel({
++  collapsed,
++  busy,
++  query,
++  onQueryChange,
++  onSearch,
++  onRestoreRecommended,
++  queryTerms,
++  onClearTerm,
++  querySummary,
++  onExpand,
++  onCollapse,
++  selectedCount,
++  onExtractSelected,
++  filters,
++  batchActions,
++}: Props) {
++  if (collapsed) {
++    return (
++      <div className="evidence-search evidence-search-collapsed" data-testid="evidence-search-collapsed">
++        <span className="evidence-search-collapsed-label">已检索</span>
++        <span
++          className="evidence-search-collapsed-query"
++          data-testid="evidence-search-collapsed-query"
++          title={querySummary}
++        >
++          {querySummary}
++        </span>
++        <span className="evidence-search-collapsed-actions">
++          <button type="button" className="btn btn-sm" disabled={busy} onClick={onSearch}>
++            {busy ? '检索中…' : '重新搜索'}
++          </button>
++          <button type="button" className="btn btn-sm" onClick={onExpand}>
++            展开检索
++          </button>
++          <button
++            type="button"
++            className="btn btn-sm btn-primary"
++            data-testid="evidence-collapsed-extract"
++            disabled={busy || selectedCount === 0}
++            onClick={onExtractSelected}
++          >
++            提取所选论文（{selectedCount}）
++          </button>
++        </span>
++      </div>
++    )
++  }
++  return (
++    <div className="evidence-search" data-testid="evidence-search">
++      <div className="evidence-search-layer">
++        <h4 className="evidence-search-title">查找相关论文</h4>
++        <div className="evidence-search-row">
++          <input
++            className="filter-input evidence-search-query"
++            data-testid="evidence-search-query"
++            value={query}
++            onChange={e => onQueryChange(e.target.value)}
++            placeholder="检索式 / 关键词（留空使用系统推荐检索式）"
++          />
++          <button type="button" className="btn btn-sm" disabled={busy} onClick={onSearch}>
++            {busy ? '检索中…' : '重新搜索'}
++          </button>
++          <button type="button" className="btn btn-sm" disabled={busy} onClick={onRestoreRecommended}>
++            恢复系统推荐
++          </button>
++        </div>
++        {queryTerms.length > 0 && (
++          <div className="evidence-search-terms" data-testid="evidence-search-terms">
++            {queryTerms.map(term => (
++              <span key={term} className="evidence-query-term" data-testid="evidence-query-term">
++                {term}
++                <button
++                  type="button"
++                  className="evidence-query-term-clear"
++                  aria-label={`清空关键词 ${term}`}
++                  onClick={() => onClearTerm(term)}
++                >
++                  ×
++                </button>
++              </span>
++            ))}
++          </div>
++        )}
++      </div>
++      {filters}
++      {batchActions}
++    </div>
++  )
++}
+diff --git a/frontend/src/pages/evidence-center/components/PaperStatusSummary.test.tsx b/frontend/src/pages/evidence-center/components/PaperStatusSummary.test.tsx
+new file mode 100644
+index 0000000..be1ecbc
+--- /dev/null
++++ b/frontend/src/pages/evidence-center/components/PaperStatusSummary.test.tsx
+@@ -0,0 +1,64 @@
++import { describe, expect, it, vi } from 'vitest'
++import { fireEvent, render, screen, within } from '@testing-library/react'
++import { PaperStatusSummary, type CandidateStats } from './PaperStatusSummary'
++
++const STATS: CandidateStats = {
++  foundPapers: 5,
++  extractedPapers: 3,
++  verifiedPassages: 4,
++  selectedPassages: 2,
++  coverageRatio: 0.5,
++  coverageSupported: 1,
++  coverageRequired: 2,
++  direction: 'supports',
++  modelAssessment: '支持连接存在',
++}
++
++describe('PaperStatusSummary', () => {
++  it('浅蓝状态条字段:找到论文 / AI提取 / 已核验 / Coverage N/M / 模型判断(方向+评估)', () => {
++    render(<PaperStatusSummary stats={STATS} onEnterReview={vi.fn()} />)
++    const bar = screen.getByTestId('evidence-stats-bar')
++    expect(within(bar).getByTestId('evidence-stats-found').textContent).toBe('5')
++    expect(within(bar).getByTestId('evidence-stats-extracted').textContent).toBe('3')
++    expect(within(bar).getByTestId('evidence-stats-verified').textContent).toBe('4')
++    expect(within(bar).getByTestId('evidence-stats-coverage').textContent).toBe('1/2')
++    expect(within(bar).getByTestId('evidence-stats-direction').textContent).toBe('支持')
++    expect(within(bar).getByText('支持连接存在')).toBeTruthy()
++    expect(within(bar).getByText('模型判断')).toBeTruthy()
++  })
++
++  it('stats 为 null 时显示零值占位并禁用 [进入人工审核]', () => {
++    render(<PaperStatusSummary stats={null} onEnterReview={vi.fn()} />)
++    const bar = screen.getByTestId('evidence-stats-bar')
++    expect(within(bar).getByTestId('evidence-stats-found').textContent).toBe('0')
++    expect(within(bar).getByTestId('evidence-stats-coverage').textContent).toBe('—')
++    expect((screen.getByRole('button', { name: /进入人工审核/ }) as HTMLButtonElement).disabled).toBe(true)
++  })
++
++  it('Coverage 无必需组件时显示百分比', () => {
++    render(
++      <PaperStatusSummary
++        stats={{ ...STATS, coverageRequired: 0, coverageRatio: 0.75 }}
++        onEnterReview={vi.fn()}
++      />,
++    )
++    expect(screen.getByTestId('evidence-stats-coverage').textContent).toBe('75%')
++  })
++
++  it('[进入人工审核] 勾选片段后可用并显示计数;点击触发 onEnterReview', () => {
++    const onEnterReview = vi.fn()
++    render(<PaperStatusSummary stats={STATS} onEnterReview={onEnterReview} />)
++    const btn = screen.getByRole('button', { name: /进入人工审核/ }) as HTMLButtonElement
++    expect(btn.disabled).toBe(false)
++    expect(btn.textContent).toContain('进入人工审核（2）')
++    fireEvent.click(btn)
++    expect(onEnterReview).toHaveBeenCalledTimes(1)
++  })
++
++  it('零选中时禁用并带提示 title', () => {
++    render(<PaperStatusSummary stats={{ ...STATS, selectedPassages: 0 }} onEnterReview={vi.fn()} />)
++    const btn = screen.getByRole('button', { name: /进入人工审核/ }) as HTMLButtonElement
++    expect(btn.disabled).toBe(true)
++    expect(btn.title).toContain('勾选已核验的候选片段')
++  })
++})
+diff --git a/frontend/src/pages/evidence-center/components/CandidateStatsBar.tsx b/frontend/src/pages/evidence-center/components/PaperStatusSummary.tsx
+similarity index 88%
+rename from frontend/src/pages/evidence-center/components/CandidateStatsBar.tsx
+rename to frontend/src/pages/evidence-center/components/PaperStatusSummary.tsx
+index 02336b7..f43609e 100644
+--- a/frontend/src/pages/evidence-center/components/CandidateStatsBar.tsx
++++ b/frontend/src/pages/evidence-center/components/PaperStatusSummary.tsx
+@@ -1,13 +1,13 @@
+ import { DIRECTION_LABEL, type Direction } from './types'
+ 
+-/** 候选模块中栏统计条数据(模块内从现有状态推导,页面级测试经模块渲染断言) */
++/** 候选模块中栏状态条数据(模块内从现有状态推导,页面级测试经模块渲染断言) */
+ export interface CandidateStats {
+   /** 找到论文总数(已提取候选 + 手动检索结果) */
+   foundPapers: number
+   /** AI 已提取论文数 */
+   extractedPapers: number
+   /** 已核验片段数 */
+   verifiedPassages: number
+   /** 当前已勾选的候选片段数(零时禁止进入人工审核) */
+   selectedPassages: number
+   /** 0-1;null 表示无可计算覆盖 */
+@@ -24,34 +24,34 @@ interface Props {
+   stats: CandidateStats | null
+   onEnterReview: () => void
+ }
+ 
+ function formatCoverage(stats: CandidateStats | null): string {
+   if (!stats) return '—'
+   if (stats.coverageRequired === 0) return stats.coverageRatio == null ? '—' : `${Math.round(stats.coverageRatio * 100)}%`
+   return `${stats.coverageSupported}/${stats.coverageRequired}`
+ }
+ 
+-/** 中栏统计信息条:找到论文 / AI 提取论文 / 已核验片段 / Coverage / 模型判断 + [进入人工审核] */
+-export function CandidateStatsBar({ stats, onEnterReview }: Props) {
++/** 浅蓝状态条:找到论文 / AI提取 / 已核验 / Coverage / 模型判断(加粗)+ 右侧 [进入人工审核] */
++export function PaperStatusSummary({ stats, onEnterReview }: Props) {
+   return (
+     <div className="evidence-stats-bar" data-testid="evidence-stats-bar">
+       <div className="evidence-stats-item">
+         <span className="evidence-stats-label">找到论文</span>
+         <span className="evidence-stats-value" data-testid="evidence-stats-found">{stats?.foundPapers ?? 0}</span>
+       </div>
+       <div className="evidence-stats-item">
+-        <span className="evidence-stats-label">AI 提取论文</span>
++        <span className="evidence-stats-label">AI提取</span>
+         <span className="evidence-stats-value" data-testid="evidence-stats-extracted">{stats?.extractedPapers ?? 0}</span>
+       </div>
+       <div className="evidence-stats-item">
+-        <span className="evidence-stats-label">已核验片段</span>
++        <span className="evidence-stats-label">已核验</span>
+         <span className="evidence-stats-value" data-testid="evidence-stats-verified">{stats?.verifiedPassages ?? 0}</span>
+       </div>
+       <div className="evidence-stats-item">
+         <span className="evidence-stats-label">Coverage</span>
+         <span className="evidence-stats-value" data-testid="evidence-stats-coverage">{formatCoverage(stats)}</span>
+       </div>
+       {(stats?.direction || stats?.modelAssessment) && (
+         <div className="evidence-stats-model" data-testid="evidence-stats-model">
+           <span className="evidence-stats-label">模型判断</span>
+           {stats.direction && (
+diff --git a/frontend/src/pages/evidence-center/modules/EvidenceCandidatesModule.test.tsx b/frontend/src/pages/evidence-center/modules/EvidenceCandidatesModule.test.tsx
+index d5da86d..e6d1480 100644
+--- a/frontend/src/pages/evidence-center/modules/EvidenceCandidatesModule.test.tsx
++++ b/frontend/src/pages/evidence-center/modules/EvidenceCandidatesModule.test.tsx
+@@ -201,25 +201,24 @@ describe('EvidenceCandidatesModule', () => {
+   it('PaperCard 分层:标题粗体 / 作者·期刊·年份 / 标签(PMID/DOI/摘要/OA 全文) / 提取结果行', async () => {
+     renderModule()
+     await waitFor(() => expect(screen.getByText('A Study of R1 to R2 Projection')).toBeTruthy())
+     // 引用行
+     expect(screen.getByText(/Brain Journal · 2024/)).toBeTruthy()
+     // 标签行
+     expect(screen.getByText('PMID 12345678')).toBeTruthy()
+     expect(screen.getByText('DOI 10.1234/test')).toBeTruthy()
+     expect(screen.getByText('摘要')).toBeTruthy()
+     expect(screen.getByText('OA 全文')).toBeTruthy()
+-    // 提取结果:AI 判断 + 覆盖度 + 片段数 + 已核验数 + [查看证据候选]
+-    expect(screen.getByText(/AI 判断 支持/)).toBeTruthy()
+-    expect(screen.getByText('覆盖度 50%')).toBeTruthy()
+-    expect(screen.getByText('片段 2')).toBeTruthy()
+-    expect(screen.getByText('已核验 1')).toBeTruthy()
++    // 提取结果:AI判断 + Coverage(N/M) + 已核验片段数 + [查看证据候选]
++    expect(screen.getByText(/AI判断：支持/)).toBeTruthy()
++    expect(screen.getByText('Coverage 1/3')).toBeTruthy()
++    expect(screen.getByText('已核验片段 1')).toBeTruthy()
+     expect(screen.getByRole('button', { name: /查看证据候选/ })).toBeTruthy()
+   })
+ 
+   it('查看证据候选 → 中栏切换 PaperEvidenceView,← 返回论文列表恢复列表', async () => {
+     renderModule()
+     await waitFor(() => expect(screen.getByText('A Study of R1 to R2 Projection')).toBeTruthy())
+     fireEvent.click(screen.getByRole('button', { name: /查看证据候选/ }))
+     // 论文列表隐藏,证据视图出现
+     expect(screen.queryByRole('button', { name: /查看证据候选/ })).toBeNull()
+     expect(screen.getByTestId('evidence-paper-view')).toBeTruthy()
+@@ -352,26 +351,30 @@ describe('EvidenceCandidatesModule', () => {
+ 
+     // 论文 B 取消勾选 → 全部清空 → 草稿删除
+     fireEvent.click(screen.getByTestId('evidence-paper-back'))
+     const cardB2 = screen.getAllByTestId('paper-card-candidate')
+       .find(c => c.textContent?.includes('Another Study on R1 to R2'))!
+     fireEvent.click(within(cardB2).getByRole('button', { name: /查看证据候选/ }))
+     fireEvent.click(screen.getAllByRole('checkbox')[0])
+     await waitFor(() => expect(sessionStorage.getItem('evidence-center.review-draft.r1-r2')).toBeNull())
+   })
+ 
+-  it('排除此候选从列表移除论文卡', async () => {
++  it('排除此候选从列表移除论文卡;列表头出现 [恢复排除(1)] 可找回', async () => {
+     renderModule()
+     await waitFor(() => expect(screen.getByText('A Study of R1 to R2 Projection')).toBeTruthy())
+     fireEvent.click(screen.getByRole('button', { name: /排除此候选/ }))
+     expect(screen.queryByText('A Study of R1 to R2 Projection')).toBeNull()
+     expect(screen.getByText(/当前对象暂无候选证据/)).toBeTruthy()
++    // 空态提示 + 列表头恢复入口
++    expect(screen.getByTestId('evidence-candidates-hint').textContent).toContain('恢复排除')
++    fireEvent.click(screen.getByRole('button', { name: /恢复排除（1）/ }))
++    expect(screen.getByText('A Study of R1 to R2 Projection')).toBeTruthy()
+   })
+ 
+   it('重新提取触发 extractSelectedPaperEvidence 并更新片段数', async () => {
+     renderModule()
+     await waitFor(() => expect(screen.getByText('A Study of R1 to R2 Projection')).toBeTruthy())
+     const fresh = {
+       ...CANDIDATE,
+       passages: [
+         ...CANDIDATE.passages,
+         { passage: 'A newly extracted passage.', source_scope: 'fulltext', direction: 'supports', source_verified: true, supported_components: ['relation'] },
+@@ -384,22 +387,21 @@ describe('EvidenceCandidatesModule', () => {
+       llm_model: null,
+     })
+     fireEvent.click(screen.getByRole('button', { name: /重新提取/ }))
+     await waitFor(() =>
+       expect(endpoints.extractSelectedPaperEvidence).toHaveBeenCalledWith(expect.objectContaining({
+         target_type: 'connection',
+         target_id: 'r1-r2',
+         papers: [expect.objectContaining({ pmid: '12345678' })],
+       })),
+     )
+-    await waitFor(() => expect(screen.getByText('片段 3')).toBeTruthy())
+-    expect(screen.getByText('已核验 2')).toBeTruthy()
++    await waitFor(() => expect(screen.getByText('已核验片段 2')).toBeTruthy())
+   })
+ 
+   it('禁止项:无正式 attach / confirm 文案与控件', async () => {
+     renderModule()
+     await waitFor(() => expect(screen.getByText('A Study of R1 to R2 Projection')).toBeTruthy())
+     expect(screen.queryByText('确认论文证据')).toBeNull()
+     expect(screen.queryByText('确认入库')).toBeNull()
+     expect(screen.queryByText('保存草稿')).toBeNull()
+     expect(screen.queryByTestId('ew-attach')).toBeNull()
+   })
+@@ -412,25 +414,26 @@ describe('EvidenceCandidatesModule', () => {
+         <EvidenceCandidatesModule />
+       </EvidenceCenterProvider>,
+     )
+     await waitFor(() => expect(screen.getByText('查找相关论文')).toBeTruthy())
+     // 三层标题
+     expect(screen.getByText('查找相关论文')).toBeTruthy()
+     expect(screen.getByText('检索过滤')).toBeTruthy()
+     expect(screen.getByText('批量操作')).toBeTruthy()
+     // Query Terms Chips 来自 DTO(源脑区/目标脑区/连接关系/功能)
+     const terms = screen.getAllByTestId('evidence-query-term')
+-    expect(terms.map(t => t.textContent)).toEqual(expect.arrayContaining(['R1', 'R2', 'projects_to', '影响功能']))
+-    // 过滤控件
++    expect(terms.map(t => t.textContent)).toEqual(expect.arrayContaining(['R1×', 'R2×', 'projects_to×', '影响功能×']))
++    // 过滤控件:☐仅OA / 证据模式 / 年份(下拉) / [恢复默认] + [恢复排除]
+     expect(screen.getByLabelText('仅 OA')).toBeTruthy()
+-    expect(screen.getByLabelText('佐证模式')).toBeTruthy()
+-    expect(screen.getByPlaceholderText(/年份/)).toBeTruthy()
++    expect(screen.getByLabelText('证据模式')).toBeTruthy()
++    expect(screen.getByLabelText(/年份/)).toBeTruthy()
++    expect(screen.getByRole('button', { name: /恢复默认/ })).toBeTruthy()
+     expect(screen.getByRole('button', { name: /恢复排除/ })).toBeTruthy()
+   })
+ 
+   it('手动检索:重新搜索携带 query_override;搜索结果显示为候选卡可勾选「加入提取」', async () => {
+     vi.mocked(endpoints.listPaperEvidenceTaskItems).mockResolvedValue({ items: [] })
+     vi.mocked(endpoints.searchPaperEvidence).mockResolvedValue({
+       target_info: { target_type: 'connection', target_id: 'r1-r2', function_term: '', mode: 'existence', query: 'R1 AND R2', info: {} },
+       papers: [{
+         pmid: '99999999',
+         doi: '10.9999/abc',
+@@ -619,21 +622,21 @@ describe('EvidenceCandidatesModule', () => {
+     render(
+       <EvidenceCenterProvider>
+         <EvidenceCandidatesModule />
+       </EvidenceCenterProvider>,
+     )
+     await waitFor(() => expect(screen.getByText('查找相关论文')).toBeTruthy())
+     fireEvent.click(screen.getByRole('button', { name: /重新搜索/ }))
+     await waitFor(() => expect(screen.getByText('Paper A')).toBeTruthy())
+     // 检索成功 → 检索区自动折叠,批量操作需先展开
+     fireEvent.click(screen.getByRole('button', { name: /展开检索/ }))
+-    fireEvent.click(screen.getByRole('button', { name: /全选/ }))
++    fireEvent.click(screen.getByRole('checkbox', { name: /全选/ }))
+     fireEvent.click(screen.getByRole('button', { name: /提取所选论文（2）/ }))
+     await waitFor(() =>
+       expect(endpoints.extractSelectedPaperEvidence).toHaveBeenCalledWith(expect.objectContaining({
+         papers: expect.arrayContaining([
+           expect.objectContaining({ pmid: '111' }),
+           expect.objectContaining({ pmid: '222' }),
+         ]),
+       })),
+     )
+   })
+@@ -686,27 +689,26 @@ describe('EvidenceCandidatesModule', () => {
+     render(
+       <EvidenceCenterProvider>
+         <EvidenceCandidatesModule />
+       </EvidenceCenterProvider>,
+     )
+     await waitFor(() => expect(screen.getByText('查找相关论文')).toBeTruthy())
+     fireEvent.click(screen.getByRole('button', { name: /重新搜索/ }))
+     await waitFor(() => expect(screen.getByText('A Newly Found Paper')).toBeTruthy())
+     // 检索成功 → 检索区自动折叠,批量操作需先展开
+     fireEvent.click(screen.getByRole('button', { name: /展开检索/ }))
+-    fireEvent.click(screen.getByRole('button', { name: /全选/ }))
++    fireEvent.click(screen.getByRole('checkbox', { name: /全选/ }))
+     fireEvent.click(screen.getByRole('button', { name: /提取所选论文（1）/ }))
+-    // 提取结果卡:AI 判断 / 片段 / 已核验 + [查看证据候选];检索卡保留(标题出现两处)
++    // 提取结果卡:AI判断 / 已核验片段 + [查看证据候选];检索卡保留(标题出现两处)
+     await waitFor(() => expect(screen.getByRole('button', { name: /查看证据候选/ })).toBeTruthy())
+-    expect(screen.getByText(/AI 判断 支持/)).toBeTruthy()
+-    expect(screen.getByText('片段 1')).toBeTruthy()
+-    expect(screen.getByText('已核验 1')).toBeTruthy()
++    expect(screen.getByText(/AI判断：支持/)).toBeTruthy()
++    expect(screen.getByText('已核验片段 1')).toBeTruthy()
+     expect(screen.getByText(/候选论文（2）/)).toBeTruthy()
+     expect(screen.getAllByText('A Newly Found Paper')).toHaveLength(2)
+   })
+ 
+   it('OA Only / 年份过滤在客户端过滤搜索结果', async () => {
+     vi.mocked(endpoints.listPaperEvidenceTaskItems).mockResolvedValue({ items: [] })
+     vi.mocked(endpoints.searchPaperEvidence).mockResolvedValue({
+       target_info: { target_type: 'connection', target_id: 'r1-r2', function_term: '', mode: 'existence', query: '', info: {} },
+       papers: [
+         { pmid: '111', doi: '10.1/a', title: 'OA Paper', journal: 'J', year: '2024', authors: '', abstract: '', source: 'europepmc', is_open_access: true },
+@@ -722,21 +724,21 @@ describe('EvidenceCandidatesModule', () => {
+     await waitFor(() => expect(screen.getByText('查找相关论文')).toBeTruthy())
+     fireEvent.click(screen.getByRole('button', { name: /重新搜索/ }))
+     await waitFor(() => expect(screen.getByText('OA Paper')).toBeTruthy())
+     expect(screen.getByText('Closed Paper')).toBeTruthy()
+     // 检索成功 → 检索区自动折叠,过滤控件需先展开
+     fireEvent.click(screen.getByRole('button', { name: /展开检索/ }))
+     fireEvent.click(screen.getByLabelText('仅 OA'))
+     expect(screen.queryByText('Closed Paper')).toBeNull()
+     expect(screen.getByText('OA Paper')).toBeTruthy()
+     fireEvent.click(screen.getByLabelText('仅 OA'))
+-    fireEvent.change(screen.getByPlaceholderText(/年份/), { target: { value: '2023' } })
++    fireEvent.change(screen.getByLabelText(/年份/), { target: { value: '2023' } })
+     expect(screen.queryByText('Closed Paper')).toBeNull()
+     expect(screen.getByText('OA Paper')).toBeTruthy()
+   })
+ 
+   it('无任务时从 sessionStorage initial-queue 一次性恢复队列(数据中心入口交接)', async () => {
+     sessionStorage.setItem(
+       'evidence-center.initial-queue',
+       JSON.stringify({
+         items: [
+           { target_type: 'connection', target_id: 'r1-r2', label: 'R1 → R2 连接', confidence: 0.7 },
+@@ -810,11 +812,100 @@ describe('EvidenceCandidatesModule', () => {
+     expect(screen.getByText('Found Paper')).toBeTruthy()
+     // 切换到对象 B:manualResult / manualQuery / manualResults / manualSelected 全部重置
+     window.location.hash = '#/evidence-center?module=candidates&task_id=t1&target_type=connection&target_id=r3-r4'
+     fireEvent(window, new HashChangeEvent('hashchange'))
+     // A 的折叠条消失(不显示旧 query 摘要),检索区回到展开态且 query 输入为空,旧结果卡移除
+     await waitFor(() => expect(screen.queryByTestId('evidence-search-collapsed')).toBeNull())
+     expect(screen.getByText('查找相关论文')).toBeTruthy()
+     expect((screen.getByTestId('evidence-search-query') as HTMLInputElement).value).toBe('')
+     expect(screen.queryByText('Found Paper')).toBeNull()
+   })
++
++  it('Query Chip ×清空:移除该关键词;恢复系统推荐恢复全部推荐词', async () => {
++    vi.mocked(endpoints.listPaperEvidenceTaskItems).mockResolvedValue({ items: [] })
++    window.location.hash = '#/evidence-center?module=candidates&task_id=t1&target_type=connection&target_id=r1-r2'
++    render(
++      <EvidenceCenterProvider>
++        <EvidenceCandidatesModule />
++      </EvidenceCenterProvider>,
++    )
++    await waitFor(() => expect(screen.getByText('查找相关论文')).toBeTruthy())
++    const terms = () => screen.getAllByTestId('evidence-query-term').map(t => t.textContent)
++    expect(terms()).toEqual(expect.arrayContaining(['R1×', 'R2×', 'projects_to×', '影响功能×']))
++    fireEvent.click(screen.getByRole('button', { name: '清空关键词 R1' }))
++    expect(terms()).not.toContain('R1×')
++    expect(terms()).toEqual(expect.arrayContaining(['R2×', 'projects_to×', '影响功能×']))
++    // 恢复系统推荐:清空 Query + 恢复全部推荐词并重新检索
++    fireEvent.click(screen.getByRole('button', { name: /恢复系统推荐/ }))
++    await waitFor(() => expect(endpoints.searchPaperEvidence).toHaveBeenCalled())
++    expect(terms()).toEqual(expect.arrayContaining(['R1×', 'R2×', 'projects_to×', '影响功能×']))
++  })
++
++  it('检索过滤 [恢复默认]:重置 仅OA / 年份 过滤条件', async () => {
++    vi.mocked(endpoints.listPaperEvidenceTaskItems).mockResolvedValue({ items: [] })
++    vi.mocked(endpoints.searchPaperEvidence).mockResolvedValue({
++      target_info: { target_type: 'connection', target_id: 'r1-r2', function_term: '', mode: 'existence', query: '', info: {} },
++      papers: [
++        { pmid: '111', doi: '10.1/a', title: 'OA Paper', journal: 'J', year: '2024', authors: '', abstract: '', source: 'europepmc', is_open_access: true },
++        { pmid: '222', doi: '10.2/b', title: 'Closed Paper', journal: 'J', year: '2020', authors: '', abstract: '', source: 'europepmc', is_open_access: false },
++      ],
++    })
++    window.location.hash = '#/evidence-center?module=candidates&task_id=t1&target_type=connection&target_id=r1-r2'
++    render(
++      <EvidenceCenterProvider>
++        <EvidenceCandidatesModule />
++      </EvidenceCenterProvider>,
++    )
++    await waitFor(() => expect(screen.getByText('查找相关论文')).toBeTruthy())
++    fireEvent.click(screen.getByRole('button', { name: /重新搜索/ }))
++    await waitFor(() => expect(screen.getByText('OA Paper')).toBeTruthy())
++    fireEvent.click(screen.getByRole('button', { name: /展开检索/ }))
++    // 仅OA + 年份 2024 → 只剩 OA Paper
++    fireEvent.click(screen.getByLabelText('仅 OA'))
++    fireEvent.change(screen.getByLabelText(/年份/), { target: { value: '2024' } })
++    expect(screen.queryByText('Closed Paper')).toBeNull()
++    // [恢复默认] → 全部过滤重置 → 两篇论文均恢复
++    fireEvent.click(screen.getByRole('button', { name: /恢复默认/ }))
++    expect((screen.getByLabelText('仅 OA') as HTMLInputElement).checked).toBe(false)
++    expect((screen.getByLabelText(/年份/) as HTMLSelectElement).value).toBe('')
++    expect(screen.getByText('Closed Paper')).toBeTruthy()
++    expect(screen.getByText('OA Paper')).toBeTruthy()
++  })
++
++  it('空态(手动检索场景):暂无候选论文 + 调整检索条件 + 轻提示;排除后可恢复', async () => {
++    vi.mocked(endpoints.listPaperEvidenceTaskItems).mockResolvedValue({ items: [] })
++    vi.mocked(endpoints.searchPaperEvidence).mockResolvedValue({
++      target_info: { target_type: 'connection', target_id: 'r1-r2', function_term: '', mode: 'existence', query: '', info: {} },
++      papers: [{
++        pmid: '99999999',
++        doi: '10.9999/abc',
++        title: 'Only Paper',
++        journal: 'Nature',
++        year: '2025',
++        authors: '',
++        abstract: '',
++        source: 'europepmc',
++        is_open_access: true,
++      }],
++    })
++    window.location.hash = '#/evidence-center?module=candidates&task_id=t1&target_type=connection&target_id=r1-r2'
++    render(
++      <EvidenceCenterProvider>
++        <EvidenceCandidatesModule />
++      </EvidenceCenterProvider>,
++    )
++    await waitFor(() => expect(screen.getByText('查找相关论文')).toBeTruthy())
++    fireEvent.click(screen.getByRole('button', { name: /重新搜索/ }))
++    await waitFor(() => expect(screen.getByText('Only Paper')).toBeTruthy())
++    // 排除唯一论文 → 空态:标题/说明/调整检索条件/轻提示 + 列表头恢复入口
++    fireEvent.click(screen.getByRole('button', { name: /排除此候选/ }))
++    expect(screen.getByText('候选论文（0）')).toBeTruthy()
++    expect(screen.getByText('暂无候选论文')).toBeTruthy()
++    expect(screen.getByText('当前还没有找到相关论文，可尝试调整检索条件后重新搜索。')).toBeTruthy()
++    expect(screen.getByTestId('evidence-candidates-hint').textContent).toContain('勾选论文后可批量操作')
++    expect(screen.getByRole('button', { name: /恢复排除（1）/ })).toBeTruthy()
++    // [调整检索条件] → 展开完整检索区
++    fireEvent.click(screen.getByRole('button', { name: /调整检索条件/ }))
++    expect(screen.getByTestId('evidence-search-query')).toBeTruthy()
++    expect(screen.getByText('检索过滤')).toBeTruthy()
++  })
+ })
+diff --git a/frontend/src/pages/evidence-center/modules/EvidenceCandidatesModule.tsx b/frontend/src/pages/evidence-center/modules/EvidenceCandidatesModule.tsx
+index b23deaa..68efbdb 100644
+--- a/frontend/src/pages/evidence-center/modules/EvidenceCandidatesModule.tsx
++++ b/frontend/src/pages/evidence-center/modules/EvidenceCandidatesModule.tsx
+@@ -5,31 +5,33 @@ import {
+   listPaperEvidenceTaskItems,
+   searchPaperEvidence,
+   type EvidenceTargetDto,
+   type PaperEvidenceTaskItem,
+   type PaperSearchResponse,
+ } from '../../../api/endpoints'
+ import { useEvidenceCenter } from '../EvidenceCenterContext'
+ import { INITIAL_QUEUE_KEY } from '../evidenceCenterUrl'
+ import { candidatePassagesToWorkbench } from '../components/candidatePassages'
+ import { aggregateTmpDirection, computeTmpCoverage } from '../components/claimCoverage'
+-import { CandidatePaperCard, type CandidatePaperData } from '../components/PaperCard'
+-import { CandidateStatsBar, type CandidateStats } from '../components/CandidateStatsBar'
++import { PaperBatchActions } from '../components/PaperBatchActions'
++import { PaperCandidateCard, type CandidatePaperData } from '../components/PaperCandidateCard'
++import { PaperCandidateList } from '../components/PaperCandidateList'
++import { PaperSearchFilters, type EvidenceMode } from '../components/PaperSearchFilters'
++import { PaperSearchPanel } from '../components/PaperSearchPanel'
++import { PaperStatusSummary, type CandidateStats } from '../components/PaperStatusSummary'
+ import { PaperDetailDrawer } from '../components/PaperDetailDrawer'
+ import { PaperEvidenceView } from '../components/PaperEvidenceView'
+ import { loadReviewStatus } from '../components/ReviewStatusStore'
+ import type { QueueEntry, QueueStatus, WorkbenchPassage } from '../components/types'
+ 
+ const DRAFT_PREFIX = 'evidence-center.review-draft.'
+ 
+-type EvidenceMode = 'auto' | 'function' | 'existence'
+-
+ /** 候选论文(任务 item 的 candidate_papers 与手动提取的 ExtractedPaperCandidate 的公共子集) */
+ interface CandidatePaper {
+   paper_id: string
+   pmid: string
+   doi?: string | null
+   pmcid?: string | null
+   title: string
+   journal: string
+   year: string
+   is_oa: boolean
+@@ -130,20 +132,22 @@ export function EvidenceCandidatesModule() {
+   const [manualSelected, setManualSelected] = useState<Set<string>>(new Set())
+   const [manualResults, setManualResults] = useState<CandidatePaper[]>([])
+   const [evidenceViewPaperId, setEvidenceViewPaperId] = useState<string | null>(null)
+   const [detailPaperId, setDetailPaperId] = useState<string | null>(null)
+   // 检索区展开态:有检索结果时默认折叠为一条(Query 摘要 + 重新搜索 + 展开)
+   const [searchExpanded, setSearchExpanded] = useState(false)
+   // 搜索过滤(第二层)
+   const [oaOnly, setOaOnly] = useState(false)
+   const [modeOverride, setModeOverride] = useState<EvidenceMode>('auto')
+   const [yearFilter, setYearFilter] = useState('')
++  // Query Chips 用户清除项(× 清空;恢复系统推荐时重置)
++  const [clearedTerms, setClearedTerms] = useState<Set<string>>(new Set())
+ 
+   const loadItems = useCallback(async () => {
+     if (!state.taskId) {
+       setItems([])
+       setQueue([])
+       setLoading(false)
+       return
+     }
+     setLoading(true)
+     setError(null)
+@@ -254,20 +258,21 @@ export function EvidenceCandidatesModule() {
+   useEffect(() => {
+     setEvidenceViewPaperId(null)
+     setDetailPaperId(null)
+     setSelectedHashes(new Set())
+     setExcludedPaperIds(new Set())
+     setManualQuery('')
+     setManualResult(null)
+     setManualSelected(new Set())
+     setManualResults([])
+     setSearchExpanded(false)
++    setClearedTerms(new Set())
+     setMessage(null)
+   }, [current?.target_id])
+ 
+   // 数据中心跳转兼容:无任务时从 sessionStorage initial-queue 一次性恢复队列
+   useEffect(() => {
+     if (state.taskId) return
+     try {
+       const raw = sessionStorage.getItem(INITIAL_QUEUE_KEY)
+       if (!raw) return
+       const parsed = JSON.parse(raw) as {
+@@ -313,34 +318,40 @@ export function EvidenceCandidatesModule() {
+     ? { target_type: current.target_type, target_id: current.target_id }
+     : null
+ 
+   const queryTerms = useMemo(() => {
+     if (!dto) return []
+     return [dto.source_region, dto.target_region, dto.relation, dto.function_context, dto.circuit_context]
+       .filter((t): t is string => Boolean(t))
+       .filter((t, i, arr) => arr.indexOf(t) === i)
+   }, [dto])
+ 
++  /** 可见推荐词(用户 × 清除后不再展示) */
++  const visibleQueryTerms = useMemo(
++    () => queryTerms.filter(t => !clearedTerms.has(t)),
++    [queryTerms, clearedTerms],
++  )
++
+   const visibleSearchPapers = useMemo(() => {
+     const papers = manualResult?.papers ?? []
+     return papers.filter(p =>
+       !excludedPaperIds.has(p.pmid)
+       && (!oaOnly || p.is_open_access)
+       && (!yearFilter || Number(p.year) >= Number(yearFilter)),
+     )
+   }, [manualResult, oaOnly, yearFilter, excludedPaperIds])
+ 
+   /** 是否有检索结果:有结果 → 检索区默认折叠为一条;无结果 → 展开完整检索区 */
+   const hasSearchResults = (manualResult?.papers.length ?? 0) > 0
+ 
+   /** 折叠条 Query 摘要(截断显示):手动检索式 → 推荐词 → 占位 */
+-  const querySummary = manualQuery.trim() || queryTerms.join(' · ') || '系统推荐检索式'
++  const querySummary = manualQuery.trim() || visibleQueryTerms.join(' · ') || '系统推荐检索式'
+ 
+   const runSearch = useCallback(async (query: string) => {
+     if (!manualTarget) return
+     setManualBusy(true)
+     setMessage(null)
+     try {
+       const resp = await searchPaperEvidence({
+         target_type: manualTarget.target_type,
+         target_id: manualTarget.target_id,
+         limit: 10,
+@@ -356,23 +367,29 @@ export function EvidenceCandidatesModule() {
+       setMessage(`检索失败：${err instanceof Error ? err.message : String(err)}`)
+     } finally {
+       setManualBusy(false)
+     }
+   }, [manualTarget, effectiveMode, setProgress])
+ 
+   const handleManualSearch = useCallback(() => { void runSearch(manualQuery) }, [runSearch, manualQuery])
+ 
+   const handleRestoreRecommended = useCallback(() => {
+     setManualQuery('')
++    setClearedTerms(new Set())
+     void runSearch('')
+   }, [runSearch])
+ 
++  /** Query Chip ×:从推荐词中移除该关键词(仅展示层,不影响后端推荐检索式) */
++  const handleClearTerm = useCallback((term: string) => {
++    setClearedTerms(prev => new Set(prev).add(term))
++  }, [])
++
+   const handleManualExtract = useCallback(async () => {
+     if (!manualTarget) return
+     const papers = visibleSearchPapers.filter(p => manualSelected.has(p.pmid) && Boolean(p.pmid || p.doi))
+     if (papers.length === 0) return
+     setManualBusy(true)
+     setMessage(null)
+     try {
+       const resp = await extractSelectedPaperEvidence({
+         target_type: manualTarget.target_type,
+         target_id: manualTarget.target_id,
+@@ -383,20 +400,32 @@ export function EvidenceCandidatesModule() {
+       // 已有提取片段 → 推进 StepPills → 找到原文
+       setProgress({ extracted: true })
+       setMessage(`已提取 ${resp.results.length} 篇论文，请勾选片段后加入人工审核`)
+     } catch (err) {
+       setMessage(`批量提取失败：${err instanceof Error ? err.message : String(err)}`)
+     } finally {
+       setManualBusy(false)
+     }
+   }, [manualTarget, manualSelected, visibleSearchPapers, effectiveMode, setProgress])
+ 
++  /** ☐全选:勾选全部可见搜索结果 / 取消清空其勾选 */
++  const handleToggleAll = useCallback((checked: boolean) => {
++    setManualSelected(prev => {
++      const next = new Set(prev)
++      for (const p of visibleSearchPapers) {
++        if (checked) next.add(p.pmid)
++        else next.delete(p.pmid)
++      }
++      return next
++    })
++  }, [visibleSearchPapers])
++
+   const handleTogglePassage = useCallback((hash: string, checked: boolean) => {
+     // 选中片段(写审核草稿)→ 推进 StepPills → 找到原文
+     if (checked) setProgress({ extracted: true })
+     setSelectedHashes(prev => {
+       const next = new Set(prev)
+       if (checked) next.add(hash)
+       else next.delete(hash)
+       return next
+     })
+   }, [setProgress])
+@@ -488,21 +517,21 @@ export function EvidenceCandidatesModule() {
+       passages: selected,
+       modelDirection: metaPaper?.model_direction ?? null,
+       modelAssessment: metaPaper?.model_assessment ?? null,
+       paperTitle: metaPaper?.title ?? '',
+       pmid: metaPaper?.pmid ?? '',
+     }
+     sessionStorage.setItem(key, JSON.stringify(draft))
+     draftWrittenRef.current = { key }
+   }, [current, candidates, manualResults, selectedHashes])
+ 
+-  // ─── 中栏统计条数据(候选/已提取/已核验/覆盖/模型判断) ───
++  // ─── 中栏状态条数据(候选/已提取/已核验/覆盖/模型判断) ───
+   const stats = useMemo<CandidateStats | null>(() => {
+     if (!current) return null
+     const all = [...candidates, ...manualResults]
+     const passages = all.flatMap(c => candidatePassagesToWorkbench(c.passages ?? [], c.paper_id))
+     const verified = passages.filter(p => p.source_verified)
+     const coverage = computeTmpCoverage(claimComponents, verified)
+     return {
+       foundPapers: all.length + (manualResult?.papers.length ?? 0),
+       extractedPapers: all.length,
+       verifiedPassages: verified.length,
+@@ -510,20 +539,24 @@ export function EvidenceCandidatesModule() {
+       coverageRatio: coverage.coverage_ratio,
+       coverageSupported: coverage.supported_components.length,
+       coverageRequired: coverage.required_components.length,
+       direction: aggregateTmpDirection(coverage, verified),
+       modelAssessment: all[0]?.model_assessment ?? null,
+     }
+   }, [current, candidates, manualResults, manualResult, claimComponents, selectedHashes])
+ 
+   const totalPapers = candidates.length + manualResults.length + visibleSearchPapers.length
+ 
++  const handleEnterReview = useCallback(() => {
++    if (state.targetType && state.targetId) openTarget(state.targetType, state.targetId, 'review')
++  }, [state.targetType, state.targetId, openTarget])
++
+   return (
+     <div className="evidence-candidates">
+       <div className="evidence-candidates-main">
+         {loading && <div className="evidence-task-loading">加载中…</div>}
+         {!loading && error && (
+           <div className="evidence-task-error">
+             <p>候选加载失败：{error}</p>
+             <button type="button" className="btn btn-sm" onClick={() => void loadItems()}>重试</button>
+           </div>
+         )}
+@@ -531,233 +564,146 @@ export function EvidenceCandidatesModule() {
+           <div className="evidence-candidates-empty">
+             请先在「佐证任务」中打开一个任务，或从上方任务列表进入。
+           </div>
+         )}
+         {!loading && !error && current && (
+           <>
+             {message && <div className="ontology-page-message">{message}</div>}
+ 
+             {evidencePaper ? (
+               <>
+-                {/* 证据视图态:统计条保留在上方,[进入人工审核] 随勾选实时可用 */}
+-                <CandidateStatsBar
+-                  stats={stats}
+-                  onEnterReview={() => {
+-                    if (state.targetType && state.targetId) openTarget(state.targetType, state.targetId, 'review')
+-                  }}
+-                />
++                {/* 证据视图态:状态条保留在上方,[进入人工审核] 随勾选实时可用 */}
++                <PaperStatusSummary stats={stats} onEnterReview={handleEnterReview} />
+                 <PaperEvidenceView
+                   paper={{
+                     paperId: evidencePaper.paper_id,
+                     pmid: evidencePaper.pmid,
+                     doi: evidencePaper.doi ?? null,
+                     title: evidencePaper.title,
+                     journal: evidencePaper.journal,
+                     year: evidencePaper.year,
+                   }}
+                   components={claimComponents}
+                   passages={evidencePassages}
+                   selectedHashes={selectedHashes}
+                   onTogglePassage={handleTogglePassage}
+                   onBack={() => setEvidenceViewPaperId(null)}
+                 />
+               </>
+             ) : (
+               <>
+                 {manualTarget && (
+-                  hasSearchResults && !searchExpanded ? (
+-                    // 有检索结果 → 默认折叠为一条:Query 摘要 + [重新搜索](直接执行) + [展开检索] + [提取所选论文(N)](primary)
+-                    <div className="evidence-search evidence-search-collapsed" data-testid="evidence-search-collapsed">
+-                      <span className="evidence-search-collapsed-label">已检索</span>
+-                      <span
+-                        className="evidence-search-collapsed-query"
+-                        data-testid="evidence-search-collapsed-query"
+-                        title={querySummary}
+-                      >
+-                        {querySummary}
+-                      </span>
+-                      <span className="evidence-search-collapsed-actions">
+-                        <button type="button" className="btn btn-sm" disabled={manualBusy} onClick={() => void handleManualSearch()}>
+-                          {manualBusy ? '检索中…' : '重新搜索'}
+-                        </button>
+-                        <button type="button" className="btn btn-sm" onClick={() => setSearchExpanded(true)}>
+-                          展开检索
+-                        </button>
+-                        <button
+-                          type="button"
+-                          className="btn btn-sm btn-primary"
+-                          data-testid="evidence-collapsed-extract"
+-                          disabled={manualBusy || manualSelected.size === 0}
+-                          onClick={() => void handleManualExtract()}
+-                        >
+-                          提取所选论文（{manualSelected.size}）
+-                        </button>
+-                      </span>
+-                    </div>
+-                  ) : (
+-                    <div className="evidence-search" data-testid="evidence-search">
+-                      <div className="evidence-search-layer">
+-                        <h4 className="evidence-search-title">查找相关论文</h4>
+-                        <div className="evidence-search-row">
+-                          <input
+-                            className="filter-input evidence-search-query"
+-                            data-testid="evidence-search-query"
+-                            value={manualQuery}
+-                            onChange={e => setManualQuery(e.target.value)}
+-                            placeholder="检索式 / 关键词（留空使用系统推荐检索式）"
+-                          />
+-                          <button type="button" className="btn btn-sm" disabled={manualBusy} onClick={() => void handleManualSearch()}>
+-                            {manualBusy ? '检索中…' : '重新搜索'}
+-                          </button>
+-                          <button type="button" className="btn btn-sm" disabled={manualBusy} onClick={() => void handleRestoreRecommended()}>
+-                            恢复系统推荐
+-                          </button>
+-                        </div>
+-                        {queryTerms.length > 0 && (
+-                          <div className="evidence-search-terms">
+-                            {queryTerms.map(t => (
+-                              <span key={t} className="evidence-query-term" data-testid="evidence-query-term">{t}</span>
+-                            ))}
+-                          </div>
+-                        )}
+-                      </div>
+-                      <div className="evidence-search-layer">
+-                        <h4 className="evidence-search-title">检索过滤</h4>
+-                        <div className="evidence-search-row">
+-                          <label className="evidence-search-filter">
+-                            <input type="checkbox" checked={oaOnly} onChange={e => setOaOnly(e.target.checked)} />
+-                            仅 OA
+-                          </label>
+-                          <label className="evidence-search-filter">
+-                            佐证模式
+-                            <select
+-                              className="filter-select"
+-                              value={modeOverride}
+-                              onChange={e => setModeOverride(e.target.value as EvidenceMode)}
+-                            >
+-                              <option value="auto">自动</option>
+-                              <option value="existence">存在性</option>
+-                              <option value="function">功能性</option>
+-                            </select>
+-                          </label>
+-                          <input
+-                            className="filter-input evidence-search-year"
+-                            value={yearFilter}
+-                            onChange={e => setYearFilter(e.target.value)}
+-                            placeholder="年份（如 2020）"
+-                          />
+-                          <button type="button" className="btn btn-xs" onClick={() => setExcludedPaperIds(new Set())}>
+-                            恢复排除
+-                          </button>
+-                        </div>
+-                      </div>
+-                      <div className="evidence-search-layer">
+-                        <h4 className="evidence-search-title">批量操作</h4>
+-                        <div className="evidence-search-row">
+-                          <button
+-                            type="button"
+-                            className="btn btn-sm"
+-                            disabled={visibleSearchPapers.length === 0}
+-                            onClick={() => setManualSelected(new Set(visibleSearchPapers.map(p => p.pmid)))}
+-                          >
+-                            全选
+-                          </button>
+-                          <button
+-                            type="button"
+-                            className="btn btn-sm btn-primary"
+-                            disabled={manualBusy || manualSelected.size === 0}
+-                            onClick={() => void handleManualExtract()}
+-                          >
+-                            提取所选论文（{manualSelected.size}）
+-                          </button>
+-                          {hasSearchResults && (
+-                            <button type="button" className="btn btn-xs" onClick={() => setSearchExpanded(false)}>
+-                              收起检索
+-                            </button>
+-                          )}
+-                        </div>
+-                      </div>
+-                    </div>
+-                  )
++                  <PaperSearchPanel
++                    collapsed={hasSearchResults && !searchExpanded}
++                    busy={manualBusy}
++                    query={manualQuery}
++                    onQueryChange={setManualQuery}
++                    onSearch={handleManualSearch}
++                    onRestoreRecommended={handleRestoreRecommended}
++                    queryTerms={visibleQueryTerms}
++                    onClearTerm={handleClearTerm}
++                    querySummary={querySummary}
++                    onExpand={() => setSearchExpanded(true)}
++                    onCollapse={() => setSearchExpanded(false)}
++                    selectedCount={manualSelected.size}
++                    onExtractSelected={() => void handleManualExtract()}
++                    filters={
++                      <PaperSearchFilters
++                        oaOnly={oaOnly}
++                        onOaOnlyChange={setOaOnly}
++                        mode={modeOverride}
++                        onModeChange={setModeOverride}
++                        year={yearFilter}
++                        onYearChange={setYearFilter}
++                        onRestoreDefaults={() => {
++                          setOaOnly(false)
++                          setModeOverride('auto')
++                          setYearFilter('')
++                        }}
++                        excludedCount={excludedPaperIds.size}
++                        onRestoreExcluded={() => setExcludedPaperIds(new Set())}
++                      />
++                    }
++                    batchActions={
++                      <PaperBatchActions
++                        allSelected={visibleSearchPapers.length > 0 && visibleSearchPapers.every(p => manualSelected.has(p.pmid))}
++                        onToggleAll={handleToggleAll}
++                        selectedCount={manualSelected.size}
++                        busy={manualBusy}
++                        onExtractSelected={() => void handleManualExtract()}
++                        canSelect={visibleSearchPapers.length > 0}
++                        canCollapse={hasSearchResults}
++                        onCollapse={() => setSearchExpanded(false)}
++                      />
++                    }
++                  />
+                 )}
+ 
+-                {/* 中栏统计条:检索区下方、候选论文列表上方;Claim 事实在页面左栏 */}
+-                <CandidateStatsBar
+-                  stats={stats}
+-                  onEnterReview={() => {
+-                    if (state.targetType && state.targetId) openTarget(state.targetType, state.targetId, 'review')
+-                  }}
+-                />
++                {/* 中栏状态条:检索区下方、候选论文列表上方;Claim 事实在页面左栏 */}
++                <PaperStatusSummary stats={stats} onEnterReview={handleEnterReview} />
+ 
+-                <div className="evidence-candidates-papers">
+-                  <div className="evidence-candidates-papers-head">
+-                    <h4>候选论文（{totalPapers}）</h4>
+-                    <span className="evidence-module-hint">
+-                      勾选已核验片段后可从中栏统计条「进入人工审核」；排除的论文可用「恢复排除」找回。
+-                    </span>
+-                  </div>
+-                  {totalPapers === 0 && (
+-                    <div className="evidence-candidates-empty">
+-                      {manualTarget
+-                        ? '没有找到候选论文，可先在上方检索相关论文或切换其他对象。'
+-                        : '当前对象暂无候选证据，可尝试重新提取或切换其他对象。'}
+-                    </div>
+-                  )}
++                <PaperCandidateList
++                  total={totalPapers}
++                  searchable={Boolean(manualTarget)}
++                  excludedCount={excludedPaperIds.size}
++                  onRestoreExcluded={() => setExcludedPaperIds(new Set())}
++                  onAdjustSearch={() => setSearchExpanded(true)}
++                >
+                   {visibleSearchPapers.map(p => (
+-                    <CandidatePaperCard
++                    <PaperCandidateCard
+                       key={`s-${p.pmid}`}
+                       paper={searchToCardData(p)}
+                       selected={manualSelected.has(p.pmid)}
+                       reExtracting={false}
+                       onToggleSelected={checked => {
+                         setManualSelected(prev => {
+                           const next = new Set(prev)
+                           if (checked) next.add(p.pmid)
+                           else next.delete(p.pmid)
+                           return next
+                         })
+                       }}
+                       onOpenDetail={() => undefined}
+                       onExclude={() => setExcludedPaperIds(prev => new Set(prev).add(p.pmid))}
+                       onReExtract={() => undefined}
+                       onViewEvidence={() => undefined}
+                     />
+                   ))}
+                   {candidates.map(cand => (
+-                    <CandidatePaperCard
++                    <PaperCandidateCard
+                       key={cand.paper_id || cand.pmid}
+                       paper={extractedToCardData(cand)}
+                       selected={false}
+                       reExtracting={reExtractBusy === (cand.paper_id || cand.pmid)}
+                       onToggleSelected={() => undefined}
+                       onOpenDetail={() => setDetailPaperId(cand.paper_id)}
+                       onExclude={() => setExcludedPaperIds(prev => new Set(prev).add(cand.paper_id || cand.pmid))}
+                       onReExtract={() => void handleReExtract(cand)}
+                       onViewEvidence={() => setEvidenceViewPaperId(cand.paper_id || cand.pmid)}
+                     />
+                   ))}
+                   {manualResults
+                     .filter(c => !excludedPaperIds.has(c.paper_id || c.pmid))
+                     .map(cand => (
+-                      <CandidatePaperCard
++                      <PaperCandidateCard
+                         key={`m-${cand.paper_id || cand.pmid}`}
+                         paper={extractedToCardData(cand)}
+                         selected={false}
+                         reExtracting={reExtractBusy === (cand.paper_id || cand.pmid)}
+                         onToggleSelected={() => undefined}
+                         onOpenDetail={() => setDetailPaperId(cand.paper_id)}
+                         onExclude={() => setExcludedPaperIds(prev => new Set(prev).add(cand.paper_id || cand.pmid))}
+                         onReExtract={() => void handleReExtract(cand)}
+                         onViewEvidence={() => setEvidenceViewPaperId(cand.paper_id || cand.pmid)}
+                       />
+                     ))}
+-                </div>
++                </PaperCandidateList>
+               </>
+             )}
+ 
+             {detailPaperId && <PaperDetailDrawer paperId={detailPaperId} onClose={() => setDetailPaperId(null)} />}
+           </>
+         )}
+       </div>
+     </div>
+   )
+ }
+diff --git a/frontend/src/styles.css b/frontend/src/styles.css
+index b4e6f52..7a7f84c 100644
+--- a/frontend/src/styles.css
++++ b/frontend/src/styles.css
+@@ -11866,22 +11866,24 @@ input[type="range"]::-webkit-slider-thumb {
+   font-size: 13px;
+   background: var(--white);
+   border: 1px dashed var(--border);
+   border-radius: var(--card-radius);
+ }
+ 
+ /* ── 证据候选模块(EvidenceCandidatesModule) ── */
+ .evidence-candidates { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+ .evidence-candidates-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 12px; }
+ .evidence-candidates-papers { display: flex; flex-direction: column; gap: 8px; }
+-.evidence-candidates-papers-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
++.evidence-candidates-papers-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+ .evidence-candidates-papers-head h4 { font-size: 15px; color: var(--text); }
++/* 空态底部轻提示(批量操作 / 恢复排除) */
++.evidence-candidates-hint { font-size: 11px; color: var(--text-muted); text-align: center; }
+ .evidence-candidates-empty {
+   padding: 24px 12px;
+   text-align: center;
+   color: var(--text-muted);
+   font-size: 13px;
+   background: var(--white);
+   border: 1px dashed var(--border);
+   border-radius: var(--card-radius);
+ }
+ 
+@@ -11897,32 +11899,53 @@ input[type="range"]::-webkit-slider-thumb {
+   gap: 12px;
+ }
+ .evidence-search-layer { display: flex; flex-direction: column; gap: 6px; }
+ .evidence-search-layer + .evidence-search-layer {
+   border-top: 1px dashed var(--border);
+   padding-top: 12px;
+ }
+ .evidence-search-title { font-size: 13px; font-weight: 700; color: var(--text); }
+ .evidence-search-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+ .evidence-search-query { flex: 1; min-width: 220px; }
+-.evidence-search-year { width: 140px; }
++.evidence-search-year { width: 118px; }
+ .evidence-search-filter { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: var(--text); cursor: pointer; }
+ .evidence-search-terms { display: flex; gap: 6px; flex-wrap: wrap; }
++/* 系统推荐关键词 Chip:浅蓝圆角 + ×清空,可换行 */
+ .evidence-query-term {
++  display: inline-flex;
++  align-items: center;
++  gap: 4px;
+   font-size: 11px;
+   font-family: var(--font-mono, monospace);
+-  color: var(--text-muted);
+-  background: var(--muted-bg);
+-  border: 1px solid var(--border);
++  color: var(--primary);
++  background: var(--info-bg);
++  border: 1px solid rgba(22, 119, 255, .28);
+   border-radius: 999px;
+-  padding: 2px 8px;
++  padding: 2px 4px 2px 9px;
+ }
++.evidence-query-term-clear {
++  display: inline-flex;
++  align-items: center;
++  justify-content: center;
++  width: 16px;
++  height: 16px;
++  padding: 0;
++  border: none;
++  border-radius: 50%;
++  background: rgba(22, 119, 255, .14);
++  color: var(--primary);
++  font-size: 12px;
++  line-height: 1;
++  cursor: pointer;
++  transition: background .12s ease;
++}
++.evidence-query-term-clear:hover { background: rgba(22, 119, 255, .28); }
+ 
+ /* ── 检索区折叠条(有检索结果后默认收起,候选列表占据主视区) ── */
+ .evidence-search-collapsed {
+   display: flex;
+   align-items: center;
+   gap: 10px;
+   flex-wrap: wrap;
+ }
+ .evidence-search-collapsed-label {
+   font-size: 12px;
+@@ -11940,46 +11963,48 @@ input[type="range"]::-webkit-slider-thumb {
+   text-overflow: ellipsis;
+ }
+ /* 折叠条按钮组(重新搜索 / 展开检索 / 提取所选论文)右对齐 */
+ .evidence-search-collapsed-actions {
+   display: flex;
+   align-items: center;
+   gap: 8px;
+   margin-left: auto;
+ }
+ 
+-/* ── 中栏统计信息条(CandidateStatsBar) ── */
++/* ── 中栏状态信息条(PaperStatusSummary) ── */
++/* 浅蓝状态条:高 48-54px,模型判断加粗 */
+ .evidence-stats-bar {
+   display: flex;
+   align-items: center;
+   gap: 18px;
+   flex-wrap: wrap;
+-  background: var(--white);
+-  border: 1px solid var(--border);
++  background: var(--info-bg);
++  border: 1px solid rgba(22, 119, 255, .22);
+   border-radius: var(--card-radius);
+-  box-shadow: var(--shadow);
+-  padding: 8px 14px;
++  padding: 6px 14px;
++  min-height: 48px;
+ }
+ .evidence-stats-item { display: flex; align-items: baseline; gap: 6px; }
+ .evidence-stats-label { font-size: 12px; color: var(--text-muted); white-space: nowrap; }
+ .evidence-stats-value { font-size: 16px; font-weight: 700; color: var(--text); white-space: nowrap; }
+ .evidence-stats-model { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+ .evidence-stats-direction {
+   font-size: 12px;
+   font-weight: 700;
+   color: var(--primary);
+-  background: var(--info-bg);
++  background: var(--white);
++  border: 1px solid rgba(22, 119, 255, .28);
+   border-radius: 999px;
+   padding: 1px 8px;
+   white-space: nowrap;
+ }
+-.evidence-stats-assessment { font-size: 12px; color: var(--text-muted); }
++.evidence-stats-assessment { font-size: 12px; font-weight: 600; color: var(--text); }
+ .evidence-stats-actions { margin-left: auto; display: flex; align-items: center; }
+ 
+ /* ── 候选论文分层卡(PaperCard) ── */
+ .paper-card-candidate {
+   background: var(--white);
+   border: 1px solid var(--border);
+   border-radius: var(--card-radius);
+   box-shadow: var(--shadow);
+   padding: 10px 14px;
+   display: flex;
+@@ -12010,20 +12035,47 @@ input[type="range"]::-webkit-slider-thumb {
+ .paper-card-result-badge {
+   font-size: 11px;
+   font-weight: 600;
+   border-radius: 6px;
+   padding: 2px 8px;
+   color: var(--text-muted);
+   background: var(--muted-bg);
+   white-space: nowrap;
+ }
+ .paper-card-result-badge-ok { color: var(--success-fg); background: var(--success-bg); }
++.paper-card-result-badge-ai { color: var(--primary); background: var(--info-bg); }
++
++/* ── 统一空态(EmptyState) ── */
++.evidence-empty {
++  display: flex;
++  flex-direction: column;
++  align-items: center;
++  gap: 8px;
++  padding: 40px 20px;
++  text-align: center;
++  background: var(--white);
++  border: 1px dashed var(--border);
++  border-radius: var(--card-radius);
++}
++.evidence-empty-icon {
++  display: flex;
++  align-items: center;
++  justify-content: center;
++  width: 48px;
++  height: 48px;
++  border-radius: 50%;
++  background: var(--info-bg);
++  color: var(--primary);
++}
++.evidence-empty-icon svg { width: 24px; height: 24px; }
++.evidence-empty-title { font-size: 14px; font-weight: 700; color: var(--text); }
++.evidence-empty-desc { font-size: 12px; color: var(--text-muted); max-width: 380px; line-height: 1.6; }
+ .paper-card-actions-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; border-top: 1px dashed var(--border); padding-top: 8px; }
+ .paper-card-select { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: var(--text); cursor: pointer; }
+ 
+ /* ── 论文↔证据视图(PaperEvidenceView) ── */
+ .evidence-paper-view { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+ .evidence-paper-back { align-self: flex-start; font-size: 13px; color: var(--primary); background: none; border: none; cursor: pointer; padding: 2px 0; }
+ .evidence-paper-back:hover { text-decoration: underline; }
+ .evidence-paper-summary {
+   background: var(--white);
+   border: 1px solid var(--border);

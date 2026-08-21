@@ -35,7 +35,7 @@ async def get_settings_options():
             SettingsProviderOption(value="anthropic", label="Claude", disabled=True),
             SettingsProviderOption(value="local", label="Local Model", disabled=True),
         ],
-        default_models={"deepseek": ["deepseek-chat", "deepseek-reasoner"]},
+        default_models={"deepseek": ["deepseek-chat", "deepseek-reasoner", "deepseek-v4-pro", "deepseek-v4-flash"]},
     )
 
 

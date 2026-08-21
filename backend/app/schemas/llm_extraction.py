@@ -389,6 +389,7 @@ class SameGranularityConnectionExtractionRequest(BaseModel):
     dry_run: bool = False
     max_candidate_pairs: int = Field(default=200, ge=1, le=5000)
     pair_strategy: str = Field(default="all_pairs")
+    pairs_per_pack: int | None = Field(default=None, ge=1, le=500)
     center_candidate_id: uuid.UUID | None = None
     allowed_connection_types: list[str] | None = None
     create_mirror_records: bool = True
@@ -607,7 +608,7 @@ class ProjectionToFunctionsExtractionRequest(BaseModel):
     projection_ids: list[uuid.UUID] = Field(..., min_length=1)
     prompt_template_key: str = "projection_to_functions_v1"
     temperature: float = Field(default=0.2, ge=0.0, le=2.0)
-    max_tokens: int = Field(default=4000, ge=256, le=8192)
+    max_tokens: int = Field(default=12000, ge=1024, le=65536)
     dry_run: bool = False
     max_functions_per_projection: int = Field(default=5, ge=1, le=10)
     include_circuit_context: bool = True
@@ -625,6 +626,7 @@ class ProjectionToFunctionsExtractionResponse(BaseModel):
     model_name: str | None = None
     status: str | None = None
     projection_count: int = 0
+    skipped_projection_count: int = 0
     circuit_context_count: int = 0
     function_count: int = 0
     mirror_projection_function_created_count: int = 0

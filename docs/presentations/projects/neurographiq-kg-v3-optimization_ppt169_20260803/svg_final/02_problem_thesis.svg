@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 720" width="1280" height="720">
+  <g id="background"><rect width="1280" height="720" fill="#F7FAFC" /></g>
+  <g id="header">
+  <rect x="56" y="42" width="8" height="40" fill="#1F9FB5" />
+  <text x="80" y="72" font-family="Microsoft YaHei, Arial, sans-serif" font-size="34" font-weight="700" fill="#17324D">多源脑图谱知识为何难以可信沉淀</text>
+  <text x="80" y="104" font-family="Microsoft YaHei, Arial, sans-serif" font-size="16" fill="#5A6A7A">问题先于方案：接入、合并、幻觉与追责</text>
+  </g>
+  <g id="left"><path fill="#FFFFFF" stroke="#CBD5E0" d="M66,140 H606 A10,10 0 0 1 616,150 V630 A10,10 0 0 1 606,640 H66 A10,10 0 0 1 56,630 V150 A10,10 0 0 1 66,140 Z" />
+  
+  <g transform="translate(84.0, 168.0) scale(1.3333333333333333)" fill="none" stroke="none" stroke-width="2">
+    <path d="M12 9v4" />
+    <path d="M10.363 3.591l-8.106 13.534a1.914 1.914 0 0 0 1.636 2.871h16.214a1.914 1.914 0 0 0 1.636 -2.87l-8.106 -13.536a1.914 1.914 0 0 0 -3.274 0" />
+    <path d="M12 16h.01" />
+  </g>
+  <text x="132" y="192" font-family="Microsoft YaHei, Arial, sans-serif" font-size="22" font-weight="700" fill="#17324D">核心问题</text>
+  <circle cx="100" cy="244" r="14" fill="#EDF2F7" stroke="#C05640" /><text x="100" y="249" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="#C05640">1</text><text x="132" y="250" font-family="Microsoft YaHei, Arial, sans-serif" font-size="18" fill="#243447">多源脑图谱难统一接入</text>
+  <circle cx="100" cy="314" r="14" fill="#EDF2F7" stroke="#C05640" /><text x="100" y="319" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="#C05640">2</text><text x="132" y="320" font-family="Microsoft YaHei, Arial, sans-serif" font-size="18" fill="#243447">跨粒度命名冲突易诱发隐式合并</text>
+  <circle cx="100" cy="384" r="14" fill="#EDF2F7" stroke="#C05640" /><text x="100" y="389" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="#C05640">3</text><text x="132" y="390" font-family="Microsoft YaHei, Arial, sans-serif" font-size="18" fill="#243447">LLM 可能带来幻觉与不稳定输出</text>
+  <circle cx="100" cy="454" r="14" fill="#EDF2F7" stroke="#C05640" /><text x="100" y="459" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="#C05640">4</text><text x="132" y="460" font-family="Microsoft YaHei, Arial, sans-serif" font-size="18" fill="#243447">审核若成黑盒则无法追责</text>
+  </g>
+  <g id="right"><path fill="#FFFFFF" stroke="#CBD5E0" d="M674,140 H1214 A10,10 0 0 1 1224,150 V630 A10,10 0 0 1 1214,640 H674 A10,10 0 0 1 664,630 V150 A10,10 0 0 1 674,140 Z" />
+  
+  <g transform="translate(692.0, 168.0) scale(1.3333333333333333)" fill="none" stroke="none" stroke-width="2">
+    <path d="M5 13a2 2 0 0 1 2 -2h10a2 2 0 0 1 2 2v6a2 2 0 0 1 -2 2h-10a2 2 0 0 1 -2 -2v-6" />
+    <path d="M11 16a1 1 0 1 0 2 0a1 1 0 0 0 -2 0" />
+    <path d="M8 11v-4a4 4 0 1 1 8 0v4" />
+  </g>
+  <text x="740" y="192" font-family="Microsoft YaHei, Arial, sans-serif" font-size="22" font-weight="700" fill="#17324D">核心命题与硬边界</text>
+  <path fill="#EDF2F7" d="M700,222 H1184 A8,8 0 0 1 1192,230 V266 A8,8 0 0 1 1184,274 H700 A8,8 0 0 1 692,266 V230 A8,8 0 0 1 700,222 Z" /><text x="716" y="254" font-family="Microsoft YaHei, Arial, sans-serif" font-size="17" fill="#243447">LLM 不写 final_*</text>
+  <path fill="#EDF2F7" d="M700,292 H1184 A8,8 0 0 1 1192,300 V336 A8,8 0 0 1 1184,344 H700 A8,8 0 0 1 692,336 V300 A8,8 0 0 1 700,292 Z" /><text x="716" y="324" font-family="Microsoft YaHei, Arial, sans-serif" font-size="17" fill="#243447">Final 只收经审核知识</text>
+  <path fill="#EDF2F7" d="M700,362 H1184 A8,8 0 0 1 1192,370 V406 A8,8 0 0 1 1184,414 H700 A8,8 0 0 1 692,406 V370 A8,8 0 0 1 700,362 Z" /><text x="716" y="394" font-family="Microsoft YaHei, Arial, sans-serif" font-size="17" fill="#243447">跨粒度只允许显式 mapping</text>
+  <path fill="#EDF2F7" d="M700,432 H1184 A8,8 0 0 1 1192,440 V476 A8,8 0 0 1 1184,484 H700 A8,8 0 0 1 692,476 V440 A8,8 0 0 1 700,432 Z" /><text x="716" y="464" font-family="Microsoft YaHei, Arial, sans-serif" font-size="17" fill="#243447">Mirror 是唯一预正式缓冲层</text>
+  </g>
+  <g id="footer"><text x="1224" y="696" text-anchor="end" font-family="Arial, sans-serif" font-size="12" fill="#8492A0">2</text></g>
+</svg>

@@ -67,7 +67,9 @@ export function PaperStatusSummary({ stats, onEnterReview }: Props) {
           type="button"
           className="btn btn-sm btn-primary"
           disabled={!stats || stats.selectedPassages === 0}
-          title={!stats || stats.selectedPassages === 0 ? '请先勾选已核验的候选片段' : '进入人工审核'}
+          title={!stats ? '无候选数据'
+            : stats.selectedPassages === 0 ? '请先勾选已核验的候选片段后再进入人工审核'
+            : '进入人工审核'}
           onClick={onEnterReview}
         >
           进入人工审核{stats && stats.selectedPassages > 0 ? `（${stats.selectedPassages}）` : ''}

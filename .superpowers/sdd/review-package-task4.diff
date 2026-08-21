@@ -1,0 +1,1330 @@
+997dbf0b4b110ced2afc4e9a73f822336ff4078b feat(evidence): route batch create through per-task execution; adapt phase4/scale/live tests
+---DIFF---
+diff --git a/backend/app/routers/ontology.py b/backend/app/routers/ontology.py
+index 1ee4c50..2f2e3f4 100644
+--- a/backend/app/routers/ontology.py
++++ b/backend/app/routers/ontology.py
+@@ -4,37 +4,40 @@ from __future__ import annotations
+ 
+ import asyncio
+ import uuid
+ 
+ import httpx
+ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
+ from sqlalchemy.ext.asyncio import AsyncSession
+ 
+ from app.config import get_settings
+ from app.database import get_db
++from app.schemas.paper_evidence_extraction import PaperEvidenceExtractionRunRequest
++from app.services import paper_evidence_extraction_run_service as extraction_run_svc
+ from app.schemas.ontology import (
+     AlignmentReviewRequest,
+     BatchActivateRequest,
+     BatchGroundingByTextRequest,
+     AttachPreviewRequest,
+     AttachPreviewResponse,
+     CoverageResponse,
+     EnumReplaceRequest,
+     EvidenceExtractRequest,
+     EvidenceExtractResponse,
+     EvidenceAttachRequest,
+     EvidenceRollbackRequest,
+     BatchTaskCreateRequest,
+     EvidenceAuditRequest,
+     ExtractSelectedRequest,
+     PassageSelectionRequest,
+     TaskItemDraftRequest,
++    TranslateBatchRequest,
+     TranslateRequest,
+     ReviewResolveRequest,
+     GroundingListResponse,
+     GroundingRead,
+     GroundingRunRequest,
+     GroundingRunResponse,
+     GroundingSkipRequest,
+     ManualGroundingRequest,
+     PaperSearchRequest,
+     PanoramaResponse,
+@@ -44,24 +47,29 @@ from app.schemas.ontology import (
+     TermRead,
+     TermSynonymCreateRequest,
+     VocabularyCreateRequest,
+     VocabularyListResponse,
+     VocabularyRead,
+     EvidenceReviewBuildRequest,
+     EvidenceReviewListResponse,
+     EvidenceReviewOut,
+     EvidenceReviewResponse,
+     EvidenceReviewReturnRequest,
++    ReviewHistoryResponse,
++    RollbackRescoreRequest,
++    RollbackRescoreResponse,
+ )
+ from app.services import ontology_service as svc
+ from app.services import ontology_governance_service as gov
+ from app.services import paper_evidence_service as pes
++from app.services.paper_evidence_service import EvidenceReviewError
++from app.services.paper_search_multi import multi_search
+ from app.services import paper_fetch_service as pfs
+ from app.services import oa_xml_parser
+ from app.services.paragraph_retrieval import build_windows, score_paragraphs
+ 
+ router = APIRouter()
+ 
+ _ROLE_LEVELS = {"viewer": 0, "reviewer": 1, "ontology_admin": 2}
+ 
+ 
+ def _current_role() -> str:
+@@ -632,31 +640,30 @@ async def paper_evidence_search(
+     body: PaperSearchRequest,
+     session: AsyncSession = Depends(get_db),
+ ):
+     try:
+         info = await pes.pack_target_info(
+             session, body.target_type, body.target_id, mode=body.mode
+         )
+         context = await pes.build_retrieval_context(
+             session, body.target_type, body.target_id, mode=body.mode
+         )
+-        query = (body.query_override or "").strip() or pes._build_epmc_query(context) or info["query"]
+-        papers = await pes.search_papers(query, limit=body.limit)
+-        # ABSTRACT-only can miss papers that only mention the terms in the body:
+-        # fall back to the BODY-inclusive query when nothing matched.
+-        if not papers and not (body.query_override or "").strip():
+-            fallback = pes._build_epmc_query(context, abstract_only=False) or ""
+-            if fallback and fallback != query:
+-                papers = await pes.search_papers(fallback, limit=body.limit)
+-                if papers:
+-                    query = fallback
+-        ranked = pes._rank_papers(papers, context)
++        limit = max(body.limit, 20)
++        query = (body.query_override or "").strip() or info["query"]
++        if (body.query_override or "").strip():
++            # Custom query: single-source Europe PMC only
++            papers = await pes.search_papers(body.query_override.strip(), limit=limit)
++            ranked = pes._rank_papers(papers, context)
++        else:
++            # Multi-source search: PubMed + OpenAlex + Europe PMC
++            ranked = await multi_search(context, limit=limit)
++
+         for p in ranked:
+             text_blob = f"{p.get('title') or ''} {p.get('abstract') or ''} {p.get('journal') or ''}".lower()
+             reasons = []
+             src = (context.get("source_region") or "").lower()
+             tgt = (context.get("target_region") or "").lower()
+             if src and src in text_blob:
+                 reasons.append("源脑区")
+             if tgt and tgt in text_blob:
+                 reasons.append("靶脑区")
+             if any(fn and fn.lower() in text_blob for fn in (context.get("function_terms") or [])):
+@@ -686,34 +693,92 @@ async def paper_evidence_extract_selected(
+         sem_deepseek = asyncio.Semaphore(cfg.ontology_residual_concurrency)
+         papers = [p.model_dump() for p in body.papers]
+         results, llm_model = await pes.extract_candidates_for_target(
+             session,
+             context=context,
+             papers=papers,
+             max_papers=len(papers),
+             only_oa=body.only_oa,
+             stop_after_strong_support=body.stop_after_strong_support,
+             mode=body.mode,
++            # A reviewer explicitly selected these papers. Do not silently
++            # suppress one before extraction because a lightweight relevance
++            # pass omitted or under-scored it.
++            apply_semantic_filter=False,
+             sem_fetch=sem_fetch,
+             sem_deepseek=sem_deepseek,
+         )
+         await session.commit()
+         return {
+             "claim": context.get("claim_text") or "",
+             "claim_components": context.get("claim_components") or [],
+             "results": results,
+             "llm_model": llm_model,
+         }
+     except ValueError as exc:
+         raise HTTPException(status_code=400, detail={"code": "INVALID_REQUEST", "message": str(exc)})
+ 
+ 
++@router.post("/evidence/extraction-runs", status_code=202)
++async def paper_evidence_extraction_run_create(
++    body: PaperEvidenceExtractionRunRequest,
++    background_tasks: BackgroundTasks,
++    session: AsyncSession = Depends(get_db),
++    _auth: str = Depends(require_role("reviewer")),
++):
++    try:
++        result = await extraction_run_svc.create_run(session, body)
++        background_tasks.add_task(extraction_run_svc.execute_run_background, result.run_id)
++        return result
++    except ValueError as exc:
++        raise HTTPException(status_code=400, detail={"code": "INVALID_REQUEST", "message": str(exc)})
++
++
++@router.get("/evidence/extraction-runs/{run_id}")
++async def paper_evidence_extraction_run_get(
++    run_id: uuid.UUID,
++    session: AsyncSession = Depends(get_db),
++):
++    try:
++        return await extraction_run_svc.get_run_detail(session, run_id)
++    except ValueError as exc:
++        raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": str(exc)})
++
++
++@router.post("/evidence/extraction-runs/{run_id}/cancel")
++async def paper_evidence_extraction_run_cancel(
++    run_id: uuid.UUID,
++    session: AsyncSession = Depends(get_db),
++    _auth: str = Depends(require_role("reviewer")),
++):
++    try:
++        return await extraction_run_svc.cancel_run(session, run_id)
++    except ValueError as exc:
++        raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": str(exc)})
++
++
++@router.post("/evidence/extraction-runs/{run_id}/retry-failed")
++async def paper_evidence_extraction_run_retry_failed(
++    run_id: uuid.UUID,
++    background_tasks: BackgroundTasks,
++    session: AsyncSession = Depends(get_db),
++    _auth: str = Depends(require_role("reviewer")),
++):
++    try:
++        result = await extraction_run_svc.retry_failed_items(session, run_id)
++        if result.get("retried", 0) > 0:
++            background_tasks.add_task(extraction_run_svc.execute_run_background, run_id)
++        return result
++    except ValueError as exc:
++        raise HTTPException(status_code=400, detail={"code": "INVALID_REQUEST", "message": str(exc)})
++
++
+ @router.post("/evidence/attach")
+ async def paper_evidence_attach(
+     body: EvidenceAttachRequest,
+     session: AsyncSession = Depends(get_db),
+     _auth: str = Depends(require_role("reviewer")),
+ ):
+     try:
+         result = await pes.attach_evidence(
+             session,
+             target_type=body.target_type,
+@@ -929,23 +994,22 @@ async def paper_evidence_batch_create(
+             limit=body.limit,
+             start_paused=body.start_paused,
+             name=body.name,
+             granularity_level=body.granularity_level,
+             only_oa=body.only_oa,
+             confidence_lt=body.confidence_lt,
+             stop_after_strong_support=body.stop_after_strong_support,
+             target_ids=body.target_ids,
+             filter_snapshot=body.filter_snapshot,
+         )
+-        background_tasks.add_task(pes.materialize_task_items_background, result["task_id"])
+-        if not body.start_paused:
+-            background_tasks.add_task(pes.execute_paper_evidence_batch_background, result["task_id"])
++        if result["task_ids"] and not body.start_paused:
++            background_tasks.add_task(pes.execute_paper_evidence_batch_background_many, result["task_ids"])
+         return {**result, "auto_started": not body.start_paused}
+     except ValueError as exc:
+         raise HTTPException(status_code=400, detail={"code": "INVALID_REQUEST", "message": str(exc)})
+ 
+ 
+ @router.get("/evidence/batch")
+ async def paper_evidence_batch_list(
+     limit: int = Query(default=50, ge=1, le=200),
+     offset: int = Query(default=0, ge=0),
+     status: str | None = Query(default=None),
+@@ -1043,23 +1107,61 @@ async def paper_evidence_batch_get(
+         return await pes.get_batch_task(session, task_id)
+     except ValueError as exc:
+         raise HTTPException(status_code=400, detail={"code": "INVALID_REQUEST", "message": str(exc)})
+ 
+ 
+ @router.get("/evidence/batch/{task_id}/items")
+ async def paper_evidence_batch_items(
+     task_id: str,
+     limit: int = Query(default=50, ge=1, le=200),
+     offset: int = Query(default=0, ge=0),
++    sort: str = Query(default="created_at", pattern="^(created_at|confidence)$"),
++    status: str | None = Query(
++        default=None,
++        pattern="^(pending|searching|fetching|retrieving|extracting|verifying|awaiting_review|completed|skipped|failed|cancelled)$",
++    ),
+     session: AsyncSession = Depends(get_db),
+ ):
+-    return await pes.list_batch_items(session, task_id, limit=limit, offset=offset)
++    return await pes.list_batch_items(session, task_id, limit=limit, offset=offset, sort=sort, status=status)
++
++
++# S6:review 域错误 → 结构化 HTTP 状态/机器码
++def _review_http_error(exc: EvidenceReviewError) -> HTTPException:
++    return HTTPException(
++        status_code=exc.http_status,
++        detail={"code": exc.code, "message": str(exc)},
++    )
++
++
++@router.get("/evidence/batch/{task_id}/items/resolve")
++async def paper_evidence_task_item_resolve(
++    task_id: uuid.UUID,
++    target_type: str = Query(...),
++    target_id: uuid.UUID = Query(...),
++    task_item_id: uuid.UUID | None = Query(default=None),
++    session: AsyncSession = Depends(get_db),
++):
++    """S6:只读解析任务项(前端 URL 补齐 + 审核前置校验)。
++
++    - 提供 task_item_id:校验其存在、属于 task、target 一致。
++    - 未提供:按 task+target 查找;0 个 → 404;多个 → 409。
++    """
++    try:
++        return await pes.resolve_task_item_for_target(
++            session,
++            task_id=task_id,
++            target_type=target_type,
++            target_id=target_id,
++            task_item_id=task_item_id,
++        )
++    except EvidenceReviewError as exc:
++        raise _review_http_error(exc)
+ 
+ 
+ @router.post("/evidence/batch/{task_id}/items/{item_id}/reviewed")
+ async def paper_evidence_batch_item_reviewed(
+     task_id: str,
+     item_id: str,
+     evidence_id: str | None = Query(default=None),
+     session: AsyncSession = Depends(get_db),
+     _auth: str = Depends(require_role("reviewer")),
+ ):
+@@ -1218,20 +1320,28 @@ async def paper_evidence_review_resolve(
+ 
+ 
+ @router.post("/evidence/translate")
+ async def paper_evidence_translate(
+     body: TranslateRequest,
+     _auth: str = Depends(require_role("reviewer")),
+ ):
+     return await pes.translate_text(body.text)
+ 
+ 
++@router.post("/evidence/translate-batch")
++async def paper_evidence_translate_batch(
++    body: TranslateBatchRequest,
++    _auth: str = Depends(require_role("reviewer")),
++):
++    return await pes.translate_texts(body.texts)
++
++
+ @router.get("/evidence/queue")
+ async def paper_evidence_queue(
+     target_type: str = Query(...),
+     scope: str = Query(default="low_confidence"),
+     limit: int = Query(default=50, ge=1, le=200),
+     session: AsyncSession = Depends(get_db),
+ ):
+     try:
+         return await pes.queue_targets(session, target_type, scope, limit)
+     except ValueError as exc:
+@@ -1264,76 +1374,134 @@ async def paper_evidence_review_build(
+             reviewer_direction=body.reviewer_direction,
+             reviewer_evidence_level=body.reviewer_evidence_level,
+             reviewer_confidence=body.reviewer_confidence,
+             reviewer_note=body.reviewer_note,
+             coverage_summary_snapshot=body.coverage_summary_snapshot,
+             coverage_formula_version=body.coverage_formula_version,
+             draft_revision=body.draft_revision,
+             passages=body.passages,
+         )
+         return result
++    except EvidenceReviewError as exc:
++        raise _review_http_error(exc)
+     except ValueError as exc:
+         raise HTTPException(status_code=400, detail={"code": "INVALID_REQUEST", "message": str(exc)})
+     except httpx.HTTPError as exc:
+         raise HTTPException(status_code=502, detail={"code": "PAPER_API_ERROR", "message": str(exc)})
+ 
+ 
++def _apply_role_capability(items: list[dict], role: str) -> list[dict]:
++    """S8:capability 权限边界——低于 reviewer 的角色一律 can_rollback_rescore=false + FORBIDDEN(项目统一权限码)。"""
++    if _ROLE_LEVELS.get(role, -1) >= _ROLE_LEVELS.get("reviewer", 99):
++        return items
++    for item in items:
++        item["can_rollback_rescore"] = False
++        item["rollback_block_reason"] = "FORBIDDEN"
++    return items
++
++
+ @router.get("/evidence/reviews", response_model=EvidenceReviewListResponse)
+ async def paper_evidence_review_list(
+     review_status: str | None = Query(default=None),
+     promotion_status: str | None = Query(default=None),
+     target_type: str | None = Query(default=None),
+     page: int = Query(default=1, ge=1),
+     page_size: int = Query(default=20, ge=1, le=200),
+     session: AsyncSession = Depends(get_db),
++    role: str = Depends(_current_role),
+ ):
+-    return await pes.list_reviews(
++    result = await pes.list_reviews(
+         session,
+         review_status=review_status,
+         promotion_status=promotion_status,
+         target_type=target_type,
+         page=page,
+         page_size=page_size,
+     )
++    result["items"] = _apply_role_capability(result["items"], role)
++    return result
+ 
+ 
+ @router.get("/evidence/reviews/{review_id}", response_model=EvidenceReviewOut)
+ async def paper_evidence_review_get(
+     review_id: uuid.UUID,
+     session: AsyncSession = Depends(get_db),
++    role: str = Depends(_current_role),
+ ):
+     try:
+-        return await pes.get_review(session, review_id)
++        result = await pes.get_review(session, review_id)
++        result = _apply_role_capability([result], role)[0]
++        return result
+     except ValueError as exc:
+         raise HTTPException(status_code=400, detail={"code": "INVALID_REQUEST", "message": str(exc)})
+ 
+ 
+ @router.post("/evidence/reviews/{review_id}/approve", response_model=EvidenceReviewResponse)
+ async def paper_evidence_review_approve(
+     review_id: uuid.UUID,
+     session: AsyncSession = Depends(get_db),
+     _auth: str = Depends(require_role("reviewer")),
+ ):
+     try:
+         return await pes.approve_review(session, review_id)
++    except EvidenceReviewError as exc:
++        raise _review_http_error(exc)
+     except ValueError as exc:
+         raise HTTPException(status_code=400, detail={"code": "INVALID_REQUEST", "message": str(exc)})
+ 
+ 
+ @router.post("/evidence/reviews/{review_id}/reject", response_model=EvidenceReviewResponse)
+ async def paper_evidence_review_reject(
+     review_id: uuid.UUID,
+     session: AsyncSession = Depends(get_db),
+     _auth: str = Depends(require_role("reviewer")),
+ ):
+     try:
+         return await pes.reject_review(session, review_id)
++    except EvidenceReviewError as exc:
++        raise _review_http_error(exc)
++    except ValueError as exc:
++        raise HTTPException(status_code=400, detail={"code": "INVALID_REQUEST", "message": str(exc)})
++
++
++@router.post("/evidence/reviews/{review_id}/rollback-for-rescore", response_model=RollbackRescoreResponse)
++async def paper_evidence_review_rollback_for_rescore(
++    review_id: uuid.UUID,
++    body: RollbackRescoreRequest,
++    session: AsyncSession = Depends(get_db),
++    auth_role: str = Depends(require_role("reviewer")),
++):
++    """S7B:回退并重新评分。review 行锁串行化;证据撤销+supersede+item 重开同一事务。"""
++    try:
++        return await pes.rollback_review_for_rescore(
++            session,
++            review_id,
++            reason=body.reason,
++            actor=auth_role,
++            idempotency_key=body.idempotency_key,
++        )
++    except EvidenceReviewError as exc:
++        raise _review_http_error(exc)
++    except ValueError as exc:
++        raise HTTPException(status_code=400, detail={"code": "INVALID_REQUEST", "message": str(exc)})
++
++
++@router.get("/evidence/reviews/{review_id}/history", response_model=ReviewHistoryResponse)
++async def paper_evidence_review_history(
++    review_id: uuid.UUID,
++    session: AsyncSession = Depends(get_db),
++):
++    """S7B:版本链历史(只读;仅按 supersedes 链,不按 target 混入其他任务)。"""
++    try:
++        return await pes.get_review_history(session, review_id)
++    except EvidenceReviewError as exc:
++        raise _review_http_error(exc)
+     except ValueError as exc:
+         raise HTTPException(status_code=400, detail={"code": "INVALID_REQUEST", "message": str(exc)})
+ 
+ 
+ @router.post("/evidence/reviews/{review_id}/promote", response_model=EvidenceReviewOut)
+ async def paper_evidence_review_promote(
+     review_id: uuid.UUID,
+     session: AsyncSession = Depends(get_db),
+     _auth: str = Depends(require_role("reviewer")),
+ ):
+diff --git a/backend/app/services/paper_evidence_service.py b/backend/app/services/paper_evidence_service.py
+index 3e3126f..400b421 100644
+--- a/backend/app/services/paper_evidence_service.py
++++ b/backend/app/services/paper_evidence_service.py
+@@ -3598,20 +3598,26 @@ async def execute_paper_evidence_batch_background(task_id: str) -> None:
+     try:
+         await materialize_task_items_background(task_id)
+         async with AsyncSessionLocal() as session:
+             await _run_batch_loop(session, task_id)
+     except Exception:  # noqa: BLE001
+         import logging
+ 
+         logging.getLogger(__name__).exception("[paper-evidence-batch] background failure task_id=%s", task_id)
+ 
+ 
++async def execute_paper_evidence_batch_background_many(task_ids: list[str]) -> None:
++    """逐个执行对象任务(单任务内部已有异常兜底,循环保证一个失败不阻断其余)。"""
++    for tid in task_ids:
++        await execute_paper_evidence_batch_background(tid)
++
++
+ async def recover_interrupted_batch_tasks(session: AsyncSession) -> int:
+     """On startup: reset running tasks to pending so they can be resumed."""
+     result = await session.execute(
+         text(
+             "UPDATE paper_evidence_tasks SET status='pending', resumed_at=now() "
+             "WHERE status IN ('running','pending') AND finished_at IS NULL"
+         )
+     )
+     await session.execute(
+         text(
+diff --git a/backend/tests/test_paper_evidence_batch_phase4.py b/backend/tests/test_paper_evidence_batch_phase4.py
+index d9f18c2..3f4f18a 100644
+--- a/backend/tests/test_paper_evidence_batch_phase4.py
++++ b/backend/tests/test_paper_evidence_batch_phase4.py
+@@ -80,119 +80,92 @@ def _extraction(direction="supports", verified=True):
+     }
+ 
+ 
+ async def _make_task(ids, scope="low_confidence", limit=10):
+     with (
+         patch.object(pes, "_resolve_scope_ids", new=AsyncMock(return_value=ids)),
+         patch.object(pes, "_resolve_scope_ids_low_confidence", new=AsyncMock(return_value=ids)),
+         patch.object(pes, "_batch_scope_label", new=AsyncMock(side_effect=lambda s, tt, oid: (f"t-{oid}", 0.2))),
+     ):
+         async with AsyncSessionLocal() as s:
+-            result = await pes.create_batch_task(
++            return await pes.create_batch_task(
+                 s, target_type="connection", scope=scope, mode="function",
+                 max_papers_per_object=3, created_by="test", limit=limit, name="Phase4 task",
+                 granularity_level="macro", confidence_lt=0.5,
+                 target_ids=ids if scope == "selected" else None,
+             )
+-            for oid in ids:
+-                await s.execute(
+-                    text(
+-                        "INSERT INTO paper_evidence_task_items "
+-                        "(task_id, target_type, target_id, label, current_confidence, status) "
+-                        "SELECT :tid, 'connection', :oid, :lbl, 0.2, 'pending' "
+-                        "WHERE NOT EXISTS ("
+-                        "  SELECT 1 FROM paper_evidence_task_items a "
+-                        "  WHERE a.target_type='connection' AND a.target_id=:oid "
+-                        "  AND a.status NOT IN ('completed','skipped','failed','cancelled')"
+-                        ") "
+-                        "ON CONFLICT (task_id, target_type, target_id) DO NOTHING"
+-                    ),
+-                    {"tid": result["task_id"], "oid": uuid.UUID(oid), "lbl": f"t-{oid}"},
+-                )
+-            await s.commit()
+-            return result
+ 
+ 
+ async def _run_task(task_id):
+     with (
+         patch.object(pes, "build_retrieval_context", new=AsyncMock(return_value=CONTEXT)),
+         patch.object(pes, "build_search_query", new=AsyncMock(return_value='"BLA" AND "fear extinction"')),
+         patch.object(pes, "search_papers", new=AsyncMock(return_value=[PAPER])),
+         patch.object(pes, "verify_paper", new=AsyncMock(return_value=PAPER)),
+         patch.object(pes.pfs, "fetch_oa_fulltext_xml", new=AsyncMock(return_value="")),
+         patch.object(pes, "extract_passage_from_paper", new=AsyncMock(return_value=_extraction())),
++                patch.object(pes, "semantic_filter_papers", new=AsyncMock(side_effect=lambda papers, ctx: (papers, []))),
+     ):
+         async with AsyncSessionLocal() as s:
+             await pes._run_batch_loop(s, task_id)
+ 
+ 
+ async def _cleanup(task_id):
+     async with AsyncSessionLocal() as s:
+         await s.execute(text("DELETE FROM paper_evidence_tasks WHERE id::text=:tid"), {"tid": task_id})
+         await s.execute(text("DELETE FROM paper_sources WHERE pmid='99090001'"))
+         await s.commit()
+ 
+ 
+ def test_batch_preprocessing_never_attaches_and_keeps_confidence():
+-    ids = [str(uuid.uuid4()) for _ in range(3)]
++    ids = [str(uuid.uuid4())]
+     task = _run(_make_task(ids))
+     task_id = task["task_id"]
+     try:
+         _run(_run_task(task_id))
+ 
+         async def check():
+             async with AsyncSessionLocal() as s:
+                 items = (
+                     await s.execute(
+                         text(
+                             "SELECT status, preprocess_outcome, attempt_count, candidate_papers IS NOT NULL "
+                             "FROM paper_evidence_task_items WHERE task_id::text=:tid"
+                         ),
+                         {"tid": task_id},
+                     )
+                 ).all()
+-                assert all(i[0] == "awaiting_review" for i in items)
+-                assert all(i[1] == "evidence_found" for i in items)
+-                assert all(i[2] == 1 for i in items)
+-                assert all(i[3] for i in items)
+-                # no formal evidence + confidence untouched (no target rows exist at all)
+-                ev = (
+-                    await s.execute(
+-                        text(
+-                            "SELECT COUNT(*) FROM mirror_evidence_records "
+-                            "WHERE evidence_type='paper_verification' AND verification_status='human_verified'"
+-                        ),
+-                    )
+-                ).scalar_one()
+-                assert ev >= 0  # batch must not create new human_verified for these targets
+-                # draft passages persisted
++                assert len(items) == 1
++                assert items[0][0] == "awaiting_review"
++                assert items[0][1] == "evidence_found"
++                assert items[0][2] == 1
++                assert items[0][3]
+                 dp = (
+                     await s.execute(
+                         text(
+                             "SELECT COUNT(*) FROM paper_evidence_task_item_passages pp "
+                             "JOIN paper_evidence_task_items t ON t.id=pp.task_item_id "
+                             "WHERE t.task_id::text=:tid"
+                         ),
+                         {"tid": task_id},
+                     )
+                 ).scalar_one()
+-                assert dp == 3
+-                # task progress + review_status
++                assert dp == 1
+                 st = (
+                     await s.execute(
+                         text("SELECT status, review_status, awaiting_review_items FROM paper_evidence_tasks WHERE id::text=:tid"),
+                         {"tid": task_id},
+                     )
+                 ).first()
+                 assert st[0] == "completed"
+                 assert st[1] == "in_review"
+-                assert st[2] == 3
++                assert st[2] == 1
+         _run(check())
+     finally:
+         _run(_cleanup(task_id))
+ 
+ 
+ def test_no_paper_result_and_no_verified_passage_are_no_evidence_found():
+     ids = [str(uuid.uuid4())]
+     task = _run(_make_task(ids))
+     task_id = task["task_id"]
+     try:
+@@ -211,20 +184,21 @@ def test_no_paper_result_and_no_verified_passage_are_no_evidence_found():
+         task_id2 = task2["task_id"]
+         try:
+             async def run_unverified():
+                 with (
+                     patch.object(pes, "build_retrieval_context", new=AsyncMock(return_value=CONTEXT)),
+                     patch.object(pes, "build_search_query", new=AsyncMock(return_value="q")),
+                     patch.object(pes, "search_papers", new=AsyncMock(return_value=[PAPER])),
+                     patch.object(pes, "verify_paper", new=AsyncMock(return_value=PAPER)),
+                     patch.object(pes.pfs, "fetch_oa_fulltext_xml", new=AsyncMock(return_value="")),
+                     patch.object(pes, "extract_passage_from_paper", new=AsyncMock(return_value=_extraction(verified=False))),
++                    patch.object(pes, "semantic_filter_papers", new=AsyncMock(side_effect=lambda papers, ctx: (papers, []))),
+                 ):
+                     async with AsyncSessionLocal() as s:
+                         await pes._run_batch_loop(s, task_id2)
+             _run(run_unverified())
+ 
+             async def check2():
+                 async with AsyncSessionLocal() as s:
+                     row = (
+                         await s.execute(
+                             text(
+@@ -265,20 +239,21 @@ def test_mixed_contradict_are_kept_as_awaiting_review():
+     task_id = task["task_id"]
+     try:
+         async def run_mixed():
+             with (
+                 patch.object(pes, "build_retrieval_context", new=AsyncMock(return_value=CONTEXT)),
+                 patch.object(pes, "build_search_query", new=AsyncMock(return_value="q")),
+                 patch.object(pes, "search_papers", new=AsyncMock(return_value=[PAPER])),
+                 patch.object(pes, "verify_paper", new=AsyncMock(return_value=PAPER)),
+                 patch.object(pes.pfs, "fetch_oa_fulltext_xml", new=AsyncMock(return_value="")),
+                 patch.object(pes, "extract_passage_from_paper", new=AsyncMock(return_value=_extraction(direction="mixed"))),
++                patch.object(pes, "semantic_filter_papers", new=AsyncMock(side_effect=lambda papers, ctx: (papers, []))),
+             ):
+                 async with AsyncSessionLocal() as s:
+                     await pes._run_batch_loop(s, task_id)
+         _run(run_mixed())
+         async def check():
+             async with AsyncSessionLocal() as s:
+                 row = (
+                     await s.execute(
+                         text("SELECT status, model_direction FROM paper_evidence_task_items WHERE task_id::text=:tid"),
+                         {"tid": task_id},
+diff --git a/backend/tests/test_paper_evidence_batch_scale.py b/backend/tests/test_paper_evidence_batch_scale.py
+index 5a677da..f4e4668 100644
+--- a/backend/tests/test_paper_evidence_batch_scale.py
++++ b/backend/tests/test_paper_evidence_batch_scale.py
+@@ -66,109 +66,93 @@ def test_filter_snapshot_and_preview_and_max_limit():
+                     await pes.create_batch_task(
+                         s, target_type="connection", scope="low_confidence", mode="function",
+                         max_papers_per_object=3, confidence_lt=0.5, limit=200,
+                         filter_snapshot={"confidence_lt": 0.5},
+                     )
+             finally:
+                 cfg.paper_evidence_max_task_items = old
+     _run(case())
+ 
+ 
+-def test_large_scope_materialization_checkpoint_and_idempotency():
++def test_1to1_create_writes_snapshot_and_materialize_is_noop():
+     cids = _run(_insert_connections(6))
+     try:
+         async def case():
+             cfg = pes.get_settings()
+             old = cfg.paper_evidence_max_task_items
+             cfg.paper_evidence_max_task_items = 100000
+             async with AsyncSessionLocal() as s:
+                 task = await pes.create_batch_task(
+                     s, target_type="connection", scope="low_confidence", mode="function",
+                     max_papers_per_object=3, confidence_lt=0.5, limit=200,
+                     filter_snapshot={"confidence_lt": 0.001},
+                 )
+-                task_id = task["task_id"]
+-            try:
+-                await pes.materialize_task_items_background(task_id)
+-                # idempotent re-materialize after simulated restart (checkpoint continues, no dupes)
+-                async with AsyncSessionLocal() as s:
+-                    await s.execute(
+-                        text("UPDATE paper_evidence_tasks SET materialization_status='running' WHERE id::text=:tid"),
+-                        {"tid": task_id},
+-                    )
+-                    await s.commit()
+-                await pes.materialize_task_items_background(task_id)
+-                async with AsyncSessionLocal() as s:
++                task_ids = task["task_ids"]
++                assert len(task_ids) >= 6
++                first = task_ids[0]
++                await pes.materialize_task_items_background(first)
++                for tid in task_ids:
+                     row = (
+                         await s.execute(
+                             text(
+-                                "SELECT materialization_status, materialized_target_count, total_items "
++                                "SELECT total_items, materialized_target_count, target_id IS NOT NULL "
+                                 "FROM paper_evidence_tasks WHERE id::text=:tid"
+                             ),
+-                            {"tid": task_id},
++                            {"tid": tid},
+                         )
+                     ).first()
+-                    assert row[0] == "completed"
+-                    assert row[1] >= 6
++                    assert row[0] == 1
++                    assert row[1] == 1
++                    assert row[2] is True
+                     count = (
+                         await s.execute(
+                             text("SELECT COUNT(*) FROM paper_evidence_task_items WHERE task_id::text=:tid"),
+-                            {"tid": task_id},
++                            {"tid": tid},
+                         )
+                     ).scalar_one()
+-                    assert count == row[1]  # every materialized target has exactly one item
+-                    snap = (
+-                        await s.execute(
+-                            text("SELECT scope_type, filter_snapshot FROM paper_evidence_tasks WHERE id::text=:tid"),
+-                            {"tid": task_id},
+-                        )
+-                    ).first()
+-                    assert snap[0] == "filter"
+-                    assert snap[1].get("confidence_lt") == 0.001
+-                    await s.execute(text("DELETE FROM paper_evidence_tasks WHERE id::text=:tid"), {"tid": task_id})
+-                    await s.commit()
+-            finally:
+-                cfg.paper_evidence_max_task_items = old
++                    assert count == 1
++                    await s.execute(text("DELETE FROM paper_evidence_tasks WHERE id::text=:tid"), {"tid": tid})
++                await s.commit()
++            cfg.paper_evidence_max_task_items = old
+         _run(case())
+     finally:
+         _run(_cleanup_connections(cids))
+ 
+ 
+-def test_materialization_cancel_stops_and_keeps_generated():
++def test_cancel_single_object_task():
+     cids = _run(_insert_connections(4))
+     try:
+         async def case():
+             cfg = pes.get_settings()
+             old = cfg.paper_evidence_max_task_items
+             cfg.paper_evidence_max_task_items = 100000
+             async with AsyncSessionLocal() as s:
+                 task = await pes.create_batch_task(
+                     s, target_type="connection", scope="low_confidence", mode="function",
+                     max_papers_per_object=3, confidence_lt=0.5, limit=200,
+                     filter_snapshot={"confidence_lt": 0.001},
+                 )
+-                task_id = task["task_id"]
+-            try:
+-                await pes.cancel_batch_task(s, task_id)
+-                await pes.materialize_task_items_background(task_id)
+-                async with AsyncSessionLocal() as s:
+-                    st = (
+-                        await s.execute(
+-                            text("SELECT materialization_status FROM paper_evidence_tasks WHERE id::text=:tid"),
+-                            {"tid": task_id},
+-                        )
+-                    ).first()
+-                    assert st[0] == "cancelled"
+-                    await s.execute(text("DELETE FROM paper_evidence_tasks WHERE id::text=:tid"), {"tid": task_id})
+-                    await s.commit()
+-            finally:
+-                cfg.paper_evidence_max_task_items = old
++                task_ids = task["task_ids"]
++                assert len(task_ids) >= 4
++                first = task_ids[0]
++                await pes.cancel_batch_task(s, first)
++                st = (
++                    await s.execute(
++                        text("SELECT status FROM paper_evidence_tasks WHERE id::text=:tid"),
++                        {"tid": first},
++                    )
++                ).first()
++                assert st[0] == "cancelled"
++                for tid in task_ids:
++                    await s.execute(text("DELETE FROM paper_evidence_tasks WHERE id::text=:tid"), {"tid": tid})
++                await s.commit()
++            cfg.paper_evidence_max_task_items = old
+         _run(case())
+     finally:
+         _run(_cleanup_connections(cids))
+ 
+ 
+ def test_versions_written_on_items():
+     ids = [str(uuid.uuid4())]
+     extraction = {
+         "overall_direction": "supports", "paper_relevance": 0.9, "assessment": "a",
+         "source_type": "abstract", "llm_model": "deepseek-v4-flash-test",
+@@ -190,123 +174,108 @@ def test_versions_written_on_items():
+             {"component_type": "relation", "statement": "projection", "required": True, "metadata": {}},
+         ], "claim_version": "claim_v1",
+     }
+     async def case():
+         async with AsyncSessionLocal() as s:
+             task = await pes.create_batch_task(
+                 s, target_type="connection", scope="selected", mode="function",
+                 max_papers_per_object=3, target_ids=ids,
+             )
+             task_id = task["task_id"]
+-            for oid in ids:
+-                await s.execute(
+-                    text(
+-                        "INSERT INTO paper_evidence_task_items (task_id, target_type, target_id, label, status) "
+-                        "SELECT :tid, 'connection', :oid, :lbl, 'pending' "
+-                        "WHERE NOT EXISTS (SELECT 1 FROM paper_evidence_task_items a "
+-                        "WHERE a.target_type='connection' AND a.target_id=:oid AND a.status NOT IN "
+-                        "('completed','skipped','failed','cancelled')) "
+-                        "ON CONFLICT (task_id,target_type,target_id) DO NOTHING"
+-                    ),
+-                    {"tid": task_id, "oid": uuid.UUID(oid), "lbl": "t"},
+-                )
+-            await s.commit()
+         with (
+             patch.object(pes, "build_retrieval_context", new=AsyncMock(return_value=context)),
+             patch.object(pes, "build_search_query", new=AsyncMock(return_value="q")),
+             patch.object(pes, "search_papers", new=AsyncMock(return_value=[{
+                 "pmid": "99090005", "title": "p", "abstract": extraction["passages"][0]["passage"],
+                 "is_open_access": True,
+             }])),
+             patch.object(pes, "verify_paper", new=AsyncMock(return_value={
+                 "pmid": "99090005", "title": "p", "abstract": extraction["passages"][0]["passage"],
+                 "journal": "J", "year": "2026", "authors": "A", "is_open_access": True, "source": "europepmc",
+             })),
+             patch.object(pes.pfs, "fetch_oa_fulltext_xml", new=AsyncMock(return_value="")),
+             patch.object(pes, "extract_passage_from_paper", new=AsyncMock(return_value=extraction)),
++            patch.object(pes, "semantic_filter_papers", new=AsyncMock(side_effect=lambda papers, ctx: (papers, []))),
+         ):
+             async with AsyncSessionLocal() as s:
+                 await pes._run_batch_loop(s, task_id)
+         async with AsyncSessionLocal() as s:
+             row = (
+                 await s.execute(
+                     text(
+                         "SELECT preprocessing_version, retrieval_version, prompt_version, llm_model, "
+                         "preprocess_outcome FROM paper_evidence_task_items WHERE task_id::text=:tid"
+                     ),
+                     {"tid": task_id},
+                 )
+             ).first()
+             assert row[0] == "paper_evidence_preprocess_v1"
+             assert row[1] == "paper_passage_retrieval_v1"
+             assert row[2] == "paper_evidence_extract_v2"
+             assert row[3] == "deepseek-v4-flash-test"
+             assert row[4] == "evidence_found"
+-            await s.execute(text("DELETE FROM paper_evidence_tasks WHERE id::text=:tid"), {"tid": task_id})
++            for tid in task["task_ids"]:
++                await s.execute(text("DELETE FROM paper_evidence_tasks WHERE id::text=:tid"), {"tid": tid})
+             await s.commit()
+     _run(case())
+ 
+ 
+ def test_draft_revision_optimistic_concurrency():
+     ids = [str(uuid.uuid4())]
+     async def case():
+         async with AsyncSessionLocal() as s:
+             task = await pes.create_batch_task(
+                 s, target_type="connection", scope="selected", mode="function",
+                 max_papers_per_object=3, target_ids=ids,
+             )
+             task_id = task["task_id"]
+-            await s.execute(
+-                text(
+-                    "INSERT INTO paper_evidence_task_items (task_id, target_type, target_id, label, status) "
+-                    "SELECT :tid, 'connection', :oid, 't', 'awaiting_review' "
+-                    "ON CONFLICT (task_id,target_type,target_id) DO NOTHING"
+-                ),
+-                {"tid": task_id, "oid": uuid.UUID(ids[0])},
+-            )
+-            await s.commit()
+             item_id = (
+                 await s.execute(
+                     text("SELECT id::text FROM paper_evidence_task_items WHERE task_id::text=:tid"),
+                     {"tid": task_id},
+                 )
+             ).scalar_one()
+             # newer revision first
+             r2 = await pes.save_task_item_draft(s, item_id, {"note": "newer"}, revision=2)
+             assert r2["server_revision"] == 2
+             # stale revision rejected
+             with pytest.raises(ValueError, match="stale draft revision"):
+                 await pes.save_task_item_draft(s, item_id, {"note": "older"}, revision=1)
+             loaded = await pes.get_task_item_draft(s, item_id)
+             assert loaded["review_draft"]["note"] == "newer"
+-            await s.execute(text("DELETE FROM paper_evidence_tasks WHERE id::text=:tid"), {"tid": task_id})
++            for tid in task["task_ids"]:
++                await s.execute(text("DELETE FROM paper_evidence_tasks WHERE id::text=:tid"), {"tid": tid})
+             await s.commit()
+     _run(case())
+ 
+ 
+ def test_dual_worker_skip_locked_no_overlap():
+     n = 20
+     ids = [str(uuid.uuid4()) for _ in range(n)]
+ 
+     async def case():
+         async with AsyncSessionLocal() as s:
+-            task = await pes.create_batch_task(
+-                s, target_type="connection", scope="selected", mode="function",
+-                max_papers_per_object=3, target_ids=ids,
+-            )
+-            task_id = task["task_id"]
++            task_id = (
++                await s.execute(
++                    text(
++                        "INSERT INTO paper_evidence_tasks "
++                        "(target_type, scope, mode, max_papers_per_object, status, total_items) "
++                        "VALUES ('connection', 'selected', 'function', 3, 'pending', :n) RETURNING id::text"
++                    ),
++                    {"n": n},
++                )
++            ).scalar_one()
+             for oid in ids:
+                 await s.execute(
+                     text(
+                         "INSERT INTO paper_evidence_task_items (task_id, target_type, target_id, label, status) "
+-                        "SELECT :tid, 'connection', :oid, 't', 'pending' "
+-                        "ON CONFLICT (task_id,target_type,target_id) DO NOTHING"
++                        "VALUES (:tid, 'connection', :oid, 't', 'pending')"
+                     ),
+                     {"tid": task_id, "oid": uuid.UUID(oid)},
+                 )
+             await s.commit()
+ 
+         async def worker_claim(limit=10):
+             claimed: list[str] = []
+             for _ in range(limit):
+                 async with AsyncSessionLocal() as ws:
+                     rows = (
+diff --git a/backend/tests/test_paper_evidence_live_fields.py b/backend/tests/test_paper_evidence_live_fields.py
+new file mode 100644
+index 0000000..d5ff2c1
+--- /dev/null
++++ b/backend/tests/test_paper_evidence_live_fields.py
+@@ -0,0 +1,362 @@
++# -*- coding: utf-8 -*-
++"""S3: 任务对象列表实时展示字段/排序/分页 与 物化快照修复(service 级测试)。
++
++覆盖:
++- live_display_name/live_confidence/display_*/source 与 total
++- 历史快照不被修改;0.0 保留;null=未评分
++- 中文优先/英文兜底/中文#短ID 兜底
++- sort=confidence 排序(0 最前,null 最后,稳定)
++- offset 稳定分页不重不漏
++- 批量解析无逐对象查询
++- _materialize_page 写入真实快照
++"""
++from __future__ import annotations
++
++import asyncio
++import uuid
++
++import pytest
++from sqlalchemy import text
++
++from app.database import AsyncSessionLocal
++from app.models.mirror_kg import MirrorRegionConnection
++from app.services import paper_evidence_service as pes
++
++
++def _run(coro):
++    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
++    loop = asyncio.new_event_loop()
++    try:
++        return loop.run_until_complete(coro)
++    finally:
++        loop.close()
++
++
++async def _make_connection(
++    session,
++    *,
++    confidence=None,
++    src_cn="体感区，第4层",
++    src_en="Somatosensory areas, layer 4",
++    tgt_cn="鼻区，第1层",
++    tgt_en="Primary somatosensory area, nose, layer 1",
++    conn_id=None,
++) -> str:
++    conn = MirrorRegionConnection(
++        id=conn_id or uuid.uuid4(),
++        granularity_level="macro",
++        granularity_family="macro_clinical",
++        source_atlas="test_atlas",
++        connection_type="projection",
++        source_region_name_cn=src_cn,
++        source_region_name_en=src_en,
++        target_region_name_cn=tgt_cn,
++        target_region_name_en=tgt_en,
++        confidence=confidence,
++        mirror_status="llm_suggested",
++        review_status="pending",
++        promotion_status="not_promoted",
++    )
++    session.add(conn)
++    await session.flush()
++    return str(conn.id)
++
++
++async def _make_task(session, ids: list[str]) -> str:
++    tid = (
++        await session.execute(
++            text(
++                "INSERT INTO paper_evidence_tasks "
++                "(target_type, scope, mode, max_papers_per_object, status, total_items) "
++                "VALUES ('connection', 'selected', 'existence', 3, 'paused', :n) RETURNING id::text"
++            ),
++            {"n": len(ids)},
++        )
++    ).scalar_one()
++    return tid
++
++
++async def _insert_item(session, task_id, *, target_id, label, conf, status="awaiting_review") -> None:
++    await session.execute(
++        text(
++            "INSERT INTO paper_evidence_task_items "
++            "(task_id, target_type, target_id, label, current_confidence, status) "
++            "VALUES (:tid, 'connection', :oid, :lbl, :conf, :st)"
++        ),
++        {"tid": task_id, "oid": target_id, "lbl": label, "conf": conf, "st": status},
++    )
++    await session.commit()
++
++
++async def _cleanup(session, task_id: str, conn_ids: list[str]) -> None:
++    await session.execute(text("DELETE FROM paper_evidence_task_items WHERE task_id::text=:tid"), {"tid": task_id})
++    await session.execute(text("DELETE FROM paper_evidence_tasks WHERE id::text=:tid"), {"tid": task_id})
++    for cid in conn_ids:
++        await session.execute(text("DELETE FROM mirror_region_connections WHERE id::text=:cid"), {"cid": cid})
++    await session.commit()
++
++
++class CountingSession:
++    """统计 SELECT 次数的只读代理(验证批量解析无 N+1)。"""
++
++    def __init__(self, inner):
++        self.inner = inner
++        self.selects = 0
++
++    async def execute(self, stmt, params=None):
++        if str(stmt).lstrip().upper().startswith("SELECT"):
++            self.selects += 1
++        return await self.inner.execute(stmt, params)
++
++    def __getattr__(self, name):
++        return getattr(self.inner, name)
++
++
++# ── 列表接口:实时展示字段 ──
++
++
++def test_live_fields_audit_object():
++    """审计对象:UUID 快照 + null 快照置信度,镜像行有中文名与 0.0 → display 用实时值,快照不动。"""
++    conn_ids: list[str] = []
++    task_id: str | None = None
++    try:
++        async def case():
++            nonlocal task_id
++            async with AsyncSessionLocal() as s:
++                cid = await _make_connection(s, confidence=0.0)
++                conn_ids.append(cid)
++                task_id = await _make_task(s, [cid])
++                uuid_label = str(uuid.uuid4())
++                await _insert_item(s, task_id, target_id=cid, label=uuid_label, conf=None)
++                resp = await pes.list_batch_items(s, task_id)
++                assert resp["total"] == 1
++                item = resp["items"][0]
++                # 历史快照不动
++                assert item["label"] == uuid_label
++                assert item["current_confidence"] is None
++                # 实时字段
++                assert item["live_display_name"] == "体感区，第4层 → 鼻区，第1层"
++                assert item["live_confidence"] == 0.0
++                # 展示合成
++                assert item["display_name"] == "体感区，第4层 → 鼻区，第1层"
++                assert item["display_confidence"] == 0.0
++                assert item["display_name_source"] == "mirror_live"
++                assert item["display_confidence_source"] == "mirror_live"
++        _run(case())
++    finally:
++        _run(_cleanup_case(task_id, conn_ids))
++
++
++async def _cleanup_case(task_id, conn_ids):
++    async with AsyncSessionLocal() as s:
++        await _cleanup(s, task_id, conn_ids)
++
++
++def test_live_null_falls_back_to_snapshot():
++    conn_ids: list[str] = []
++    task_id: str | None = None
++    try:
++        async def case():
++            nonlocal task_id
++            async with AsyncSessionLocal() as s:
++                cid = await _make_connection(s, confidence=None)
++                conn_ids.append(cid)
++                task_id = await _make_task(s, [cid])
++                await _insert_item(s, task_id, target_id=cid, label="BLA → IL", conf=0.7)
++                item = (await pes.list_batch_items(s, task_id))["items"][0]
++                # 名称:实时名优先(镜像行有中文名) → mirror_live
++                assert item["display_name"] == "体感区，第4层 → 鼻区，第1层"
++                # 置信度:实时 null → 快照 0.7
++                assert item["display_confidence"] == 0.7
++                assert item["display_confidence_source"] == "task_snapshot"
++        _run(case())
++    finally:
++        _run(_cleanup_case(task_id, conn_ids))
++
++
++def test_missing_row_uuid_label_falls_back_to_type_short_id():
++    conn_ids: list[str] = []
++    task_id: str | None = None
++    try:
++        async def case():
++            nonlocal task_id
++            async with AsyncSessionLocal() as s:
++                ghost = str(uuid.uuid4())
++                task_id = await _make_task(s, [ghost])
++                uuid_label = str(uuid.uuid4())
++                await _insert_item(s, task_id, target_id=ghost, label=uuid_label, conf=None)
++                item = (await pes.list_batch_items(s, task_id))["items"][0]
++                assert item["live_display_name"] is None
++                assert item["live_confidence"] is None
++                assert item["display_name"] == f"连接 #{ghost[:8]}"
++                assert item["display_name_source"] == "fallback"
++                assert item["display_confidence"] is None
++                assert item["display_confidence_source"] == "missing"
++        _run(case())
++    finally:
++        _run(_cleanup_case(task_id, conn_ids))
++
++
++def test_cn_first_en_fallback():
++    conn_ids: list[str] = []
++    task_id: str | None = None
++    try:
++        async def case():
++            nonlocal task_id
++            async with AsyncSessionLocal() as s:
++                cid = await _make_connection(s, confidence=0.2, src_cn=None, tgt_cn=None)
++                conn_ids.append(cid)
++                task_id = await _make_task(s, [cid])
++                await _insert_item(s, task_id, target_id=cid, label=str(uuid.uuid4()), conf=None)
++                item = (await pes.list_batch_items(s, task_id))["items"][0]
++                assert item["display_name"] == "Somatosensory areas, layer 4 → Primary somatosensory area, nose, layer 1"
++        _run(case())
++    finally:
++        _run(_cleanup_case(task_id, conn_ids))
++
++
++def test_sort_confidence_zero_low_high_null():
++    """排序:0 最前 → 低值 → 高值 → null 最后;同分按 created_at/id 稳定。"""
++    conn_ids: list[str] = []
++    task_id: str | None = None
++    try:
++        async def case():
++            nonlocal task_id
++            async with AsyncSessionLocal() as s:
++                c0 = await _make_connection(s, confidence=0.0)
++                c3 = await _make_connection(s, confidence=0.3)
++                ghost = str(uuid.uuid4())
++                conn_ids.extend([c0, c3])
++                task_id = await _make_task(s, [c0, c3, ghost])
++                await _insert_item(s, task_id, target_id=c0, label="z0", conf=None)
++                await _insert_item(s, task_id, target_id=c3, label="z3", conf=None)
++                await _insert_item(s, task_id, target_id=ghost, label=str(uuid.uuid4()), conf=None)
++                items = (await pes.list_batch_items(s, task_id, sort="confidence"))["items"]
++                confs = [it["display_confidence"] for it in items]
++                assert confs == [0.0, 0.3, None]
++        _run(case())
++    finally:
++        _run(_cleanup_case(task_id, conn_ids))
++
++
++def test_total_and_stable_offset_pagination():
++    conn_ids: list[str] = []
++    task_id: str | None = None
++    try:
++        async def case():
++            nonlocal task_id
++            async with AsyncSessionLocal() as s:
++                for _ in range(5):
++                    conn_ids.append(await _make_connection(s, confidence=0.1))
++                task_id = await _make_task(s, conn_ids)
++                for i, cid in enumerate(conn_ids):
++                    await _insert_item(s, task_id, target_id=cid, label=f"obj-{i}", conf=0.1)
++                r1 = await pes.list_batch_items(s, task_id, limit=2, offset=0)
++                r2 = await pes.list_batch_items(s, task_id, limit=2, offset=2)
++                r3 = await pes.list_batch_items(s, task_id, limit=2, offset=4)
++                assert r1["total"] == 5 and len(r1["items"]) == 2
++                ids = [it["id"] for it in r1["items"] + r2["items"] + r3["items"]]
++                assert len(ids) == 5 and len(set(ids)) == 5, "分页不得重复或遗漏"
++        _run(case())
++    finally:
++        _run(_cleanup_case(task_id, conn_ids))
++
++
++def test_list_batch_items_no_n1():
++    """列表读取的 SELECT 次数固定(任务类型 + items + count),不随对象数增长。"""
++    conn_ids: list[str] = []
++    task_id: str | None = None
++    try:
++        async def case():
++            nonlocal task_id
++            async with AsyncSessionLocal() as s:
++                for _ in range(5):
++                    conn_ids.append(await _make_connection(s, confidence=0.2))
++                task_id = await _make_task(s, conn_ids)
++                for i, cid in enumerate(conn_ids):
++                    await _insert_item(s, task_id, target_id=cid, label=f"obj-{i}", conf=0.2)
++                proxy = CountingSession(s)
++                await pes.list_batch_items(proxy, task_id)
++                assert proxy.selects == 3, f"expected 3 SELECT, got {proxy.selects}"
++        _run(case())
++    finally:
++        _run(_cleanup_case(task_id, conn_ids))
++
++
++# ── 物化流程快照 ──
++
++
++def test_materialize_writes_real_snapshot_with_zero():
++    conn_ids: list[str] = []
++    task_id: str | None = None
++    try:
++        async def case():
++            nonlocal task_id
++            async with AsyncSessionLocal() as s:
++                cid = await _make_connection(s, confidence=0.0)
++                conn_ids.append(cid)
++                task_id = await _make_task(s, [cid])
++                inserted, _ = await pes._materialize_page(
++                    s, task_id=task_id, target_type="connection",
++                    filter_snapshot=None, cursor=None, batch_size=100, selected_ids=[cid],
++                )
++                assert inserted == 1
++                row = (await s.execute(
++                    text("SELECT label, current_confidence FROM paper_evidence_task_items WHERE task_id::text=:tid"),
++                    {"tid": task_id},
++                )).first()
++                assert row[0] == "体感区，第4层 → 鼻区，第1层"
++                assert float(row[1]) == 0.0
++        _run(case())
++    finally:
++        _run(_cleanup_case(task_id, conn_ids))
++
++
++def test_materialize_null_confidence_stays_null():
++    conn_ids: list[str] = []
++    task_id: str | None = None
++    try:
++        async def case():
++            nonlocal task_id
++            async with AsyncSessionLocal() as s:
++                cid = await _make_connection(s, confidence=None)
++                conn_ids.append(cid)
++                task_id = await _make_task(s, [cid])
++                inserted, _ = await pes._materialize_page(
++                    s, task_id=task_id, target_type="connection",
++                    filter_snapshot=None, cursor=None, batch_size=100, selected_ids=[cid],
++                )
++                assert inserted == 1
++                row = (await s.execute(
++                    text("SELECT label, current_confidence FROM paper_evidence_task_items WHERE task_id::text=:tid"),
++                    {"tid": task_id},
++                )).first()
++                assert row[0] == "体感区，第4层 → 鼻区，第1层"
++                assert row[1] is None
++        _run(case())
++    finally:
++        _run(_cleanup_case(task_id, conn_ids))
++
++
++def test_materialize_missing_row_falls_back_to_target_id():
++    task_id: str | None = None
++    try:
++        async def case():
++            nonlocal task_id
++            async with AsyncSessionLocal() as s:
++                ghost = str(uuid.uuid4())
++                task_id = await _make_task(s, [ghost])
++                inserted, _ = await pes._materialize_page(
++                    s, task_id=task_id, target_type="connection",
++                    filter_snapshot=None, cursor=None, batch_size=100, selected_ids=[ghost],
++                )
++                assert inserted == 1
++                row = (await s.execute(
++                    text("SELECT label, current_confidence FROM paper_evidence_task_items WHERE task_id::text=:tid"),
++                    {"tid": task_id},
++                )).first()
++                assert row[0] == ghost
++                assert row[1] is None
++        _run(case())
++    finally:
++        _run(_cleanup_case(task_id, []))

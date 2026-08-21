@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 720" width="1280" height="720">
+  <g id="background"><rect width="1280" height="720" fill="#FFFFFF"/><image href="../images/cover_neural_graph.png" x="600" y="0" width="680" height="720" preserveAspectRatio="xMidYMid slice"/><rect x="560" y="0" width="720" height="720" fill="#FFFFFF" fill-opacity="0.72"/></g>
+  <g id="closing">
+    <line x1="96" y1="188" x2="96" y2="418" stroke="#3182CE" stroke-width="8"/>
+    <text x="140" y="286" font-family="Cambria, SimSun, serif" font-size="62" font-weight="700" fill="#1A365D">谢谢</text>
+    <text x="140" y="354" font-family="Cambria, SimSun, serif" font-size="40" font-weight="700" fill="#243447">Q &amp; A</text>
+    <text x="140" y="420" font-family="Microsoft YaHei, Arial, sans-serif" font-size="24" fill="#5F6F7F">欢迎围绕数据治理、LLM 可信性与多粒度映射交流</text>
+  </g>
+  <g id="topics">
+    <text x="140" y="522" font-family="Microsoft YaHei, Arial, sans-serif" font-size="16" font-weight="700" fill="#3182CE">DATA GOVERNANCE</text>
+    <text x="380" y="522" font-family="Microsoft YaHei, Arial, sans-serif" font-size="16" font-weight="700" fill="#DD6B20">TRUSTWORTHY LLM</text>
+    <text x="620" y="522" font-family="Microsoft YaHei, Arial, sans-serif" font-size="16" font-weight="700" fill="#38A169">MULTI-GRANULAR MAPPING</text>
+  </g>
+  <g id="footer"><text x="140" y="650" font-family="Microsoft YaHei, Arial, sans-serif" font-size="14" fill="#8492A0">NeuroGraphIQ KG V3 · 2026</text></g>
+</svg>

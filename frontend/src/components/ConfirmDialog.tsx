@@ -12,6 +12,8 @@ interface ConfirmDialogProps {
   confirmLabel?: string
   danger?: boolean
   loading?: boolean
+  /** 可选:dialog box 的 testid(便于在完整弹窗范围内查询按钮) */
+  testId?: string
 }
 
 export function ConfirmDialog({
@@ -24,6 +26,7 @@ export function ConfirmDialog({
   confirmLabel,
   danger = false,
   loading = false,
+  testId,
 }: ConfirmDialogProps) {
   const { t } = useI18n()
 
@@ -31,7 +34,7 @@ export function ConfirmDialog({
 
   return (
     <div className="dialog-overlay" onClick={e => { if (e.target === e.currentTarget) onCancel() }}>
-      <div className="dialog-box">
+      <div className="dialog-box" data-testid={testId}>
         <div className="dialog-title">{title}</div>
         {message && <p className="dialog-msg">{message}</p>}
         {children}

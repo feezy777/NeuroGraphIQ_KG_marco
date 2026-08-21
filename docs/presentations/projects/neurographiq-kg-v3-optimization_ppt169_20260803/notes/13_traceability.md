@@ -1,0 +1,1 @@
+原版写“七步”，实际是八个节点：Final fact、Promotion、Review、Validation、Extraction、Candidate、Import batch、Resource file。证据链保留原文、LLM 输出、规则日志与审核意见。

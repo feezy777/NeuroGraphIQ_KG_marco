@@ -92,6 +92,9 @@ class FinalRegionFunction(Base):
     source_atlas: Mapped[str] = mapped_column(String(128), nullable=False)
     source_version: Mapped[str | None] = mapped_column(String(64), nullable=True)
     function_term: Mapped[str] = mapped_column(String(512), nullable=False)
+    term_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("ontology_terms.id", ondelete="SET NULL"), nullable=True
+    )
     function_category: Mapped[str] = mapped_column(String(64), nullable=False, default="unknown")
     relation_type: Mapped[str] = mapped_column(String(64), nullable=False, default="associated_with")
     confidence: Mapped[float | None] = mapped_column(Numeric, nullable=True)

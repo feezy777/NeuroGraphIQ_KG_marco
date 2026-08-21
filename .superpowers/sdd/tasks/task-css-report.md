@@ -53,3 +53,12 @@
 - `.ew-passage` 移除了旧 `margin-bottom: 8px`,间距统一由容器 `gap: 8px` 承担(证据中心实际间距 16px→8px,更紧凑;旧数据中心 PaperEvidenceColumn 的 `.pe-passages` 容器同理靠 gap 生效)
 - 模块导航胶囊默认态从灰底改为透明,白底头部更干净
 - 未改动任何布局数值(网格列宽、最大宽、sticky、队列 active 左侧竖条、左栏 claim 紧凑覆写均保留)
+
+## 6. Critical 修复(2026-08-11):passage 卡间距恢复
+
+- **问题**:`.ew-passage` 移除 `margin-bottom: 8px` 后,数据中心 `PaperEvidenceColumn.tsx:291` 的 `.pe-passages` 容器在 styles.css 无任何规则(无 gap),验证中心 `PaperEvidenceReviewPanel.tsx:149` 的 `ontology-detail-section`(仅 margin-top:10px,无 gap)→ 多张 passage 卡垂直间距变 0、卡片相接。
+- **修复**(`frontend/src/styles.css`):
+  - `.pe-passages { display: flex; flex-direction: column; gap: 8px; }`(置于 .pe-* 系列,第 11281 行)
+  - `.ontology-detail-section .ew-passage + .ew-passage { margin-top: 8px; }`(最小影响方案:仅相邻 passage 兄弟节点间加间距,不影响该容器内 ul/table/pev-adjust 等其他子元素布局)
+- **影响面核对**:`ontology-detail-section` 共 6 处使用(OntologyCenterPage 4 处为 ul/table 无 .ew-passage,PaperEvidenceColumn:373 与 PaperEvidenceReviewPanel:149 均为 .ew-passage 兄弟 → 规则生效且不破坏其余)。
+- **验证**:`npx vitest run` 18 文件 167 用例全过;`npx tsc --noEmit` 0 错误;`npm run build` 成功(存量 chunk 警告无关)。

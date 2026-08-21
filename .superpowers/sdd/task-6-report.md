@@ -1,41 +1,33 @@
-# Task 6: Candidate Pool Frontend Integration — Report
+# Task 6 Report: 统一任务端点 label 改用对象名
 
-**Status**: DONE
+## Status: DONE
 
-## Changes Made
+## What Changed
 
-### File 1: `frontend/src/pages/LlmExtractionPage.tsx`
+- File: `backend/app/routers/unified_tasks.py` (function `_paper_evidence`)
+- Replaced `label=f"论文佐证 · {item['target_type']}"` with a fallback chain:
+  `item.get("display_name_cn") or item.get("display_name_en") or f"论文佐证 · {item['target_type']}"`
+- Task 5 prerequisite verified: `paper_evidence_service.py` (lines 3823, 3910-3911) augments task dicts
+  with `display_name_cn`/`display_name_en`, so the new label picks up object display names.
 
-1. **Added imports** for `CandidatePoolBar`, `FullExtractionModal`, `useCandidatePool`, and `PoolScope`.
+## Commands Run
 
-2. **Added pool state** after `scope` and `providers` declarations:
-   - `poolScope` state derived from session scope (`scope.source_atlas`, `scope.granularity_level`, `scope.granularity_family`)
-   - `useCandidatePool(poolScope)` hook providing `pool`, `pooledCandidateIds`, `addCandidates`, `clearPool`
-   - `showFullExtractModal`, `isExtracting`, `extractProgress` state for the full extraction flow
+1. `cd backend && ./.venv/Scripts/python.exe -m pytest tests/ -q -k "unified"`
+   - Result: 0 tests collected (1464 deselected, 12 warnings in 1.30s). No test file matches this
+     keyword; per brief, 0 collected is acceptable.
+2. `cd backend && ./.venv/Scripts/python.exe -m pytest tests/ -q -k "unified or tasks_runs"`
+   - Result: same — 0 collected, no failures (1464 deselected).
+3. Smoke import: `cd backend && ./.venv/Scripts/python.exe -c "import app.routers.unified_tasks; print('import ok')"`
+   - Result: `import ok`
+4. Commit: `git add backend/app/routers/unified_tasks.py && git commit -m "feat(evidence): unified task label uses object display name"`
 
-3. **Added auto-add on extraction** — `addCandidates(selectedCandidateIds)` is called before opening the extraction modal in:
-   - `handleBatchExtract` (toolbar batch button)
-   - All three quick extraction card onClick handlers (功能提取, 连接提取, 回路+步骤+功能提取)
+## Commit
 
-4. **Rendered `CandidatePoolBar`** — appears in the JSX after the quick extraction cards, showing pool info when a pool exists or extraction is in progress.
+- SHA: `8966dad` — feat(evidence): unified task label uses object display name
+- Contents: only `backend/app/routers/unified_tasks.py` (5 insertions, 1 deletion)
 
-5. **Rendered `FullExtractionModal`** — appears before the closing `</div>`. Its `onConfirm` extracts candidate IDs from the pool, calls `runCompositeExtractionTask`, and updates progress via the pool bar.
+## Concerns
 
-6. **Passed `pooledCandidateIds`** prop to `DataFirstCandidatesTab`.
-
-### File 2: `frontend/src/pages/llm-extraction/components/DataFirstCandidatesTab.tsx`
-
-1. **Added `pooledCandidateIds?: Set<string>`** to the `Props` interface and destructured it.
-
-2. **Added `displayCols` computed columns** — when `pooledCandidateIds` is non-empty, a marker column (32px wide with a 🧠 icon) is prepended to show which candidates are already in the pool.
-
-3. **Updated table rendering** — colgroup, thead, tbody, and colSpan values all use `displayCols` instead of `cols` to account for the optional marker column.
-
-## Verification
-
-- `npx tsc --noEmit` — 0 TypeScript errors
-- `npm run build` — builds successfully (1689 modules transformed)
-
-## Files Modified
-- `frontend/src/pages/LlmExtractionPage.tsx` — main pool integration
-- `frontend/src/pages/llm-extraction/components/DataFirstCandidatesTab.tsx` — pool row markers
+- None. The change is behavior-preserving for items lacking display names (fallback keeps the old
+  label format).
+- Pre-existing unrelated working-tree modifications were left untouched.

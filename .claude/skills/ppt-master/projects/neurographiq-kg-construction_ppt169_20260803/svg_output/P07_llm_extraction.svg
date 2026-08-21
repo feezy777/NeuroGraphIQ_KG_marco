@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 720" data-pptx-page-role="content"><defs><filter id="g"><feGaussianBlur stdDeviation="2" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs><g id="bg" data-pptx-bounds="0 0 1280 720" data-pptx-role="background"><rect width="1280" height="720" fill="#0D1117"/><line x1="0" y1="108" x2="1280" y2="108" stroke="#212D40" stroke-width="0.5"/><text x="80" y="700" font-family="Microsoft YaHei" font-size="14" fill="#586069">NeuroGraphIQ KG V3</text></g><g id="c" data-pptx-bounds="40 120 1200 560">
+<rect x="40" y="120" width="4" height="48" fill="#58A6FF" /><text x="60" y="155" font-family="Microsoft YaHei" font-weight="bold" font-size="40" fill="#FFFFFF">LLM 知识提取：双模型驱动的知识关系构建</text>
+<text x="40" y="200" font-family="Microsoft YaHei" font-size="18" fill="#8B949E">双 LLM 架构: DeepSeek (v4-pro / V3 / R1) + Kimi (Moonshot) · Provider 抽象层 · API Key 前端不可见</text>
+<!-- Extraction tree -->
+<rect x="390" y="220" width="500" height="40" rx="2" fill="#1A365D"/><text x="640" y="246" text-anchor="middle" font-family="Microsoft YaHei" font-weight="bold" font-size="18" fill="#FFFFFF">候选脑区实体 (Candidate Brain Regions)</text>
+<!-- Level 1 -->
+<rect x="100" y="285" width="310" height="36" rx="2" fill="#1C3A6E"/><text x="255" y="309" text-anchor="middle" font-family="Microsoft YaHei" font-size="16" fill="#79C0FF">连接提取 (Connection)</text>
+<rect x="485" y="285" width="310" height="36" rx="2" fill="#1C3A6E"/><text x="640" y="309" text-anchor="middle" font-family="Microsoft YaHei" font-size="16" fill="#79C0FF">功能提取 (Function)</text>
+<rect x="870" y="285" width="310" height="36" rx="2" fill="#1C3A6E"/><text x="1025" y="309" text-anchor="middle" font-family="Microsoft YaHei" font-size="16" fill="#79C0FF">回路提取 (Circuit)</text>
+<!-- Level 2 -->
+<rect x="100" y="345" width="310" height="36" rx="2" fill="#204A90"/><text x="255" y="369" text-anchor="middle" font-family="Microsoft YaHei" font-size="16" fill="#FFA657">投射功能提取 (Proj Function)</text>
+<rect x="485" y="345" width="310" height="36" rx="2" fill="#204A90"/><text x="640" y="369" text-anchor="middle" font-family="Microsoft YaHei" font-size="16" fill="#FFA657">回路功能提取 (Circ Function)</text>
+<rect x="870" y="345" width="310" height="36" rx="2" fill="#204A90"/><text x="1025" y="369" text-anchor="middle" font-family="Microsoft YaHei" font-size="16" fill="#FFA657">回路步骤提取 (Circ Step)</text>
+<!-- Level 3 -->
+<rect x="390" y="405" width="500" height="40" rx="2" fill="#38A169"/><text x="640" y="431" text-anchor="middle" font-family="Microsoft YaHei" font-weight="bold" font-size="18" fill="#FFFFFF">三元组整合 (Triple Consolidation) — 确定性，不调 LLM</text>
+<!-- Workflow features -->
+<text x="40" y="485" font-family="Microsoft YaHei" font-size="18" fill="#8B949E">复合工作流: Pack 机制(pairs_per_pack 可调) · Dry Run 预览 · Skip Existing · 暂停/取消/恢复</text>
+<g><text x="640" y="530" text-anchor="middle" font-family="Microsoft YaHei" font-weight="bold" font-size="18" fill="#FFA657">全部在同粒度内操作 · 跨粒度需显式 Mapping 表 · LLM 输出只写 Mirror KG</text></g>
+</g></svg>

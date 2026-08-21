@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 720" width="1280" height="720">
+  <g id="background"><rect width="1280" height="720" fill="#FFFFFF"/></g>
+  <g id="header"><text x="56" y="70" font-family="Cambria, SimSun, serif" font-size="34" font-weight="700" fill="#1A365D">Pack 化编排控制成本与可恢复性，确定性转换负责写入 Mirror</text><text x="56" y="102" font-family="Microsoft YaHei, Arial, sans-serif" font-size="14" fill="#5F6F7F">LLM 生成 raw response；llm_to_mirror 承担结构化与写入责任</text></g>
+  <g id="workflow-image"><image href="../images/mirror_write_backdrop.png" x="56" y="126" width="850" height="566" preserveAspectRatio="xMidYMid meet"/></g>
+  <g id="stage-labels">
+    <rect x="112" y="158" width="150" height="34" rx="8" fill="#1A365D"/><text x="187" y="181" text-anchor="middle" font-family="Microsoft YaHei, Arial, sans-serif" font-size="14" font-weight="700" fill="#FFFFFF">连接 + 功能</text>
+    <rect x="304" y="158" width="150" height="34" rx="8" fill="#3182CE"/><text x="379" y="181" text-anchor="middle" font-family="Microsoft YaHei, Arial, sans-serif" font-size="14" font-weight="700" fill="#FFFFFF">回路 + 步骤</text>
+    <rect x="496" y="158" width="150" height="34" rx="8" fill="#3182CE"/><text x="571" y="181" text-anchor="middle" font-family="Microsoft YaHei, Arial, sans-serif" font-size="14" font-weight="700" fill="#FFFFFF">投射提取</text>
+    <rect x="688" y="158" width="150" height="34" rx="8" fill="#38A169"/><text x="763" y="181" text-anchor="middle" font-family="Microsoft YaHei, Arial, sans-serif" font-size="14" font-weight="700" fill="#FFFFFF">三元组整合</text>
+  </g>
+  <g id="controls">
+    <rect x="934" y="136" width="290" height="246" rx="8" fill="#F4F7FA"/>
+    <text x="962" y="176" font-family="Microsoft YaHei, Arial, sans-serif" font-size="20" font-weight="700" fill="#1A365D">运行控制</text>
+    <text x="962" y="222" font-family="Microsoft YaHei, Arial, sans-serif" font-size="18" fill="#243447">pairs_per_pack = 20</text>
+    <text x="962" y="260" font-family="Microsoft YaHei, Arial, sans-serif" font-size="18" fill="#243447">Dry Run：pack / token / 费用</text>
+    <text x="962" y="298" font-family="Microsoft YaHei, Arial, sans-serif" font-size="18" fill="#243447">Skip Existing</text>
+    <text x="962" y="336" font-family="Microsoft YaHei, Arial, sans-serif" font-size="18" fill="#243447">暂停 · 取消 · 恢复</text>
+  </g>
+  <g id="write-chain">
+    <rect x="934" y="410" width="290" height="230" rx="8" fill="#1A365D"/>
+    <text x="962" y="452" font-family="Microsoft YaHei, Arial, sans-serif" font-size="20" font-weight="700" fill="#FFFFFF">Mirror 写入链</text>
+    <text x="962" y="500" font-family="Consolas, Courier New, monospace" font-size="14" fill="#FFFFFF">llm_extraction_runs</text>
+    <text x="962" y="536" font-family="Consolas, Courier New, monospace" font-size="14" fill="#FFFFFF">llm_extraction_items</text>
+    <text x="962" y="572" font-family="Consolas, Courier New, monospace" font-size="14" fill="#38A169">llm_to_mirror</text>
+    <text x="962" y="608" font-family="Microsoft YaHei, Arial, sans-serif" font-size="16" fill="#FFFFFF">→ 8 张 Mirror 表</text>
+  </g>
+  <g id="footer"><text x="56" y="700" font-family="Microsoft YaHei, Arial, sans-serif" font-size="11" fill="#8492A0">Raw responses remain auditable before deterministic conversion.</text><text x="1224" y="700" text-anchor="end" font-family="Arial, sans-serif" font-size="11" fill="#8492A0">08</text></g>
+</svg>

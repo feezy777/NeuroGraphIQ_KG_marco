@@ -14,6 +14,7 @@ MODEL_ENCODING_MAP: dict[str, str] = {
     "deepseek-chat": "o200k_base",
     "deepseek-reasoner": "o200k_base",
     "deepseek-v4-pro": "o200k_base",
+    "deepseek-v4-flash": "o200k_base",
     "kimi-k2": "cl100k_base",
     "kimi-k2-thinking": "cl100k_base",
 }

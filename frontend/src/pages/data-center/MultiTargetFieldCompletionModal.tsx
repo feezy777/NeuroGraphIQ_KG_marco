@@ -87,6 +87,7 @@ function formatValue(v: unknown): string {
 
 const DS_MODELS = [
   { value: 'deepseek-chat', label: 'deepseek-chat（推荐，速度快）' },
+  { value: 'deepseek-v4-flash', label: 'deepseek-v4-flash（最新极速版，成本低）' },
   { value: 'deepseek-v4-pro', label: 'deepseek-v4-pro（高精度）' },
   { value: 'deepseek-reasoner', label: 'deepseek-reasoner（推理模型）' },
 ]

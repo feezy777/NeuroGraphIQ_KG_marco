@@ -1,0 +1,1 @@
+只有全部闸门通过后，记录才进入 Promotion。Promotion 不是一个普通的复制按钮，而是先预览 Mirror 到 Final 的映射结果，再要求强确认，执行时同时写入八张 Final 表和审计记录。Final KG 的实体包括 BrainRegion、Function、Circuit、Step 和 Projection，关系使用十二种标准谓词，统一查询面由 final_kg_triples 提供。底层按照 macro、meso、sub、fine 和 molecular 五层 Schema 隔离，不同粒度可以在查询层联合，但不能在存储语义上自动混合。跨粒度只允许 exact match、part of 和 overlaps 三类显式关系。评委如果问 Schema 隔离是否影响性能，这里优先保护语义正确性，查询优化可以通过视图和图数据库同步完成。

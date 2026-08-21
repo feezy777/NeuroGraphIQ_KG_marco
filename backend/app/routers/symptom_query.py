@@ -75,12 +75,12 @@ class SymptomSearchResponse(BaseModel):
 
 # ── Analyze — LLM symptom → functions ──────────────────────────────────────
 
-ANALYZE_PROMPT = """You are a senior clinical neurologist. Analyze the patient's symptoms and output structured data for brain circuit matching.
+ANALYZE_PROMPT = """你是一位资深临床神经科医生。分析患者症状，输出用于脑回路匹配的结构化数据。
 
-Output ONLY this JSON:
+只输出以下 JSON：
 {{
-  "syndrome": "most likely clinical syndrome (e.g. Parkinsonism, Essential Tremor, Corticobasal Syndrome)",
-  "functions": ["standardized function terms for circuit search"],
+  "syndrome": "最可能的临床综合征，用中文（如：帕金森综合征、特发性震颤、皮质基底节综合征）",
+  "functions": ["用于回路检索的标准功能术语，保持英文"],
   "categories": ["motor","sensory","cognitive","emotional","autonomic","memory","language","attention"],
   "primary_category": "primary domain",
   "implicated_regions": ["brain regions implicated (e.g. substantia_nigra, striatum, thalamus, cerebellum)"],
@@ -88,9 +88,9 @@ Output ONLY this JSON:
   "pathway_level": "cortical|subcortical|brainstem|spinal|peripheral"
 }}
 
-FOCUSED: 1-2 functions, 2-3 regions. EXPLORATORY: 3-5 functions, 3-5 regions.
-Patient: {symptom}
-Mode: {mode}"""
+FOCUSED 模式: 1-2 个功能，2-3 个脑区。EXPLORATORY 模式: 3-5 个功能，3-5 个脑区。
+患者症状: {symptom}
+模式: {mode}"""
 
 
 @router.post("/analyze", response_model=SymptomAnalyzeResponse)
@@ -102,7 +102,7 @@ async def analyze_symptom(body: SymptomAnalyzeRequest):
     try:
         resp = await provider.complete_json(
             model=cfg.default_model,
-            system_prompt="You are a clinical neuroscientist. Output ONLY a JSON object with syndrome, functions, categories, primary_category, implicated_regions, neurotransmitters, pathway_level.",
+            system_prompt="你是一位临床神经科学家。只输出一个 JSON 对象，字段为 syndrome、functions、categories、primary_category、implicated_regions、neurotransmitters、pathway_level。syndrome 用中文，其余字段保持英文。",
             user_prompt=prompt, temperature=0.1,
         )
         import ast as _ast, json as _json
@@ -411,27 +411,27 @@ class ConversationResponse(BaseModel):
     summary: str | None = None
 
 
-CONVERSATION_PROMPT = """You are a clinical neuroscientist conducting a symptom triage interview. Your goal is to narrow down the patient's symptoms by asking one clarifying question at a time. The user is searching at the {granularity} granularity level. Adapt your terminology accordingly.
+CONVERSATION_PROMPT = """你是一位临床神经科医生，正在对患者进行症状问诊。你的目标是通过每次提出一个澄清问题，逐步缩小症状范围。用户当前在 {granularity} 粒度下查询，请相应调整用词。
 
-Conversation so far:
+到目前为止的对话：
 {messages}
 
-Based on the conversation, decide if you need more information or if you can summarize the symptoms.
+请根据对话判断：是需要继续收集信息，还是已经可以总结症状。
 
-If you need more information, respond with:
-{{"stage": "asking", "content": "Your single clarifying question here...", "summary": null}}
+如果需要更多信息，请回复：
+{{"stage": "asking", "content": "你的下一个澄清问题（每次只问一个问题，用中文）...", "summary": null}}
 
-If you have enough information to form a clinical summary (typically after 2-4 exchanges), respond with:
-{{"stage": "summarizing", "content": null, "summary": "Clinical summary of the symptoms..."}}
+如果信息已足够形成临床总结（通常在 2-4 轮对话后），请回复：
+{{"stage": "summarizing", "content": null, "summary": "症状的临床总结（用中文）..."}}
 
-Reply ONLY with the JSON object, nothing else."""
+只输出 JSON 对象，不要输出其他内容。"""
 
 
 @router.post("/conversation", response_model=ConversationResponse)
 async def conversation_endpoint(body: ConversationRequest):
     """LLM-powered symptom triage conversation — asks clarifying questions or summarizes."""
     if not body.messages:
-        return ConversationResponse(stage="asking", content="Please describe your symptoms.")
+        return ConversationResponse(stage="asking", content="请描述你的症状。")
 
     try:
         cfg = get_deepseek_runtime_config()

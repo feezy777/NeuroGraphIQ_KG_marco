@@ -91,6 +91,11 @@ class CandidateBrainRegion(Base):
     uberon_iri: Mapped[str | None] = mapped_column(String(512), nullable=True)
     nifstd_iri: Mapped[str | None] = mapped_column(String(512), nullable=True)
     alignment_status: Mapped[str] = mapped_column(String(32), nullable=False, default="not_aligned")
+    canonical_region_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("canonical_brain_regions.id", ondelete="SET NULL"),
+        nullable=True,
+    )
     candidate_status: Mapped[str] = mapped_column(
         String(64), nullable=False, default="candidate_created"
     )

@@ -1,0 +1,910 @@
+55e0cb6 feat(evidence): 论文库模块 PaperLibraryModule + PaperCard + PaperDetailDrawer
+===STAT===
+ frontend/src/api/endpoints.ts                      |  46 ++++++
+ .../pages/evidence-center/components/PaperCard.tsx |  46 ++++++
+ .../components/PaperDetailDrawer.tsx               | 177 ++++++++++++++++++++
+ .../modules/PaperLibraryModule.test.tsx            | 171 +++++++++++++++++++
+ .../evidence-center/modules/PaperLibraryModule.tsx | 165 ++++++++++++++++++
+ frontend/src/styles.css                            | 184 +++++++++++++++++++++
+ 6 files changed, 789 insertions(+)
+===DIFF===
+diff --git a/frontend/src/api/endpoints.ts b/frontend/src/api/endpoints.ts
+index f2d29e0..5a03f1e 100644
+--- a/frontend/src/api/endpoints.ts
++++ b/frontend/src/api/endpoints.ts
+@@ -5286,20 +5286,23 @@ export interface PaperEvidenceItem {
+   verification_status: string | null
+   pmid: string | null
+   doi: string | null
+   title: string | null
+   journal: string | null
+   year: number | null
+   created_at: string | null
+   verification_by?: string | null
+   suggested_confidence?: number | null
+   confidence_adjustment_status?: string | null
++  invalidated_by?: string | null
++  invalidated_at?: string | null
++  invalidation_reason?: string | null
+   passage_count?: number
+   links: { pubmed: string | null; doi: string | null }
+   passages?: PaperEvidencePassageDetail[]
+ }
+ 
+ export interface PaperEvidencePassageDetail {
+   id: string
+   source_scope: 'abstract' | 'fulltext'
+   section_title: string | null
+   paragraph_index: number | null
+@@ -5403,35 +5406,40 @@ export const extractPaperPassage = (body: {
+ 
+ export interface ExtractedPaperCandidate {
+   paper_id: string
+   pmid: string
+   doi: string
+   pmcid: string
+   title: string
+   journal: string
+   year: string
+   is_oa: boolean
++  fulltext_fetched?: boolean | null
+   paper_match_score: number
+   model_direction: string | null
+   model_assessment: string | null
+   coverage_summary: Record<string, unknown> | null
+   passages: Array<Record<string, unknown>>
++  semantic_relevance?: number | null
++  semantic_skip_reason?: string | null
++  evidence_dimension?: 'existence' | 'function' | 'mixed' | null
+   error_code?: string | null
+   error_message?: string | null
+ }
+ 
+ export const extractSelectedPaperEvidence = (body: {
+   target_type: string
+   target_id: string
+   papers: Array<{ pmid: string; doi?: string | null; pmcid?: string | null; title?: string | null }>
+   only_oa?: boolean
+   stop_after_strong_support?: boolean
++  mode?: 'function' | 'existence'
+ }) => postJson<{
+   claim: string
+   claim_components: Array<Record<string, unknown>>
+   results: ExtractedPaperCandidate[]
+   llm_model: string | null
+ }>('/api/ontology/evidence/extract-selected', body)
+ 
+ export const getEvidenceQueue = (p: { target_type: string; scope?: string; limit?: number }) =>
+   getJson<{ items: Array<{ target_type: string; target_id: string; label: string; confidence: number | null }> }>(
+     '/api/ontology/evidence/queue',
+@@ -5705,10 +5713,48 @@ export interface ConfidenceAdjustmentItem {
+   status: string
+   applied_by: string | null
+   applied_at: string | null
+   rolled_back_by: string | null
+   rolled_back_at: string | null
+   rollback_reason: string | null
+ }
+ 
+ export const listConfidenceAdjustments = (p: { target_type: string; target_id: string; limit?: number }) =>
+   getJson<{ items: ConfidenceAdjustmentItem[] }>('/api/ontology/evidence/adjustments', p)
++
++// ──── Paper Library (read-only) ──────────────────────────────────────────
++
++export interface EvidencePaperItem {
++  id: string
++  pmid: string | null
++  pmcid: string | null
++  doi: string | null
++  title: string | null
++  journal: string | null
++  publication_year: number | null
++  is_oa: boolean
++  abstract_available: boolean
++  fulltext_available: boolean
++  paragraph_count: number
++  evidence_count: number
++}
++
++export interface EvidencePaperParagraph {
++  paragraph_id: string
++  section_title: string | null
++  paragraph_index: number
++  passage_text: string
++  source_scope: string
++}
++
++export interface EvidencePaperDetail {
++  paper: EvidencePaperItem
++  paragraphs: EvidencePaperParagraph[]
++  evidence_count: number
++  targets: Array<{ target_type: string; target_id: string }>
++}
++
++export const listEvidencePapers = (p?: Record<string, string | number | boolean | undefined>) =>
++  getJson<{ items: EvidencePaperItem[]; total: number }>('/api/ontology/evidence/papers', p)
++
++export const getEvidencePaperDetail = (paperId: string) =>
++  getJson<EvidencePaperDetail>(`/api/ontology/evidence/papers/${paperId}`)
+diff --git a/frontend/src/pages/evidence-center/components/PaperCard.tsx b/frontend/src/pages/evidence-center/components/PaperCard.tsx
+new file mode 100644
+index 0000000..dcaa651
+--- /dev/null
++++ b/frontend/src/pages/evidence-center/components/PaperCard.tsx
+@@ -0,0 +1,46 @@
++import type { EvidencePaperItem } from '../../../api/endpoints'
++
++interface Props {
++  paper: EvidencePaperItem
++  onOpen: (paperId: string) => void
++}
++
++function paperIdentifiers(paper: EvidencePaperItem): string[] {
++  const ids: string[] = []
++  if (paper.pmid) ids.push(`PMID ${paper.pmid}`)
++  if (paper.pmcid) ids.push(`PMC ${paper.pmcid}`)
++  if (paper.doi) ids.push(`DOI ${paper.doi}`)
++  return ids
++}
++
++export function PaperCard({ paper, onOpen }: Props) {
++  const journalLine = [paper.journal, paper.publication_year ? `(${paper.publication_year})` : '']
++    .filter(Boolean)
++    .join(' ')
++  const identifiers = paperIdentifiers(paper)
++  return (
++    <button
++      type="button"
++      className="paper-card"
++      data-testid="paper-card"
++      onClick={() => onOpen(paper.id)}
++    >
++      <div className="paper-card-main">
++        <span className="paper-card-title">{paper.title || '(无标题)'}</span>
++        <span className="paper-card-meta">{journalLine || '—'}</span>
++        <span className="paper-card-ids">
++          {identifiers.length > 0
++            ? identifiers.map(id => <span key={id} className="paper-card-id">{id}</span>)
++            : '无标识'}
++        </span>
++      </div>
++      <div className="paper-card-chips">
++        {paper.is_oa && <span className="paper-badge paper-badge-oa">OA</span>}
++        {paper.abstract_available && <span className="paper-badge paper-badge-avail">摘要可用</span>}
++        {paper.fulltext_available && <span className="paper-badge paper-badge-avail">全文可用</span>}
++        <span className="paper-badge paper-badge-muted">{paper.paragraph_count} 段</span>
++        <span className="paper-badge paper-badge-muted">{paper.evidence_count} 条证据</span>
++      </div>
++    </button>
++  )
++}
+diff --git a/frontend/src/pages/evidence-center/components/PaperDetailDrawer.tsx b/frontend/src/pages/evidence-center/components/PaperDetailDrawer.tsx
+new file mode 100644
+index 0000000..a07b919
+--- /dev/null
++++ b/frontend/src/pages/evidence-center/components/PaperDetailDrawer.tsx
+@@ -0,0 +1,177 @@
++import { useCallback, useEffect, useState } from 'react'
++import {
++  getEvidencePaperDetail,
++  type EvidencePaperDetail,
++  type EvidencePaperParagraph,
++} from '../../../api/endpoints'
++import { useEvidenceCenter } from '../EvidenceCenterContext'
++
++interface Props {
++  paperId: string
++  onClose: () => void
++}
++
++interface ParagraphGroup {
++  section: string
++  paragraphs: EvidencePaperParagraph[]
++}
++
++function isAbstractParagraph(p: EvidencePaperParagraph): boolean {
++  return p.source_scope === 'abstract' || (p.section_title ?? '').toLowerCase() === 'abstract'
++}
++
++function groupFulltextParagraphs(paragraphs: EvidencePaperParagraph[]): ParagraphGroup[] {
++  const groups: ParagraphGroup[] = []
++  for (const p of paragraphs) {
++    if (isAbstractParagraph(p)) continue
++    const section = p.section_title || '正文'
++    const group = groups.find(g => g.section === section)
++    if (group) {
++      group.paragraphs.push(p)
++    } else {
++      groups.push({ section, paragraphs: [p] })
++    }
++  }
++  return groups
++}
++
++export function PaperDetailDrawer({ paperId, onClose }: Props) {
++  const { openTarget } = useEvidenceCenter()
++  const [detail, setDetail] = useState<EvidencePaperDetail | null>(null)
++  const [loading, setLoading] = useState(true)
++  const [error, setError] = useState<string | null>(null)
++  const [openSections, setOpenSections] = useState<Set<string>>(new Set())
++
++  useEffect(() => {
++    let cancelled = false
++    setLoading(true)
++    setError(null)
++    setDetail(null)
++    setOpenSections(new Set())
++    getEvidencePaperDetail(paperId)
++      .then(d => { if (!cancelled) setDetail(d) })
++      .catch(err => { if (!cancelled) setError(err instanceof Error ? err.message : String(err)) })
++      .finally(() => { if (!cancelled) setLoading(false) })
++    return () => { cancelled = true }
++  }, [paperId])
++
++  const toggleSection = useCallback((section: string) => {
++    setOpenSections(prev => {
++      const next = new Set(prev)
++      if (next.has(section)) {
++        next.delete(section)
++      } else {
++        next.add(section)
++      }
++      return next
++    })
++  }, [])
++
++  const paragraphs = detail?.paragraphs ?? []
++  const abstractParagraphs = paragraphs.filter(isAbstractParagraph)
++  const fulltextGroups = groupFulltextParagraphs(paragraphs)
++
++  return (
++    <div className="evidence-drawer-overlay" onClick={onClose}>
++      <aside
++        className="evidence-drawer"
++        role="dialog"
++        aria-label="论文详情"
++        data-testid="paper-detail-drawer"
++        onClick={e => e.stopPropagation()}
++      >
++        <header className="evidence-drawer-head">
++          <h4 className="evidence-drawer-title">{detail?.paper.title ?? '论文详情'}</h4>
++          <button type="button" className="evidence-drawer-close" aria-label="关闭" onClick={onClose}>×</button>
++        </header>
++        <div className="evidence-drawer-body">
++          {loading && <div className="paper-drawer-loading">加载中…</div>}
++          {!loading && error && (
++            <div className="paper-drawer-error">
++              <p>论文详情加载失败:{error}</p>
++            </div>
++          )}
++          {!loading && detail && (
++            <>
++              <div className="paper-drawer-meta">
++                <div className="paper-drawer-meta-row">
++                  <span className="paper-drawer-meta-label">期刊</span>
++                  <span className="paper-drawer-meta-value">
++                    {detail.paper.journal || '—'}
++                    {detail.paper.publication_year ? ` (${detail.paper.publication_year})` : ''}
++                  </span>
++                </div>
++                <div className="paper-drawer-meta-row">
++                  <span className="paper-drawer-meta-label">PMID</span>
++                  <span className="paper-drawer-meta-value">{detail.paper.pmid ?? '—'}</span>
++                </div>
++                <div className="paper-drawer-meta-row">
++                  <span className="paper-drawer-meta-label">PMCID</span>
++                  <span className="paper-drawer-meta-value">{detail.paper.pmcid ?? '—'}</span>
++                </div>
++                <div className="paper-drawer-meta-row">
++                  <span className="paper-drawer-meta-label">DOI</span>
++                  <span className="paper-drawer-meta-value">{detail.paper.doi ?? '—'}</span>
++                </div>
++                <div className="paper-drawer-meta-row">
++                  <span className="paper-drawer-meta-label">关联证据</span>
++                  <span className="paper-drawer-meta-value">{detail.evidence_count} 条</span>
++                </div>
++              </div>
++
++              {abstractParagraphs.length > 0 && (
++                <section className="paper-drawer-abstract">
++                  <h5 className="paper-drawer-section-title">摘要</h5>
++                  {abstractParagraphs.map(p => (
++                    <p key={p.paragraph_id} className="paper-drawer-paragraph">{p.passage_text}</p>
++                  ))}
++                </section>
++              )}
++
++              {fulltextGroups.map(group => {
++                const isOpen = openSections.has(group.section)
++                return (
++                  <section key={group.section} className="paper-drawer-section">
++                    <button
++                      type="button"
++                      className="paper-drawer-section-head"
++                      onClick={() => toggleSection(group.section)}
++                    >
++                      <span>{group.section}</span>
++                      <span className="paper-drawer-section-toggle">{isOpen ? '收起' : '展开'}</span>
++                    </button>
++                    {isOpen && (
++                      <div className="paper-drawer-section-body">
++                        {group.paragraphs.map(p => (
++                          <p key={p.paragraph_id} className="paper-drawer-paragraph">{p.passage_text}</p>
++                        ))}
++                      </div>
++                    )}
++                  </section>
++                )
++              })}
++
++              {detail.targets.length > 0 && (
++                <section className="paper-drawer-targets">
++                  <h5 className="paper-drawer-section-title">关联知识对象</h5>
++                  <div className="paper-drawer-target-list">
++                    {detail.targets.map(t => (
++                      <button
++                        key={`${t.target_type}-${t.target_id}`}
++                        type="button"
++                        className="paper-drawer-target-chip"
++                        onClick={() => openTarget(t.target_type, t.target_id)}
++                      >
++                        {t.target_type} · {t.target_id}
++                      </button>
++                    ))}
++                  </div>
++                </section>
++              )}
++            </>
++          )}
++        </div>
++      </aside>
++    </div>
++  )
++}
+diff --git a/frontend/src/pages/evidence-center/modules/PaperLibraryModule.test.tsx b/frontend/src/pages/evidence-center/modules/PaperLibraryModule.test.tsx
+new file mode 100644
+index 0000000..dda2adb
+--- /dev/null
++++ b/frontend/src/pages/evidence-center/modules/PaperLibraryModule.test.tsx
+@@ -0,0 +1,171 @@
++import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
++import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
++import * as endpoints from '../../../api/endpoints'
++import { EvidenceCenterProvider } from '../EvidenceCenterContext'
++import { PaperLibraryModule } from './PaperLibraryModule'
++
++vi.mock('../../../api/endpoints', () => ({
++  listEvidencePapers: vi.fn(),
++  getEvidencePaperDetail: vi.fn(),
++}))
++
++const PAPER_A = {
++  id: 'p1',
++  pmid: '12345678',
++  pmcid: 'PMC1234567',
++  doi: '10.1000/xyz123',
++  title: 'Neural circuits of the prefrontal cortex',
++  journal: 'Nature Neuroscience',
++  publication_year: 2023,
++  is_oa: true,
++  abstract_available: true,
++  fulltext_available: true,
++  paragraph_count: 12,
++  evidence_count: 3,
++}
++
++const PAPER_B = {
++  id: 'p2',
++  pmid: null,
++  pmcid: null,
++  doi: '10.1000/abc456',
++  title: 'Thalamocortical loops in working memory',
++  journal: 'Brain Research',
++  publication_year: 2021,
++  is_oa: false,
++  abstract_available: false,
++  fulltext_available: false,
++  paragraph_count: 0,
++  evidence_count: 0,
++}
++
++const DETAIL = {
++  paper: PAPER_A,
++  paragraphs: [
++    { paragraph_id: 'pa1', section_title: 'Abstract', paragraph_index: 0, passage_text: 'The prefrontal cortex integrates sensory input with mnemonic content.', source_scope: 'abstract' },
++    { paragraph_id: 'pa2', section_title: 'Abstract', paragraph_index: 1, passage_text: 'Here we show that recurrent dynamics support working memory.', source_scope: 'abstract' },
++    { paragraph_id: 'pf1', section_title: 'Results', paragraph_index: 2, passage_text: 'We found elevated gamma power in layer 5.', source_scope: 'fulltext' },
++    { paragraph_id: 'pf2', section_title: 'Discussion', paragraph_index: 3, passage_text: 'These findings suggest a distributed mnemonic network.', source_scope: 'fulltext' },
++  ],
++  evidence_count: 3,
++  targets: [{ target_type: 'connection', target_id: 'conn-1' }],
++}
++
++const renderModule = () =>
++  render(<EvidenceCenterProvider><PaperLibraryModule /></EvidenceCenterProvider>)
++
++describe('PaperLibraryModule', () => {
++  afterEach(() => { cleanup(); window.location.hash = '' })
++  beforeEach(() => {
++    vi.clearAllMocks()
++    vi.mocked(endpoints.listEvidencePapers).mockResolvedValue({ items: [PAPER_A, PAPER_B], total: 2 })
++    vi.mocked(endpoints.getEvidencePaperDetail).mockResolvedValue(DETAIL)
++  })
++
++  it('列表渲染 title/journal/年份/OA 徽章/段落数/证据数', async () => {
++    renderModule()
++    expect(await screen.findByText('Neural circuits of the prefrontal cortex')).toBeTruthy()
++    expect(screen.getByText('Nature Neuroscience (2023)')).toBeTruthy()
++    expect(screen.getByText('Brain Research (2021)')).toBeTruthy()
++    // OA 徽章(仅 PAPER_A)
++    expect(screen.getByText('OA')).toBeTruthy()
++    // 摘要/全文可用徽章 + 段落数 + 证据数
++    expect(screen.getByText('摘要可用')).toBeTruthy()
++    expect(screen.getByText('全文可用')).toBeTruthy()
++    expect(screen.getByText('12 段')).toBeTruthy()
++    expect(screen.getByText('3 条证据')).toBeTruthy()
++    expect(screen.getByText('0 段')).toBeTruthy()
++    // 标识
++    expect(screen.getByText('PMID 12345678')).toBeTruthy()
++    expect(screen.getByText('DOI 10.1000/abc456')).toBeTruthy()
++    // 论文库不渲染 Reviewer/Attach/Coverage 控件
++    expect(screen.queryByText(/确认晋升|Reviewer|Coverage|Attach/i)).toBeNull()
++  })
++
++  it('搜索与过滤条件携带参数重新请求', async () => {
++    renderModule()
++    await screen.findByText('Neural circuits of the prefrontal cortex')
++    fireEvent.change(screen.getByPlaceholderText(/搜索/), { target: { value: 'prefrontal' } })
++    fireEvent.click(screen.getByLabelText('仅开放获取'))
++    fireEvent.change(screen.getByLabelText('年份'), { target: { value: '2023' } })
++    fireEvent.click(screen.getByLabelText('已解析全文'))
++    fireEvent.click(screen.getByText('搜索'))
++    await waitFor(() =>
++      expect(endpoints.listEvidencePapers).toHaveBeenLastCalledWith(
++        expect.objectContaining({ search: 'prefrontal', oa: true, year: 2023, has_fulltext: true, page: 1 }),
++      ),
++    )
++    // 再次搜索会重置页码
++    fireEvent.change(screen.getByPlaceholderText(/搜索/), { target: { value: '' } })
++    fireEvent.click(screen.getByText('搜索'))
++    await waitFor(() =>
++      expect(endpoints.listEvidencePapers).toHaveBeenLastCalledWith(
++        expect.objectContaining({ search: undefined, oa: true, year: 2023, has_fulltext: true, page: 1 }),
++      ),
++    )
++  })
++
++  it('点击论文卡片打开详情抽屉(metadata + abstract + section 结构)', async () => {
++    renderModule()
++    await screen.findByText('Neural circuits of the prefrontal cortex')
++    fireEvent.click(screen.getByText('Neural circuits of the prefrontal cortex'))
++    await waitFor(() => expect(endpoints.getEvidencePaperDetail).toHaveBeenCalledWith('p1'))
++    // metadata 行
++    expect(screen.getByText('期刊')).toBeTruthy()
++    expect(screen.getByText('PMID')).toBeTruthy()
++    expect(screen.getByText('DOI')).toBeTruthy()
++    expect(screen.getAllByText('Nature Neuroscience (2023)').length).toBeGreaterThanOrEqual(2)
++    // abstract 段落默认展开
++    expect(screen.getByText('The prefrontal cortex integrates sensory input with mnemonic content.')).toBeTruthy()
++    // section 分组默认折叠:标题可见,段落隐藏
++    expect(screen.getByText('Results')).toBeTruthy()
++    expect(screen.queryByText('We found elevated gamma power in layer 5.')).toBeNull()
++    // 展开后显示段落
++    fireEvent.click(screen.getByText('Results'))
++    expect(screen.getByText('We found elevated gamma power in layer 5.')).toBeTruthy()
++    // 关联证据数 + targets 列表
++    expect(screen.getByText('关联证据')).toBeTruthy()
++    expect(screen.getByText('3 条')).toBeTruthy()
++    expect(screen.getByText('connection · conn-1')).toBeTruthy()
++    // 抽屉内同样不渲染 Reviewer/Attach/Coverage
++    expect(screen.queryByText(/确认晋升|Reviewer|Coverage|Attach/i)).toBeNull()
++  })
++
++  it('点击 target 跳转证据候选模块', async () => {
++    renderModule()
++    await screen.findByText('Neural circuits of the prefrontal cortex')
++    fireEvent.click(screen.getByText('Neural circuits of the prefrontal cortex'))
++    await waitFor(() => expect(screen.getByText('connection · conn-1')).toBeTruthy())
++    fireEvent.click(screen.getByText('connection · conn-1'))
++    await waitFor(() => expect(window.location.hash).toContain('module=candidates'))
++    expect(window.location.hash).toContain('target_type=connection')
++    expect(window.location.hash).toContain('target_id=conn-1')
++  })
++
++  it('分页切换重新请求(上一页/下一页)', async () => {
++    vi.mocked(endpoints.listEvidencePapers).mockResolvedValue({ items: [PAPER_A], total: 25 })
++    renderModule()
++    await screen.findByText('Neural circuits of the prefrontal cortex')
++    // 第 1 页:上一页禁用
++    expect((screen.getByText('上一页') as HTMLButtonElement).disabled).toBe(true)
++    fireEvent.click(screen.getByText('下一页'))
++    await waitFor(() =>
++      expect(endpoints.listEvidencePapers).toHaveBeenLastCalledWith(expect.objectContaining({ page: 2 })),
++    )
++    // 第 2 页:下一页禁用,上一页可用
++    await waitFor(() => expect((screen.getByText('下一页') as HTMLButtonElement).disabled).toBe(true))
++    expect((screen.getByText('上一页') as HTMLButtonElement).disabled).toBe(false)
++    fireEvent.click(screen.getByText('上一页'))
++    await waitFor(() =>
++      expect(endpoints.listEvidencePapers).toHaveBeenLastCalledWith(expect.objectContaining({ page: 1 })),
++    )
++  })
++
++  it('加载失败显示错误并可重试', async () => {
++    vi.mocked(endpoints.listEvidencePapers).mockRejectedValueOnce(new Error('503 backend down'))
++    renderModule()
++    await waitFor(() => expect(screen.getByText(/论文加载失败/)).toBeTruthy())
++    fireEvent.click(screen.getByText('重试'))
++    await waitFor(() => expect(screen.getByText('Neural circuits of the prefrontal cortex')).toBeTruthy())
++  })
++})
+diff --git a/frontend/src/pages/evidence-center/modules/PaperLibraryModule.tsx b/frontend/src/pages/evidence-center/modules/PaperLibraryModule.tsx
+new file mode 100644
+index 0000000..d030b83
+--- /dev/null
++++ b/frontend/src/pages/evidence-center/modules/PaperLibraryModule.tsx
+@@ -0,0 +1,165 @@
++import { useCallback, useEffect, useState } from 'react'
++import { listEvidencePapers, type EvidencePaperItem } from '../../../api/endpoints'
++import { PaperCard } from '../components/PaperCard'
++import { PaperDetailDrawer } from '../components/PaperDetailDrawer'
++
++const PAGE_SIZE = 20
++const YEAR_START = 2015
++
++interface PaperQuery {
++  search?: string
++  oa?: boolean
++  year?: number
++  has_fulltext?: boolean
++  page: number
++}
++
++function yearOptions(): number[] {
++  const current = new Date().getFullYear()
++  const years: number[] = []
++  for (let y = current; y >= YEAR_START; y -= 1) years.push(y)
++  return years
++}
++
++export function PaperLibraryModule() {
++  const [search, setSearch] = useState('')
++  const [oaOnly, setOaOnly] = useState(false)
++  const [year, setYear] = useState('')
++  const [hasFulltext, setHasFulltext] = useState(false)
++  const [papers, setPapers] = useState<EvidencePaperItem[]>([])
++  const [total, setTotal] = useState(0)
++  const [page, setPage] = useState(1)
++  const [loading, setLoading] = useState(true)
++  const [error, setError] = useState<string | null>(null)
++  const [selectedPaperId, setSelectedPaperId] = useState<string | null>(null)
++
++  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE))
++
++  const loadPapers = useCallback(async (query: PaperQuery) => {
++    setLoading(true)
++    setError(null)
++    try {
++      const r = await listEvidencePapers({
++        search: query.search || undefined,
++        oa: query.oa || undefined,
++        year: query.year,
++        has_fulltext: query.has_fulltext || undefined,
++        page: query.page,
++        page_size: PAGE_SIZE,
++      })
++      setPapers(r.items)
++      setTotal(r.total)
++    } catch (err) {
++      setError(err instanceof Error ? err.message : String(err))
++    } finally {
++      setLoading(false)
++    }
++  }, [])
++
++  useEffect(() => {
++    void loadPapers({ page: 1 })
++  }, [loadPapers])
++
++  const buildQuery = useCallback((nextPage: number): PaperQuery => ({
++    search: search.trim(),
++    oa: oaOnly,
++    year: year ? Number(year) : undefined,
++    has_fulltext: hasFulltext,
++    page: nextPage,
++  }), [search, oaOnly, year, hasFulltext])
++
++  const handleSearch = useCallback(() => {
++    setPage(1)
++    void loadPapers(buildQuery(1))
++  }, [loadPapers, buildQuery])
++
++  const goToPage = useCallback((nextPage: number) => {
++    setPage(nextPage)
++    void loadPapers(buildQuery(nextPage))
++  }, [loadPapers, buildQuery])
++
++  return (
++    <div className="paper-module">
++      <div className="paper-toolbar">
++        <div className="paper-toolbar-title">
++          <h3>论文库</h3>
++          <p className="evidence-module-hint">
++            {total > 0 ? `共 ${total} 篇论文,点击卡片查看摘要与全文段落。` : '管理系统已获取的真实论文资源,点击卡片查看摘要与全文。'}
++          </p>
++        </div>
++        <button type="button" className="btn btn-sm" onClick={() => void handleSearch()}>刷新</button>
++      </div>
++
++      <form className="paper-search-bar" onSubmit={e => { e.preventDefault(); handleSearch() }}>
++        <input
++          className="form-input paper-search-input"
++          placeholder="搜索标题 / 期刊 / PMID / DOI"
++          value={search}
++          onChange={e => setSearch(e.target.value)}
++        />
++        <label className="paper-filter-label">
++          <input type="checkbox" checked={oaOnly} onChange={e => setOaOnly(e.target.checked)} />
++          仅开放获取
++        </label>
++        <label className="paper-filter-label">
++          年份
++          <select className="form-select paper-year-select" value={year} onChange={e => setYear(e.target.value)}>
++            <option value="">全部年份</option>
++            {yearOptions().map(y => (
++              <option key={y} value={y}>{y}</option>
++            ))}
++          </select>
++        </label>
++        <label className="paper-filter-label">
++          <input type="checkbox" checked={hasFulltext} onChange={e => setHasFulltext(e.target.checked)} />
++          已解析全文
++        </label>
++        <button type="submit" className="btn btn-sm btn-primary">搜索</button>
++      </form>
++
++      {loading && <div className="paper-loading">加载中…</div>}
++      {!loading && error && (
++        <div className="paper-error">
++          <p>论文加载失败:{error}</p>
++          <button type="button" className="btn btn-sm" onClick={() => void handleSearch()}>重试</button>
++        </div>
++      )}
++      {!loading && !error && papers.length === 0 && (
++        <div className="paper-empty">暂无论文,先通过「佐证任务」获取并解析论文资源。</div>
++      )}
++      {!loading && !error && papers.length > 0 && (
++        <div className="paper-list">
++          {papers.map(p => (
++            <PaperCard key={p.id} paper={p} onOpen={setSelectedPaperId} />
++          ))}
++        </div>
++      )}
++
++      {!loading && !error && total > 0 && (
++        <div className="paper-pagination">
++          <button
++            type="button"
++            className="btn btn-sm"
++            disabled={page <= 1}
++            onClick={() => goToPage(page - 1)}
++          >
++            上一页
++          </button>
++          <span className="paper-pagination-info">第 {page} / {totalPages} 页 · 共 {total} 篇</span>
++          <button
++            type="button"
++            className="btn btn-sm"
++            disabled={page >= totalPages}
++            onClick={() => goToPage(page + 1)}
++          >
++            下一页
++          </button>
++        </div>
++      )}
++
++      {selectedPaperId && (
++        <PaperDetailDrawer paperId={selectedPaperId} onClose={() => setSelectedPaperId(null)} />
++      )}
++    </div>
++  )
++}
+diff --git a/frontend/src/styles.css b/frontend/src/styles.css
+index 9d3d241..3992abf 100644
+--- a/frontend/src/styles.css
++++ b/frontend/src/styles.css
+@@ -11460,10 +11460,194 @@ input[type="range"]::-webkit-slider-thumb {
+ .evidence-task-error { padding: 24px; text-align: center; color: var(--danger); display: flex; flex-direction: column; gap: 10px; align-items: center; }
+ .evidence-task-empty {
+   padding: 40px 20px;
+   text-align: center;
+   color: var(--text-muted);
+   font-size: 13px;
+   background: var(--white);
+   border: 1px dashed var(--border);
+   border-radius: var(--card-radius);
+ }
++
++/* 论文库模块 */
++.paper-module { display: flex; flex-direction: column; gap: 12px; }
++.paper-toolbar { display: flex; align-items: flex-end; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
++.paper-toolbar-title h3 { font-size: 15px; color: var(--text); margin-bottom: 2px; }
++.paper-search-bar {
++  display: flex;
++  align-items: center;
++  gap: 10px;
++  flex-wrap: wrap;
++  background: var(--white);
++  border: 1px solid var(--border);
++  border-radius: var(--card-radius);
++  padding: 10px 12px;
++  box-shadow: var(--shadow);
++}
++.paper-search-input { min-width: 240px; }
++.paper-filter-label {
++  display: inline-flex;
++  align-items: center;
++  gap: 5px;
++  font-size: 13px;
++  color: var(--text);
++  cursor: pointer;
++  white-space: nowrap;
++}
++.paper-year-select { width: auto; padding: 4px 8px; }
++.paper-list { display: flex; flex-direction: column; gap: 10px; }
++.paper-card {
++  display: flex;
++  align-items: flex-start;
++  justify-content: space-between;
++  gap: 14px;
++  flex-wrap: wrap;
++  width: 100%;
++  text-align: left;
++  background: var(--white);
++  border: 1px solid var(--border);
++  border-radius: 10px;
++  padding: 12px 14px;
++  cursor: pointer;
++  transition: border-color .15s ease, box-shadow .15s ease;
++}
++.paper-card:hover { border-color: var(--primary); box-shadow: var(--shadow); }
++.paper-card-main { display: flex; flex-direction: column; gap: 4px; min-width: 200px; flex: 1; }
++.paper-card-title { font-size: 14px; font-weight: 700; color: var(--text); line-height: 1.45; }
++.paper-card-meta { font-size: 12px; color: var(--text-muted); }
++.paper-card-ids { font-size: 11px; color: var(--text-muted); font-family: var(--font-mono, monospace); }
++.paper-card-chips { display: flex; gap: 6px; flex-wrap: wrap; align-items: flex-start; justify-content: flex-end; max-width: 320px; }
++.paper-badge { font-size: 11px; font-weight: 600; border-radius: 999px; padding: 2px 8px; white-space: nowrap; }
++.paper-badge-oa { color: #15803d; background: #dcfce7; }
++.paper-badge-avail { color: var(--primary); background: #eff6ff; }
++.paper-badge-muted { color: var(--text-muted); background: #f1f5f9; }
++.paper-pagination { display: flex; align-items: center; justify-content: center; gap: 12px; }
++.paper-pagination-info { font-size: 12px; color: var(--text-muted); }
++.paper-loading { padding: 40px 20px; text-align: center; color: var(--text-muted); }
++.paper-error { padding: 24px; text-align: center; color: var(--danger); display: flex; flex-direction: column; gap: 10px; align-items: center; }
++.paper-empty {
++  padding: 40px 20px;
++  text-align: center;
++  color: var(--text-muted);
++  font-size: 13px;
++  background: var(--white);
++  border: 1px dashed var(--border);
++  border-radius: var(--card-radius);
++}
++
++/* 论文详情抽屉 */
++.evidence-drawer-overlay {
++  position: fixed;
++  inset: 0;
++  background: rgba(15, 23, 42, .45);
++  z-index: 1050;
++  display: flex;
++  justify-content: flex-end;
++  animation: evidence-fade-in .18s ease;
++}
++@keyframes evidence-fade-in { from { opacity: 0; } to { opacity: 1; } }
++.evidence-drawer {
++  width: min(680px, 94vw);
++  height: 100%;
++  background: var(--white);
++  box-shadow: -8px 0 24px rgba(15, 23, 42, .16);
++  display: flex;
++  flex-direction: column;
++  animation: evidence-drawer-in .22s ease;
++}
++@keyframes evidence-drawer-in { from { transform: translateX(24px); opacity: .6; } to { transform: none; opacity: 1; } }
++.evidence-drawer-head {
++  display: flex;
++  align-items: flex-start;
++  justify-content: space-between;
++  gap: 12px;
++  padding: 14px 18px;
++  border-bottom: 1px solid var(--border);
++  background: linear-gradient(180deg, #f7faff, var(--white));
++}
++.evidence-drawer-title { font-size: 15px; font-weight: 700; color: var(--text); line-height: 1.5; flex: 1; }
++.evidence-drawer-close {
++  border: 1px solid var(--border);
++  background: var(--white);
++  color: var(--text-muted);
++  width: 28px;
++  height: 28px;
++  border-radius: 8px;
++  font-size: 16px;
++  line-height: 1;
++  cursor: pointer;
++  transition: color .15s ease, border-color .15s ease;
++}
++.evidence-drawer-close:hover { color: var(--primary); border-color: var(--primary); }
++.evidence-drawer-body { flex: 1; overflow-y: auto; padding: 16px 18px 24px; display: flex; flex-direction: column; gap: 16px; }
++.paper-drawer-loading { padding: 48px 20px; text-align: center; color: var(--text-muted); }
++.paper-drawer-error { padding: 24px; text-align: center; color: var(--danger); }
++.paper-drawer-meta {
++  display: grid;
++  grid-template-columns: 1fr 1fr;
++  gap: 8px 18px;
++  background: #f7faff;
++  border: 1px solid var(--border);
++  border-radius: 10px;
++  padding: 12px 14px;
++}
++.paper-drawer-meta-row { display: flex; gap: 8px; font-size: 12px; min-width: 0; }
++.paper-drawer-meta-label { color: var(--text-muted); flex-shrink: 0; }
++.paper-drawer-meta-label::after { content: ':'; }
++.paper-drawer-meta-value { color: var(--text); font-weight: 500; overflow-wrap: anywhere; }
++.paper-drawer-abstract,
++.paper-drawer-section,
++.paper-drawer-targets {
++  border: 1px solid var(--border);
++  border-radius: 10px;
++  padding: 10px 12px;
++  background: var(--white);
++}
++.paper-drawer-section-title {
++  font-size: 13px;
++  font-weight: 600;
++  color: var(--text);
++  margin-bottom: 8px;
++}
++.paper-drawer-section-title::before {
++  content: '';
++  display: inline-block;
++  width: 4px;
++  height: 13px;
++  border-radius: 2px;
++  background: var(--primary);
++  margin-right: 8px;
++  vertical-align: -2px;
++}
++.paper-drawer-section-head {
++  width: 100%;
++  display: flex;
++  align-items: center;
++  justify-content: space-between;
++  gap: 10px;
++  background: none;
++  border: none;
++  cursor: pointer;
++  font-size: 13px;
++  font-weight: 600;
++  color: var(--text);
++  padding: 2px 0;
++  text-align: left;
++}
++.paper-drawer-section-head:hover { color: var(--primary); }
++.paper-drawer-section-toggle { font-size: 11px; color: var(--primary); font-weight: 500; flex-shrink: 0; }
++.paper-drawer-section-body { margin-top: 8px; display: flex; flex-direction: column; gap: 10px; border-top: 1px dashed var(--border); padding-top: 8px; }
++.paper-drawer-paragraph { font-size: 13px; line-height: 1.75; color: var(--text); }
++.paper-drawer-target-list { display: flex; gap: 8px; flex-wrap: wrap; }
++.paper-drawer-target-chip {
++  font-size: 12px;
++  font-weight: 600;
++  color: var(--primary);
++  background: rgba(59, 130, 246, .08);
++  border: 1px solid rgba(59, 130, 246, .35);
++  border-radius: 6px;
++  padding: 3px 10px;
++  cursor: pointer;
++  transition: background .15s ease, border-color .15s ease;
++}
++.paper-drawer-target-chip:hover { background: #eff6ff; border-color: var(--primary); }
++

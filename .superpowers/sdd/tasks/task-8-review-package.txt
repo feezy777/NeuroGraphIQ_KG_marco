@@ -1,0 +1,845 @@
+36432b7 feat(evidence): 人工审核模块(EvidenceReviewModule)
+===STAT===
+ .../components/ConfidencePreview.tsx               |  23 ++
+ .../components/ReviewerDecisionPanel.tsx           |  90 ++++++
+ .../modules/EvidenceReviewModule.test.tsx          | 271 ++++++++++++++++
+ .../modules/EvidenceReviewModule.tsx               | 360 +++++++++++++++++++++
+ frontend/src/styles.css                            |  53 +++
+ 5 files changed, 797 insertions(+)
+===DIFF===
+diff --git a/frontend/src/pages/evidence-center/components/ConfidencePreview.tsx b/frontend/src/pages/evidence-center/components/ConfidencePreview.tsx
+new file mode 100644
+index 0000000..a357786
+--- /dev/null
++++ b/frontend/src/pages/evidence-center/components/ConfidencePreview.tsx
+@@ -0,0 +1,23 @@
++import type { AttachPreviewResponse } from '../../../api/endpoints'
++
++interface Props {
++  preview: AttachPreviewResponse | null
++}
++
++/** 置信度预览:current → final + 公式 + cap + block_reasons(从旧 ReviewerPanel 的 ConfidenceRuleText 迁移) */
++export function ConfidencePreview({ preview }: Props) {
++  if (!preview) return null
++  return (
++    <div className="ew-preview" data-testid="ew-confidence-preview">
++      <h4>置信度预览</h4>
++      <div className="ew-preview-flow">
++        {preview.current_confidence ?? '—'} → {preview.final_confidence ?? '—'}（上限 {preview.cap ?? '—'}）
++      </div>
++      <div className="ew-meta">公式：min({preview.cap ?? '—'}, max(当前, 人工推荐))</div>
++      <div className="ew-meta">已选片段 {preview.selected_passage_count} · 重复 {preview.duplicate_passage_count}</div>
++      {preview.block_reasons.map((r, i) => (
++        <div key={i} className="ew-bad">{r}</div>
++      ))}
++    </div>
++  )
++}
+diff --git a/frontend/src/pages/evidence-center/components/ReviewerDecisionPanel.tsx b/frontend/src/pages/evidence-center/components/ReviewerDecisionPanel.tsx
+new file mode 100644
+index 0000000..e5e83c2
+--- /dev/null
++++ b/frontend/src/pages/evidence-center/components/ReviewerDecisionPanel.tsx
+@@ -0,0 +1,90 @@
++import type { AttachPreviewResponse } from '../../../api/endpoints'
++import { ConfidencePreview } from './ConfidencePreview'
++import type { Direction, EvidenceLevel } from './types'
++import { DIRECTION_LABEL, LEVEL_HINT, LEVEL_LABEL } from './types'
++
++export interface ReviewerDecisionPanelProps {
++  direction: Direction
++  modelDirection: Direction | null
++  onDirectionChange: (d: Direction) => void
++  evidenceLevel: EvidenceLevel
++  onEvidenceLevelChange: (l: EvidenceLevel) => void
++  confidence: string
++  onConfidenceChange: (v: string) => void
++  note: string
++  onNoteChange: (v: string) => void
++  selectedCount: number
++  preview: AttachPreviewResponse | null
++  previewBusy: boolean
++}
++
++const DIRECTIONS: readonly Direction[] = ['supports', 'partial', 'contradicts', 'mixed', 'not_found']
++
++/** 人工审核决策区(从旧 ReviewerPanel 拆出):AI 推荐灰字 + 人工方向独立高亮 + ConfidencePreview */
++export function ReviewerDecisionPanel({
++  direction,
++  modelDirection,
++  onDirectionChange,
++  evidenceLevel,
++  onEvidenceLevelChange,
++  confidence,
++  onConfidenceChange,
++  note,
++  onNoteChange,
++  selectedCount,
++  preview,
++  previewBusy,
++}: ReviewerDecisionPanelProps) {
++  return (
++    <div className="ew-right-inner" data-testid="ew-reviewer-panel">
++      <h4>人工审核</h4>
++      <div className="ew-field">
++        <label className="ew-dir-label">
++          人工方向
++          {modelDirection && (
++            <span className="ew-ai-recommend" data-testid="ew-ai-recommend">
++              AI 推荐：{DIRECTION_LABEL[modelDirection]}
++            </span>
++          )}
++        </label>
++        <div className="ew-dir-radios">
++          {DIRECTIONS.map(d => (
++            <label key={d} className={`ew-dir-chip${direction === d ? ' ew-dir-chip-active' : ''}`}>
++              <input type="radio" name="dir" value={d} checked={direction === d} onChange={() => onDirectionChange(d)} />
++              {DIRECTION_LABEL[d]}
++            </label>
++          ))}
++        </div>
++      </div>
++      <div className="ew-field">
++        <label>整篇证据等级</label>
++        <select className="filter-select" value={evidenceLevel} title={LEVEL_HINT[evidenceLevel]}
++          onChange={e => onEvidenceLevelChange(e.target.value as EvidenceLevel)}>
++          {(['direct', 'indirect', 'interpretive', 'background'] as const).map(l => (
++            <option key={l} value={l}>{LEVEL_LABEL[l]}</option>
++          ))}
++        </select>
++      </div>
++      <div className="ew-field">
++        <label>Reviewer Confidence（0–0.85）</label>
++        <input type="range" min={0} max={0.85} step={0.01} value={Math.min(0.85, parseFloat(confidence) || 0)}
++          onChange={e => onConfidenceChange(e.target.value)} />
++        <input className="filter-input" value={confidence} onChange={e => onConfidenceChange(e.target.value)} />
++        <span className="ew-meta">DeepSeek semantic confidence 仅供参考，不是图谱 confidence。</span>
++      </div>
++      <div className="ew-field">
++        <label>人工备注</label>
++        <textarea className="filter-input" value={note} onChange={e => onNoteChange(e.target.value)} placeholder="为什么接受/调整方向/修改组件等（可选）" />
++      </div>
++      <div className="ew-field"><label>已选片段</label><span className="ew-meta">{selectedCount} 段（仅统计通过原文校验的片段）</span></div>
++      {previewBusy && <div className="ew-busy">正在计算置信度预览…</div>}
++      {direction === 'not_found' && <div className="ew-bad">不能作为正式论文佐证入库</div>}
++      {(direction === 'contradicts' || direction === 'mixed') && (
++        <div className="ew-bad">不会自动修改当前置信度，将进入验证中心待复核</div>
++      )}
++      {direction !== 'not_found' && direction !== 'contradicts' && direction !== 'mixed' && (
++        <ConfidencePreview preview={preview} />
++      )}
++    </div>
++  )
++}
+diff --git a/frontend/src/pages/evidence-center/modules/EvidenceReviewModule.test.tsx b/frontend/src/pages/evidence-center/modules/EvidenceReviewModule.test.tsx
+new file mode 100644
+index 0000000..01a0873
+--- /dev/null
++++ b/frontend/src/pages/evidence-center/modules/EvidenceReviewModule.test.tsx
+@@ -0,0 +1,271 @@
++import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
++import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
++import { useEffect } from 'react'
++import * as endpoints from '../../../api/endpoints'
++import { EvidenceCenterProvider, useEvidenceCenter } from '../EvidenceCenterContext'
++import type { EvidenceLevel, QueueStatus, WorkbenchPassage } from '../components/types'
++import { EvidenceReviewModule } from './EvidenceReviewModule'
++
++vi.mock('../../../api/endpoints', () => ({
++  getEvidenceTarget: vi.fn(),
++  attachPaperEvidencePreview: vi.fn(),
++  translateEvidenceText: vi.fn(),
++  validatePassageSelection: vi.fn(),
++  saveTaskItemDraft: vi.fn(),
++}))
++
++const DRAFT_KEY = 'evidence-center.review-draft.r1-r2'
++
++const PASSAGE_VERIFIED: WorkbenchPassage = {
++  hash: 'h1',
++  paper_id: 'paper-1',
++  paper_passage_id: 'pp1',
++  source_scope: 'abstract',
++  section_title: null,
++  paragraph_index: 0,
++  paragraph_id: null,
++  passage: 'We observed that R1 projects to R2 in the macaque.',
++  translation_zh: null,
++  direction: 'supports',
++  evidence_level: 'direct',
++  reason: '直接支持',
++  confidence: 0.9,
++  semantic_confidence: 0.82,
++  source_locator: 'pmc:123:sec1',
++  source_verified: true,
++  source_verification_method: 'exact',
++  supported_components: ['relation'],
++}
++
++const PASSAGE_UNVERIFIED: WorkbenchPassage = {
++  ...PASSAGE_VERIFIED,
++  hash: 'h2',
++  paper_passage_id: 'pp2',
++  passage: 'A secondary passage without verification.',
++  source_verified: false,
++  source_verification_method: null,
++  supported_components: [],
++}
++
++const DRAFT = {
++  passages: [PASSAGE_VERIFIED, PASSAGE_UNVERIFIED],
++  modelDirection: 'supports',
++  modelAssessment: '支持连接存在',
++  paperTitle: 'A Study of R1 to R2 Projection',
++  pmid: '12345678',
++}
++
++const DTO = {
++  target_type: 'connection',
++  target_id: 'r1-r2',
++  granularity: 'macro_clinical',
++  display_name: 'R1 → R2',
++  source_region: 'R1',
++  target_region: 'R2',
++  canonical_terms: [],
++  relation: 'projects_to',
++  directionality: '',
++  circuit_context: '',
++  function_context: '',
++  current_confidence: 0.7,
++  existing_evidence: 2,
++  structured_claim: {},
++  claim_text: 'R1 投射到 R2 且影响功能',
++  claim_components: [
++    { component_type: 'relation', statement: '存在投射关系', required: true, metadata: {} },
++    { component_type: 'source_region', statement: '源脑区为 R1', required: true, metadata: {} },
++  ],
++  claim_version: 'v1',
++}
++
++const PREVIEW = {
++  target_type: 'connection',
++  target_id: 'r1-r2',
++  current_confidence: 0.7,
++  direction: 'supports',
++  reviewer_confidence: 0.8,
++  final_confidence: 0.85,
++  cap: 0.85,
++  selected_passage_count: 1,
++  duplicate_passage_count: 0,
++  evidence_text_preview: '...',
++  allow: true,
++  block_reasons: [] as string[],
++}
++
++const REVIEW_HASH = '#/evidence-center?module=review&task_id=t1&target_type=connection&target_id=r1-r2'
++
++function renderModule(hash = REVIEW_HASH) {
++  window.location.hash = hash
++  return render(
++    <EvidenceCenterProvider>
++      <EvidenceReviewModule />
++    </EvidenceCenterProvider>,
++  )
++}
++
++/** 模拟候选模块已把带 taskItemId 的队列同步到 context */
++function QueueSeeder() {
++  const { setQueue } = useEvidenceCenter()
++  useEffect(() => {
++    setQueue([{
++      target_type: 'connection',
++      target_id: 'r1-r2',
++      label: 'R1 → R2 连接',
++      confidence: 0.7,
++      status: 'awaiting_review' as QueueStatus,
++      evidenceCount: 1,
++      taskItemId: 'item-1',
++    }])
++  }, [setQueue])
++  return null
++}
++
++describe('EvidenceReviewModule', () => {
++  afterEach(() => {
++    cleanup()
++    window.location.hash = ''
++    sessionStorage.clear()
++  })
++
++  beforeEach(() => {
++    vi.clearAllMocks()
++    sessionStorage.setItem(DRAFT_KEY, JSON.stringify(DRAFT))
++    vi.mocked(endpoints.getEvidenceTarget).mockResolvedValue(DTO)
++    vi.mocked(endpoints.attachPaperEvidencePreview).mockResolvedValue(PREVIEW)
++    vi.mocked(endpoints.translateEvidenceText).mockResolvedValue({ translated: '译文内容：R1 投射到 R2。' })
++    vi.mocked(endpoints.validatePassageSelection).mockResolvedValue({
++      source_verified: true,
++      verification_method: 'exact',
++      normalized_selection: 'R1 projects to R2.',
++      char_start: 0,
++      char_end: 20,
++    })
++    vi.mocked(endpoints.saveTaskItemDraft).mockResolvedValue({ item_id: 'item-1', saved: true, server_revision: 1 })
++  })
++
++  it('从 sessionStorage draft 恢复 passages 并渲染 PassageEvidenceCard + AI 推荐灰字', async () => {
++    renderModule()
++    await waitFor(() => expect(screen.getByText('We observed that R1 projects to R2 in the macaque.')).toBeTruthy())
++    expect(screen.getByText('A secondary passage without verification.')).toBeTruthy()
++    expect(screen.getByText('未通过原文校验，请人工核对或重新截取')).toBeTruthy()
++    expect(screen.getByText('AI 推荐：支持')).toBeTruthy()
++    // 未核验片段不可勾选
++    const cards = screen.getAllByTestId('ew-passage')
++    const checkboxes = cards.map(c => c.querySelector('input[type="checkbox"]')) as HTMLInputElement[]
++    expect(checkboxes[0].disabled).toBe(false)
++    expect(checkboxes[1].disabled).toBe(true)
++  })
++
++  it('方向修改触发 attach-preview(debounce 350ms)', async () => {
++    renderModule()
++    await waitFor(() => expect(endpoints.attachPaperEvidencePreview).toHaveBeenCalled())
++    fireEvent.click(screen.getByLabelText('矛盾'))
++    await waitFor(() =>
++      expect(endpoints.attachPaperEvidencePreview).toHaveBeenLastCalledWith(expect.objectContaining({
++        target_type: 'connection',
++        target_id: 'r1-r2',
++        pmid: '12345678',
++        direction: 'contradicts',
++        reviewer_confidence: 0.8,
++      }), expect.anything()),
++    )
++    expect(endpoints.attachPaperEvidencePreview).toHaveBeenCalledWith(expect.objectContaining({
++      passages: expect.arrayContaining([expect.objectContaining({ source_verified: true, passage: PASSAGE_VERIFIED.passage })]),
++    }), expect.anything())
++  })
++
++  it('翻译按钮调用 translateEvidenceText 并显示译文', async () => {
++    renderModule()
++    await waitFor(() => expect(screen.getByText('We observed that R1 projects to R2 in the macaque.')).toBeTruthy())
++    fireEvent.click(screen.getByRole('button', { name: '翻译' }))
++    await waitFor(() => expect(endpoints.translateEvidenceText).toHaveBeenCalledWith({ text: PASSAGE_VERIFIED.passage }))
++    const ta = screen.getByPlaceholderText('中文翻译（可编辑）') as HTMLTextAreaElement
++    await waitFor(() => expect(ta.value).toBe('译文内容：R1 投射到 R2。'))
++  })
++
++  it('「返回证据候选」→ module=candidates 且 draft 保留,重新进入 review 恢复', async () => {
++    renderModule()
++    await waitFor(() => expect(screen.getByText('We observed that R1 projects to R2 in the macaque.')).toBeTruthy())
++    fireEvent.click(screen.getByRole('button', { name: '返回证据候选' }))
++    await waitFor(() => expect(window.location.hash).toContain('module=candidates'))
++    expect(window.location.hash).toContain('target_id=r1-r2')
++    const raw = sessionStorage.getItem(DRAFT_KEY)
++    expect(raw).toBeTruthy()
++    expect(JSON.parse(raw!).passages.length).toBe(2)
++    // 重新进入 review 模块 → 从 draft 恢复
++    cleanup()
++    renderModule()
++    await waitFor(() => expect(screen.getByText('We observed that R1 projects to R2 in the macaque.')).toBeTruthy())
++    expect(screen.getByText('AI 推荐：支持')).toBeTruthy()
++  })
++
++  it('AI 推荐与人工确认视觉:modelDirection 灰字 + 人工方向 radio 独立高亮', async () => {
++    const { container } = renderModule()
++    await waitFor(() => expect(screen.getByText('AI 推荐：支持')).toBeTruthy())
++    const badge = container.querySelector('.ew-ai-recommend')
++    expect(badge).toBeTruthy()
++    expect(badge!.textContent).toBe('AI 推荐：支持')
++    // 人工方向 radio 独立于 AI 推荐存在,当前选择高亮
++    const radios = container.querySelectorAll('input[name="dir"]')
++    expect(radios.length).toBe(5)
++    const checked = [...radios].find(r => (r as HTMLInputElement).checked) as HTMLInputElement
++    expect(checked.value).toBe('supports')
++    const supportsChip = screen.getByText('支持')
++    expect(supportsChip.className).toContain('ew-dir-chip')
++    expect(supportsChip.className).toContain('ew-dir-chip-active')
++    expect(screen.getByText('矛盾').className).not.toContain('ew-dir-chip-active')
++  })
++
++  it('禁止项:无 Europe PMC 搜索控件 / 无 attach / 无正式确认文案', async () => {
++    renderModule()
++    await waitFor(() => expect(screen.getByText('We observed that R1 projects to R2 in the macaque.')).toBeTruthy())
++    expect(screen.queryByPlaceholderText(/检索/)).toBeNull()
++    expect(screen.queryByText(/Europe PMC/)).toBeNull()
++    expect(screen.queryByText('确认论文证据')).toBeNull()
++    expect(screen.queryByText('确认入库')).toBeNull()
++    expect(screen.queryByTestId('ew-attach')).toBeNull()
++    expect(screen.queryByText('检索')).toBeNull()
++  })
++
++  it('保存草稿:写 sessionStorage + 有 taskItemId 时调 saveTaskItemDraft', async () => {
++    window.location.hash = REVIEW_HASH
++    render(
++      <EvidenceCenterProvider>
++        <QueueSeeder />
++        <EvidenceReviewModule />
++      </EvidenceCenterProvider>,
++    )
++    await waitFor(() => expect(screen.getByText('We observed that R1 projects to R2 in the macaque.')).toBeTruthy())
++    fireEvent.click(screen.getByRole('button', { name: '保存草稿' }))
++    await waitFor(() =>
++      expect(endpoints.saveTaskItemDraft).toHaveBeenCalledWith('item-1', expect.objectContaining({
++        passages: expect.any(Array),
++        reviewerDirection: 'supports',
++        modelDirection: 'supports',
++        pmid: '12345678',
++      }), 0),
++    )
++    const raw = sessionStorage.getItem(DRAFT_KEY)
++    const draft = JSON.parse(raw!) as { reviewerDirection: string; reviewerEvidenceLevel: EvidenceLevel; note: string }
++    expect(draft.reviewerDirection).toBe('supports')
++    expect(draft.reviewerEvidenceLevel).toBe('indirect')
++    expect(typeof draft.note).toBe('string')
++  })
++
++  it('重新截取调用 validatePassageSelection 并通过校验后替换原文', async () => {
++    renderModule()
++    await waitFor(() => expect(screen.getByText('We observed that R1 projects to R2 in the macaque.')).toBeTruthy())
++    fireEvent.click(screen.getByRole('button', { name: '重新截取' }))
++    const input = screen.getByPlaceholderText('输入更短的真实原文范围（后端校验）') as HTMLTextAreaElement
++    fireEvent.change(input, { target: { value: 'R1 projects to R2.' } })
++    fireEvent.click(screen.getByRole('button', { name: '校验并替换' }))
++    await waitFor(() =>
++      expect(endpoints.validatePassageSelection).toHaveBeenCalledWith({
++        paper_passage_id: 'pp1',
++        selected_text: 'R1 projects to R2.',
++      }),
++    )
++    await waitFor(() => expect(screen.getByText('R1 projects to R2.')).toBeTruthy())
++  })
++})
+diff --git a/frontend/src/pages/evidence-center/modules/EvidenceReviewModule.tsx b/frontend/src/pages/evidence-center/modules/EvidenceReviewModule.tsx
+new file mode 100644
+index 0000000..0b62e4b
+--- /dev/null
++++ b/frontend/src/pages/evidence-center/modules/EvidenceReviewModule.tsx
+@@ -0,0 +1,360 @@
++import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
++import {
++  attachPaperEvidencePreview,
++  getEvidenceTarget,
++  saveTaskItemDraft,
++  translateEvidenceText,
++  validatePassageSelection,
++  type AttachPreviewResponse,
++  type EvidenceTargetDto,
++} from '../../../api/endpoints'
++import { useEvidenceCenter } from '../EvidenceCenterContext'
++import { ClaimPanel } from '../components/ClaimPanel'
++import { CoveragePanel } from '../components/CoveragePanel'
++import { PassageEvidenceCard } from '../components/PassageEvidenceCard'
++import { ReviewerDecisionPanel } from '../components/ReviewerDecisionPanel'
++import { aggregateTmpDirection, computeTmpCoverage } from '../components/claimCoverage'
++import type { Direction, EvidenceLevel, WorkbenchPassage } from '../components/types'
++
++const DRAFT_PREFIX = 'evidence-center.review-draft.'
++
++/** T7 候选模块写入、本模块恢复/回写的审核草稿 */
++interface ReviewDraft {
++  passages: WorkbenchPassage[]
++  modelDirection: Direction | null
++  modelAssessment: string | null
++  paperTitle: string
++  pmid: string
++  doi?: string | null
++  translations?: Record<string, string>
++  reviewerDirection?: Direction
++  reviewerEvidenceLevel?: EvidenceLevel
++  reviewerConfidence?: string
++  note?: string
++}
++
++export function EvidenceReviewModule() {
++  const { state, queue, openTarget } = useEvidenceCenter()
++  const [dto, setDto] = useState<EvidenceTargetDto | null>(null)
++  const [passages, setPassages] = useState<WorkbenchPassage[]>([])
++  const [selectedHashes, setSelectedHashes] = useState<Set<string>>(new Set())
++  const [translations, setTranslations] = useState<Record<string, string>>({})
++  const [direction, setDirection] = useState<Direction>('supports')
++  const [modelDirection, setModelDirection] = useState<Direction | null>(null)
++  const [modelAssessment, setModelAssessment] = useState<string | null>(null)
++  const [paperTitle, setPaperTitle] = useState('')
++  const [pmid, setPmid] = useState('')
++  const [doi, setDoi] = useState<string | null>(null)
++  const [evidenceLevel, setEvidenceLevel] = useState<EvidenceLevel>('indirect')
++  const [confidence, setConfidence] = useState('0.8')
++  const [note, setNote] = useState('')
++  const [preview, setPreview] = useState<AttachPreviewResponse | null>(null)
++  const [previewBusy, setPreviewBusy] = useState(false)
++  const [showContextHash, setShowContextHash] = useState<string | null>(null)
++  const [message, setMessage] = useState<string | null>(null)
++  const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
++  const abortRef = useRef<AbortController | null>(null)
++
++  const targetType = state.targetType
++  const targetId = state.targetId
++
++  // ─── 目标切换:恢复 sessionStorage 审核草稿(刷新不丢) ───
++  useEffect(() => {
++    setDto(null)
++    setPassages([])
++    setSelectedHashes(new Set())
++    setTranslations({})
++    setDirection('supports')
++    setEvidenceLevel('indirect')
++    setConfidence('0.8')
++    setNote('')
++    setModelDirection(null)
++    setModelAssessment(null)
++    setPaperTitle('')
++    setPmid('')
++    setDoi(null)
++    setPreview(null)
++    setPreviewBusy(false)
++    setShowContextHash(null)
++    setMessage(null)
++    setSaveState('idle')
++    if (!targetId) return
++    const raw = sessionStorage.getItem(`${DRAFT_PREFIX}${targetId}`)
++    if (!raw) return
++    try {
++      const d = JSON.parse(raw) as Partial<ReviewDraft>
++      if (Array.isArray(d.passages)) {
++        setPassages(d.passages)
++        setSelectedHashes(new Set(d.passages.filter(p => p.source_verified).map(p => p.hash)))
++      }
++      if (d.modelDirection) setModelDirection(d.modelDirection as Direction)
++      if (d.modelAssessment != null) setModelAssessment(d.modelAssessment)
++      if (d.paperTitle != null) setPaperTitle(d.paperTitle)
++      if (d.pmid != null) setPmid(d.pmid)
++      if (d.doi != null) setDoi(d.doi)
++      if (d.translations) setTranslations(d.translations)
++      if (d.reviewerDirection) setDirection(d.reviewerDirection as Direction)
++      if (d.reviewerEvidenceLevel) setEvidenceLevel(d.reviewerEvidenceLevel as EvidenceLevel)
++      if (d.reviewerConfidence != null) setConfidence(d.reviewerConfidence)
++      if (d.note != null) setNote(d.note)
++    } catch {
++      // 草稿损坏时忽略,保持空态
++    }
++  }, [targetId])
++
++  // Claim DTO(ClaimPanel 数据源)
++  useEffect(() => {
++    if (!targetType || !targetId) return
++    let cancelled = false
++    getEvidenceTarget(targetType, targetId)
++      .then(d => { if (!cancelled) setDto(d) })
++      .catch(() => { if (!cancelled) setDto(null) })
++    return () => { cancelled = true }
++  }, [targetType, targetId])
++
++  const updatePassage = useCallback((hash: string, patch: Partial<WorkbenchPassage>) => {
++    setPassages(ps => ps.map(p => (p.hash === hash ? { ...p, ...patch } : p)))
++  }, [])
++
++  const selectedPassages = useMemo(
++    () => passages.filter(p => selectedHashes.has(p.hash)),
++    [passages, selectedHashes],
++  )
++
++  const claimComponents = dto?.claim_components ?? []
++  const tmpCoverage = useMemo(() => computeTmpCoverage(claimComponents, selectedPassages), [claimComponents, selectedPassages])
++  const tmpDirection = useMemo(() => aggregateTmpDirection(tmpCoverage, selectedPassages), [tmpCoverage, selectedPassages])
++
++  // ─── 置信度预览(350ms debounce,body 同旧逻辑) ───
++  const runPreview = useCallback(async () => {
++    if (!targetType || !targetId || !pmid) return
++    if (selectedPassages.length === 0) {
++      setPreview(null)
++      return
++    }
++    abortRef.current?.abort()
++    abortRef.current = new AbortController()
++    setPreviewBusy(true)
++    try {
++      const r = await attachPaperEvidencePreview({
++        target_type: targetType,
++        target_id: targetId,
++        pmid,
++        direction,
++        reviewer_confidence: parseFloat(confidence) || 0,
++        passages: selectedPassages.map(p => ({
++          source_scope: p.source_scope,
++          paragraph_index: p.paragraph_index,
++          passage: p.passage,
++          direction: p.direction,
++          reason: p.reason,
++          confidence: p.confidence,
++          source_locator: p.source_locator,
++          source_verified: true,
++          supported_components: p.supported_components,
++        })),
++      }, abortRef.current.signal)
++      setPreview(r)
++    } catch (err) {
++      // 被新一轮预览 abort 的旧请求不算失败
++      if ((err as Error)?.name !== 'AbortError') {
++        setMessage(`预览失败：${err instanceof Error ? err.message : String(err)}`)
++      }
++    } finally {
++      setPreviewBusy(false)
++    }
++  }, [targetType, targetId, pmid, direction, confidence, selectedPassages])
++
++  useEffect(() => {
++    const t = setTimeout(() => void runPreview(), 350)
++    return () => clearTimeout(t)
++    // eslint-disable-next-line react-hooks/exhaustive-deps
++  }, [direction, confidence, selectedHashes, passages, pmid, targetType, targetId])
++
++  // ─── 草稿 debounce(500ms)写回 sessionStorage(永不丢) ───
++  const buildDraft = useCallback((): ReviewDraft => ({
++    passages,
++    modelDirection,
++    modelAssessment,
++    paperTitle,
++    pmid,
++    doi,
++    translations,
++    reviewerDirection: direction,
++    reviewerEvidenceLevel: evidenceLevel,
++    reviewerConfidence: confidence,
++    note,
++  }), [passages, modelDirection, modelAssessment, paperTitle, pmid, doi, translations, direction, evidenceLevel, confidence, note])
++
++  useEffect(() => {
++    if (!targetId || passages.length === 0) return
++    const t = setTimeout(() => {
++      sessionStorage.setItem(`${DRAFT_PREFIX}${targetId}`, JSON.stringify(buildDraft()))
++    }, 500)
++    return () => clearTimeout(t)
++  }, [targetId, buildDraft])
++
++  // ─── 片段操作 ───
++  const translatePassage = useCallback(async (hash: string, text: string) => {
++    try {
++      const r = await translateEvidenceText({ text })
++      setTranslations(t => ({ ...t, [hash]: r.translated }))
++    } catch (err) {
++      setMessage(`翻译失败：${err instanceof Error ? err.message : String(err)}`)
++    }
++  }, [])
++
++  const copyPassage = useCallback((text: string) => {
++    void navigator.clipboard?.writeText(text).catch(() => undefined)
++  }, [])
++
++  const handleReselect = useCallback(async (paperPassageId: string, text: string): Promise<boolean> => {
++    try {
++      const r = await validatePassageSelection({ paper_passage_id: paperPassageId, selected_text: text })
++      if (!r.source_verified) {
++        setMessage('重新截取未通过原文校验，禁止使用')
++        return false
++      }
++      const hash = passages.find(p => p.paper_passage_id === paperPassageId)?.hash
++      if (hash) {
++        updatePassage(hash, {
++          passage: r.normalized_selection ?? text,
++          source_verified: true,
++          source_verification_method: r.verification_method,
++        })
++      }
++      setMessage('重新截取已通过原文校验')
++      return true
++    } catch (err) {
++      setMessage(`重新截取失败：${err instanceof Error ? err.message : String(err)}`)
++      return false
++    }
++  }, [passages, updatePassage])
++
++  // ─── 顶部操作 ───
++  const handleBack = useCallback(() => {
++    if (targetType && targetId) openTarget(targetType, targetId, 'candidates')
++  }, [targetType, targetId, openTarget])
++
++  const taskItem = queue.find(q => q.target_type === targetType && q.target_id === targetId)
++
++  const handleSaveDraft = useCallback(async () => {
++    if (!targetId) return
++    const draft = buildDraft()
++    sessionStorage.setItem(`${DRAFT_PREFIX}${targetId}`, JSON.stringify(draft))
++    if (taskItem?.taskItemId) {
++      setSaveState('saving')
++      try {
++        await saveTaskItemDraft(taskItem.taskItemId, draft as unknown as Record<string, unknown>, 0)
++        setSaveState('saved')
++      } catch (err) {
++        setSaveState('error')
++        setMessage(`保存到任务失败：${err instanceof Error ? err.message : String(err)}`)
++      }
++    } else {
++      setMessage('草稿已保存在本地（未关联任务项）')
++    }
++  }, [targetId, buildDraft, taskItem?.taskItemId])
++
++  if (!targetType || !targetId) {
++    return (
++      <div className="evidence-review">
++        <div className="evidence-review-main">
++          <div className="evidence-candidates-empty">
++            请先从「佐证任务」或「证据候选」进入一个目标对象。
++          </div>
++        </div>
++      </div>
++    )
++  }
++
++  return (
++    <div className="evidence-review" data-testid="evidence-review">
++      <div className="evidence-review-main">
++        <ClaimPanel
++          claimText={dto?.claim_text ?? ''}
++          components={claimComponents}
++          confidence={dto?.current_confidence ?? null}
++          evidenceCount={dto?.existing_evidence ?? 0}
++          targetType={targetType}
++          granularity={dto?.granularity ?? ''}
++        />
++
++        <div className="evidence-review-paper" data-testid="evidence-review-paper">
++          <h4>当前论文</h4>
++          <strong>{paperTitle || '—'}</strong>
++          <span className="ew-meta">PMID {pmid || '—'} · DOI {doi || '—'}</span>
++          {modelAssessment && <p className="ew-meta">模型评估：{modelAssessment}</p>}
++        </div>
++
++        {message && <div className="ontology-page-message">{message}</div>}
++
++        <div className="evidence-review-passages">
++          {passages.length === 0 && (
++            <div className="evidence-candidates-empty">
++              暂无审核草稿。请先在「证据候选」中勾选片段并「加入人工审核」。
++            </div>
++          )}
++          {passages.map(p => (
++            <PassageEvidenceCard
++              key={p.hash}
++              passage={p}
++              components={claimComponents}
++              selected={selectedHashes.has(p.hash)}
++              translation={translations[p.hash] ?? ''}
++              onToggleSelect={checked => {
++                setSelectedHashes(prev => {
++                  const n = new Set(prev)
++                  if (checked) n.add(p.hash)
++                  else n.delete(p.hash)
++                  return n
++                })
++              }}
++              onLevelChange={level => updatePassage(p.hash, { evidence_level: level })}
++              onComponentToggle={(comp, checked) => {
++                const next = checked
++                  ? [...new Set([...(p.supported_components || []), comp])]
++                  : (p.supported_components || []).filter(c => c !== comp)
++                updatePassage(p.hash, { supported_components: next })
++              }}
++              onTranslationChange={value => setTranslations(t => ({ ...t, [p.hash]: value }))}
++              onTranslate={() => void translatePassage(p.hash, p.passage)}
++              onCopy={() => copyPassage(p.passage)}
++              onShowContext={() => setShowContextHash(prev => (prev === p.hash ? null : p.hash))}
++              showContext={showContextHash === p.hash}
++              onReselect={handleReselect}
++            />
++          ))}
++        </div>
++
++        {selectedPassages.length > 0 && (
++          <CoveragePanel coverage={tmpCoverage} direction={tmpDirection} />
++        )}
++      </div>
++
++      <div className="evidence-review-side">
++        <ReviewerDecisionPanel
++          direction={direction}
++          modelDirection={modelDirection}
++          onDirectionChange={setDirection}
++          evidenceLevel={evidenceLevel}
++          onEvidenceLevelChange={setEvidenceLevel}
++          confidence={confidence}
++          onConfidenceChange={setConfidence}
++          note={note}
++          onNoteChange={setNote}
++          selectedCount={selectedHashes.size}
++          preview={preview}
++          previewBusy={previewBusy}
++        />
++        <div className="evidence-review-actions">
++          <button type="button" className="btn btn-sm" onClick={handleBack}>返回证据候选</button>
++          <button type="button" className="btn btn-sm btn-primary" onClick={() => void handleSaveDraft()}>保存草稿</button>
++          {saveState === 'saving' && <span className="ew-meta">保存中…</span>}
++          {saveState === 'saved' && <span className="ew-ok">已保存</span>}
++          {saveState === 'error' && <span className="ew-bad">保存失败</span>}
++        </div>
++      </div>
++    </div>
++  )
++}
+diff --git a/frontend/src/styles.css b/frontend/src/styles.css
+index 949748d..d938db5 100644
+--- a/frontend/src/styles.css
++++ b/frontend/src/styles.css
+@@ -11739,10 +11739,63 @@ input[type="range"]::-webkit-slider-thumb {
+   font-size: 13px;
+   color: var(--text);
+   cursor: pointer;
+   border: 1px solid var(--border);
+   border-radius: 8px;
+   padding: 8px 10px;
+   background: #f8fafc;
+ }
+ .evidence-candidates-manual-paper strong { font-weight: 600; }
+ .evidence-candidates-empty { padding: 24px 12px; text-align: center; color: var(--text-muted); font-size: 13px; }
++
++/* ── 人工审核模块(EvidenceReviewModule) ─────────────────────────────────── */
++.evidence-review { display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 16px; align-items: start; }
++.evidence-review-main { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
++.evidence-review-passages { display: flex; flex-direction: column; gap: 8px; }
++.evidence-review-paper {
++  background: var(--white);
++  border: 1px solid var(--border);
++  border-radius: 10px;
++  padding: 10px 12px;
++  display: flex;
++  flex-direction: column;
++  gap: 4px;
++}
++.evidence-review-paper h4 { margin: 0 0 4px; font-size: 13px; }
++.evidence-review-paper strong { font-size: 13px; color: var(--text); }
++.evidence-review-side { width: 380px; display: flex; flex-direction: column; gap: 10px; }
++.evidence-review-side .ew-right-inner {
++  background: var(--white);
++  border: 1px solid var(--border);
++  border-radius: 10px;
++  padding: 12px;
++  display: flex;
++  flex-direction: column;
++  gap: 10px;
++}
++.evidence-review-side .ew-right-inner h4 { margin: 0 0 4px; font-size: 13px; }
++.evidence-review-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
++.ew-dir-label { display: flex; align-items: center; gap: 6px; }
++.ew-ai-recommend {
++  font-size: 11px;
++  color: var(--muted);
++  background: #f1f5f9;
++  border: 1px dashed var(--border);
++  border-radius: 10px;
++  padding: 1px 8px;
++  font-weight: 400;
++}
++.ew-dir-radios { display: flex; flex-wrap: wrap; gap: 6px; }
++.ew-dir-chip {
++  display: inline-flex;
++  align-items: center;
++  gap: 4px;
++  padding: 4px 10px;
++  border: 1px solid var(--border);
++  border-radius: 14px;
++  font-size: 12px;
++  cursor: pointer;
++  background: var(--white);
++  color: var(--text);
++}
++.ew-dir-chip:hover { border-color: var(--primary); background: #f8fafc; }
++.ew-dir-chip-active { background: #eff6ff; border-color: var(--primary); color: var(--primary); font-weight: 600; }

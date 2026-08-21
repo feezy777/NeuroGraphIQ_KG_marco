@@ -103,3 +103,21 @@ API wrappers: `buildReview()`, `listEvidenceReviews()`, `getEvidenceReview()`, `
 - `paper_evidence_review_passages` currently lacks a `passage_text_snapshot` hash index; may add if dedup is needed at review level
 - No batch promotion endpoint yet (single-review only)
 - Frontend UI integration (ReviewModule → buildReview, PromotionModule → promoteReview) is Phase 2
+
+## Post-Review Fixes (2026-08-11)
+
+**Commit:** `02bbe88` | **Branch:** `codex/ontology-evidence`
+
+### Changes
+
+| Finding | Fix |
+|---|---|
+| **C1** | `reject_review`/`return_review` 增加状态守卫: 已 promoted 或已 rejected/returned → raise ValueError |
+| **C2** | 新增 `cancel_review()` service (awaiting_promotion → cancelled), migration 注释 supported values |
+| **I1** | `approve_review` 移除不可达 'draft' 守卫, 注释说明 draft 预留未来多步审核流程 |
+| **I2** | 删除 `_write_evidence_audit_event` 死代码, ontology 路由改为调用 `_write_audit` |
+| **I3** | `build_review` 统一设 `review_status='awaiting_review'` + `promotion_status='not_ready'`, 需 `approve_review` 显式推进 |
+
+### Test Summary
+
+57 passed (15 review + 42 evidence), 0 failed. New: `test_reject_already_promoted_raises`, `test_return_already_promoted_raises`, `test_cancel_review`, `test_cancel_review_wrong_status_raises`.

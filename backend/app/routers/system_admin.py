@@ -23,7 +23,8 @@ async def restart_backend():
     """Schedule a backend process restart and return immediately.
 
     The current process exits shortly after this response is flushed; a detached
-    restarter relaunches ``run_server.py`` on the same port in a new console window.
+    restarter relaunches ``run_server.py`` on the same port in the background
+    (no console window; logs go to backend/logs/restart_server.log).
     """
     try:
         info = server_restart_service.schedule_server_restart()

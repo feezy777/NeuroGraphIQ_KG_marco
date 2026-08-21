@@ -1,0 +1,827 @@
+d49cf4573203ce33515eb59b58714bddb1758a1f style(evidence-ui): object task card + filter chips + left hint styles
+---DIFF---
+diff --git a/backend/tests/test_paper_evidence_work_status.py b/backend/tests/test_paper_evidence_work_status.py
+new file mode 100644
+index 0000000..d115f59
+--- /dev/null
++++ b/backend/tests/test_paper_evidence_work_status.py
+@@ -0,0 +1,257 @@
++# -*- coding: utf-8 -*-
++"""S5: 任务统一 work_status/item_counts/capabilities 与 items 状态筛选(service 级)。"""
++from __future__ import annotations
++
++import asyncio
++import json
++import uuid
++
++from fastapi.testclient import TestClient
++from sqlalchemy import text
++
++from app.database import AsyncSessionLocal
++from app.main import app
++from app.services import paper_evidence_service as pes
++
++
++def _run(coro):
++    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
++    loop = asyncio.new_event_loop()
++    try:
++        return loop.run_until_complete(coro)
++    finally:
++        loop.close()
++
++
++async def _make_task(session, *, raw_status="pending", counts: dict[str, int] | None = None, summary: bool = True) -> str:
++    tid = str(uuid.uuid4())
++    summary_json = (
++        json.dumps({"counts": counts}, ensure_ascii=False)
++        if summary and counts is not None
++        else json.dumps({}, ensure_ascii=False)  # summary NOT NULL:空对象触发批量兜底路径
++    )
++    await session.execute(
++        text(
++            "INSERT INTO paper_evidence_tasks "
++            "(id, target_type, scope, mode, max_papers_per_object, status, review_status, summary) "
++            "VALUES (:tid, 'connection', 'selected', 'existence', 3, :st, 'not_started', "
++            "CAST(:sum AS jsonb))"
++        ),
++        {"tid": tid, "st": raw_status, "sum": summary_json},
++    )
++    await session.commit()
++    return tid
++
++
++async def _add_items(session, task_id: str, statuses: list[str]) -> None:
++    for st in statuses:
++        await session.execute(
++            text(
++                "INSERT INTO paper_evidence_task_items (task_id, target_type, target_id, label, current_confidence, status) "
++                "VALUES (:tid, 'connection', :oid, :lbl, NULL, :st)"
++            ),
++            {"tid": task_id, "oid": str(uuid.uuid4()), "lbl": str(uuid.uuid4())[:8], "st": st},
++        )
++    await session.commit()
++
++
++async def _cleanup(session, task_id: str) -> None:
++    await session.execute(text("DELETE FROM paper_evidence_task_items WHERE task_id::text=:tid"), {"tid": task_id})
++    await session.execute(text("DELETE FROM paper_evidence_tasks WHERE id::text=:tid"), {"tid": task_id})
++    await session.commit()
++
++
++def _task_by_id(session, task_id: str) -> dict:
++    async def case():
++        async with AsyncSessionLocal() as s:
++            return next(t for t in (await pes.list_paper_evidence_tasks(s, limit=200))["items"] if t["id"] == task_id)
++    return _run(case())
++
++
++def test_raw_completed_with_awaiting_is_awaiting_review():
++    task_id = None
++    try:
++        async def case():
++            nonlocal task_id
++            async with AsyncSessionLocal() as s:
++                task_id = await _make_task(s, raw_status="completed", counts=None, summary=False)
++                await _add_items(s, task_id, ["awaiting_review", "awaiting_review"])
++        _run(case())
++        t = _task_by_id(None, task_id)
++        assert t["work_status"] == "awaiting_review"
++        assert t["item_counts"]["awaiting_review"] == 2
++        assert t["capabilities"]["can_continue_review"] is True
++    finally:
++        _run(_cleanup_case(task_id))
++
++
++async def _cleanup_case(task_id):
++    async with AsyncSessionLocal() as s:
++        await _cleanup(s, task_id)
++
++
++def test_empty_when_no_items():
++    task_id = None
++    try:
++        async def case():
++            nonlocal task_id
++            async with AsyncSessionLocal() as s:
++                task_id = await _make_task(s, raw_status="pending", counts=None, summary=False)
++        _run(case())
++        t = _task_by_id(None, task_id)
++        assert t["work_status"] == "empty"
++        assert t["item_counts"]["total"] == 0
++    finally:
++        _run(_cleanup_case(task_id))
++
++
++def test_paused_work_status_and_resume_capability():
++    task_id = None
++    try:
++        async def case():
++            nonlocal task_id
++            async with AsyncSessionLocal() as s:
++                task_id = await _make_task(s, raw_status="paused", counts={"pending": 3}, summary=True)
++        _run(case())
++        t = _task_by_id(None, task_id)
++        assert t["work_status"] == "paused"
++        assert t["capabilities"]["can_resume"] is True
++        assert t["capabilities"]["can_pause"] is False
++    finally:
++        _run(_cleanup_case(task_id))
++
++
++def test_running_processing_and_pause_capability():
++    task_id = None
++    try:
++        async def case():
++            nonlocal task_id
++            async with AsyncSessionLocal() as s:
++                task_id = await _make_task(s, raw_status="running", counts={"searching": 2, "pending": 1}, summary=True)
++        _run(case())
++        t = _task_by_id(None, task_id)
++        assert t["work_status"] == "processing"
++        assert t["item_counts"]["processing"] == 2
++        assert t["item_counts"]["pending"] == 1
++        assert t["capabilities"]["can_pause"] is True
++        assert t["capabilities"]["can_resume"] is False
++    finally:
++        _run(_cleanup_case(task_id))
++
++
++def test_failed_and_partially_failed():
++    ids = []
++    try:
++        async def case():
++            async with AsyncSessionLocal() as s:
++                ids.append(await _make_task(s, raw_status="failed", counts={"failed": 4}, summary=True))
++                ids.append(await _make_task(s, raw_status="failed", counts={"failed": 2, "completed": 3}, summary=True))
++        _run(case())
++        t1 = _task_by_id(None, ids[0])
++        t2 = _task_by_id(None, ids[1])
++        assert t1["work_status"] == "failed"
++        assert t1["capabilities"]["can_retry_failed"] is True
++        assert t2["work_status"] == "partially_failed"
++        assert t2["capabilities"]["can_retry_failed"] is True
++        assert t2["capabilities"]["can_view_results"] is True
++    finally:
++        for tid in ids:
++            _run(_cleanup_case(tid))
++
++
++def test_completed_is_not_approved():
++    task_id = None
++    try:
++        async def case():
++            nonlocal task_id
++            async with AsyncSessionLocal() as s:
++                task_id = await _make_task(s, raw_status="completed", counts={"completed": 5, "skipped": 1}, summary=True)
++        _run(case())
++        t = _task_by_id(None, task_id)
++        assert t["work_status"] == "completed"
++        # 与 review 无关:review_status 始终 not_started,但 work_status 由对象终态推导
++        assert t["review_status"] == "not_started"
++        assert t["capabilities"]["can_view_results"] is True
++        assert t["capabilities"]["can_continue_review"] is False
++    finally:
++        _run(_cleanup_case(task_id))
++
++
++def test_cancelled_work_status():
++    task_id = None
++    try:
++        async def case():
++            nonlocal task_id
++            async with AsyncSessionLocal() as s:
++                task_id = await _make_task(s, raw_status="cancelled", counts={"cancelled": 6}, summary=True)
++        _run(case())
++        t = _task_by_id(None, task_id)
++        assert t["work_status"] == "cancelled"
++        assert t["capabilities"]["can_pause"] is False
++        assert t["capabilities"]["can_resume"] is False
++        assert t["capabilities"]["can_retry_failed"] is False
++    finally:
++        _run(_cleanup_case(task_id))
++
++
++def test_status_filter_and_total():
++    task_id = None
++    try:
++        async def case():
++            nonlocal task_id
++            async with AsyncSessionLocal() as s:
++                task_id = await _make_task(s, raw_status="pending", counts=None, summary=False)
++                await _add_items(s, task_id, ["awaiting_review"] * 3 + ["pending"] * 2 + ["completed"])
++                resp = await pes.list_batch_items(s, task_id, status="awaiting_review", sort="confidence")
++                assert resp["total"] == 3
++                assert all(it["status"] == "awaiting_review" for it in resp["items"])
++                resp2 = await pes.list_batch_items(s, task_id, status="completed")
++                assert resp2["total"] == 1
++                # 不带筛选保持原行为
++                resp3 = await pes.list_batch_items(s, task_id)
++                assert resp3["total"] == 6
++        _run(case())
++    finally:
++        _run(_cleanup_case(task_id))
++
++
++def test_task_list_no_n1_for_missing_summary():
++    """缺 summary 的任务列表:一次批量聚合,SELECT 次数固定。"""
++    task_ids = []
++    try:
++        async def case():
++            async with AsyncSessionLocal() as s:
++                # 种子任务填满 limit 窗口(不带 target_id/summary):确保窗口内只有 NULL-target 任务,
++                # by_type 为空 → 不触发 enrich 的镜像 JOIN,SELECT 次数对环境不敏感
++                for _ in range(100):
++                    task_ids.append(await _make_task(s, raw_status="pending", counts=None, summary=False))
++                proxy = CountingSession(s)
++                resp = await pes.list_paper_evidence_tasks(proxy, limit=100)
++                assert len(resp["items"]) >= 100
++                # 1 列表 SELECT + 1 COUNT + 1 批量聚合 = 3
++                assert proxy.selects == 3, f"expected 3 SELECT, got {proxy.selects}"
++        _run(case())
++    finally:
++        for tid in task_ids:
++            _run(_cleanup_case(tid))
++
++
++class CountingSession:
++    def __init__(self, inner):
++        self.inner = inner
++        self.selects = 0
++
++    async def execute(self, stmt, params=None):
++        if str(stmt).lstrip().upper().startswith("SELECT"):
++            self.selects += 1
++        return await self.inner.execute(stmt, params)
++
++    def __getattr__(self, name):
++        return getattr(self.inner, name)
++
++
++def test_invalid_status_filter_returns_422():
++    """非法 status 由路由白名单校验返回 4xx,不进入 SQL。"""
++    with TestClient(app, raise_server_exceptions=False) as client:
++        r = client.get("/api/ontology/evidence/batch/00000000-0000-0000-0000-000000000000/items?status=evil")
++        assert r.status_code == 422
+diff --git a/frontend/src/styles.css b/frontend/src/styles.css
+index c9f68a0..5a86525 100644
+--- a/frontend/src/styles.css
++++ b/frontend/src/styles.css
+@@ -10346,20 +10346,104 @@ input[type="range"]::-webkit-slider-thumb {
+   -webkit-appearance: none;
+   width: 16px;
+   height: 16px;
+   border-radius: 50%;
+   background: var(--primary);
+   cursor: pointer;
+   border: 2px solid #fff;
+   box-shadow: 0 1px 4px rgba(0,0,0,0.2);
+ }
+ 
++/* ── Confidence Filter Popover (after global range rules to override) ────── */
++.cfp-root { position: relative; display: inline-flex; }
++.cfp-trigger { font-size: 12px; height: 30px; padding: 0 12px; border-radius: 6px; display: inline-flex; align-items: center; gap: 4px; }
++.cfp-trigger.cfp-active { background: var(--accent-light, #e8f0fe); color: var(--accent, #1a73e8); border-color: var(--accent, #1a73e8); }
++.cfp-clear { cursor: pointer; font-weight: bold; opacity: 0.7; }
++.cfp-clear:hover { opacity: 1; }
++.cfp-arrow { opacity: 0.5; }
++.cfp-popover {
++  position: absolute; top: calc(100% + 4px); left: 0; z-index: 9999;
++  background: #fff; border: 1px solid #d9d9d9; border-radius: 8px;
++  padding: 12px 14px; min-width: 260px; box-shadow: 0 4px 16px rgba(0,0,0,.10);
++}
++.cfp-presets { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 10px; }
++.cfp-preset-btn {
++  font-size: 11px; height: 26px; padding: 0 10px; border-radius: 4px;
++  border: 1px solid #d9d9d9; background: #fff; cursor: pointer; color: #555; white-space: nowrap;
++}
++.cfp-preset-btn:hover { border-color: var(--accent, #1a73e8); color: var(--accent, #1a73e8); }
++.cfp-preset-active { background: var(--accent, #1a73e8); color: #fff; border-color: var(--accent, #1a73e8); }
++.cfp-preset-active:hover { background: var(--accent, #1a73e8); color: #fff; }
++.cfp-section-label { font-size: 11px; color: #888; margin-bottom: 6px; }
++
++/* ── Dual-range slider: ONE track (divs) + transparent inputs ── */
++.cfp-slider-track { position: relative; height: 28px; margin-bottom: 2px; }
++
++/* The only visible track: background gray bar */
++.cfp-track-bg,
++.cfp-track-active {
++  position: absolute; top: 50%; left: 0; right: 0;
++  height: 4px; border-radius: 2px;
++  transform: translateY(-50%); pointer-events: none;
++}
++.cfp-track-bg   { background: #e0e0e0; }
++.cfp-track-active { background: var(--accent, #1a73e8); }
++
++/* Both range inputs: completely transparent — divs draw the track */
++.cfp-slider-track .cfp-range {
++  position: absolute; top: 0; left: 0;
++  width: 100%; height: 28px;
++  margin: 0 !important; padding: 0 !important; border: none !important;
++  box-shadow: none !important;
++  -webkit-appearance: none; appearance: none;
++  background: transparent !important;
++  pointer-events: none;
++  outline: none !important;
++}
++/* Native track — must be invisible */
++.cfp-slider-track .cfp-range::-webkit-slider-runnable-track {
++  height: 4px;
++  background: transparent !important;
++  border: 0 !important;
++  box-shadow: none !important;
++}
++.cfp-slider-track .cfp-range::-moz-range-track {
++  height: 4px;
++  background: transparent !important;
++  border: 0 !important;
++  box-shadow: none !important;
++}
++/* Thumb — 14px circle, centered on 4px transparent native track */
++.cfp-slider-track .cfp-range::-webkit-slider-thumb {
++  -webkit-appearance: none; appearance: none;
++  width: 14px !important; height: 14px !important;
++  border-radius: 50%; border: none !important;
++  box-shadow: none !important;
++  background: var(--accent, #1a73e8) !important;
++  cursor: pointer; pointer-events: auto;
++  margin-top: -5px;
++}
++.cfp-slider-track .cfp-range::-moz-range-thumb {
++  width: 14px; height: 14px; border-radius: 50%;
++  background: var(--accent, #1a73e8); border: none; cursor: pointer; pointer-events: auto;
++}
++
++.cfp-range-lo { z-index: 1; }
++.cfp-range-hi { z-index: 2; }
++.cfp-range-labels { display: flex; justify-content: space-between; font-size: 11px; margin-bottom: 10px; }
++.cfp-range-val { font-weight: 600; color: var(--accent, #1a73e8); }
++.cfp-check { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #555; margin-bottom: 10px; cursor: pointer; }
++.cfp-check input { accent-color: var(--accent, #1a73e8); }
++.cfp-actions { display: flex; justify-content: flex-end; gap: 6px; }
++.cfp-actions .btn { font-size: 12px; height: 28px; padding: 0 12px; border-radius: 4px; }
++.data-center-filter-stats { font-size: 12px; color: var(--text-muted); padding: 2px 0; }
++
+ /* ── Page refinement ────────────────────────────────────────────────────── */
+ .page {
+   display: flex;
+   flex-direction: column;
+   gap: 16px;
+   height: 100%;
+ }
+ .page-header {
+   margin-bottom: 0;
+   display: flex;
+@@ -11322,21 +11406,21 @@ input[type="range"]::-webkit-slider-thumb {
+ .ew-passage-invalid { border-color: var(--danger); background: var(--danger-bg); }
+ .ew-passage-top { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 12px; }
+ .ew-passage-top label { display: inline-flex; align-items: center; gap: 4px; cursor: pointer; color: var(--text); font-weight: 500; }
+ .ew-level-badge { color: var(--primary); background: var(--info-bg); border: 1px solid rgba(22, 119, 255, .3); border-radius: 4px; padding: 0 6px; font-size: 11px; font-weight: 600; }
+ .ew-passage-direction { font-size: 11px; font-weight: 600; font-family: var(--font-mono); color: var(--text-muted); background: var(--muted-bg); border-radius: 4px; padding: 0 6px; }
+ .ew-passage-en { font-size: 13px; line-height: 1.7; color: var(--text); background: var(--bg-soft); padding: 8px 10px; border-radius: 8px; }
+ .ew-passage-zh { font-size: 12px; color: #334155; background: var(--info-bg); padding: 8px 10px; border-radius: 8px; }
+ .ew-passage-context { font-size: 12px; color: var(--text-muted); border: 1px dashed var(--border); border-radius: 8px; padding: 6px 10px; }
+ .ew-passage-context summary { cursor: pointer; font-weight: 600; }
+ .ew-passage-context p { margin: 4px 0 0; }
+-.ew-trans { width: 100%; min-height: 54px; font-size: 12px; }
++.ew-trans { width: 100%; min-height: 140px; font-size: 14px; font-family: SimSun, "宋体", "Songti SC", serif; line-height: 1.7; }
+ .ew-reselect { display: flex; flex-direction: column; gap: 6px; padding: 8px; border: 1px dashed var(--border); border-radius: 8px; background: var(--bg-soft); }
+ 
+ /* ── Claim 面板(ClaimPanel) ───────────────────────────────────────────────── */
+ .ew-claim-panel { background: var(--bg-soft); }
+ .ew-claim-text {
+   font-size: 14px;
+   font-weight: 600;
+   color: var(--text);
+   line-height: 1.6;
+   padding: 8px 10px;
+@@ -11810,21 +11894,22 @@ input[type="range"]::-webkit-slider-thumb {
+   background: var(--white);
+   border: 1px solid var(--border);
+   border-radius: 10px;
+   padding: 12px 16px;
+   cursor: pointer;
+   transition: border-color .15s ease, box-shadow .15s ease;
+ }
+ .paper-card:hover { border-color: var(--primary); box-shadow: var(--shadow); }
+ .paper-card:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
+ .paper-card-main { display: flex; flex-direction: column; gap: 4px; min-width: 200px; flex: 1; }
+-.paper-card-title { font-size: 14px; font-weight: 700; color: var(--text); line-height: 1.45; }
++.paper-card-title { font-size: 14px; font-weight: 700; color: var(--text); line-height: 1.45; text-decoration: none; }
++a.paper-card-title[href]:hover { color: var(--primary, #1a73e8); text-decoration: underline; }
+ .paper-card-meta { font-size: 12px; color: var(--text-muted); }
+ .paper-card-ids { font-size: 11px; color: var(--text-muted); font-family: var(--font-mono); }
+ .paper-card-chips { display: flex; gap: 6px; flex-wrap: wrap; align-items: flex-start; justify-content: flex-end; max-width: 320px; }
+ .paper-badge { font-size: 11px; font-weight: 600; border-radius: 999px; padding: 2px 8px; white-space: nowrap; }
+ .paper-badge-oa { color: var(--success-fg); background: var(--success-bg); }
+ .paper-badge-avail { color: var(--primary); background: var(--info-bg); }
+ .paper-badge-muted { color: var(--text-muted); background: var(--muted-bg); }
+ .paper-pagination { display: flex; align-items: center; justify-content: center; gap: 12px; }
+ .paper-pagination-info { font-size: 12px; color: var(--text-muted); }
+ 
+@@ -11882,20 +11967,31 @@ input[type="range"]::-webkit-slider-thumb {
+   border: none;
+   border-radius: 50%;
+   background: rgba(22, 119, 255, .14);
+   color: var(--primary);
+   font-size: 12px;
+   line-height: 1;
+   cursor: pointer;
+   transition: background .12s ease;
+ }
+ .evidence-query-term-clear:hover { background: rgba(22, 119, 255, .28); }
++/* Query 语义指示器:轻量文本,浮动在 chips 行右侧 */
++.evidence-query-mode {
++  display: inline-flex;
++  align-items: center;
++  font-size: 11px;
++  color: var(--text-muted, #8c8c8c);
++  white-space: nowrap;
++}
++.evidence-query-mode-custom {
++  color: var(--primary);
++}
+ 
+ /* ── 检索区折叠条(有检索结果后默认收起,候选列表占据主视区) ── */
+ .evidence-search-collapsed {
+   display: flex;
+   align-items: center;
+   gap: 10px;
+   flex-wrap: wrap;
+ }
+ .evidence-search-collapsed-label {
+   font-size: 12px;
+@@ -11943,64 +12039,230 @@ input[type="range"]::-webkit-slider-thumb {
+   color: var(--primary);
+   background: var(--white);
+   border: 1px solid rgba(22, 119, 255, .28);
+   border-radius: 999px;
+   padding: 1px 8px;
+   white-space: nowrap;
+ }
+ .evidence-stats-assessment { font-size: 12px; font-weight: 600; color: var(--text); }
+ .evidence-stats-actions { margin-left: auto; display: flex; align-items: center; }
+ 
++/* ── 并行提取进度面板 ── */
++.evidence-extraction-progress {
++  margin: 10px 0 12px;
++  padding: 10px 12px;
++  border: 1px solid rgba(22, 119, 255, .18);
++  border-radius: var(--card-radius);
++  background: var(--white);
++}
++.evidence-extraction-progress-summary { display: grid; gap: 8px; }
++.evidence-extraction-progress-bar {
++  height: 8px;
++  border-radius: 999px;
++  background: rgba(22, 119, 255, .12);
++  overflow: hidden;
++}
++.evidence-extraction-progress-fill {
++  height: 100%;
++  background: var(--primary);
++  transition: width .2s ease;
++}
++.evidence-extraction-progress-meta {
++  font-size: 12px;
++  color: var(--text-muted);
++}
++.evidence-extraction-progress-actions {
++  display: flex;
++  gap: 8px;
++  margin-top: 8px;
++}
++.evidence-extraction-progress-list {
++  list-style: none;
++  margin: 10px 0 0;
++  padding: 0;
++  display: grid;
++  gap: 6px;
++  max-height: 220px;
++  overflow: auto;
++}
++.evidence-extraction-progress-list li {
++  display: flex;
++  justify-content: space-between;
++  gap: 12px;
++  font-size: 12px;
++  padding: 4px 0;
++  border-bottom: 1px solid rgba(15, 23, 42, .06);
++}
++.evidence-extraction-progress-title {
++  color: var(--text);
++  font-weight: 600;
++  overflow: hidden;
++  text-overflow: ellipsis;
++  white-space: nowrap;
++}
++.evidence-extraction-progress-stage {
++  color: var(--text-muted);
++  white-space: nowrap;
++}
++
+ /* ── 候选论文分层卡(PaperCard) ── */
+ .paper-card-candidate {
+   background: var(--white);
+   border: 1px solid var(--border);
+   border-radius: var(--card-radius);
+   box-shadow: var(--shadow);
+   padding: 12px 16px;
+   display: flex;
+   flex-direction: column;
+   gap: 8px;
+   transition: border-color .15s ease, box-shadow .15s ease;
+ }
+ .paper-card-candidate:hover { border-color: var(--primary); }
+-.paper-card-title-row .paper-card-title { font-size: 14px; font-weight: 700; color: var(--text); line-height: 1.5; }
++.paper-card-title-row .paper-card-title { font-size: 14px; font-weight: 700; color: var(--text); line-height: 1.5; text-decoration: none; }
++.paper-card-title-row .paper-card-title[href]:hover { color: var(--primary, #1a73e8); text-decoration: underline; }
+ .paper-card-cite-row .paper-card-meta { font-size: 12px; color: var(--text-muted); }
+ .paper-card-match-row { display: flex; align-items: center; gap: 8px; font-size: 12px; flex-wrap: wrap; }
+ .paper-card-match-score { color: var(--success-fg); background: var(--success-bg); border-radius: 999px; padding: 1px 8px; font-weight: 600; }
+ .paper-card-match-reason { color: var(--text-muted); }
+ .paper-card-tags-row { display: flex; gap: 6px; flex-wrap: wrap; }
+ .paper-card-tag {
+   font-size: 11px;
+   font-weight: 600;
+   color: var(--text-muted);
+   background: var(--muted-bg);
+   border: 1px solid var(--border);
+   border-radius: 999px;
+   padding: 2px 8px;
+   font-family: var(--font-mono);
+ }
+ .paper-card-tag-ok { color: var(--primary); background: var(--info-bg); border-color: rgba(22, 119, 255, .28); }
+ .paper-card-tag-oa { color: var(--success-fg); background: var(--success-bg); }
++.paper-card-tag-src { text-transform: uppercase; font-weight: 600; letter-spacing: .3px; }
++.paper-card-tag-src-pubmed { color: #1a56db; background: #e8f0fe; }
++.paper-card-tag-src-openalex { color: #7c3aed; background: #ede9fe; }
++.paper-card-tag-src-europepmc { color: #059669; background: #d1fae5; }
++.paper-card-tag-src-semanticscholar { color: #d97706; background: #fef3c7; }
++.paper-card-abstract { font-size: 12px; color: var(--text-muted); line-height: 1.5; margin: 4px 0 6px; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+ .paper-card-result-row { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+ .paper-card-result-badge {
+   font-size: 11px;
+   font-weight: 600;
+   border-radius: 6px;
+   padding: 2px 8px;
+   color: var(--text-muted);
+   background: var(--muted-bg);
+   white-space: nowrap;
+ }
+ .paper-card-result-badge-ok { color: var(--success-fg); background: var(--success-bg); }
+ .paper-card-result-badge-ai { color: var(--primary); background: var(--info-bg); }
+ 
++/* ── PMID/DOI 可点击链接(候选论文卡标签) ── */
++.paper-card-tag-link {
++  text-decoration: none;
++  cursor: pointer;
++  transition: background .15s, border-color .15s;
++}
++.paper-card-tag-link:hover { background: var(--info-bg); border-color: var(--primary); color: var(--primary); }
++
++/* ── 右栏候选佐证原文片段聚合(PassageSummary) ── */
++.passage-summary {
++  display: flex;
++  flex-direction: column;
++  gap: 0;
++  border-top: 1px solid var(--border);
++  margin-top: 4px;
++  padding-top: 10px;
++}
++.passage-summary-head {
++  display: flex;
++  align-items: center;
++  justify-content: space-between;
++  margin-bottom: 4px;
++}
++.passage-summary-title { font-size: 13px; font-weight: 700; color: var(--text); margin: 0; }
++.passage-summary-count {
++  font-size: 11px;
++  font-weight: 700;
++  color: var(--primary);
++  background: var(--info-bg);
++  border-radius: 999px;
++  padding: 1px 7px;
++  min-width: 20px;
++  text-align: center;
++}
++.passage-summary-intro {
++  font-size: 11px;
++  color: var(--text-muted);
++  line-height: 1.5;
++  margin: 0 0 8px;
++}
++.passage-summary-section { display: flex; flex-direction: column; gap: 6px; margin-bottom: 6px; }
++.passage-summary-section-label {
++  font-size: 10px;
++  font-weight: 700;
++  color: var(--text-muted);
++  text-transform: uppercase;
++  letter-spacing: .5px;
++}
++.passage-summary-card {
++  background: var(--bg-soft);
++  border: 1px solid var(--border);
++  border-radius: 8px;
++  padding: 6px 8px;
++  display: flex;
++  flex-direction: column;
++  gap: 4px;
++}
++.passage-summary-card:hover { border-color: var(--primary); }
++.passage-summary-card-meta {
++  display: flex;
++  align-items: center;
++  gap: 4px;
++  flex-wrap: wrap;
++}
++.passage-summary-card-title {
++  font-size: 11px;
++  font-weight: 600;
++  color: var(--text);
++  line-height: 1.3;
++  max-width: 100%;
++}
++.passage-summary-card-badge {
++  font-size: 10px;
++  font-weight: 600;
++  border-radius: 999px;
++  padding: 0 6px;
++  line-height: 16px;
++  white-space: nowrap;
++  color: var(--text-muted);
++  background: var(--muted-bg);
++}
++.passage-summary-badge-support { color: var(--success-fg); background: var(--success-bg); }
++.passage-summary-badge-partial { color: #b54708; background: #fffaeb; }
++.passage-summary-badge-contradict { color: var(--danger-fg); background: var(--danger-bg); }
++.passage-summary-card-badge-level {
++  color: var(--text-muted);
++  background: transparent;
++  border: 1px solid var(--border);
++}
++.passage-summary-card-text {
++  font-size: 11px;
++  color: var(--text-muted);
++  line-height: 1.4;
++  overflow: hidden;
++  text-overflow: ellipsis;
++}
++.passage-summary-card-actions {
++  display: flex;
++  justify-content: flex-end;
++}
++
+ /* ── 统一空态(EmptyState) ── */
+ .evidence-empty {
+   display: flex;
+   flex-direction: column;
+   align-items: center;
+   gap: 8px;
+   padding: 40px 20px;
+   text-align: center;
+   background: var(--white);
+   border: 1px dashed var(--border);
+@@ -12308,20 +12570,50 @@ input[type="range"]::-webkit-slider-thumb {
+   border-bottom: 1px dashed var(--border);
+   padding: 6px 0;
+   font-size: 12px;
+ }
+ .evidence-promotion-impact .ew-promo-field:last-of-type { border-bottom: none; }
+ .evidence-promotion-impact .ew-promo-key { color: var(--text-muted); flex-shrink: 0; }
+ .evidence-promotion-impact .ew-promo-val { font-weight: 600; color: var(--text); }
+ .evidence-promotion-impact .ew-promo-final { color: var(--primary); }
+ .evidence-promotion-impact .ew-sticky-actions { margin-top: 8px; }
+ 
++/* Promotion confidence preview */
++.evidence-promotion-preview {
++  margin: 10px 0; padding: 14px 16px;
++  background: var(--info-bg, #f0f7ff); border-radius: 8px; border: 1px solid var(--primary-border, #cfe2ff);
++}
++.evidence-promotion-preview h4 { margin: 0 0 10px; font-size: 13px; color: var(--primary, #1a73e8); }
++.evidence-promotion-confidence-grid {
++  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
++}
++.evidence-promotion-confidence-cell {
++  display: flex; flex-direction: column; align-items: center; padding: 8px 12px;
++  background: #fff; border-radius: 6px; border: 1px solid var(--border, #e0e0e0);
++  min-width: 72px;
++}
++.evidence-promotion-confidence-label { font-size: 11px; color: var(--text-muted); }
++.evidence-promotion-confidence-cell strong { font-size: 18px; color: var(--text); }
++.evidence-promotion-confidence-final strong { color: var(--primary, #1a73e8); }
++.evidence-promotion-confidence-arrow { font-size: 18px; color: var(--text-muted); }
++.evidence-promotion-result {
++  display: flex; align-items: center; gap: 12px; padding: 10px 14px;
++  background: #d1fae5; border-radius: 8px; border: 1px solid #a7f3d0;
++  margin-bottom: 8px; font-size: 13px;
++}
++.evidence-promotion-result .btn { margin-left: auto; }
++.evidence-promotion-auto { display: flex; align-items: center; gap: 4px; font-size: 12px; color: var(--text-muted); cursor: pointer; }
++.evidence-promotion-actions {
++  display: flex; gap: 8px; margin-top: 12px; padding: 10px 0;
++  border-top: 1px solid var(--border, #e0e0e0);
++}
++
+ /* ── 证据详情抽屉(EvidenceDetailDrawer) ── */
+ .evidence-detail-body { gap: 12px; }
+ .evidence-detail-section {
+   border: 1px solid var(--border);
+   border-radius: 10px;
+   padding: 10px 12px;
+   background: var(--white);
+   display: flex;
+   flex-direction: column;
+   gap: 8px;
+@@ -12552,10 +12844,90 @@ input[type="range"]::-webkit-slider-thumb {
+   border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-soft);
+ }
+ .evidence-task-middle-bar h3 { margin: 0; font-size: 15px; }
+ .evidence-task-card-selected { border-color: var(--primary); box-shadow: 0 0 0 1px var(--primary) inset; }
+ 
+ /* ── 全局队列任务名徽章 ── */
+ .evidence-queue-task-badge {
+   padding: 2px 8px; border-radius: 999px; background: var(--info-bg);
+   color: var(--text-muted); font-size: 11px;
+ }
++
++/* ─── 佐证任务:左栏任务列表 + 中栏连接卡片 ─── */
++.evidence-task-list { display: flex; flex-direction: column; gap: 6px; padding: 4px; }
++.evidence-task-list-head { display: flex; align-items: center; justify-content: space-between; padding: 2px 4px 6px; }
++.evidence-task-list-title { font-size: 13px; font-weight: 600; color: var(--text); }
++.evidence-task-list-item { display: flex; flex-direction: column; gap: 4px; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--border); cursor: pointer; background: var(--white); transition: border-color .15s, background .15s; }
++.evidence-task-list-item:hover { border-color: var(--primary); }
++.evidence-task-list-item-active { background: var(--info-bg); border-color: var(--primary); }
++.evidence-task-list-name { font-size: 13px; font-weight: 500; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
++.evidence-task-list-status { align-self: flex-start; }
++.evidence-task-list-empty { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 20px 8px; color: var(--text-muted); }
++
++.evidence-conn-tabs { display: flex; gap: 6px; margin: 10px 0; flex-wrap: wrap; }
++.evidence-conn-tab { padding: 5px 12px; border-radius: 999px; border: 1px solid var(--border); background: var(--white); font-size: 12px; color: var(--text); cursor: pointer; transition: all .15s; }
++.evidence-conn-tab:hover { border-color: var(--primary); color: var(--primary); }
++.evidence-conn-tab-active { background: var(--primary); border-color: var(--primary); color: #fff; }
++
++.evidence-conn-list { display: flex; flex-direction: column; gap: 10px; }
++.evidence-conn-card { display: flex; flex-direction: column; gap: 10px; padding: 14px 16px; border-radius: 10px; border: 1px solid var(--border); background: var(--white); cursor: pointer; transition: border-color .15s, box-shadow .15s; }
++.evidence-conn-card:hover { border-color: var(--primary); box-shadow: var(--shadow); }
++.evidence-conn-card-main { display: flex; flex-direction: column; gap: 2px; }
++.evidence-conn-card-label { font-size: 14px; font-weight: 600; color: var(--text); }
++.evidence-conn-card-type { font-size: 12px; color: var(--text-muted); }
++.evidence-conn-card-meta { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
++.evidence-conn-card-conf { display: flex; align-items: baseline; gap: 6px; padding: 4px 10px; border-radius: 8px; background: var(--info-bg); }
++.evidence-conn-card-conf-label { font-size: 12px; color: var(--text-muted); }
++.evidence-conn-card-conf-value { font-size: 18px; font-weight: 700; color: var(--primary); }
++
++/* ── 第四步:卡片按钮与错误面板 ── */
++.evidence-conn-card-btn { width: 100%; font: inherit; color: inherit; }
++.evidence-conn-card-btn:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
++.evidence-queue-done-item-clickable { cursor: pointer; }
++.evidence-queue-done-item-clickable:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
++.evidence-target-not-found { padding: 18px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-soft); display: flex; flex-direction: column; gap: 8px; }
++.evidence-target-not-found h4 { margin: 0; font-size: 15px; }
++
++/* ── 第五步:任务卡动作与可点击卡 ── */
++.evidence-task-card-clickable { cursor: pointer; }
++.evidence-task-card-clickable:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
++.evidence-task-card-actions { display: flex; gap: 6px; margin-top: 2px; }
++
++/* ── 佐证任务对象卡(一对一)── */
++.evidence-task-card-title {
++  font-weight: 600;
++  overflow: hidden;
++  text-overflow: ellipsis;
++  white-space: nowrap;
++}
++.evidence-task-card-meta {
++  display: flex;
++  align-items: baseline;
++  gap: 10px;
++  margin-top: 4px;
++}
++.evidence-task-card-confidence {
++  font-size: 1.15rem;
++  font-weight: 700;
++  color: var(--color-accent, #1a6fb0);
++}
++.evidence-task-card-remark {
++  margin-top: 4px;
++  font-size: 0.8rem;
++  color: var(--color-text-muted, #8a94a6);
++  overflow: hidden;
++  text-overflow: ellipsis;
++  white-space: nowrap;
++}
++.evidence-task-filter-chips {
++  display: flex;
++  gap: 8px;
++  margin-bottom: 10px;
++}
++.evidence-left-hint {
++  padding: 12px;
++  margin-bottom: 10px;
++  border-radius: 8px;
++  background: var(--color-surface-muted, #f3f6fa);
++  color: var(--color-text-muted, #8a94a6);
++  font-size: 0.85rem;
++}

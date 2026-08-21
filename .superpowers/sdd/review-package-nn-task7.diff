@@ -1,0 +1,438 @@
+25a21a6b3abbf01aa11802c4cf4693fd6fc3d7b0 feat(evidence-ui): structurally-impossible badge on task cards + banner on evidence page
+---DIFF---
+diff --git a/backend/app/services/paper_evidence_service.py b/backend/app/services/paper_evidence_service.py
+index f601189..843df92 100644
+--- a/backend/app/services/paper_evidence_service.py
++++ b/backend/app/services/paper_evidence_service.py
+@@ -3991,33 +3991,35 @@ async def _enrich_task_display(session: AsyncSession, tasks: list[dict]) -> list
+         ).all()
+         for r in rows:
+             live[(tt, str(r._mapping["id"]))] = r._mapping
+     # 始终批量取唯一 item 的 id 与快照(一对一:任务 = 对象;item_id 供前端回退/review 关联,快照兜底名称)
+     snap: dict[str, dict] = {}
+     need_item = [t["id"] for t in tasks]
+     if need_item:
+         rows = (
+             await session.execute(
+                 text(
+-                    "SELECT DISTINCT ON (task_id) task_id::text, id::text, target_id::text, label, current_confidence "
++                    "SELECT DISTINCT ON (task_id) task_id::text, id::text, target_id::text, label, current_confidence, "
++                    "preprocess_outcome "
+                     "FROM paper_evidence_task_items WHERE task_id::text = ANY(:ids) "
+                     "ORDER BY task_id, updated_at DESC"
+                 ),
+                 {"ids": need_item},
+             )
+         ).all()
+         for r in rows:
+             snap[r[0]] = {
+                 "item_id": r[1],
+                 "target_id": r[2],
+                 "label": r[3],
+                 "confidence": float(r[4]) if r[4] is not None else None,
++                "preprocess_outcome": r[5],
+             }
+     out: list[dict] = []
+     for t in tasks:
+         tt = t["target_type"]
+         oid = t.get("target_id") or snap.get(t["id"], {}).get("target_id")
+         m = live.get((tt, oid)) if oid else None
+         cn = en = None
+         conf = None
+         name_src = "missing"
+         if m is not None:
+@@ -4042,20 +4044,21 @@ async def _enrich_task_display(session: AsyncSession, tasks: list[dict]) -> list
+             conf_src = "mirror_live"
+         out.append(
+             {
+                 **t,
+                 "item_id": snap.get(t["id"], {}).get("item_id"),
+                 "display_name_cn": cn,
+                 "display_name_en": en,
+                 "display_confidence": conf,
+                 "display_name_source": name_src,
+                 "display_confidence_source": conf_src,
++                "preprocess_outcome": snap.get(t["id"], {}).get("preprocess_outcome"),
+             }
+         )
+     return out
+ 
+ 
+ # workbench 颗粒度级别 → 镜像 family 值(任务表两种值并存:旧数据存级别,新数据/镜像行存 family)
+ _GRANULARITY_FAMILY: dict[str, str] = {
+     "macro": "macro_clinical",
+     "meso": "meso_anatomical",
+     "sub_connectivity": "sub_connectivity",
+diff --git a/backend/tests/test_paper_evidence_task_display.py b/backend/tests/test_paper_evidence_task_display.py
+index 16e395c..4f370f3 100644
+--- a/backend/tests/test_paper_evidence_task_display.py
++++ b/backend/tests/test_paper_evidence_task_display.py
+@@ -15,43 +15,43 @@ from app.services import paper_evidence_service as pes
+ 
+ def _run(coro):
+     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+     loop = asyncio.new_event_loop()
+     try:
+         return loop.run_until_complete(coro)
+     finally:
+         loop.close()
+ 
+ 
+-async def _insert_task(tt, oid, *, label, conf, summary_counts=True):
++async def _insert_task(tt, oid, *, label, conf, summary_counts=True, preprocess_outcome=None):
+     async with AsyncSessionLocal() as s:
+         tid = (
+             await s.execute(
+                 text(
+                     "INSERT INTO paper_evidence_tasks "
+                     "(target_type, target_id, scope, mode, max_papers_per_object, status, total_items, summary) "
+                     "VALUES (:tt, :oid, 'selected', 'function', 3, 'pending', 1, :sm) RETURNING id::text"
+                 ),
+                 {
+                     "tt": tt,
+                     "oid": uuid.UUID(oid),
+                     "sm": json.dumps({"counts": {"pending": 1}}) if summary_counts else None,
+                 },
+             )
+         ).scalar_one()
+         await s.execute(
+             text(
+                 "INSERT INTO paper_evidence_task_items "
+-                "(task_id, target_type, target_id, label, current_confidence, status) "
+-                "VALUES (:tid, :tt, :oid, :lbl, :conf, 'pending')"
++                "(task_id, target_type, target_id, label, current_confidence, status, preprocess_outcome) "
++                "VALUES (:tid, :tt, :oid, :lbl, :conf, 'pending', :po)"
+             ),
+-            {"tid": tid, "tt": tt, "oid": uuid.UUID(oid), "lbl": label, "conf": conf},
++            {"tid": tid, "tt": tt, "oid": uuid.UUID(oid), "lbl": label, "conf": conf, "po": preprocess_outcome},
+         )
+         await s.commit()
+         return tid
+ 
+ 
+ async def _insert_connection(oid, *, src_cn="杏仁核", src_en="Amygdala", tgt_cn="海马", tgt_en="Hippocampus", confidence=0.35):
+     async with AsyncSessionLocal() as s:
+         await s.execute(
+             text(
+                 "INSERT INTO mirror_region_connections "
+@@ -89,20 +89,36 @@ def test_list_tasks_returns_cn_en_and_confidence():
+                 assert task["display_name_cn"] == "杏仁核 → 海马"
+                 assert task["display_name_en"] == "Amygdala → Hippocampus"
+                 assert task["display_confidence"] == 0.35
+                 assert task["display_name_source"] == "mirror_live"
+                 assert task["display_confidence_source"] == "mirror_live"
+         _run(case())
+     finally:
+         _run(_cleanup(task_ids, [oid]))
+ 
+ 
++def test_list_tasks_exposes_preprocess_outcome():
++    oid = str(uuid.uuid4())
++    task_ids: list[str] = []
++    try:
++        task_ids.append(_run(_insert_task("connection", oid, label="BLA → IL", conf=None, preprocess_outcome="non_neural_target")))
++
++        async def case():
++            async with AsyncSessionLocal() as s:
++                resp = await pes.list_paper_evidence_tasks(s, limit=10)
++                task = next(t for t in resp["items"] if t["id"] == task_ids[0])
++                assert task["preprocess_outcome"] == "non_neural_target"
++        _run(case())
++    finally:
++        _run(_cleanup(task_ids, []))
++
++
+ def test_get_task_returns_display_fields():
+     oid = str(uuid.uuid4())
+     task_ids: list[str] = []
+     try:
+         _run(_insert_connection(oid, confidence=0.35))
+         task_ids.append(_run(_insert_task("connection", oid, label=str(uuid.uuid4()), conf=None)))
+ 
+         async def case():
+             async with AsyncSessionLocal() as s:
+                 resp = await pes.get_batch_task(s, task_ids[0])
+diff --git a/frontend/src/api/endpoints.ts b/frontend/src/api/endpoints.ts
+index d3191f1..6c40474 100644
+--- a/frontend/src/api/endpoints.ts
++++ b/frontend/src/api/endpoints.ts
+@@ -5699,20 +5699,22 @@ export interface PaperEvidenceTask {
+   /** 唯一任务项的 id(一对一:任务=对象;回退/review 关联用) */
+   item_id: string | null
+   /** 任务级对象展示名(中文;镜像行实时,缺失回退快照/兜底) */
+   display_name_cn: string | null
+   /** 任务级对象展示名(英文;仅镜像行实时) */
+   display_name_en: string | null
+   /** 任务级展示置信度(实时 → 快照 → null=未评分) */
+   display_confidence: number | null
+   display_name_source: 'mirror_live' | 'task_snapshot' | 'fallback' | 'missing'
+   display_confidence_source: 'mirror_live' | 'task_snapshot' | 'missing'
++  /** 唯一任务项的预处理结果(non_neural_target / evidence_negated / no_evidence_found;旧任务 null) */
++  preprocess_outcome: string | null
+   /** 统一任务工作状态(权威口径,后端由全量对象计数推导) */
+   work_status: TaskWorkStatus | string
+   /** 全量对象计数(非前端已加载子集) */
+   item_counts: TaskItemCounts
+   /** 后端真实守卫推导的操作能力 */
+   capabilities: TaskCapabilities
+   materialization_error: string | null
+   versions: Record<string, string | null> | null
+   summary: Record<string, unknown> | null
+   created_by: string | null
+diff --git a/frontend/src/pages/evidence-center/components/taskStatus.ts b/frontend/src/pages/evidence-center/components/taskStatus.ts
+index 0776b0a..3219999 100644
+--- a/frontend/src/pages/evidence-center/components/taskStatus.ts
++++ b/frontend/src/pages/evidence-center/components/taskStatus.ts
+@@ -136,16 +136,23 @@ export const WORK_STATUS_LABELS: Record<string, string> = {
+ export function workStatusTone(ws: string): string {
+   switch (ws) {
+     case 'processing': return 'info'
+     case 'paused': case 'awaiting_review': return 'warn'
+     case 'partially_failed': case 'failed': return 'bad'
+     case 'completed': return 'ok'
+     case 'cancelled': case 'empty': default: return 'muted'
+   }
+ }
+ 
++/** 预处理结果中文标签(对象卡/任务卡徽章) */
++export const PREPROCESS_OUTCOME_LABELS: Record<string, string> = {
++  non_neural_target: '结构性不存在:靶标为非神经结构',
++  evidence_negated: '证据否定',
++  no_evidence_found: '无证据',
++}
++
+ /** 任务卡排序:处理中 → 待验证 → 已暂停 → 部分失败 → 失败 → 已完成 → 空 → 已取消 */
+ export function workStatusRank(ws: string): number {
+   const order = ['processing', 'awaiting_review', 'paused', 'partially_failed', 'failed', 'completed', 'empty', 'cancelled']
+   const i = order.indexOf(ws)
+   return i === -1 ? 9 : i
+ }
+diff --git a/frontend/src/pages/evidence-center/modules/EvidenceCandidatesModule.test.tsx b/frontend/src/pages/evidence-center/modules/EvidenceCandidatesModule.test.tsx
+index 92bc9c7..96f5cb3 100644
+--- a/frontend/src/pages/evidence-center/modules/EvidenceCandidatesModule.test.tsx
++++ b/frontend/src/pages/evidence-center/modules/EvidenceCandidatesModule.test.tsx
+@@ -194,20 +194,34 @@ describe('EvidenceCandidatesModule', () => {
+       requested_concurrency: 4,
+       active_concurrency: 0,
+       cancel_requested: false,
+       created_at: '2026-08-12T00:00:00Z',
+       updated_at: '2026-08-12T00:00:00Z',
+       progress_percent: 100,
+       items: [],
+     })
+   })
+ 
++  it('非神经靶标对象:提示条替代候选工作区(检索区/统计条/候选列表均不渲染)', async () => {
++    vi.mocked(endpoints.listPaperEvidenceTaskItems).mockResolvedValue({
++      items: [{ ...ITEM, preprocess_outcome: 'non_neural_target' }],
++    })
++    renderModule()
++    const banner = await screen.findByTestId('evidence-non-neural-banner')
++    expect(banner.textContent).toContain('非神经结构')
++    expect(banner.textContent).toContain('已标记为不存在')
++    // 候选工作区整体被替代:检索区与候选列表不渲染
++    expect(screen.queryByText(/查找相关论文/)).toBeNull()
++    expect(screen.queryByTestId('evidence-stats-bar')).toBeNull()
++    expect(screen.queryByText('A Study of R1 to R2 Projection')).toBeNull()
++  })
++
+   it('不再自渲染左队列(队列由页面级 ObjectQueue 渲染)', async () => {
+     renderModule()
+     await waitFor(() => expect(endpoints.listPaperEvidenceTaskItems).toHaveBeenCalledWith('t1', { limit: 100 }))
+     expect(screen.queryByTestId('candidates-queue')).toBeNull()
+     expect(screen.queryByTestId('candidates-queue-item')).toBeNull()
+   })
+ 
+   it('不再自渲染 ClaimView(已移至页面左栏;模块中栏仅保留检索/统计条/候选列表)', async () => {
+     renderModule()
+     await waitFor(() => expect(screen.getByText('A Study of R1 to R2 Projection')).toBeTruthy())
+diff --git a/frontend/src/pages/evidence-center/modules/EvidenceCandidatesModule.tsx b/frontend/src/pages/evidence-center/modules/EvidenceCandidatesModule.tsx
+index 94c3c34..a659dad 100644
+--- a/frontend/src/pages/evidence-center/modules/EvidenceCandidatesModule.tsx
++++ b/frontend/src/pages/evidence-center/modules/EvidenceCandidatesModule.tsx
+@@ -456,20 +456,23 @@ export function EvidenceCandidatesModule() {
+   // useMemo:保证引用稳定(否则作为 summary 计算依赖会触发无限重渲染循环)
+   const claimComponents = useMemo(() => dto?.claim_components ?? [], [dto])
+ 
+   // ─── 搜索区(当前对象存在即可手动重新搜索;有候选论文时默认折叠为一条,可展开重新搜索) ───
+   const manualTarget = useMemo(() =>
+     current
+       ? { target_type: current.target_type, target_id: current.target_id }
+       : null,
+   [current?.target_type, current?.target_id])
+ 
++  // 非神经靶标治理:对象在预处理阶段已判定为解剖学上不存在(脑室/脑脊液等),整个候选工作区替换为提示条
++  const nonNeuralTarget = current?.preprocess_outcome === 'non_neural_target'
++
+   const queryTerms = useMemo(() => {
+     if (!dto) return []
+     return [dto.source_region, dto.target_region, dto.relation, dto.function_context, dto.circuit_context]
+       .filter((t): t is string => Boolean(t))
+       .filter((t, i, arr) => arr.indexOf(t) === i)
+   }, [dto])
+ 
+   /** 可见推荐词(用户 × 清除后不再展示) */
+   const visibleQueryTerms = useMemo(
+     () => queryTerms.filter(t => !clearedTerms.has(t)),
+@@ -979,20 +982,24 @@ export function EvidenceCandidatesModule() {
+                     journal: evidencePaper.journal,
+                     year: evidencePaper.year,
+                   }}
+                   components={claimComponents}
+                   passages={evidencePassages}
+                   selectedHashes={selectedHashes}
+                   onTogglePassage={handleTogglePassage}
+                   onBack={() => setEvidenceViewPaperId(null)}
+                 />
+               </>
++            ) : nonNeuralTarget ? (
++              <div className="ontology-page-message evidence-non-neural-banner" data-testid="evidence-non-neural-banner">
++                该对象靶标为非神经结构(脑室/脑脊液等),解剖学上不存在投射连接,已标记为不存在。
++              </div>
+             ) : (
+               <>
+                 {manualTarget && (
+                   <PaperSearchPanel
+                     collapsed={hasSearchResults && !searchExpanded}
+                     busy={manualBusy}
+                     query={manualQuery}
+                     onQueryChange={setManualQuery}
+                     onSearch={handleManualSearch}
+                     onRestoreRecommended={handleRestoreRecommended}
+diff --git a/frontend/src/pages/evidence-center/modules/EvidenceTasksModule.test.tsx b/frontend/src/pages/evidence-center/modules/EvidenceTasksModule.test.tsx
+index ef57a68..1a7895c 100644
+--- a/frontend/src/pages/evidence-center/modules/EvidenceTasksModule.test.tsx
++++ b/frontend/src/pages/evidence-center/modules/EvidenceTasksModule.test.tsx
+@@ -20,20 +20,21 @@ function makeTask(overrides: Record<string, unknown>) {
+     total_items: 1, processed_items: 0, awaiting_review_items: 1, failed_items: 0,
+     review_status: 'not_started', granularity_level: 'macro', estimated_target_count: 1,
+     materialized_target_count: 1, scope: 'low_confidence', mode: 'function', max_papers_per_object: 3,
+     created_at: '2026-08-17T00:00:00Z', created_by: null, started_at: null, finished_at: null,
+     error_message: null, materialization_status: 'completed', materialization_cursor: null,
+     materialization_error: null, confidence_lt: null, only_oa: false,
+     stop_after_strong_support: false, summary: null, scope_type: 'filter',
+     filter_snapshot: null, versions: null,
+     display_name_cn: '杏仁核 → 海马', display_name_en: 'Amygdala → Hippocampus',
+     display_confidence: 0.35, display_name_source: 'mirror_live', display_confidence_source: 'mirror_live',
++    preprocess_outcome: null,
+     work_status: 'awaiting_review',
+     item_counts: { total: 1, processing: 0, pending: 0, awaiting_review: 1, completed: 0, skipped: 0, failed: 0, cancelled: 0 },
+     capabilities: { can_continue_review: true, can_pause: false, can_resume: false, can_retry_failed: false, can_view_results: false },
+     ...overrides,
+   }
+ }
+ 
+ function renderModule(hash = '#/evidence-center?module=tasks') {
+   window.location.hash = hash
+   return render(<EvidenceCenterProvider><EvidenceTasksModule /></EvidenceCenterProvider>)
+@@ -54,20 +55,30 @@ describe('EvidenceTasksModule(对象级任务卡:命名/跳转/排序/筛选)',
+   it('卡片标题=中文 (英文),副行类型+置信度,徽章状态', async () => {
+     vi.mocked(endpoints.listPaperEvidenceTasks).mockResolvedValue({ items: [makeTask({})], total: 1 })
+     renderModule()
+     const card = await screen.findByTestId('evidence-task-card-t1')
+     expect(within(card).getByText('杏仁核 → 海马 (Amygdala → Hippocampus)')).toBeTruthy()
+     expect(within(card).getByText('连接')).toBeTruthy()
+     expect(within(card).getByText('置信度 35%')).toBeTruthy()
+     expect(within(card).getByText('待验证')).toBeTruthy()
+   })
+ 
++  it('非神经靶标任务卡显示「结构性不存在」徽章', async () => {
++    vi.mocked(endpoints.listPaperEvidenceTasks).mockResolvedValue({
++      items: [makeTask({ id: 't-nn', target_id: 'c1', display_name_cn: '右旁中央 → 右侧脑室', work_status: 'awaiting_review', preprocess_outcome: 'non_neural_target' })],
++      total: 1,
++    })
++    renderModule()
++    const card = await screen.findByTestId('evidence-task-card-t-nn')
++    expect(within(card).getByText(/结构性不存在/)).toBeTruthy()
++  })
++
+   it('中文缺失仅英文;name 备注作第三行不替换标题', async () => {
+     vi.mocked(endpoints.listPaperEvidenceTasks).mockResolvedValue({
+       items: [makeTask({ display_name_cn: null, display_name_en: 'Amygdala → Hippocampus', name: '重新评分 · x · projection' })],
+       total: 1,
+     })
+     renderModule()
+     const card = await screen.findByTestId('evidence-task-card-t1')
+     expect(within(card).getByText('Amygdala → Hippocampus')).toBeTruthy()
+     expect(within(card).getByText('重新评分 · x · projection')).toBeTruthy()
+     expect(screen.queryByText('重新评分 · x · projection (Amygdala → Hippocampus)')).toBeNull()
+diff --git a/frontend/src/pages/evidence-center/modules/EvidenceTasksModule.tsx b/frontend/src/pages/evidence-center/modules/EvidenceTasksModule.tsx
+index 40394fe..4f0ad30 100644
+--- a/frontend/src/pages/evidence-center/modules/EvidenceTasksModule.tsx
++++ b/frontend/src/pages/evidence-center/modules/EvidenceTasksModule.tsx
+@@ -8,20 +8,21 @@ import {
+   type PaperEvidenceTask,
+ } from '../../../api/endpoints'
+ import { ApiError } from '../../../api/client'
+ import { useGlobalGranularity } from '../../../hooks/useGlobalGranularity'
+ import { useEvidenceCenter } from '../EvidenceCenterContext'
+ import { navigateToEvidenceCandidates } from '../evidenceCenterUrl'
+ import { CreateBatchTaskDialog } from '../components/CreateBatchTaskDialog'
+ import { EmptyState } from '../components/EmptyState'
+ import { ConfirmDialog } from '../../../components/ConfirmDialog'
+ import {
++  PREPROCESS_OUTCOME_LABELS,
+   TARGET_TYPE_LABELS,
+   WORK_STATUS_LABELS,
+   formatConfidencePercent,
+   objectCardTitle,
+   workStatusTone,
+ } from '../components/taskStatus'
+ import { useEvidenceTaskItems } from '../components/useEvidenceTaskItems'
+ import { useTaskItemsRefresh } from '../components/taskItemsRefreshContext'
+ 
+ type CardAction = 'resume' | 'pause' | 'retry' | 'continue' | 'view'
+@@ -113,20 +114,25 @@ function TaskCard({ task, busy, onJump, onResume, onPause, onRetry }: {
+       <div className="evidence-task-card-head">
+         <span className="evidence-task-card-title">{title}</span>
+         <span className={`evidence-task-chip evidence-task-chip-${workStatusTone(ws)}`}>
+           {WORK_STATUS_LABELS[ws] ?? ws}
+         </span>
+       </div>
+       <div className="evidence-task-card-meta">
+         <span className="evidence-task-card-type">{typeLabel}</span>
+         <span className="evidence-task-card-confidence">{formatConfidencePercent(task.display_confidence)}</span>
+       </div>
++      {(task.preprocess_outcome === 'non_neural_target' || task.preprocess_outcome === 'evidence_negated') && (
++        <div className="evidence-task-chip evidence-task-chip-bad" data-testid={`evidence-task-outcome-${task.id}`}>
++          {PREPROCESS_OUTCOME_LABELS[task.preprocess_outcome]}
++        </div>
++      )}
+       {task.name && <div className="evidence-task-card-remark">{task.name}</div>}
+       {(primary || secondary) && (
+         <div className="evidence-task-card-actions">
+           {primary && button(primary)}
+           {secondary && button(secondary)}
+         </div>
+       )}
+     </div>
+   )
+ }
+diff --git a/frontend/src/styles.css b/frontend/src/styles.css
+index b554928..5466211 100644
+--- a/frontend/src/styles.css
++++ b/frontend/src/styles.css
+@@ -11257,20 +11257,23 @@ input[type="range"]::-webkit-slider-thumb {
+   border: 1px solid var(--border);
+   border-radius: 8px;
+   background: var(--white);
+   color: var(--text);
+   cursor: pointer;
+ }
+ .ontology-page-tab-active { background: var(--primary, #2563eb); border-color: var(--primary, #2563eb); color: #fff; }
+ .ontology-page-granularity { margin-left: auto; font-size: 12px; color: var(--muted); }
+ .ontology-page-filters { display: flex; align-items: center; gap: 8px; }
+ .ontology-page-message { padding: 8px 12px; background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 8px; font-size: 12px; color: #1d4ed8; }
++.evidence-non-neural-banner {
++  margin-bottom: 12px;
++}
+ .ontology-empty { padding: 18px; text-align: center; color: var(--muted); font-size: 13px; }
+ .ontology-term-table { width: 100%; font-size: 12px; }
+ .ontology-term-code { font-family: monospace; color: var(--muted); }
+ .ontology-term-actions { display: flex; gap: 6px; }
+ .ontology-status { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 600; }
+ .ontology-status-active { background: #dcfce7; color: #15803d; }
+ .ontology-status-proposed { background: #fef3c7; color: #b45309; }
+ .ontology-status-deprecated { background: #fee2e2; color: #b91c1c; }
+ .ontology-status-not_aligned { background: #f1f5f9; color: #64748b; }
+ .ontology-page-pager { display: flex; align-items: center; gap: 12px; justify-content: flex-end; margin-top: 10px; font-size: 12px; color: var(--muted); }

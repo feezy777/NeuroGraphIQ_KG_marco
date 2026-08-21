@@ -1,0 +1,1821 @@
+afa68fa feat(evidence): paper_evidence_reviews 后端生命周期(migration/service/router/test)
+===STAT===
+ .superpowers/sdd/tasks/task-phase1-report.md      | 105 ++++
+ backend/app/routers/ontology.py                   | 132 +++++
+ backend/app/schemas/ontology.py                   | 103 ++++
+ backend/app/services/paper_evidence_service.py    | 567 +++++++++++++++++++++
+ backend/migrations/034_paper_evidence_reviews.sql |  68 +++
+ backend/tests/test_paper_evidence_reviews.py      | 573 ++++++++++++++++++++++
+ frontend/src/api/endpoints.ts                     | 112 +++++
+ 7 files changed, 1660 insertions(+)
+===DIFF===
+diff --git a/.superpowers/sdd/tasks/task-phase1-report.md b/.superpowers/sdd/tasks/task-phase1-report.md
+new file mode 100644
+index 0000000..306090c
+--- /dev/null
++++ b/.superpowers/sdd/tasks/task-phase1-report.md
+@@ -0,0 +1,105 @@
++# Phase 1: paper_evidence_reviews 后端生命周期 — Implementation Report
++
++**Date:** 2026-08-11 | **Branch:** `codex/ontology-evidence`
++
++---
++
++## Summary
++
++Implemented the full `paper_evidence_reviews` backend lifecycle (Phase 1): migration, service, router, frontend endpoints, and tests. All 11 new tests pass; all 42 existing evidence tests pass; TypeScript + Vite build pass with 0 errors.
++
++## Deliverables
++
++### 1. Migration SQL
++**File:** `backend/migrations/034_paper_evidence_reviews.sql`
++
++Two tables created:
++- `paper_evidence_reviews` — formal review records with reviewer direction/confidence/note, review_status, promotion_status, claim snapshots, timestamps, evidence_id FK
++- `paper_evidence_review_passages` — frozen passage snapshots at review time (FK CASCADE on review delete)
++
++Indexes: target lookup, status filter, task filter, review_id on passages.
++
++### 2. Service
++**File:** `backend/app/services/paper_evidence_service.py` (appended 567 lines)
++
++Functions appended under `# Review/Promotion Lifecycle` section:
++
++| Function | Purpose |
++|---|---|
++| `build_review()` | Creates review + frozen passages from reviewer decision. Sets `review_status='approved'` for valid directions, `='rejected'` for `not_found`. Audits. Never writes evidence. |
++| `approve_review()` | Locks row (`FOR UPDATE`), sets `approved_at`, `promotion_status='awaiting_promotion'`. Only from draft/awaiting_review/returned. |
++| `reject_review()` | Sets `review_status='rejected'`, `rejected_at`. |
++| `promote_review()` | **Idempotent**. Reads frozen snapshot, looks up paper→pmid from `paper_sources`, converts review passages to attach format, calls `attach_evidence()` with full backend verification (paper verify, passage verify, coverage compute, dedup check, confidence adjustment, ORM evidence records + passages + audit + validation). Updates review.evidence_id + promotion_status. Transactional. |
++| `return_review()` | Sets `promotion_status='returned'`, `review_status='awaiting_review'`, `return_reason`. |
++| `list_reviews()` | Paginated list with optional filters (review_status, promotion_status, target_type). |
++| `get_review()` | Full review + all frozen passages ordered by rank. |
++
++Helper functions: `_map_review_passage()`, `_write_evidence_audit_event()`, `_review_row_to_dict()`, `_passage_row_to_dict()`.
++
++### 3. Router
++**File:** `backend/app/routers/ontology.py` (+132 lines)
++
++7 new endpoints:
++
++| Method | Path | Auth | Function |
++|---|---|---|---|
++| POST | `/api/ontology/evidence/reviews` | reviewer | Build a review |
++| GET | `/api/ontology/evidence/reviews` | — | List reviews (paginated, filterable) |
++| GET | `/api/ontology/evidence/reviews/{review_id}` | — | Get review with passages |
++| POST | `/api/ontology/evidence/reviews/{review_id}/approve` | reviewer | Approve review |
++| POST | `/api/ontology/evidence/reviews/{review_id}/reject` | reviewer | Reject review |
++| POST | `/api/ontology/evidence/reviews/{review_id}/promote` | reviewer | Promote to Mirror KG evidence |
++| POST | `/api/ontology/evidence/reviews/{review_id}/return` | reviewer | Return for rework |
++
++### 4. Schemas
++**File:** `backend/app/schemas/ontology.py` (+103 lines)
++
++Added Pydantic models: `EvidenceReviewBuildRequest`, `EvidenceReviewResponse`, `EvidenceReviewOut`, `EvidenceReviewPassageOut`, `EvidenceReviewListResponse`, `EvidenceReviewReturnRequest`.
++
++### 5. Frontend Endpoints
++**File:** `frontend/src/api/endpoints.ts` (+112 lines)
++
++TypeScript interfaces: `EvidenceReviewPassage`, `EvidenceReviewItem`, `EvidenceReviewBuildBody`.
++
++API wrappers: `buildReview()`, `listEvidenceReviews()`, `getEvidenceReview()`, `approveReview()`, `rejectReview()`, `promoteReview()`, `returnReview()`.
++
++### 6. Tests
++**File:** `backend/tests/test_paper_evidence_reviews.py` (NEW, ~540 lines)
++
++11 tests, all passing:
++
++| Test | Verifies |
++|---|---|
++| `test_build_review_approved` | supports direction → approved, passages persisted |
++| `test_build_review_rejected` | not_found direction → rejected |
++| `test_approved_does_not_create_evidence_or_modify_confidence` | build/approve never touches mirror_evidence_records |
++| `test_approve_review` | approve from valid states, rejects invalid states |
++| `test_reject_review` | reject transitions to rejected |
++| `test_promote_returns_on_wrong_status` | ValueError when not approved |
++| `test_promote_creates_evidence` | Full promote flow: attaches evidence, creates MirrorEvidenceRecord |
++| `test_promote_idempotent` | Second promote returns 'already_promoted' |
++| `test_return_review` | Return sets returned/awaiting_review |
++| `test_list_reviews` | Paginated list, status/type filters |
++| `test_get_review_with_passages` | Full review + 2 passages (selected + unselected) |
++
++### Regression
++- `tests/test_paper_evidence.py` — 42 passed
++- `tests/test_paper_evidence_api.py` — passed
++- `tests/test_paper_retrieval_phase2.py` — passed
++- `frontend/` — `npx tsc --noEmit` clean, `npm run build` succeeded (0 errors, pre-existing warnings only)
++
++## Key Design Decisions
++
++1. **promote_review calls attach_evidence directly** — The review stores `paper_id`, and `promote_review` looks up the pmid via `paper_sources`. This ensures the full backend verification chain (verify_paper → ensure_paper_source → verify_passages → compute_coverage → dedup_check → confidence_adjustment → write_evidence) runs on promotion, not silently trusting frozen review snapshots.
++
++2. **Idempotent promote** — If `promotion_status='promoted'`, returns existing `evidence_id` without re-attaching. Uses `FOR UPDATE` row lock.
++
++3. **No evidence writes during review** — `build_review` and `approve_review` write only to `paper_evidence_reviews` + `paper_evidence_review_passages`. Mirror KG evidence is only created during `promote_review`.
++
++4. **Raw SQL for review tables** — Follows the existing pattern: raw `text()` SQL for `paper_evidence_*` tables (not ORM-mapped), ORM for `mirror_evidence_records` and `mirror_evidence_passages`.
++
++## Known Limitations / Future Work
++
++- `paper_evidence_review_passages` currently lacks a `passage_text_snapshot` hash index; may add if dedup is needed at review level
++- No batch promotion endpoint yet (single-review only)
++- Frontend UI integration (ReviewModule → buildReview, PromotionModule → promoteReview) is Phase 2
+diff --git a/backend/app/routers/ontology.py b/backend/app/routers/ontology.py
+index 49f5763..8358d00 100644
+--- a/backend/app/routers/ontology.py
++++ b/backend/app/routers/ontology.py
+@@ -39,20 +39,25 @@ from app.schemas.ontology import (
+     PaperSearchRequest,
+     PanoramaResponse,
+     TermCreateRequest,
+     TermListResponse,
+     TermMergeRequest,
+     TermRead,
+     TermSynonymCreateRequest,
+     VocabularyCreateRequest,
+     VocabularyListResponse,
+     VocabularyRead,
++    EvidenceReviewBuildRequest,
++    EvidenceReviewListResponse,
++    EvidenceReviewOut,
++    EvidenceReviewResponse,
++    EvidenceReviewReturnRequest,
+ )
+ from app.services import ontology_service as svc
+ from app.services import ontology_governance_service as gov
+ from app.services import paper_evidence_service as pes
+ from app.services import paper_fetch_service as pfs
+ from app.services import oa_xml_parser
+ from app.services.paragraph_retrieval import build_windows, score_paragraphs
+ 
+ router = APIRouter()
+ 
+@@ -1210,10 +1215,137 @@ async def paper_evidence_translate(
+ async def paper_evidence_queue(
+     target_type: str = Query(...),
+     scope: str = Query(default="low_confidence"),
+     limit: int = Query(default=50, ge=1, le=200),
+     session: AsyncSession = Depends(get_db),
+ ):
+     try:
+         return await pes.queue_targets(session, target_type, scope, limit)
+     except ValueError as exc:
+         raise HTTPException(status_code=400, detail={"code": "INVALID_REQUEST", "message": str(exc)})
++
++
++# ---- Paper Evidence Reviews (Phase 1) ----
++
++
++@router.post("/evidence/reviews", response_model=EvidenceReviewResponse)
++async def paper_evidence_review_build(
++    body: EvidenceReviewBuildRequest,
++    session: AsyncSession = Depends(get_db),
++    _auth: str = Depends(require_role("reviewer")),
++):
++    try:
++        result = await pes.build_review(
++            session,
++            target_type=body.target_type,
++            target_id=body.target_id,
++            paper_id=body.paper_id,
++            task_id=body.task_id,
++            task_item_id=body.task_item_id,
++            reviewer_id=body.reviewer_id,
++            claim_version=body.claim_version,
++            claim_text_snapshot=body.claim_text_snapshot,
++            claim_components_snapshot=body.claim_components_snapshot,
++            model_direction=body.model_direction,
++            model_assessment=body.model_assessment,
++            reviewer_direction=body.reviewer_direction,
++            reviewer_evidence_level=body.reviewer_evidence_level,
++            reviewer_confidence=body.reviewer_confidence,
++            reviewer_note=body.reviewer_note,
++            coverage_summary_snapshot=body.coverage_summary_snapshot,
++            coverage_formula_version=body.coverage_formula_version,
++            draft_revision=body.draft_revision,
++            passages=body.passages,
++        )
++        return result
++    except ValueError as exc:
++        raise HTTPException(status_code=400, detail={"code": "INVALID_REQUEST", "message": str(exc)})
++    except httpx.HTTPError as exc:
++        raise HTTPException(status_code=502, detail={"code": "PAPER_API_ERROR", "message": str(exc)})
++
++
++@router.get("/evidence/reviews", response_model=EvidenceReviewListResponse)
++async def paper_evidence_review_list(
++    review_status: str | None = Query(default=None),
++    promotion_status: str | None = Query(default=None),
++    target_type: str | None = Query(default=None),
++    page: int = Query(default=1, ge=1),
++    page_size: int = Query(default=20, ge=1, le=200),
++    session: AsyncSession = Depends(get_db),
++):
++    return await pes.list_reviews(
++        session,
++        review_status=review_status,
++        promotion_status=promotion_status,
++        target_type=target_type,
++        page=page,
++        page_size=page_size,
++    )
++
++
++@router.get("/evidence/reviews/{review_id}", response_model=EvidenceReviewOut)
++async def paper_evidence_review_get(
++    review_id: uuid.UUID,
++    session: AsyncSession = Depends(get_db),
++):
++    try:
++        return await pes.get_review(session, review_id)
++    except ValueError as exc:
++        raise HTTPException(status_code=400, detail={"code": "INVALID_REQUEST", "message": str(exc)})
++
++
++@router.post("/evidence/reviews/{review_id}/approve", response_model=EvidenceReviewResponse)
++async def paper_evidence_review_approve(
++    review_id: uuid.UUID,
++    session: AsyncSession = Depends(get_db),
++    _auth: str = Depends(require_role("reviewer")),
++):
++    try:
++        return await pes.approve_review(session, review_id)
++    except ValueError as exc:
++        raise HTTPException(status_code=400, detail={"code": "INVALID_REQUEST", "message": str(exc)})
++
++
++@router.post("/evidence/reviews/{review_id}/reject", response_model=EvidenceReviewResponse)
++async def paper_evidence_review_reject(
++    review_id: uuid.UUID,
++    session: AsyncSession = Depends(get_db),
++    _auth: str = Depends(require_role("reviewer")),
++):
++    try:
++        return await pes.reject_review(session, review_id)
++    except ValueError as exc:
++        raise HTTPException(status_code=400, detail={"code": "INVALID_REQUEST", "message": str(exc)})
++
++
++@router.post("/evidence/reviews/{review_id}/promote", response_model=EvidenceReviewOut)
++async def paper_evidence_review_promote(
++    review_id: uuid.UUID,
++    session: AsyncSession = Depends(get_db),
++    _auth: str = Depends(require_role("reviewer")),
++):
++    try:
++        result = await pes.promote_review(session, review_id)
++        # Fetch full review for response
++        full = await pes.get_review(session, review_id)
++        return full
++    except ValueError as exc:
++        await session.rollback()
++        raise HTTPException(status_code=400, detail={"code": "INVALID_REQUEST", "message": str(exc)})
++    except httpx.HTTPError as exc:
++        await session.rollback()
++        raise HTTPException(status_code=502, detail={"code": "PAPER_API_ERROR", "message": str(exc)})
++
++
++@router.post("/evidence/reviews/{review_id}/return", response_model=EvidenceReviewResponse)
++async def paper_evidence_review_return(
++    review_id: uuid.UUID,
++    body: EvidenceReviewReturnRequest,
++    session: AsyncSession = Depends(get_db),
++    _auth: str = Depends(require_role("reviewer")),
++):
++    try:
++        return await pes.return_review(
++            session, review_id, reason=body.reason, returned_by=body.returned_by
++        )
++    except ValueError as exc:
++        raise HTTPException(status_code=400, detail={"code": "INVALID_REQUEST", "message": str(exc)})
+diff --git a/backend/app/schemas/ontology.py b/backend/app/schemas/ontology.py
+index 8b7edff..6e38548 100644
+--- a/backend/app/schemas/ontology.py
++++ b/backend/app/schemas/ontology.py
+@@ -136,40 +136,42 @@ class PaperRef(BaseModel):
+     pmcid: str | None = None
+     title: str | None = None
+ 
+ 
+ class ExtractSelectedRequest(BaseModel):
+     target_type: str
+     target_id: uuid.UUID
+     papers: list[PaperRef] = Field(min_length=1, max_length=20)
+     only_oa: bool = False
+     stop_after_strong_support: bool = False
++    mode: str = "function"
+ 
+ 
+ class EvidenceAttachRequest(BaseModel):
+     target_type: str
+     target_id: uuid.UUID
+     pmid: str
+     excerpt: str
+     direction: str = "supports"
+     mode: str = "function"
+     suggested_confidence: float | None = Field(default=None, ge=0.0, le=1.0)
+ 
+ 
+ class EvidenceExtractRequest(BaseModel):
+     target_type: str
+     target_id: uuid.UUID
+     pmid: str
+     doi: str | None = None
+     pmcid: str | None = None
+     title: str
+     abstract: str
++    mode: str = "function"
+ 
+ 
+ class EvidencePassageItem(BaseModel):
+     source_scope: Literal["abstract", "fulltext"] = "abstract"
+     section_title: str | None = None
+     paragraph_index: int | None = None
+     paragraph_id: str | None = None
+     passage: str
+     translation_zh: str | None = None
+     direction: Literal["supports", "partial", "contradicts", "not_found"]
+@@ -331,10 +333,111 @@ class PanoramaItem(BaseModel):
+     term_key: str
+     term_label: str
+     count: int
+     sample_ids: list[uuid.UUID] = Field(default_factory=list)
+ 
+ 
+ class PanoramaResponse(BaseModel):
+     target_type: str
+     total_distinct: int
+     items: list[PanoramaItem]
++
++
++# ---- Paper Evidence Reviews (Phase 1) ----
++
++class EvidenceReviewBuildRequest(BaseModel):
++    target_type: str
++    target_id: uuid.UUID
++    paper_id: uuid.UUID | None = None
++    task_id: uuid.UUID | None = None
++    task_item_id: uuid.UUID | None = None
++    reviewer_id: str | None = None
++    claim_version: str
++    claim_text_snapshot: str
++    claim_components_snapshot: list[dict] = Field(default_factory=list)
++    model_direction: str | None = None
++    model_assessment: str | None = None
++    reviewer_direction: str
++    reviewer_evidence_level: str
++    reviewer_confidence: float = Field(ge=0.0, le=1.0)
++    reviewer_note: str | None = None
++    coverage_summary_snapshot: dict = Field(default_factory=dict)
++    coverage_formula_version: str = "paper_evidence_coverage_v1"
++    draft_revision: int = 0
++    passages: list[dict] = Field(default_factory=list)
++
++
++class EvidenceReviewResponse(BaseModel):
++    review_id: str
++    status: str
++
++
++class EvidenceReviewPassageOut(BaseModel):
++    id: str
++    review_id: str
++    paper_passage_id: str | None = None
++    passage_text: str
++    passage_text_snapshot: str
++    source_scope: str | None = None
++    section_title: str | None = None
++    paragraph_index: int | None = None
++    paragraph_id: str | None = None
++    translation_zh: str | None = None
++    direction: str | None = None
++    evidence_level: str | None = None
++    reason: str | None = None
++    confidence: float | None = None
++    semantic_confidence: float | None = None
++    source_locator: str | None = None
++    source_verified: bool = False
++    source_verification_method: str | None = None
++    supported_components: list = Field(default_factory=list)
++    passage_hash: str | None = None
++    rank: int = 0
++    is_selected: bool = True
++    created_at: str | None = None
++
++
++class EvidenceReviewOut(BaseModel):
++    id: str
++    target_type: str
++    target_id: str
++    paper_id: str | None = None
++    task_id: str | None = None
++    task_item_id: str | None = None
++    reviewer_id: str | None = None
++    review_status: str
++    promotion_status: str
++    claim_version: str | None = None
++    claim_text_snapshot: str | None = None
++    claim_components_snapshot: list | None = None
++    model_direction: str | None = None
++    model_assessment: str | None = None
++    reviewer_direction: str | None = None
++    reviewer_evidence_level: str | None = None
++    reviewer_confidence: float | None = None
++    reviewer_note: str | None = None
++    coverage_summary_snapshot: dict | None = None
++    coverage_formula_version: str | None = None
++    draft_revision: int = 0
++    reviewed_at: str | None = None
++    approved_at: str | None = None
++    rejected_at: str | None = None
++    promoted_at: str | None = None
++    promoted_by: str | None = None
++    returned_at: str | None = None
++    returned_by: str | None = None
++    return_reason: str | None = None
++    evidence_id: str | None = None
++    created_at: str | None = None
++    updated_at: str | None = None
++    passages: list[EvidenceReviewPassageOut] = Field(default_factory=list)
++
++
++class EvidenceReviewListResponse(BaseModel):
++    items: list[EvidenceReviewOut]
++    total: int
++
++
++class EvidenceReviewReturnRequest(BaseModel):
++    reason: str = Field(min_length=1, max_length=2000)
++    returned_by: str | None = None
+diff --git a/backend/app/services/paper_evidence_service.py b/backend/app/services/paper_evidence_service.py
+index bf35df5..55f09b2 100644
+--- a/backend/app/services/paper_evidence_service.py
++++ b/backend/app/services/paper_evidence_service.py
+@@ -4680,10 +4680,577 @@ async def get_paper_detail(session: AsyncSession, paper_id: uuid.UUID) -> dict:
+                 "section_title": p[1],
+                 "paragraph_index": p[2],
+                 "passage_text": p[3],
+                 "source_scope": p[4],
+             }
+             for p in paragraphs
+         ],
+         "evidence_count": len(evidence),
+         "targets": [{"target_type": t[0], "target_id": str(t[1])} for t in evidence],
+     }
++
++
++# ════════════════════════════════════════════════════════════════════════════
++# Review/Promotion Lifecycle (Phase 1: paper_evidence_reviews)
++# ════════════════════════════════════════════════════════════════════════════
++
++
++async def _map_review_passage(p: dict, review_id: uuid.UUID, rank: int) -> dict:
++    """Convert a raw passage dict to a review_passages row params dict."""
++    return {
++        "rid": review_id,
++        "ppid": p.get("paper_passage_id") or p.get("paperPassageId"),
++        "pt": p.get("passage_text") or p.get("passage") or "",
++        "pts": p.get("passage_text_snapshot") or p.get("passage_text") or p.get("passage") or "",
++        "ss": p.get("source_scope"),
++        "st": p.get("section_title"),
++        "pi": p.get("paragraph_index"),
++        "pid": p.get("paragraph_id"),
++        "tz": p.get("translation_zh"),
++        "dir": p.get("direction"),
++        "el": p.get("evidence_level"),
++        "reason": p.get("reason"),
++        "conf": p.get("confidence"),
++        "sc": p.get("semantic_confidence") or p.get("confidence"),
++        "sl": p.get("source_locator"),
++        "sv": bool(p.get("source_verified", False)),
++        "svm": p.get("source_verification_method"),
++        "scm": json.dumps(list(p.get("supported_components") or []), ensure_ascii=False),
++        "ph": p.get("passage_hash") or passage_hash(p.get("passage") or p.get("passage_text") or ""),
++        "rank": rank,
++        "is_sel": bool(p.get("is_selected", True)),
++    }
++
++
++async def _write_evidence_audit_event(
++    session: AsyncSession,
++    *,
++    action_type: str,
++    entity_type: str,
++    entity_id: uuid.UUID,
++    before_data: dict | None = None,
++    after_data: dict | None = None,
++    operator_id: str | None = None,
++    reason: str | None = None,
++) -> None:
++    """Write an audit event (public wrapper for _write_audit)."""
++    await _write_audit(
++        session,
++        action_type=action_type,
++        entity_type=entity_type,
++        entity_id=entity_id,
++        before_data=before_data,
++        after_data=after_data,
++        operator_id=operator_id,
++        reason=reason,
++    )
++
++
++async def build_review(
++    session: AsyncSession,
++    *,
++    target_type: str,
++    target_id: uuid.UUID,
++    paper_id: uuid.UUID | None,
++    task_id: uuid.UUID | None,
++    task_item_id: uuid.UUID | None,
++    reviewer_id: str | None,
++    claim_version: str,
++    claim_text_snapshot: str,
++    claim_components_snapshot: list[dict],
++    model_direction: str | None,
++    model_assessment: str | None,
++    reviewer_direction: str,
++    reviewer_evidence_level: str,
++    reviewer_confidence: float,
++    reviewer_note: str | None,
++    coverage_summary_snapshot: dict,
++    coverage_formula_version: str,
++    draft_revision: int,
++    passages: list[dict],
++) -> dict:
++    """Create a formal review record from reviewer decision + frozen passages.
++
++    Returns {review_id, status: 'approved'|'rejected'}.
++    Side effect: never writes mirror_evidence_records, never modifies confidence.
++    """
++    # Determine review_status from reviewer_direction
++    review_status = (
++        "approved"
++        if reviewer_direction not in ("not_found",)
++        else "rejected"
++    )
++    review_id = (
++        await session.execute(
++            text(
++                "INSERT INTO paper_evidence_reviews "
++                "(target_type, target_id, paper_id, task_id, task_item_id, reviewer_id, "
++                "review_status, promotion_status, claim_version, claim_text_snapshot, "
++                "claim_components_snapshot, model_direction, model_assessment, "
++                "reviewer_direction, reviewer_evidence_level, reviewer_confidence, "
++                "reviewer_note, coverage_summary_snapshot, coverage_formula_version, "
++                "draft_revision, reviewed_at, approved_at, rejected_at) "
++                "VALUES (:tt, :tid, :pid, :taskid, :itemid, :rev_id, :rstatus, :pstatus, "
++                ":cv, :cs, CAST(:cc AS jsonb), :md, :ma, :rd, :rel, :rc, :rn, "
++                "CAST(:cov AS jsonb), :cfv, :dr, now(), "
++                "CASE WHEN :is_approved THEN now() ELSE NULL END, "
++                "CASE WHEN :is_rejected THEN now() ELSE NULL END) "
++                "RETURNING id"
++            ),
++            {
++                "tt": target_type,
++                "tid": target_id,
++                "pid": paper_id,
++                "taskid": task_id,
++                "itemid": task_item_id,
++                "rev_id": reviewer_id,
++                "rstatus": review_status,
++                "pstatus": "awaiting_promotion" if review_status == "approved" else "not_ready",
++                "cv": claim_version,
++                "cs": claim_text_snapshot,
++                "cc": json.dumps(claim_components_snapshot, ensure_ascii=False),
++                "md": model_direction,
++                "ma": model_assessment,
++                "rd": reviewer_direction,
++                "rel": reviewer_evidence_level,
++                "rc": reviewer_confidence,
++                "rn": reviewer_note,
++                "cov": json.dumps(coverage_summary_snapshot, ensure_ascii=False),
++                "cfv": coverage_formula_version,
++                "dr": draft_revision,
++                "is_approved": review_status == "approved",
++                "is_rejected": review_status == "rejected",
++            },
++        )
++    ).scalar_one()
++    # Insert frozen passages
++    for rank, p in enumerate(passages, 1):
++        params = await _map_review_passage(p, review_id, rank)
++        await session.execute(
++            text(
++                "INSERT INTO paper_evidence_review_passages "
++                "(review_id, paper_passage_id, passage_text, passage_text_snapshot, "
++                "source_scope, section_title, paragraph_index, paragraph_id, "
++                "translation_zh, direction, evidence_level, reason, confidence, "
++                "semantic_confidence, source_locator, source_verified, "
++                "source_verification_method, supported_components, passage_hash, "
++                "rank, is_selected) "
++                "VALUES (:rid, :ppid, :pt, :pts, :ss, :st, :pi, :pid, :tz, :dir, :el, "
++                ":reason, :conf, :sc, :sl, :sv, :svm, CAST(:scm AS jsonb), :ph, "
++                ":rank, :is_sel)"
++            ),
++            params,
++        )
++    # Audit
++    await _write_audit(
++        session,
++        action_type="EVIDENCE_REVIEW_CREATED",
++        entity_type="evidence_review",
++        entity_id=review_id,
++        after_data={
++            "target_type": target_type,
++            "target_id": str(target_id),
++            "review_status": review_status,
++            "promotion_status": "awaiting_promotion" if review_status == "approved" else "not_ready",
++            "passage_count": len(passages),
++        },
++        operator_id=reviewer_id,
++        reason="formal review record created",
++    )
++    await session.commit()
++    return {"review_id": str(review_id), "status": review_status}
++
++
++async def approve_review(
++    session: AsyncSession,
++    review_id: uuid.UUID,
++    *,
++    operator_id: str | None = None,
++) -> dict:
++    """Approve a review: locks snapshot, sets awaiting_promotion.
++
++    Can only be called from draft/awaiting_review/returned states.
++    """
++    row = await session.execute(
++        text(
++            "SELECT id, review_status FROM paper_evidence_reviews "
++            "WHERE id = :rid FOR UPDATE"
++        ),
++        {"rid": review_id},
++    )
++    r = row.first()
++    if r is None:
++        raise ValueError("review not found")
++    current_status = r[1]
++    if current_status not in ("draft", "awaiting_review", "returned"):
++        raise ValueError(f"cannot approve review in status '{current_status}'; must be draft/awaiting_review/returned")
++    await session.execute(
++        text(
++            "UPDATE paper_evidence_reviews "
++            "SET review_status='approved', promotion_status='awaiting_promotion', "
++            "approved_at=now(), updated_at=now() "
++            "WHERE id = :rid"
++        ),
++        {"rid": review_id},
++    )
++    await _write_audit(
++        session,
++        action_type="EVIDENCE_REVIEW_APPROVED",
++        entity_type="evidence_review",
++        entity_id=review_id,
++        after_data={"review_status": "approved", "promotion_status": "awaiting_promotion"},
++        operator_id=operator_id,
++        reason="review approved for promotion",
++    )
++    await session.commit()
++    return {"review_id": str(review_id), "status": "approved"}
++
++
++async def reject_review(
++    session: AsyncSession,
++    review_id: uuid.UUID,
++    *,
++    operator_id: str | None = None,
++) -> dict:
++    """Reject a review. Cannot be promoted from this state."""
++    row = await session.execute(
++        text(
++            "SELECT id FROM paper_evidence_reviews WHERE id = :rid FOR UPDATE"
++        ),
++        {"rid": review_id},
++    )
++    if row.first() is None:
++        raise ValueError("review not found")
++    await session.execute(
++        text(
++            "UPDATE paper_evidence_reviews "
++            "SET review_status='rejected', rejected_at=now(), updated_at=now() "
++            "WHERE id = :rid"
++        ),
++        {"rid": review_id},
++    )
++    await _write_audit(
++        session,
++        action_type="EVIDENCE_REVIEW_REJECTED",
++        entity_type="evidence_review",
++        entity_id=review_id,
++        after_data={"review_status": "rejected"},
++        operator_id=operator_id,
++        reason="review rejected",
++    )
++    await session.commit()
++    return {"review_id": str(review_id), "status": "rejected"}
++
++
++async def promote_review(
++    session: AsyncSession,
++    review_id: uuid.UUID,
++    *,
++    promoted_by: str | None = None,
++) -> dict:
++    """Promote a review: reads frozen snapshot, calls attach_evidence, updates review.
++
++    Idempotent: if already promoted (promotion_status='promoted'), returns existing
++    evidence_id without re-attaching.
++    """
++    # Lock the review row
++    row = await session.execute(
++        text(
++            "SELECT id, target_type, target_id, paper_id, promotion_status, evidence_id, "
++            "review_status, reviewer_direction, reviewer_evidence_level, "
++            "reviewer_confidence, reviewer_note, model_direction, model_assessment, "
++            "claim_version, claim_text_snapshot, claim_components_snapshot "
++            "FROM paper_evidence_reviews WHERE id = :rid FOR UPDATE"
++        ),
++        {"rid": review_id},
++    )
++    r = row.first()
++    if r is None:
++        raise ValueError("review not found")
++    review_data = r._mapping
++    # Idempotent: already promoted
++    if review_data["promotion_status"] == "promoted":
++        return {
++            "review_id": str(review_id),
++            "evidence_id": str(review_data["evidence_id"]) if review_data["evidence_id"] else None,
++            "status": "already_promoted",
++        }
++    # Must be in approved state
++    if review_data["review_status"] != "approved":
++        raise ValueError(
++            f"cannot promote review in status '{review_data['review_status']}'; must be 'approved'"
++        )
++    # Look up paper source to get pmid
++    paper_id = review_data["paper_id"]
++    if paper_id is None:
++        raise ValueError("review has no paper_id; cannot attach evidence")
++    paper_row = await session.execute(
++        text(
++            "SELECT pmid, doi, title, journal, publication_year, metadata_json "
++            "FROM paper_sources WHERE id = :pid"
++        ),
++        {"pid": paper_id},
++    )
++    paper = paper_row.first()
++    if paper is None:
++        raise ValueError("paper not found")
++    paper_info = paper._mapping
++    pmid = (paper_info["pmid"] or "").strip()
++    if not pmid:
++        raise ValueError("paper has no pmid; cannot verify via Europe PMC")
++    # Read frozen review passages
++    passage_rows = await session.execute(
++        text(
++            "SELECT passage_text, passage_text_snapshot, source_scope, section_title, "
++            "paragraph_index, paragraph_id, direction, evidence_level, reason, "
++            "confidence, semantic_confidence, source_locator, source_verified, "
++            "source_verification_method, supported_components, passage_hash, "
++            "is_selected "
++            "FROM paper_evidence_review_passages "
++            "WHERE review_id = :rid AND is_selected = true "
++            "ORDER BY rank"
++        ),
++        {"rid": review_id},
++    )
++    review_passages = passage_rows.all()
++    if not review_passages:
++        raise ValueError("review has no selected passages")
++    source_verified_passages = [
++        row._mapping for row in review_passages if row._mapping["source_verified"]
++    ]
++    if not source_verified_passages:
++        raise ValueError("review has no source_verified passages; cannot attach evidence")
++    # Build passages list in the format expected by attach_evidence
++    attach_passages = []
++    for rp in source_verified_passages:
++        attach_passages.append({
++            "passage": rp["passage_text"],
++            "source_scope": rp["source_scope"] or "abstract",
++            "section_title": rp["section_title"],
++            "paragraph_index": rp["paragraph_index"],
++            "direction": rp["direction"] or review_data["reviewer_direction"] or "partial",
++            "evidence_level": rp["evidence_level"] or review_data["reviewer_evidence_level"] or "indirect",
++            "reason": rp["reason"],
++            "confidence": float(rp["confidence"]) if rp["confidence"] is not None else None,
++            "semantic_confidence": float(rp["semantic_confidence"]) if rp["semantic_confidence"] is not None else None,
++            "source_locator": rp["source_locator"],
++            "source_verified": bool(rp["source_verified"]),
++            "source_verification_method": rp["source_verification_method"],
++            "passage_hash": rp["passage_hash"],
++            "supported_components": list(rp["supported_components"] or []),
++        })
++    # Call attach_evidence
++    result = await attach_evidence(
++        session,
++        target_type=review_data["target_type"],
++        target_id=review_data["target_id"],
++        pmid=pmid,
++        direction=review_data["reviewer_direction"] or "partial",
++        reviewer_confidence=float(review_data["reviewer_confidence"] or 0.5),
++        passages=attach_passages,
++        operator_id=promoted_by,
++        verification_status="human_verified",
++        evidence_level=review_data["reviewer_evidence_level"],
++        model_direction=review_data["model_direction"],
++        model_assessment=review_data["model_assessment"],
++        reviewer_note=review_data["reviewer_note"],
++    )
++    evidence_id = result["evidence_id"]
++    # Update review record
++    await session.execute(
++        text(
++            "UPDATE paper_evidence_reviews "
++            "SET promotion_status='promoted', evidence_id=CAST(:eid AS uuid), "
++            "promoted_at=now(), promoted_by=:pb, updated_at=now() "
++            "WHERE id = :rid"
++        ),
++        {"rid": review_id, "eid": evidence_id, "pb": promoted_by},
++    )
++    await _write_audit(
++        session,
++        action_type="EVIDENCE_REVIEW_PROMOTED",
++        entity_type="evidence_review",
++        entity_id=review_id,
++        after_data={
++            "evidence_id": evidence_id,
++            "promotion_status": "promoted",
++            "promoted_by": promoted_by,
++        },
++        operator_id=promoted_by,
++        reason="review promoted to mirror evidence",
++    )
++    await session.commit()
++    return {"review_id": str(review_id), "evidence_id": evidence_id, "status": "promoted"}
++
++
++async def return_review(
++    session: AsyncSession,
++    review_id: uuid.UUID,
++    *,
++    reason: str,
++    returned_by: str | None = None,
++) -> dict:
++    """Return a review for rework. Sets promotion_status='returned', review_status='awaiting_review'."""
++    row = await session.execute(
++        text(
++            "SELECT id FROM paper_evidence_reviews WHERE id = :rid FOR UPDATE"
++        ),
++        {"rid": review_id},
++    )
++    if row.first() is None:
++        raise ValueError("review not found")
++    await session.execute(
++        text(
++            "UPDATE paper_evidence_reviews "
++            "SET promotion_status='returned', review_status='awaiting_review', "
++            "returned_at=now(), returned_by=:rb, return_reason=:rr, updated_at=now() "
++            "WHERE id = :rid"
++        ),
++        {"rid": review_id, "rb": returned_by, "rr": reason},
++    )
++    await _write_audit(
++        session,
++        action_type="EVIDENCE_REVIEW_RETURNED",
++        entity_type="evidence_review",
++        entity_id=review_id,
++        after_data={"return_reason": reason, "returned_by": returned_by},
++        operator_id=returned_by,
++        reason=reason,
++    )
++    await session.commit()
++    return {"review_id": str(review_id), "status": "returned"}
++
++
++def _review_row_to_dict(r: dict) -> dict:
++    """Convert a raw review row mapping to a response dict."""
++    return {
++        "id": str(r["id"]),
++        "target_type": r["target_type"],
++        "target_id": str(r["target_id"]),
++        "paper_id": str(r["paper_id"]) if r.get("paper_id") else None,
++        "task_id": str(r["task_id"]) if r.get("task_id") else None,
++        "task_item_id": str(r["task_item_id"]) if r.get("task_item_id") else None,
++        "reviewer_id": r.get("reviewer_id"),
++        "review_status": r["review_status"],
++        "promotion_status": r["promotion_status"],
++        "claim_version": r.get("claim_version"),
++        "claim_text_snapshot": r.get("claim_text_snapshot"),
++        "claim_components_snapshot": r.get("claim_components_snapshot"),
++        "model_direction": r.get("model_direction"),
++        "model_assessment": r.get("model_assessment"),
++        "reviewer_direction": r.get("reviewer_direction"),
++        "reviewer_evidence_level": r.get("reviewer_evidence_level"),
++        "reviewer_confidence": float(r["reviewer_confidence"]) if r.get("reviewer_confidence") is not None else None,
++        "reviewer_note": r.get("reviewer_note"),
++        "coverage_summary_snapshot": r.get("coverage_summary_snapshot"),
++        "coverage_formula_version": r.get("coverage_formula_version"),
++        "draft_revision": int(r.get("draft_revision", 0)),
++        "reviewed_at": r["reviewed_at"].isoformat() if r.get("reviewed_at") else None,
++        "approved_at": r["approved_at"].isoformat() if r.get("approved_at") else None,
++        "rejected_at": r["rejected_at"].isoformat() if r.get("rejected_at") else None,
++        "promoted_at": r["promoted_at"].isoformat() if r.get("promoted_at") else None,
++        "promoted_by": r.get("promoted_by"),
++        "returned_at": r["returned_at"].isoformat() if r.get("returned_at") else None,
++        "returned_by": r.get("returned_by"),
++        "return_reason": r.get("return_reason"),
++        "evidence_id": str(r["evidence_id"]) if r.get("evidence_id") else None,
++        "created_at": r["created_at"].isoformat() if r.get("created_at") else None,
++        "updated_at": r["updated_at"].isoformat() if r.get("updated_at") else None,
++        "passages": [],
++    }
++
++
++def _passage_row_to_dict(p: dict) -> dict:
++    """Convert a raw review_passage row mapping to a response dict."""
++    return {
++        "id": str(p["id"]),
++        "review_id": str(p["review_id"]),
++        "paper_passage_id": str(p["paper_passage_id"]) if p.get("paper_passage_id") else None,
++        "passage_text": p.get("passage_text") or "",
++        "passage_text_snapshot": p.get("passage_text_snapshot") or "",
++        "source_scope": p.get("source_scope"),
++        "section_title": p.get("section_title"),
++        "paragraph_index": p.get("paragraph_index"),
++        "paragraph_id": p.get("paragraph_id"),
++        "translation_zh": p.get("translation_zh"),
++        "direction": p.get("direction"),
++        "evidence_level": p.get("evidence_level"),
++        "reason": p.get("reason"),
++        "confidence": float(p["confidence"]) if p.get("confidence") is not None else None,
++        "semantic_confidence": float(p["semantic_confidence"]) if p.get("semantic_confidence") is not None else None,
++        "source_locator": p.get("source_locator"),
++        "source_verified": bool(p.get("source_verified", False)),
++        "source_verification_method": p.get("source_verification_method"),
++        "supported_components": list(p.get("supported_components") or []),
++        "passage_hash": p.get("passage_hash"),
++        "rank": int(p.get("rank", 0)),
++        "is_selected": bool(p.get("is_selected", True)),
++        "created_at": p["created_at"].isoformat() if p.get("created_at") else None,
++    }
++
++
++async def list_reviews(
++    session: AsyncSession,
++    *,
++    review_status: str | None = None,
++    promotion_status: str | None = None,
++    target_type: str | None = None,
++    page: int = 1,
++    page_size: int = 20,
++) -> dict:
++    """List reviews with pagination and optional filters."""
++    where = ["1=1"]
++    params: dict = {}
++    if review_status:
++        where.append("review_status = :rs")
++        params["rs"] = review_status
++    if promotion_status:
++        where.append("promotion_status = :ps")
++        params["ps"] = promotion_status
++    if target_type:
++        where.append("target_type = :tt")
++        params["tt"] = target_type
++    clause = " AND ".join(where)
++    params["lim"] = page_size
++    params["off"] = (max(1, page) - 1) * page_size
++    rows = await session.execute(
++        text(
++            f"SELECT * FROM paper_evidence_reviews WHERE {clause} "
++            "ORDER BY created_at DESC LIMIT :lim OFFSET :off"
++        ),
++        params,
++    )
++    total = (
++        await session.execute(
++            text(f"SELECT COUNT(*) FROM paper_evidence_reviews WHERE {clause}"),
++            {k: v for k, v in params.items() if k not in ("lim", "off")},
++        )
++    ).scalar_one()
++    items = []
++    for r in rows:
++        item = _review_row_to_dict(r._mapping)
++        items.append(item)
++    return {"items": items, "total": int(total)}
++
++
++async def get_review(
++    session: AsyncSession,
++    review_id: uuid.UUID,
++) -> dict:
++    """Get a review with its frozen passages."""
++    row = await session.execute(
++        text("SELECT * FROM paper_evidence_reviews WHERE id = :rid"),
++        {"rid": review_id},
++    )
++    r = row.first()
++    if r is None:
++        raise ValueError("review not found")
++    item = _review_row_to_dict(r._mapping)
++    passage_rows = await session.execute(
++        text(
++            "SELECT * FROM paper_evidence_review_passages "
++            "WHERE review_id = :rid ORDER BY rank"
++        ),
++        {"rid": review_id},
++    )
++    item["passages"] = [_passage_row_to_dict(p._mapping) for p in passage_rows]
++    return item
+diff --git a/backend/migrations/034_paper_evidence_reviews.sql b/backend/migrations/034_paper_evidence_reviews.sql
+new file mode 100644
+index 0000000..085e8df
+--- /dev/null
++++ b/backend/migrations/034_paper_evidence_reviews.sql
+@@ -0,0 +1,68 @@
++-- paper_evidence_reviews: formal human review records (独立于 batch task items 和 sessionStorage)
++-- Each review captures a reviewer's decision + frozen passage snapshots at review time.
++-- Does NOT write mirror_evidence_records during review; promotion is a separate step.
++CREATE TABLE IF NOT EXISTS paper_evidence_reviews (
++    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
++    target_type VARCHAR(64) NOT NULL,
++    target_id UUID NOT NULL,
++    paper_id UUID REFERENCES paper_sources(id),
++    task_id UUID,
++    task_item_id UUID,
++    reviewer_id VARCHAR(128),
++    review_status VARCHAR(32) NOT NULL DEFAULT 'draft',
++    promotion_status VARCHAR(32) NOT NULL DEFAULT 'not_ready',
++    claim_version VARCHAR(32),
++    claim_text_snapshot TEXT,
++    claim_components_snapshot JSONB,
++    model_direction VARCHAR(32),
++    model_assessment TEXT,
++    reviewer_direction VARCHAR(32),
++    reviewer_evidence_level VARCHAR(32),
++    reviewer_confidence DOUBLE PRECISION,
++    reviewer_note TEXT,
++    coverage_summary_snapshot JSONB,
++    coverage_formula_version VARCHAR(32),
++    draft_revision INTEGER NOT NULL DEFAULT 0,
++    reviewed_at TIMESTAMPTZ,
++    approved_at TIMESTAMPTZ,
++    rejected_at TIMESTAMPTZ,
++    promoted_at TIMESTAMPTZ,
++    promoted_by VARCHAR(128),
++    returned_at TIMESTAMPTZ,
++    returned_by VARCHAR(128),
++    return_reason TEXT,
++    evidence_id UUID,
++    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
++    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
++);
++CREATE INDEX IF NOT EXISTS idx_reviews_target ON paper_evidence_reviews(target_type, target_id);
++CREATE INDEX IF NOT EXISTS idx_reviews_status ON paper_evidence_reviews(review_status, promotion_status);
++CREATE INDEX IF NOT EXISTS idx_reviews_task ON paper_evidence_reviews(task_id);
++
++-- paper_evidence_review_passages: frozen passage snapshots at review time
++CREATE TABLE IF NOT EXISTS paper_evidence_review_passages (
++    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
++    review_id UUID NOT NULL REFERENCES paper_evidence_reviews(id) ON DELETE CASCADE,
++    paper_passage_id UUID,
++    passage_text TEXT NOT NULL,
++    passage_text_snapshot TEXT NOT NULL,
++    source_scope VARCHAR(16),
++    section_title VARCHAR(256),
++    paragraph_index INTEGER,
++    paragraph_id VARCHAR(128),
++    translation_zh TEXT,
++    direction VARCHAR(32),
++    evidence_level VARCHAR(32),
++    reason TEXT,
++    confidence DOUBLE PRECISION,
++    semantic_confidence DOUBLE PRECISION,
++    source_locator VARCHAR(128),
++    source_verified BOOLEAN NOT NULL DEFAULT false,
++    source_verification_method VARCHAR(32),
++    supported_components JSONB DEFAULT '[]',
++    passage_hash VARCHAR(64),
++    rank INTEGER NOT NULL DEFAULT 0,
++    is_selected BOOLEAN NOT NULL DEFAULT true,
++    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
++);
++CREATE INDEX IF NOT EXISTS idx_review_passages ON paper_evidence_review_passages(review_id);
+diff --git a/backend/tests/test_paper_evidence_reviews.py b/backend/tests/test_paper_evidence_reviews.py
+new file mode 100644
+index 0000000..b1a43ad
+--- /dev/null
++++ b/backend/tests/test_paper_evidence_reviews.py
+@@ -0,0 +1,573 @@
++"""Phase 1: paper_evidence_reviews lifecycle tests (build/approve/reject/promote/return/list/get)."""
++
++from __future__ import annotations
++
++import asyncio
++import uuid
++from unittest.mock import patch
++
++import pytest
++from sqlalchemy import text
++
++from app.database import AsyncSessionLocal
++from app.services import paper_evidence_service as pes
++
++
++def _run(coro):
++    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
++    loop = asyncio.new_event_loop()
++    try:
++        return loop.run_until_complete(coro)
++    finally:
++        loop.close()
++
++
++# ════════════════════════════════════════════════════════════════════════════
++# Helpers
++# ════════════════════════════════════════════════════════════════════════════
++
++
++def _uuid():
++    return uuid.uuid4()
++
++
++def _make_connection(granularity: str = "macro_clinical"):
++    """Insert a minimal mirror_region_connection for test targeting."""
++    async def _insert():
++        conn_id = _uuid()
++        async with AsyncSessionLocal() as s:
++            await s.execute(
++                text(
++                    "INSERT INTO mirror_region_connections "
++                    "(id, source_region_name_en, target_region_name_en, connection_type, "
++                    "directionality, granularity_level, source_atlas, mirror_status, review_status) "
++                    "VALUES (:id, 'Hippocampus', 'Prefrontal Cortex', 'projection', "
++                    "'unidirectional', :gl, 'test', 'llm_suggested', 'pending')"
++                ),
++                {"id": conn_id, "gl": granularity},
++            )
++            await s.commit()
++        return conn_id
++    return _run(_insert())
++
++
++def _make_paper_source(pmid: str = "30000001"):
++    """Insert a minimal paper_sources row for test referencing."""
++    async def _insert():
++        paper_id = _uuid()
++        async with AsyncSessionLocal() as s:
++            await s.execute(
++                text(
++                    "INSERT INTO paper_sources "
++                    "(id, source, pmid, title, journal, publication_year, is_oa) "
++                    "VALUES (:id, 'europepmc', :pmid, 'Test Paper Title', 'Neuro J', 2026, false)"
++                ),
++                {"id": paper_id, "pmid": pmid},
++            )
++            await s.commit()
++        return paper_id
++    return _run(_insert())
++
++
++def _cleanup_review(review_id):
++    async def _del():
++        async with AsyncSessionLocal() as s:
++            await s.execute(
++                text("DELETE FROM paper_evidence_review_passages WHERE review_id = :rid"),
++                {"rid": review_id},
++            )
++            await s.execute(
++                text("DELETE FROM paper_evidence_reviews WHERE id = :rid"),
++                {"rid": review_id},
++            )
++            await s.commit()
++    _run(_del())
++
++
++def _cleanup_connection(conn_id):
++    async def _del():
++        async with AsyncSessionLocal() as s:
++            await s.execute(
++                text("DELETE FROM mirror_region_connections WHERE id = :cid"),
++                {"cid": conn_id},
++            )
++            await s.commit()
++    _run(_del())
++
++
++def _cleanup_paper(paper_id):
++    async def _del():
++        async with AsyncSessionLocal() as s:
++            await s.execute(
++                text("DELETE FROM paper_sources WHERE id = :pid"),
++                {"pid": paper_id},
++            )
++            await s.commit()
++    _run(_del())
++
++
++def _cleanup_evidence(evidence_ids):
++    async def _del():
++        async with AsyncSessionLocal() as s:
++            for eid in evidence_ids:
++                await s.execute(
++                    text("DELETE FROM mirror_evidence_passages WHERE evidence_id = :eid"),
++                    {"eid": eid},
++                )
++                await s.execute(
++                    text("DELETE FROM confidence_adjustment_logs WHERE evidence_id = :eid"),
++                    {"eid": eid},
++                )
++                await s.execute(
++                    text("DELETE FROM mirror_evidence_records WHERE id = :eid"),
++                    {"eid": eid},
++                )
++            await s.commit()
++    _run(_del())
++
++
++def _sample_passages():
++    return [
++        {
++            "passage": "The hippocampus projects to the prefrontal cortex via direct pathways.",
++            "source_scope": "abstract",
++            "direction": "supports",
++            "evidence_level": "direct",
++            "reason": "Explicit statement of projection.",
++            "confidence": 0.85,
++            "source_verified": True,
++            "source_verification_method": "exact",
++            "source_locator": "abstract:0",
++            "supported_components": ["source_region", "target_region", "relation"],
++            "is_selected": True,
++        }
++    ]
++
++
++# ════════════════════════════════════════════════════════════════════════════
++# Tests
++# ════════════════════════════════════════════════════════════════════════════
++
++
++def test_build_review_approved():
++    """build_review with supports direction creates an approved review."""
++    conn_id = _make_connection()
++    paper_id = _make_paper_source()
++    try:
++        result = _run(_build_review_inner(conn_id, paper_id, "supports", _sample_passages()))
++        assert result["review_id"]
++        assert result["status"] == "approved"
++        # Verify review exists
++        review = _run(_get_review_inner(result["review_id"]))
++        assert review["review_status"] == "approved"
++        assert review["promotion_status"] == "awaiting_promotion"
++        assert review["target_type"] == "connection"
++        assert review["paper_id"] == str(paper_id)
++        assert len(review["passages"]) == 1
++        assert review["passages"][0]["source_verified"] is True
++    finally:
++        if "result" in locals():
++            _cleanup_review(uuid.UUID(result["review_id"]))
++        _cleanup_paper(paper_id)
++        _cleanup_connection(conn_id)
++
++
++def test_build_review_rejected():
++    """build_review with not_found direction creates a rejected review."""
++    conn_id = _make_connection()
++    paper_id = _make_paper_source()
++    try:
++        result = _run(_build_review_inner(conn_id, paper_id, "not_found", _sample_passages()))
++        assert result["review_id"]
++        assert result["status"] == "rejected"
++        review = _run(_get_review_inner(result["review_id"]))
++        assert review["review_status"] == "rejected"
++    finally:
++        if "result" in locals():
++            _cleanup_review(uuid.UUID(result["review_id"]))
++        _cleanup_paper(paper_id)
++        _cleanup_connection(conn_id)
++
++
++def test_approved_does_not_create_evidence_or_modify_confidence():
++    """build_review/approve_review writes to paper_evidence_reviews only — never mirror_evidence_records."""
++    conn_id = _make_connection()
++    paper_id = _make_paper_source()
++    try:
++        # build with "supports" creates an already-approved review
++        result = _run(_build_review_inner(conn_id, paper_id, "supports", _sample_passages()))
++        review_id = uuid.UUID(result["review_id"])
++        assert result["status"] == "approved"
++        # Count evidence records for this target — should be 0
++        evidence_count = _run(_count_evidence_for_target(conn_id))
++        assert evidence_count == 0, "build_review should never write mirror_evidence_records"
++        # approve on already-approved is rejected (correct behavior)
++        with pytest.raises(ValueError, match="cannot approve"):
++            _run(_approve_inner(review_id))
++        evidence_count2 = _run(_count_evidence_for_target(conn_id))
++        assert evidence_count2 == 0, "approve_review should never write mirror_evidence_records"
++    finally:
++        if "result" in locals():
++            _cleanup_review(review_id)
++        _cleanup_paper(paper_id)
++        _cleanup_connection(conn_id)
++
++
++def test_approve_review():
++    """approve_review transitions status to 'approved'."""
++    conn_id = _make_connection()
++    paper_id = _make_paper_source()
++    try:
++        # Build as draft-like first (use returned state from return, then approve)
++        result = _run(_build_review_inner(conn_id, paper_id, "supports", _sample_passages()))
++        review_id = uuid.UUID(result["review_id"])
++        assert result["status"] == "approved"  # already approved from build
++        # Reject first to test approve from non-draft
++        _run(_reject_inner(review_id))
++        with pytest.raises(ValueError, match="cannot approve"):
++            _run(_approve_inner(review_id))
++    finally:
++        if "result" in locals():
++            _cleanup_review(review_id)
++        _cleanup_paper(paper_id)
++        _cleanup_connection(conn_id)
++
++
++def test_reject_review():
++    """reject_review transitions to 'rejected'."""
++    conn_id = _make_connection()
++    paper_id = _make_paper_source()
++    try:
++        result = _run(_build_review_inner(conn_id, paper_id, "supports", _sample_passages()))
++        review_id = uuid.UUID(result["review_id"])
++        rej = _run(_reject_inner(review_id))
++        assert rej["status"] == "rejected"
++        review = _run(_get_review_inner(review_id))
++        assert review["review_status"] == "rejected"
++    finally:
++        if "result" in locals():
++            _cleanup_review(review_id)
++        _cleanup_paper(paper_id)
++        _cleanup_connection(conn_id)
++
++
++def test_promote_returns_on_wrong_status():
++    """promote_review raises ValueError when review is not in 'approved' status."""
++    conn_id = _make_connection()
++    paper_id = _make_paper_source()
++    try:
++        result = _run(_build_review_inner(conn_id, paper_id, "not_found", _sample_passages()))
++        review_id = uuid.UUID(result["review_id"])
++        assert result["status"] == "rejected"
++        with pytest.raises(ValueError, match="cannot promote"):
++            _run(_promote_inner(review_id))
++    finally:
++        if "result" in locals():
++            _cleanup_review(review_id)
++        _cleanup_paper(paper_id)
++        _cleanup_connection(conn_id)
++
++
++def test_promote_creates_evidence():
++    """promote_review calls attach_evidence and creates MirrorEvidenceRecord + updates review."""
++    conn_id = _make_connection()
++    paper_id = _make_paper_source()
++    evidence_ids_to_cleanup = []
++    try:
++        # Need source_verified passages
++        passage_text = "The hippocampus projects to the prefrontal cortex via direct pathways."
++        passages = [
++            {
++                "passage": passage_text,
++                "source_scope": "abstract",
++                "direction": "supports",
++                "evidence_level": "direct",
++                "reason": "Explicit statement.",
++                "confidence": 0.85,
++                "source_verified": True,
++                "source_verification_method": "exact",
++                "source_locator": "abstract:0",
++                "supported_components": ["source_region", "target_region", "relation"],
++                "is_selected": True,
++            }
++        ]
++        # Mock verify_paper and _load_source to bypass Europe PMC API calls
++        mock_paper = {
++            "pmid": "30000001",
++            "doi": "10.1/test",
++            "title": "Test Paper Title",
++            "journal": "Neuro J",
++            "year": "2026",
++            "authors": "A B",
++            "abstract": passage_text,
++            "source": "europepmc",
++        }
++        with patch.object(pes, "verify_paper", return_value=mock_paper), \
++             patch.object(pes, "_load_source", return_value=(passage_text, "abstract")):
++            result = _run(_build_review_inner(conn_id, paper_id, "supports", passages))
++            review_id = uuid.UUID(result["review_id"])
++            assert result["status"] == "approved"
++            # promote
++            promote_result = _run(_promote_inner(review_id))
++            assert promote_result["status"] == "promoted"
++            assert promote_result["evidence_id"]
++            evidence_ids_to_cleanup.append(promote_result["evidence_id"])
++            # Verify review state
++            review = _run(_get_review_inner(review_id))
++            assert review["promotion_status"] == "promoted"
++            assert review["evidence_id"] == promote_result["evidence_id"]
++            # Verify evidence record exists
++            async def _check_ev():
++                async with AsyncSessionLocal() as s:
++                    row = (await s.execute(
++                        text(
++                            "SELECT id, evidence_target_type, evidence_target_id, "
++                            "verification_status, paper_pmid FROM mirror_evidence_records "
++                            "WHERE id = :eid"
++                        ),
++                        {"eid": uuid.UUID(promote_result["evidence_id"])},
++                    )).first()
++                    return row
++            ev_row = _run(_check_ev())
++            assert ev_row is not None
++            assert ev_row[3] == "human_verified"
++    finally:
++        if "result" in locals():
++            _cleanup_review(review_id)
++        _cleanup_evidence(evidence_ids_to_cleanup)
++        _cleanup_paper(paper_id)
++        _cleanup_connection(conn_id)
++
++
++def test_promote_idempotent():
++    """promote_review is idempotent: second call returns 'already_promoted'."""
++    conn_id = _make_connection()
++    paper_id = _make_paper_source()
++    evidence_ids_to_cleanup = []
++    try:
++        passage_text = "The hippocampus projects to the prefrontal cortex via direct pathways."
++        passages = [
++            {
++                "passage": passage_text,
++                "source_scope": "abstract",
++                "direction": "supports",
++                "evidence_level": "direct",
++                "reason": "Explicit statement.",
++                "confidence": 0.85,
++                "source_verified": True,
++                "source_verification_method": "exact",
++                "source_locator": "abstract:0",
++                "supported_components": ["source_region", "target_region", "relation"],
++                "is_selected": True,
++            }
++        ]
++        mock_paper = {
++            "pmid": "30000001",
++            "doi": "10.1/test",
++            "title": "Test Paper Title",
++            "journal": "Neuro J",
++            "year": "2026",
++            "authors": "A B",
++            "abstract": passage_text,
++            "source": "europepmc",
++        }
++        with patch.object(pes, "verify_paper", return_value=mock_paper), \
++             patch.object(pes, "_load_source", return_value=(passage_text, "abstract")):
++            result = _run(_build_review_inner(conn_id, paper_id, "supports", passages))
++            review_id = uuid.UUID(result["review_id"])
++            # First promote
++            p1 = _run(_promote_inner(review_id))
++            assert p1["status"] == "promoted"
++            evidence_ids_to_cleanup.append(p1["evidence_id"])
++            # Second promote — idempotent
++            p2 = _run(_promote_inner(review_id))
++            assert p2["status"] == "already_promoted"
++            assert p2["evidence_id"] == p1["evidence_id"]
++    finally:
++        if "result" in locals():
++            _cleanup_review(review_id)
++        _cleanup_evidence(evidence_ids_to_cleanup)
++        _cleanup_paper(paper_id)
++        _cleanup_connection(conn_id)
++
++
++def test_return_review():
++    """return_review sets promotion_status='returned' and review_status='awaiting_review'."""
++    conn_id = _make_connection()
++    paper_id = _make_paper_source()
++    try:
++        result = _run(_build_review_inner(conn_id, paper_id, "supports", _sample_passages()))
++        review_id = uuid.UUID(result["review_id"])
++        ret = _run(_return_inner(review_id, "Needs clarification on evidence level."))
++        assert ret["status"] == "returned"
++        review = _run(_get_review_inner(review_id))
++        assert review["promotion_status"] == "returned"
++        assert review["review_status"] == "awaiting_review"
++        assert review["return_reason"] == "Needs clarification on evidence level."
++    finally:
++        if "result" in locals():
++            _cleanup_review(review_id)
++        _cleanup_paper(paper_id)
++        _cleanup_connection(conn_id)
++
++
++def test_list_reviews():
++    """list_reviews returns paginated results with optional filters."""
++    conn_id = _make_connection()
++    paper_id = _make_paper_source()
++    review_id = None
++    try:
++        result_a = _run(_build_review_inner(conn_id, paper_id, "supports", _sample_passages()))
++        review_id = uuid.UUID(result_a["review_id"])
++        # List all
++        all_items = _run(_list_inner())
++        assert all_items["total"] >= 1
++        # Filter by status
++        approved = _run(_list_inner(review_status="approved"))
++        for item in approved["items"]:
++            assert item["review_status"] == "approved"
++        # Filter by target_type
++        by_type = _run(_list_inner(target_type="connection"))
++        for item in by_type["items"]:
++            assert item["target_type"] == "connection"
++    finally:
++        if review_id:
++            _cleanup_review(review_id)
++        _cleanup_paper(paper_id)
++        _cleanup_connection(conn_id)
++
++
++def test_get_review_with_passages():
++    """get_review returns review with its frozen passages."""
++    conn_id = _make_connection()
++    paper_id = _make_paper_source()
++    try:
++        passages = [
++            {
++                "passage": "The hippocampus projects to the PFC.",
++                "source_scope": "abstract",
++                "direction": "supports",
++                "evidence_level": "direct",
++                "reason": "Direct evidence.",
++                "confidence": 0.85,
++                "source_verified": True,
++                "source_verification_method": "exact",
++                "source_locator": "abstract:0",
++                "supported_components": ["source_region", "target_region"],
++                "is_selected": True,
++            },
++            {
++                "passage": "Prefrontal-hippocampal connectivity is well-established.",
++                "source_scope": "abstract",
++                "direction": "supports",
++                "evidence_level": "indirect",
++                "reason": "Review context.",
++                "confidence": 0.6,
++                "source_verified": False,
++                "source_verification_method": None,
++                "source_locator": None,
++                "supported_components": ["source_region", "target_region"],
++                "is_selected": False,
++            },
++        ]
++        result = _run(_build_review_inner(conn_id, paper_id, "supports", passages))
++        review_id = uuid.UUID(result["review_id"])
++        review = _run(_get_review_inner(review_id))
++        assert len(review["passages"]) == 2
++        assert review["passages"][0]["is_selected"] is True
++        assert review["passages"][0]["source_verified"] is True
++        assert review["passages"][1]["is_selected"] is False
++    finally:
++        if "result" in locals():
++            _cleanup_review(review_id)
++        _cleanup_paper(paper_id)
++        _cleanup_connection(conn_id)
++
++
++# ════════════════════════════════════════════════════════════════════════════
++# Internal async helpers (called via _run in tests)
++# ════════════════════════════════════════════════════════════════════════════
++
++
++async def _build_review_inner(conn_id, paper_id, direction, passages):
++    async with AsyncSessionLocal() as s:
++        return await pes.build_review(
++            s,
++            target_type="connection",
++            target_id=conn_id,
++            paper_id=paper_id,
++            task_id=None,
++            task_item_id=None,
++            reviewer_id="test_reviewer",
++            claim_version="claim_v1",
++            claim_text_snapshot="Hippocampus projects to Prefrontal Cortex.",
++            claim_components_snapshot=[
++                {"component_type": "source_region", "required": True},
++                {"component_type": "target_region", "required": True},
++                {"component_type": "relation", "required": True},
++            ],
++            model_direction="supports",
++            model_assessment="Model assessment text.",
++            reviewer_direction=direction,
++            reviewer_evidence_level="direct",
++            reviewer_confidence=0.85,
++            reviewer_note="Reviewer note.",
++            coverage_summary_snapshot={
++                "required_components": ["source_region", "target_region", "relation"],
++                "supported_components": ["source_region", "target_region", "relation"],
++                "coverage_ratio": 1.0,
++            },
++            coverage_formula_version="paper_evidence_coverage_v1",
++            draft_revision=0,
++            passages=passages,
++        )
++
++
++async def _get_review_inner(review_id):
++    async with AsyncSessionLocal() as s:
++        return await pes.get_review(s, review_id)
++
++
++async def _approve_inner(review_id):
++    async with AsyncSessionLocal() as s:
++        return await pes.approve_review(s, review_id)
++
++
++async def _reject_inner(review_id):
++    async with AsyncSessionLocal() as s:
++        return await pes.reject_review(s, review_id)
++
++
++async def _promote_inner(review_id):
++    async with AsyncSessionLocal() as s:
++        return await pes.promote_review(s, review_id)
++
++
++async def _return_inner(review_id, reason):
++    async with AsyncSessionLocal() as s:
++        return await pes.return_review(s, review_id, reason=reason)
++
++
++async def _list_inner(review_status=None, promotion_status=None, target_type=None, page=1, page_size=20):
++    async with AsyncSessionLocal() as s:
++        return await pes.list_reviews(
++            s,
++            review_status=review_status,
++            promotion_status=promotion_status,
++            target_type=target_type,
++            page=page,
++            page_size=page_size,
++        )
++
++
++async def _count_evidence_for_target(target_id):
++    async with AsyncSessionLocal() as s:
++        return (
++            await s.execute(
++                text(
++                    "SELECT COUNT(*) FROM mirror_evidence_records "
++                    "WHERE evidence_target_id = :tid"
++                ),
++                {"tid": target_id},
++            )
++        ).scalar_one()
+diff --git a/frontend/src/api/endpoints.ts b/frontend/src/api/endpoints.ts
+index 58353bc..391c25d 100644
+--- a/frontend/src/api/endpoints.ts
++++ b/frontend/src/api/endpoints.ts
+@@ -5696,20 +5696,132 @@ export interface EvidenceReviewQueueItem {
+   resolved_by: string | null
+   resolution_note: string | null
+ }
+ 
+ export const listEvidenceReviewQueue = (p?: { status?: string; limit?: number; offset?: number }) =>
+   getJson<{ items: EvidenceReviewQueueItem[]; total: number }>('/api/ontology/evidence/review-queue', p)
+ 
+ export const resolveEvidenceReviewRecord = (recordId: string, note: string) =>
+   postJson<{ id: string; status: string }>(`/api/ontology/evidence/review-queue/${recordId}/resolve`, { note })
+ 
++// ──── Paper Evidence Reviews (Phase 1) ──────────────────────────────────────
++
++export interface EvidenceReviewPassage {
++  id: string
++  review_id: string
++  paper_passage_id: string | null
++  passage_text: string
++  passage_text_snapshot: string
++  source_scope: string | null
++  section_title: string | null
++  paragraph_index: number | null
++  paragraph_id: string | null
++  translation_zh: string | null
++  direction: string | null
++  evidence_level: string | null
++  reason: string | null
++  confidence: number | null
++  semantic_confidence: number | null
++  source_locator: string | null
++  source_verified: boolean
++  source_verification_method: string | null
++  supported_components: string[]
++  passage_hash: string | null
++  rank: number
++  is_selected: boolean
++  created_at: string | null
++}
++
++export interface EvidenceReviewItem {
++  id: string
++  target_type: string
++  target_id: string
++  paper_id: string | null
++  task_id: string | null
++  task_item_id: string | null
++  reviewer_id: string | null
++  review_status: string
++  promotion_status: string
++  claim_version: string | null
++  claim_text_snapshot: string | null
++  claim_components_snapshot: Record<string, unknown>[] | null
++  model_direction: string | null
++  model_assessment: string | null
++  reviewer_direction: string | null
++  reviewer_evidence_level: string | null
++  reviewer_confidence: number | null
++  reviewer_note: string | null
++  coverage_summary_snapshot: Record<string, unknown> | null
++  coverage_formula_version: string | null
++  draft_revision: number
++  reviewed_at: string | null
++  approved_at: string | null
++  rejected_at: string | null
++  promoted_at: string | null
++  promoted_by: string | null
++  returned_at: string | null
++  returned_by: string | null
++  return_reason: string | null
++  evidence_id: string | null
++  created_at: string | null
++  updated_at: string | null
++  passages?: EvidenceReviewPassage[]
++}
++
++interface EvidenceReviewBuildBody {
++  target_type: string
++  target_id: string
++  paper_id: string | null
++  task_id?: string | null
++  task_item_id?: string | null
++  reviewer_id?: string | null
++  claim_version: string
++  claim_text_snapshot: string
++  claim_components_snapshot: Record<string, unknown>[]
++  model_direction: string | null
++  model_assessment: string | null
++  reviewer_direction: string
++  reviewer_evidence_level: string
++  reviewer_confidence: number
++  reviewer_note: string | null
++  coverage_summary_snapshot: Record<string, unknown>
++  coverage_formula_version: string
++  draft_revision: number
++  passages: Record<string, unknown>[]
++}
++
++export const buildReview = (body: EvidenceReviewBuildBody) =>
++  postJson<{ review_id: string; status: string }>('/api/ontology/evidence/reviews', body)
++
++export const listEvidenceReviews = (p?: {
++  review_status?: string
++  promotion_status?: string
++  target_type?: string
++  page?: number
++  page_size?: number
++}) => getJson<{ items: EvidenceReviewItem[]; total: number }>('/api/ontology/evidence/reviews', p)
++
++export const getEvidenceReview = (id: string) =>
++  getJson<EvidenceReviewItem>(`/api/ontology/evidence/reviews/${id}`)
++
++export const approveReview = (id: string) =>
++  postJson<{ review_id: string; status: string }>(`/api/ontology/evidence/reviews/${id}/approve`)
++
++export const rejectReview = (id: string) =>
++  postJson<{ review_id: string; status: string }>(`/api/ontology/evidence/reviews/${id}/reject`)
++
++export const promoteReview = (id: string) =>
++  postJson<EvidenceReviewItem>(`/api/ontology/evidence/reviews/${id}/promote`)
++
++export const returnReview = (id: string, reason: string) =>
++  postJson<{ review_id: string; status: string }>(`/api/ontology/evidence/reviews/${id}/return`, { reason })
++
+ export interface ConfidenceAdjustmentItem {
+   id: string
+   evidence_id: string | null
+   before_confidence: number | null
+   suggested_confidence: number | null
+   after_confidence: number | null
+   direction: string | null
+   formula_version: string
+   status: string
+   applied_by: string | null

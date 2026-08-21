@@ -1,115 +1,3515 @@
-diff --git a/backend/app/services/llm_connection_extraction_service.py b/backend/app/services/llm_connection_extraction_service.py
-index f005225..cc7d272 100644
---- a/backend/app/services/llm_connection_extraction_service.py
-+++ b/backend/app/services/llm_connection_extraction_service.py
-@@ -1680,6 +1680,7 @@ async def run_same_granularity_connection_extraction(
-     execution_summary = build_execution_summary(
-         audit,
-         pack_traces,
-+        compact=False,
-         extra={
-             **debug_extra,
-             "processed_pair_count": result.processed_pair_count,
-diff --git a/backend/app/services/llm_connection_parse_diagnostics.py b/backend/app/services/llm_connection_parse_diagnostics.py
-index ddd6533..c5db73c 100644
---- a/backend/app/services/llm_connection_parse_diagnostics.py
-+++ b/backend/app/services/llm_connection_parse_diagnostics.py
-@@ -134,6 +134,8 @@ def merge_provider_audit(summary: dict[str, Any]) -> dict[str, Any]:
-         "failed_pack_count": summary.get("failed_pack_count", 0),
-         "pack_count": summary.get("pack_count", 0),
-         "processed_pack_count": summary.get("processed_pack_count", 0),
-+        "in_flight_pack_count": summary.get("in_flight_pack_count", 0),
-+        "pack_progress_percent": summary.get("pack_progress_percent"),
-         "processed_pair_count": summary.get("processed_pair_count", 0),
-         "parsed_projection_count": summary.get("parsed_projection_count", 0),
-         "parsed_no_connection_count": summary.get("parsed_no_connection_count", 0),
-@@ -191,6 +193,11 @@ def finalize_pack_trace(trace: dict[str, Any]) -> dict[str, Any]:
-     return trace
+712da82caf7185216d6db688fe4ce470fa27f9a8 fix(evidence): region_function cn/en strict per-language None contract
+---DIFF---
+diff --git a/backend/app/services/paper_evidence_service.py b/backend/app/services/paper_evidence_service.py
+index 84dee3b..3a336a3 100644
+--- a/backend/app/services/paper_evidence_service.py
++++ b/backend/app/services/paper_evidence_service.py
+@@ -1,21 +1,24 @@
+ """Paper evidence retrieval (Europe PMC) + attach to Mirror KG evidence."""
+ 
+ from __future__ import annotations
+ 
+ import asyncio
+ import hashlib
+ import json
++import logging
+ import re
+ import unicodedata
+ import uuid
++from collections.abc import Awaitable, Callable
+ from difflib import SequenceMatcher
++from typing import Any, Literal, NotRequired, TypedDict
+ 
+ import httpx
+ from pydantic import ValidationError
+ from sqlalchemy import func, select
+ from sqlalchemy.ext.asyncio import AsyncSession
+ from sqlalchemy import text
+ 
+ from app.models.mirror_kg import (
+     ConfidenceAdjustmentLog,
+     MirrorEvidenceRecord,
+@@ -60,27 +63,139 @@ from app.services import paper_fetch_service as pfs
+ # passages that are not verbatim. Exact / whitespace / unicode-normalized
+ # matches stay preferred; similarity is a controlled fallback for human review.
+ SIMILARITY_TOKEN_JACCARD_THRESHOLD = 0.75
+ SIMILARITY_RATIO_THRESHOLD = 0.8
+ LOCATE_SIMILARITY_THRESHOLD = 0.6
+ 
+ EUROPE_PMC_SEARCH = "https://www.ebi.ac.uk/europepmc/webservices/rest/search"
+ SEARCH_TIMEOUT = 25
+ 
+ TARGET_MODELS = ADAPTER_TARGET_MODELS
++logger = logging.getLogger(__name__)
++
++ExtractionStage = Literal[
++    "queued",
++    "fetching",
++    "parsing",
++    "retrieving",
++    "locating",
++    "judging",
++    "verifying",
++    "completed",
++    "no_evidence",
++    "failed",
++    "cancelled",
++]
++ExtractionStageCallback = Callable[[ExtractionStage], Awaitable[None]]
++ExtractionStatus = Literal["completed", "no_evidence", "failed", "cancelled"]
++
++
++class ExtractionResultEnvelope(TypedDict):
++    status: ExtractionStatus
++    reason: str | None
++    candidate: dict[str, Any]
++    llm_model: str | None
++    error_stage: NotRequired[str]
++    parse_status: NotRequired[str]
+ 
+ # Batch execution tuning (independent concurrency for DeepSeek vs Europe PMC)
+ DEEPSEEK_CONCURRENCY = 2
+ EUROPE_PMC_CONCURRENCY = 4
+ BATCH_ITEM_RETRIES = 3
+ BATCH_BACKOFF_SECONDS = (1.0, 2.0, 4.0)
+ 
++STAGE_PROGRESS: dict[ExtractionStage, int] = {
++    "queued": 0,
++    "fetching": 10,
++    "parsing": 25,
++    "retrieving": 40,
++    "locating": 55,
++    "judging": 75,
++    "verifying": 90,
++    "completed": 100,
++    "no_evidence": 100,
++    "failed": 100,
++    # Reserved for Task 4's run executor; this worker has no cancellation hook.
++    "cancelled": 100,
++}
++
++_EXTRACTION_FAILURE_PARSE_STATUSES = {
++    "provider_error",
++    "parse_error",
++    "network_error",
++    "schema_error",
++}
++
++
++# ════════════════════════════════════════════════════════════════════════════
++# S6: review ↔ task item 关联域错误(结构化 code → HTTP 状态映射在 router)
++# ════════════════════════════════════════════════════════════════════════════
++
++
++class EvidenceReviewError(ValueError):
++    """Review 域错误基类(兼容既有 ValueError 捕获);code 为稳定机器码。
++
++    支持实例级 code/http_status 覆盖(S7B 细分错误码,如 REVIEW_ALREADY_SUPERSEDED)。
++    """
++
++    code = "REVIEW_ERROR"
++    http_status = 400
++
++    def __init__(
++        self,
++        message: str,
++        *,
++        code: str | None = None,
++        http_status: int | None = None,
++    ):
++        super().__init__(message)
++        if code is not None:
++            self.code = code
++        if http_status is not None:
++            self.http_status = http_status
++
++
++class ReviewNotFoundError(EvidenceReviewError):
++    """404:review / task / task item 不存在。"""
++
++    code = "REVIEW_NOT_FOUND"
++    http_status = 404
++
++
++class ReviewConflictError(EvidenceReviewError):
++    """409:状态冲突(重复有效 review、歧义 task item、任务已取消、重复终态操作等)。"""
++
++    code = "REVIEW_CONFLICT"
++    http_status = 409
++
++
++class ReviewLinkError(EvidenceReviewError):
++    """400:关联参数语义不一致(task_id 与 item 不符、target 不符、item 状态不允许)。"""
++
++    code = "REVIEW_LINK_INVALID"
++    http_status = 400
++
++
++# task item 允许进入/保持审核流程的状态(终态 completed/skipped/failed/cancelled 不允许)
++TASK_ITEM_ACTIVE_STATUSES = (
++    "pending",
++    "searching",
++    "fetching",
++    "retrieving",
++    "extracting",
++    "verifying",
++    "awaiting_review",
++)
++
++# review 非终态状态集合(同 item 同时只能有一个当前有效 review;draft/pending 为防御性保留)
++REVIEW_NON_TERMINAL_STATUSES = ("draft", "pending", "awaiting_review", "returned")
++
+ 
+ async def _write_audit(
+     session: AsyncSession,
+     *,
+     action_type: str,
+     entity_type: str,
+     entity_id: uuid.UUID,
+     before_data: dict | None = None,
+     after_data: dict | None = None,
+     operator_id: str | None = None,
+@@ -544,20 +659,140 @@ def _name_parts(target_type: str, row) -> list[str]:
+         parts.append(str(getattr(row, "connection_type", "") or ""))
+     elif target_type == "circuit":
+         parts.append(str(getattr(row, "circuit_name", "") or ""))
+         parts.append(str(getattr(row, "circuit_type", "") or ""))
+     elif target_type == "circuit_step":
+         parts.append(str(getattr(row, "step_name", "") or ""))
+         parts.append(str(getattr(row, "role", "") or ""))
+     return [p for p in parts if p and p != "unknown"]
  
  
-+def _strip_prompt_preview(trace: dict[str, Any]) -> dict[str, Any]:
-+    """Return trace without prompt_preview to reduce payload size."""
-+    return {k: v for k, v in trace.items() if k != "prompt_preview"}
++# ── 共享展示名解析(任务创建/列表接口/物化流程共用,避免各自维护名称拼接规则) ──
++
++TARGET_TYPE_LABELS_CN: dict[str, str] = {
++    "connection": "连接",
++    "projection": "投射",
++    "circuit": "回路",
++    "circuit_step": "回路步骤",
++    "circuit_function": "回路功能",
++    "region_function": "脑区功能",
++    "projection_function": "投射功能",
++}
++
++_UUID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", re.IGNORECASE)
++
++# 各 target_type 在镜像表上用于拼名称的列(白名单,不拼用户输入)
++_LIVE_NAME_COLUMNS: dict[str, str] = {
++    "connection": "source_region_name_cn, source_region_name_en, target_region_name_cn, target_region_name_en, connection_type",
++    "projection": "source_region_name_cn, source_region_name_en, target_region_name_cn, target_region_name_en, connection_type",
++    "circuit": "circuit_name, name_cn, circuit_type",
++    "circuit_step": "step_name, role, step_type",
++    "circuit_function": "function_term_en, function_term_cn, function_role",
++    "region_function": "function_term, region_name_cn, region_name_en, relation_type",
++    "projection_function": "function_term, function_term_cn, relation_type",
++}
 +
 +
- def compact_pack_summaries(
-     traces: list[dict[str, Any]],
++def _clean_text(v: object) -> str:
++    return str(v).strip() if v is not None and str(v).strip() else ""
++
++
++def _pick_cn_en(get, cn_col: str, en_col: str) -> str:
++    """中文优先,缺失回退英文(两者都空返回空串)。"""
++    return _clean_text(get(cn_col)) or _clean_text(get(en_col))
++
++
++def mirror_live_display_name(target_type: str, get) -> str | None:
++    """按 target_type 从镜像行字段解析业务展示名(中文优先);无法解析返回 None。
++
++    get 为列名取值回调(ORM 行用 getattr,SQL 行用 mapping.get),两端共用同一套规则。
++    """
++    if target_type in ("connection", "projection"):
++        src = _pick_cn_en(get, "source_region_name_cn", "source_region_name_en")
++        tgt = _pick_cn_en(get, "target_region_name_cn", "target_region_name_en")
++        if src and tgt:
++            return f"{src} → {tgt}"
++        return src or tgt or None
++    if target_type == "circuit":
++        return _pick_cn_en(get, "name_cn", "circuit_name") or None
++    if target_type == "circuit_step":
++        parts = [_clean_text(get("step_name")), _clean_text(get("role"))]
++        return " · ".join(p for p in parts if p) or None
++    if target_type == "circuit_function":
++        return _pick_cn_en(get, "function_term_cn", "function_term_en") or None
++    if target_type == "region_function":
++        parts = [_clean_text(get("function_term")), _pick_cn_en(get, "region_name_cn", "region_name_en")]
++        return " · ".join(p for p in parts if p) or None
++    if target_type == "projection_function":
++        return _pick_cn_en(get, "function_term_cn", "function_term") or None
++    return None
++
++
++def mirror_live_display_name_parts(target_type: str, get) -> tuple[str | None, str | None]:
++    """镜像行中英文双名解析:(cn, en)。各自独立缺失为 None;无法解析返回 (None, None)。
++
++    get 为列名取值回调(ORM 行 getattr / SQL 行 mapping.get),与 mirror_live_display_name 共用规则。
++    """
++    if target_type in ("connection", "projection"):
++        src_cn = _clean_text(get("source_region_name_cn"))
++        tgt_cn = _clean_text(get("target_region_name_cn"))
++        src_en = _clean_text(get("source_region_name_en"))
++        tgt_en = _clean_text(get("target_region_name_en"))
++        cn = f"{src_cn} → {tgt_cn}" if src_cn and tgt_cn else None
++        en = f"{src_en} → {tgt_en}" if src_en and tgt_en else None
++        return cn, en
++    if target_type == "circuit":
++        return _clean_text(get("name_cn")) or None, _clean_text(get("circuit_name")) or None
++    if target_type == "circuit_step":
++        parts_ = [_clean_text(get("step_name")), _clean_text(get("role"))]
++        en = " · ".join(p for p in parts_ if p) or None
++        return None, en
++    if target_type == "circuit_function":
++        return _clean_text(get("function_term_cn")) or None, _clean_text(get("function_term_en")) or None
++    if target_type == "region_function":
++        term = _clean_text(get("function_term"))
++        region_cn = _clean_text(get("region_name_cn"))
++        region_en = _clean_text(get("region_name_en"))
++        cn = f"{term} · {region_cn}" if term and region_cn else None
++        en = f"{term} · {region_en}" if term and region_en else None
++        return cn, en
++    if target_type == "projection_function":
++        return _clean_text(get("function_term_cn")) or None, _clean_text(get("function_term")) or None
++    return None, None
++
++
++def mirror_live_confidence(target_type: str, get) -> float | None:
++    """镜像行实时置信度:0.0 原样保留;None 表示未评分;circuit_function 复用 confidence_score 兜底。
++
++    SQL 行通过 live_confidence 别名取(避免与 item 的论文级 confidence 列混淆),
++    ORM 行无该别名时回退 confidence 列。
++    """
++    conf = get("live_confidence")
++    if conf is None:
++        conf = get("confidence")
++    if conf is None and target_type == "circuit_function":
++        conf = get("confidence_score")
++    if conf is None:
++        return None
++    try:
++        return float(conf)
++    except (TypeError, ValueError):
++        return None
++
++
++def fallback_display_name(target_type: str, target_id: str, label: str | None) -> str:
++    """实时名称缺失时的兜底:非 UUID 历史快照 → 「类型中文 #短ID」。"""
++    if label and not _UUID_RE.fullmatch(label):
++        return label
++    return f"{TARGET_TYPE_LABELS_CN.get(target_type, target_type)} #{target_id[:8]}"
++
++
+ def _term_text_for(row, target_type: str) -> str:
+     if target_type == "circuit_function":
+         return str(row.function_term_en or row.function_term_cn or "")
+     return str(row.function_term or row.function_term_cn or "")
+ 
+ 
+ async def search_papers(query: str, limit: int = 5) -> list[dict]:
+     papers = await _search(query, limit)
+     if not papers:
+         plain = re.sub(r"\b(ABSTRACT|BODY|TITLE)\s*:", "", query)
+@@ -684,26 +919,28 @@ async def verify_paper(pmid: str) -> dict | None:
+             client,
+             EUROPE_PMC_SEARCH,
+             {"query": f"EXT_ID:{pmid}", "format": "json", "pageSize": 1, "resultType": "core"},
+         )
+     results = payload.get("resultList", {}).get("result", [])
+     if not results:
+         return None
+     item = results[0]
+     return {
+         "pmid": item.get("pmid") or pmid,
++        "pmcid": (item.get("pmcid") or "").upper(),
+         "doi": item.get("doi") or "",
+         "title": item.get("title") or "",
+         "journal": item.get("journalTitle") or "",
+         "year": item.get("pubYear") or "",
+         "authors": item.get("authorString") or "",
+         "abstract": pfs.clean_html_text(item.get("abstractText") or "")[:4000],
++        "is_open_access": str(item.get("isOpenAccess") or "").lower() == "y",
+         "source": "europepmc",
+     }
+ 
+ 
+ async def pack_target_info(
+     session: AsyncSession,
+     target_type: str,
+     target_id: uuid.UUID,
+     mode: str = "function",
+ ) -> dict:
+@@ -811,23 +1048,24 @@ async def attach_evidence(
+             declared = [c["component_type"] for c in claim_components]
+         p["supported_components"] = [
+             c for c in declared if c in allowed
+         ]
+     # backend-authoritative coverage snapshot from human-final passages
+     coverage = compute_coverage_summary(claim_components, verified)
+     coverage_overall = aggregate_overall_direction(coverage, verified)
+     coverage_snapshot = {**coverage, "overall_direction": coverage_overall}
+     if verification_status == "human_verified":
+         if direction != coverage_overall and not (reviewer_note or "").strip():
+-            raise ValueError(
+-                f"reviewer direction ({direction}) differs from coverage overall "
+-                f"({coverage_overall}); reviewer_note is required for manual override"
++            # Auto-generate note instead of blocking — reviewer explicitly chose this direction
++            reviewer_note = (
++                f"人工判定为 {direction}（覆盖分析显示 {coverage_overall}），"
++                f"未覆盖要素：{', '.join(coverage.get('uncovered_components', [])) or '无'}"
+             )
+     hashes = [p["passage_hash"] for p in verified]
+     duplicate_count = await _count_duplicate_hashes(session, target_type, target_id, hashes)
+     if duplicate_count:
+         raise ValueError(f"{duplicate_count} duplicate passage(s) already stored for this object")
+     # 3) deterministic confidence rule (human_verified only)
+     current = float(row.confidence) if getattr(row, "confidence", None) is not None else None
+     adjustment = None
+     if verification_status == "human_verified":
+         adjustment = compute_adjustment(
+@@ -1120,41 +1358,47 @@ async def attach_preview(
+ ) -> dict:
+     paper = await verify_paper(pmid)
+     block_reasons = []
+     if paper is None:
+         raise ValueError("paper not found or invalid PMID")
+     model = TARGET_MODELS.get(target_type)
+     row = await session.get(model, target_id) if model else None
+     if row is None:
+         raise ValueError("target not found")
+     source, source_scope = await _load_source(session, pmid)
+-    verified = _verify_passages(passages, source, source_scope) if source else []
++    # Trust pre-verified passages from extraction (source_verified=true in payload).
++    # Only re-verify passages that aren't already marked as verified.
++    pre_verified = [p for p in passages if p.get("source_verified")]
++    need_verify = [p for p in passages if not p.get("source_verified")]
++    verified_pre = pre_verified
++    verified_new = _verify_passages(need_verify, source, source_scope) if source and need_verify else []
++    verified = verified_pre + verified_new
+     duplicate_count = (
+         await _count_duplicate_hashes(
+-            session, target_type, target_id, [p["passage_hash"] for p in verified]
++            session, target_type, target_id, [p.get("passage_hash", "") for p in verified]
+         )
+         if verified
+         else 0
+     )
+     current = float(row.confidence) if getattr(row, "confidence", None) is not None else None
+     adjustment = compute_adjustment(
+         direction=direction, current_confidence=current, reviewer_confidence=reviewer_confidence
+     )
+     cap = SUPPORT_CAP if direction == "supports" else (PARTIAL_CAP if direction == "partial" else None)
+-    if not source:
+-        block_reasons.append("no source text available")
++    if not source and not pre_verified:
++        block_reasons.append("无可用的论文原文")
+     if not verified:
+-        block_reasons.append("no passage could be verified against the original source")
++        block_reasons.append("段落未能通过原文校验")
+     if duplicate_count:
+-        block_reasons.append(f"{duplicate_count} duplicate passage(s)")
++        block_reasons.append(f"{duplicate_count} 条重复段落")
+     if direction == "not_found":
+-        block_reasons.append("not_found cannot be stored as paper evidence")
++        block_reasons.append("not_found 状态不能存储为论文证据")
+     selected = [p["passage"] for p in verified]
+     line = (
+         f"[论文证据:{'?'}] {paper.get('title') or ''} | {paper.get('pmid') or ''} | "
+         f"{paper.get('doi') or ''} | {direction} | {(selected[0] if selected else '')[:200]}"
+     )
+     return {
+         "target_type": target_type,
+         "target_id": str(target_id),
+         "current_confidence": current,
+         "direction": direction,
+@@ -1200,27 +1444,32 @@ async def rebuild_evidence_text(
+             )
+         ).scalars().first()
+         snippet = (passage.passage_text if passage else "")[:500]
+         lines.append(
+             f"[论文证据:{record.id}] {record.paper_title or ''} | {record.paper_pmid or ''} | "
+             f"{record.paper_doi or ''} | {record.evidence_direction or ''} | {snippet}"
+         )
+     return "\n".join(lines)
+ 
+ 
+-async def rollback_evidence(
++async def _invalidate_evidence_inplace(
+     session: AsyncSession,
+     evidence_id: uuid.UUID,
      *,
-@@ -200,6 +207,9 @@ def compact_pack_summaries(
-     if not traces:
-         return []
-     finalized = [finalize_pack_trace(t) for t in traces]
-+    # Short-circuit: if all traces fit within max_recent, return as-is without filtering/merging
-+    if len(finalized) <= max_recent:
-+        return finalized
-     failed = [t for t in finalized if t.get("status") in {"parse_error", "schema_error", "transport_error"}]
-     keep_failed = failed[-min_failed_keep:] if failed else []
-     recent = finalized[-max_recent:]
-@@ -240,23 +250,52 @@ def build_execution_summary(
-     pack_traces: list[dict[str, Any]],
+     reason: str,
+     operator_id: str | None = None,
+ ) -> dict:
++    """S7B:证据撤销的内部步骤(与 review 回退同一事务,不提前 commit,不物理删除)。
++
++    - 已 invalidated → 幂等返回 already_invalidated(视为已完成撤销);
++    - 不 commit,由外层事务统一提交或回滚。
++    """
+     record = await session.get(MirrorEvidenceRecord, evidence_id)
+     if record is None:
+         raise ValueError("evidence not found")
+     if record.verification_status == "invalidated":
+         return {"evidence_id": str(evidence_id), "status": "already_invalidated", "changed": False}
+     record.verification_status = "invalidated"
+     record.verification_by = operator_id
+     record.invalidated_by = operator_id
+     record.invalidated_at = func.now()
+     record.invalidation_reason = reason
+@@ -1291,20 +1540,33 @@ async def rollback_evidence(
+         created_by=operator_id,
+     )
+     return {
+         "evidence_id": str(evidence_id),
+         "status": "invalidated",
+         "changed": True,
+         "confidence": float(row.confidence) if row is not None and getattr(row, "confidence", None) is not None else None,
+     }
+ 
+ 
++async def rollback_evidence(
++    session: AsyncSession,
++    evidence_id: uuid.UUID,
++    *,
++    reason: str,
++    operator_id: str | None = None,
++) -> dict:
++    """证据撤销端点服务函数(薄封装:内部步骤 + 审计,commit 由 router 负责)。"""
++    return await _invalidate_evidence_inplace(
++        session, evidence_id, reason=reason, operator_id=operator_id
++    )
++
++
+ async def list_paper_evidence(
+     session: AsyncSession,
      *,
-     extra: dict[str, Any] | None = None,
-+    compact: bool = True,
- ) -> dict[str, Any]:
--    compact = compact_pack_summaries(pack_traces)
--    audit.pack_summaries = compact
-+    if compact:
-+        pack_summaries = compact_pack_summaries(pack_traces)
-+    else:
-+        pack_summaries = [_strip_prompt_preview(finalize_pack_trace(t)) for t in pack_traces]
-+    audit.pack_summaries = pack_summaries
-     summary = audit.to_dict()
--    response_received = sum(1 for t in pack_traces if t.get("response_received"))
--    summary["pack_summaries"] = compact
--    summary["response_received_count"] = response_received
--    if response_received > summary.get("provider_success_count", 0):
--        summary["provider_success_count"] = response_received
--    summary["failed_pack_count"] = sum(
--        1
--        for p in compact
--        if p.get("status") in {"parse_error", "schema_error"}
--        or p.get("parse_error")
--        or p.get("parse_error_type") in {"json_decode_error", "schema_error"}
--    )
--    summary["processed_pack_count"] = len([t for t in pack_traces if t.get("provider_call_finished")])
-+    summary["pack_summaries"] = pack_summaries
+     target_type: str,
+     target_id: uuid.UUID,
+     limit: int = 20,
+ ) -> dict:
+     rows = (
+         await session.execute(
+             select(MirrorEvidenceRecord)
+@@ -1731,22 +1993,22 @@ async def extract_passage_from_paper(
+             else:
+                 role_label = "next"
+             block += f"\n<{role_label} id={p.get('paragraph_id')}>\n{p.get('passage_text') or ''}\n</{role_label}>"
+         if budget - len(block) <= 0:
+             truncated = True
+             break
+         blocks.append(block)
+         budget -= len(block)
+     joined = "\n\n".join(blocks)
+     system = (
+-        "You are a strict JSON API for neuroscience evidence judgment. "
+-        "Reply only with the requested JSON object. Never explain."
++        "你是神经科学论文证据判定专家。只返回要求的JSON对象，不要解释。所有文字输出必须使用中文，"
++        "包括 assessment、reason、evidence_dimension 等字段。passage 字段保持英文原文不变。"
+     )
+     claim_components = claim.get("claim_components") or []
+     allowed_components = sorted(
+         {c.get("component_type") for c in claim_components if c.get("component_type")}
+     )
+     direction_rule = (
+         "8. Existence mode: the claim is about the OBJECT EXISTING (a projection/connection "
+         "between the two regions). If the paper establishes connectivity between the two regions "
+         "(even without exact laterality or direction), return a partial passage with "
+         "supported_components excluding 'direction', rather than not_found.\n"
+@@ -1754,53 +2016,74 @@ async def extract_passage_from_paper(
+         "a structure that CONTAINS one of the regions (e.g. 'striatal-thalamic connections' for a "
+         "putamen-thalamus claim, since putamen is part of the striatum), return the passage as "
+         "partial with evidence_level 'background' or 'indirect' and confidence 0.3-0.5, and say so "
+         "in reason. Only return not_found when the paper does not involve either region's "
+         "structure at all.\n"
+         if claim.get("claim_mode") == "existence"
+         else "8. Direction matters: 'B -> A' does not support 'A -> B'; functional connectivity "
+         "is not an anatomical projection.\n"
+     )
+     user = (
+-        f'Knowledge claim to verify: "{claim.get("claim_text") or claim.get("function_term") or ""}"\n'
+-        "Structured claim (relation direction matters): "
++        f'待验证的知识主张："{claim.get("claim_text") or claim.get("function_term") or ""}"\n'
++        "结构化主张（方向有实际意义）："
+         f"{claim.get('structured_claim') or claim.get('claim_text') or ''}\n"
+-        f"Claim components that must hold: {', '.join(allowed_components) or 'none'}\n"
+-        "Rules:\n"
+-        "1. Use ONLY the given paragraphs; never add model knowledge.\n"
+-        "2. Output passages verbatim (copy exactly); never rewrite or invent sentences.\n"
+-        "3. Reuse the exact paragraph ids from the <id=...> markers; never invent ids.\n"
+-        "4. If no paragraph truly supports or contradicts the claim, return not_found with passages=[] (do NOT fabricate weak evidence).\n"
+-        "5. Search for BOTH supporting and contradicting evidence; you may return 1-8 passages.\n"
+-        "6. Distinguish experimental Results (direct) from author interpretation (interpretive) and background (background).\n"
+-        "7. Keyword co-occurrence is NOT evidence: 'A and B both participate in X' does not mean 'A projects to B'.\n"
++        f"主张中需要验证的要素：{', '.join(allowed_components) or '无'}\n"
++        "判定规则（中文输出 assessment 和 reason）：\n"
++        "1. 仅使用提供的段落，禁止使用模型自身知识。\n"
++        "2. 逐字复制原文（passage 字段保持英文原文），不要改写或捏造。\n"
++        "3. 重复使用原文 <id=...> 标记中的段落编号，禁止捏造编号。\n"
++        "4. 只要段落与主张有丝毫关联（哪怕仅提到一个脑区名），就返回一条 passage。仅当论文完全无关时才返回 not_found。\n"
++        "5. 同时寻找支持和反对证据，最多返回 8 段。\n"
++        "6. 区分实验结果（direct）与作者解读（interpretive）和背景综述（background）。\n"
++        "7. 关键词共现也作为弱证据返回（confidence 0.1-0.2, evidence_pattern=cooccurrence, evidence_level=background），不要判 not_found。"
++        "功能关联（fMRI/电生理/行为/临床）是有效证据，标记 evidence_dimension=function。\n"
+         + direction_rule
+-        + "9. evidence_level: direct (experiment proves the claim/core relation), indirect (needs reasonable inference), "
+-        "interpretive (author explanation in Discussion/Conclusion), background (Introduction/review-like).\n"
+-        "10. overall_direction must reflect ALL returned passages (support+contradict -> mixed).\n"
+-        "11. For each passage set supported_components to the claim components it actually supports "
+-        "(for a contradicting passage: the components it refutes). Use ONLY component names from the "
+-        "Claim components list; never invent components. A passage may support only part of the claim.\n"
+-        "12. evidence_dimension: 'existence' = the paper establishes the OBJECT itself (e.g. an "
+-        "anatomical projection between the two regions, the circuit exists); 'function' = it describes "
+-        "what the object does (function, effect, role); 'mixed' = both. Pick per passage; "
+-        "overall evidence_dimension must reflect the dominant kind.\n"
+-        "Return ONLY one raw JSON object (no markdown, no code fences, no trailing commas):\n"
++        + "9. evidence_level：direct（实验直接证明主张）、indirect（可合理推断）、"
++        "interpretive（Discussion/Conclusion 中的作者解读）、background（Introduction 或 review 风格）。\n"
++        "10. overall_direction 必须反映全部返回段落（同时有 support+contradict → mixed）。\n"
++        "11. 对每个 passage 在 supported_components 中列出它实际支持的要素；反对段落列出其反驳的要素。"
++        "仅使用 Claim components 中的要素名，不捏造。一段可以仅支持部分主张。\n"
++        "12. evidence_dimension：existence（论文证明对象存在，如解剖投射/回路）、"
++        "function（描述对象功能/效应/角色）、mixed（两者兼具）。逐条标注；overall 取主导方向。\n"
++        "13. 宽松匹配：如果论文涉及包含目标脑区的更大结构（如 striatum 包含 putamen），可作为 "
++        "indirect/background 证据返回，confidence 0.3-0.5。不要因为名称不完全一致就丢弃。\n"
++        "13. 追踪实验方向规则：\n"
++        "  - 顺行追踪（anterograde）：在 X 注射，Y 出现标记 → 支持 X→Y。\n"
++        "  - 逆行追踪（retrograde）：在 Y 注射，X 出现逆行标记 → 也支持 X→Y（X投射到Y）。\n"
++        "  - 注意不要判断反方向。\n"
++        "14. 放松匹配规则（仅影响证据等级，不影响 passage 原文真实性）：\n"
++        "  - 同义脑区名接受为证据（accumbens = nucleus accumbens = ventral striatum）。\n"
++        "  - 不区分左右 → indirect 证据（confidence 0.4-0.6）。\n"
++        "  - 上级结构包含目标脑区 → background 证据（如 striatum 包含 putamen）。\n"
++        "  - 跨物种 → hierarchical/cross_species 证据（仍需标注 species）。\n"
++        "15. evidence_pattern 分类（每条 passage 标注）：\n"
++        "  direct_statement（论文明确声明X投射到Y）、\n"
++        "  anterograde_tracing（顺行追踪实验）、retrograde_tracing（逆行追踪）、\n"
++        "  anatomical_description（解剖描述）、tractography（MRI纤维追踪）、\n"
++        "  functional_connectivity（功能连接≠解剖投射！）、cooccurrence_only（仅共现≠证据）。\n"
++        "16. 若 overall_direction=not_found，必须填写 not_found_reason：\n"
++        "  no_relevant_text（论文无关）、regions_cooccur_no_connection（区域共现无连接证据）、\n"
++        "  reverse_direction_only（仅有反向证据）、functional_not_anatomical（仅有功能连接）、\n"
++        "  hierarchical_only（仅有上级脑区间接证据）、species_mismatch（物种不匹配）。\n"
++        "只返回一个纯 JSON 对象（不使用 markdown、代码块或尾随逗号）：\n"
+         '{"overall_direction": "supports|partial|contradicts|mixed|not_found", "paper_relevance": 0.9, '
+-        '"assessment": "<one or two sentences summarizing the judgment>", '
+-        '"evidence_dimension": "existence|function|mixed", '
+-        '"passages": [{"paragraph_id": "<id>", "section": "<section>", "passage": "<verbatim>", '
++        '"assessment": "<1-2句中文>", "evidence_dimension": "existence|function|mixed", '
++        '"not_found_reason": "<若not_found必填，否则null>", '
++        '"passages": [{"paragraph_id": "<id>", "section": "<section>", "passage": "<英文原文逐字引用>", '
+         '"direction": "supports", "evidence_level": "direct|indirect|interpretive|background", '
+-        '"reason": "<one sentence>", "confidence": 0.9, "semantic_confidence": 0.9, '
++        '"reason": "<1句中文>", "confidence": 0.9, "semantic_confidence": 0.9, '
+         '"supported_components": ["source_region", "target_region", "relation"], '
+-        '"evidence_dimension": "existence"}]}\n'
+-        f"Paper title: {title}\nCandidate paragraph windows:\n{joined}"
++        '"evidence_dimension": "existence", '
++        '"evidence_pattern": "direct_statement", '
++        '"source_match": true, "target_match": true, "relation_match": true, '
++        '"direction_match": true, "species_match": true}]}\n'
++        f"论文标题：{title}\n候选段落窗口：\n{joined}"
+     )
+     parsed = None
+     parse_status = "provider_error"
+     retry_count = 0
+     raw_response = ""
+     for attempt in range(3):
+         retry_count = attempt
+         try:
+             if attempt == 0:
+                 resp = await provider.complete_json(
+@@ -1895,36 +2178,332 @@ async def extract_passage_from_paper(
+             "verified_count": sum(1 for p in deduped if p.get("source_verified")),
+             "unverified_count": sum(1 for p in deduped if not p.get("source_verified")),
+             "model_overall_direction": parsed.overall_direction,
+         },
+         "parse_status": parse_status,
+         "retry_count": retry_count,
+         "raw_response": raw_response[:1000],
+     }
+ 
+ 
++# ── Two-stage extraction: high-recall locator → strict judge ──────────────
 +
-+    if compact:
-+        # Recalculate from pack_traces because pack_summaries may be truncated
-+        response_received = sum(1 for t in pack_traces if t.get("response_received"))
-+        summary["response_received_count"] = response_received
-+        if response_received > summary.get("provider_success_count", 0):
-+            summary["provider_success_count"] = response_received
-+        summary["failed_pack_count"] = sum(
-+            1
-+            for p in pack_summaries
-+            if p.get("status") in {"parse_error", "schema_error", "transport_error", "empty_response"}
-+            or p.get("parse_error")
-+            or p.get("parse_error_type") in {"json_decode_error", "schema_error", "transport_error", "empty_response"}
-+        )
-+        processed_traces = [t for t in pack_traces if t.get("provider_call_finished")]
-+        summary["processed_pack_count"] = len(processed_traces)
-+        summary["succeeded_pack_count"] = summary["processed_pack_count"] - summary["failed_pack_count"]
-+        summary["in_flight_pack_count"] = len([
-+            t for t in pack_traces
-+            if t.get("provider_call_started") and not t.get("provider_call_finished")
-+        ])
-+    else:
-+        # When not compacting, trust audit object fields directly (accurate after Task 1 fix)
-+        summary["response_received_count"] = sum(1 for t in pack_traces if t.get("response_received"))
-+        summary["in_flight_pack_count"] = len([
-+            t for t in pack_traces
-+            if t.get("provider_call_started") and not t.get("provider_call_finished")
-+        ])
++_LOCATOR_SYSTEM = (
++    "你是神经科学论文段落筛选专家。只返回要求的JSON对象，不要解释。"
++    "reason 字段使用中文。你的核心原则：宁可多返回，绝不遗漏。"
++    "只要段落与主张中的脑区/功能/连接有丝毫关联（哪怕是间接提及、功能关联、"
++    "临床分析、结构描述、方法学提及），都必须返回。"
++    "不要判断证据强弱或方向——那是第二阶段的工作。"
++)
 +
-+    pack_count = int(summary.get("pack_count") or 0)
-+    if pack_count > 0:
-+        completed = int(summary.get("processed_pack_count") or 0)
-+        in_flight = int(summary.get("in_flight_pack_count") or 0)
-+        summary["pack_progress_percent"] = round(
-+            min(100.0, ((completed + in_flight) / pack_count) * 100.0),
-+            1,
++_LOCATOR_USER = """待验证的知识主张："{claim}"
++
++任务：找出所有可能与该主张相关的段落。标准极宽——只要有一丝关联就返回。
++
++规则：
++1. 段落提到主张中的任一脑区名（包括同义词/上级结构/跨物种）→ 必须返回。
++2. 段落涉及脑区的任何功能/连接/临床/结构/方法学描述 → 必须返回。
++3. 功能连接（fMRI/电生理/EEG/钙成像）、临床分析（疾病相关/行为实验）、
++   解剖描述（组织学/染色）、方法提及（示踪剂/注射位点）→ 全部接受。
++4. 仅共现（两个脑区名称同时出现但无连接描述）→ 也要返回，relevance=0.2-0.3。
++5. relevance 评估标准（宽松）：
++   0.8-1.0：段落直接描述该连接/投射/功能通路
++   0.5-0.7：段落讨论相关脑区功能或连接，但关系不够直接
++   0.2-0.4：段落仅提到相关脑区名称或结构
++6. relation_cue 分类：
++   direct_connection（直接描述投射/连接/通路）
++   tracing（示踪实验）
++   anatomical（解剖描述/组织学）
++   functional（功能研究：fMRI/电生理/行为等）
++   clinical（临床分析/疾病关联/行为实验）
++   cooccurrence（仅关键词共现）
++
++只返回一个纯JSON（无markdown/代码块）：
++{{"candidates":[{{"paragraph_id":"<id>","relevance":0.6,"relation_cue":"clinical","reason":"<1句中文>"}}]}}
++
++段落窗口：
++{windows}"""
++
++
++async def locate_candidates(claim: dict, windows: list[dict], title: str = "") -> list[dict]:
++    """Stage 1: High-recall candidate locator — find ALL potentially relevant paragraphs."""
++    cfg = get_settings()
++    if not windows:
++        return []
++    provider = get_llm_provider("deepseek")
++    claim_text = claim.get("claim_text") or claim.get("function_term") or ""
++
++    # Serialize windows with IDs
++    window_lines = []
++    window_map: dict[str, dict] = {}
++    for w in windows:
++        for p in (w.get("context") or []):
++            pid = p.get("paragraph_id", "")
++            if pid and pid not in window_map:
++                window_map[pid] = p
++                text = (p.get("passage_text") or "")[:500]
++                window_lines.append(f"<id={pid}> {text}")
++
++    if not window_lines:
++        return []
++
++    user = _LOCATOR_USER.format(claim=claim_text, windows="\n".join(window_lines[:50]))
++    raw_response = ""
++
++    last_exc: Exception | None = None
++    for attempt in range(2):
++        try:
++            resp = await provider.complete_json(
++                model=cfg.ontology_residual_model,
++                system_prompt=_LOCATOR_SYSTEM,
++                user_prompt=user,
++                temperature=0.1,
++                max_tokens=2000,
++            )
++            raw_response = resp.raw_text or ""
++            data = resp.parsed_json if resp.parsed_json is not None else _parse_relevance_batch(raw_response)
++            if isinstance(data, dict):
++                items = data.get("candidates") or data.get("items") or []
++                result = []
++                for item in items:
++                    pid = (item.get("paragraph_id") or "").strip()
++                    if pid in window_map:
++                        result.append({
++                            "paragraph_id": pid,
++                            "relevance": float(item.get("relevance", 0.5)),
++                            "relation_cue": item.get("relation_cue", "cooccurrence"),
++                            "reason": item.get("reason", ""),
++                            "passage_text": window_map[pid].get("passage_text", ""),
++                            "section": window_map[pid].get("section_title", ""),
++                        })
++                return sorted(result, key=lambda x: -x["relevance"])
++        except Exception:
++            if attempt == 0:
++                user += "\n\nIMPORTANT: Respond with ONLY the raw JSON object."
++    return []
++
++
++_JUDGE_SYSTEM = (
++    "你是神经科学论文证据判定专家。只返回要求的JSON对象，不要解释。"
++    "所有文字输出必须使用中文（assessment/reason），passage保持英文原文。"
++)
++
++_JUDGE_USER = """待验证的知识主张："{claim}"
++结构化主张：{structured}
++主张要素：{components}
++
++以下是从论文中筛选出的候选段落。请逐一判断，只要段落与主张有关联就作为证据返回。
++核心原则：宁可给低置信度的证据，也不要轻易判 not_found。让人类专家做最终判断。
++
++规则：
++1. passage 逐字复制原文。
++2. direction：只要有正面关联就选 supports/partial，明确反对才选 contradicts。
++   partial 是安全默认值——只要不是完全无关，都可以归入 partial。
++3. evidence_level（基于证据强度，不是基于是否有证据）：
++   direct = 实验直接证明该连接/投射
++   indirect = 需要合理推断（功能连接、跨物种、上级结构）
++   interpretive = 作者在 Discussion/Conclusion 中的解读
++   background = Introduction 中的背景描述
++4. evidence_dimension：
++   existence = 涉及解剖连接/投射/通路
++   function = 涉及功能关联/临床意义/行为效应
++   mixed = 两者都有
++5. evidence_pattern：direct_statement/anterograde_tracing/retrograde_tracing/
++   anatomical_description/tractography/functional_connectivity/clinical_analysis/cooccurrence。
++6. 仅共现也算证据（evidence_pattern=cooccurrence, confidence 0.1-0.2），不要判 not_found。
++7. 功能连接/临床分析/行为实验都是有效证据（evidence_dimension=function）。
++8. 只要段落提到主张中任一脑区名 → 至少返回 1 条 passage。
++9. not_found 仅在论文全文与主张完全无关时使用。
++
++只返回一个纯JSON：
++{{"overall_direction":"supports|partial|contradicts|mixed|not_found","paper_relevance":0.5,
++ "assessment":"<1-2句中文，说明论文与主张的关联程度>","evidence_dimension":"function|existence|mixed",
++ "not_found_reason":"<仅not_found时填写>",
++ "passages":[{{"paragraph_id":"<id>","section":"<section>","passage":"<英文原文>",
++ "direction":"partial","evidence_level":"background","reason":"<中文>",
++ "confidence":0.2,"semantic_confidence":0.2,
++ "supported_components":["source_region","target_region"],
++ "evidence_dimension":"function","evidence_pattern":"cooccurrence",
++ "source_match":true,"target_match":true,"relation_match":false,
++ "direction_match":false,"species_match":true}}]}}
++
++论文标题：{title}
++候选段落：
++{candidates}"""
++
++
++async def judge_candidates(
++    claim: dict, candidates: list[dict], title: str = "",
++) -> dict:
++    """Stage 2: Strict evidence judge — only evaluate pre-located candidates."""
++    cfg = get_settings()
++    if not candidates:
++        return {
++            "overall_direction": "not_found",
++            "paper_relevance": 0,
++            "assessment": "无可评估的候选段落",
++            "evidence_dimension": "mixed",
++            "not_found_reason": "no_relevant_text",
++            "passages": [],
++        }
++
++    provider = get_llm_provider("deepseek")
++    claim_text = claim.get("claim_text") or claim.get("function_term") or ""
++    components = [c.get("component_type", "") for c in (claim.get("claim_components") or [])]
++
++    candidate_lines = []
++    for c in candidates[:10]:  # Top 10 candidates
++        text = (c.get("passage_text") or "")[:800]
++        candidate_lines.append(
++            f"<id={c['paragraph_id']}> [{c.get('relation_cue','?')}] "
++            f"relevance={c['relevance']:.2f} | {text}"
 +        )
-     summary["errors"] = validate_connection_progress_invariants(summary)
-     if extra:
-         summary.update(extra)
++
++    user = _JUDGE_USER.format(
++        claim=claim_text,
++        structured=claim.get("structured_claim") or claim_text,
++        components=", ".join(components) if components else "无",
++        title=title,
++        candidates="\n".join(candidate_lines),
++    )
++
++    for attempt in range(2):
++        try:
++            resp = await provider.complete_json(
++                model=cfg.ontology_residual_model,
++                system_prompt=_JUDGE_SYSTEM,
++                user_prompt=user,
++                temperature=0.1,
++                max_tokens=cfg.ontology_residual_max_tokens,
++            )
++            if not getattr(resp, "transport_ok", True):
++                raise httpx.TransportError(
++                    getattr(resp, "error", None) or "evidence judge transport error"
++                )
++            data = resp.parsed_json
++            if not isinstance(data, dict) or not data.get("overall_direction"):
++                raise ValueError("evidence judge response parse error")
++            return {
++                "overall_direction": data.get("overall_direction", "not_found"),
++                "paper_relevance": data.get("paper_relevance", 0),
++                "assessment": data.get("assessment", ""),
++                "evidence_dimension": data.get("evidence_dimension", "mixed"),
++                "not_found_reason": data.get("not_found_reason"),
++                "passages": data.get("passages") or [],
++                "llm_model": getattr(resp, "model", None)
++                or cfg.ontology_residual_model,
++            }
++        except Exception as exc:  # noqa: BLE001
++            last_exc = exc
++    raise ValueError(
++        "evidence judge failed: provider/parse error after 2 attempts"
++    ) from last_exc
++
++
++async def extract_passage_two_stage(
++    *,
++    claim: dict,
++    title: str = "",
++    windows: list[dict],
++    on_stage: ExtractionStageCallback | None = None,
++) -> dict:
++    """Two-stage extraction: locate candidates → strict evidence judge.
++
++    Stage 1 (locate_candidates): high-recall, finds ALL potentially relevant paragraphs.
++    Stage 2 (judge_candidates): strict judgment on top-K located candidates.
++    Falls back to single-stage extract_passage_from_paper if stage 1 finds nothing.
++    """
++    # Stage 1: High-recall candidate locator
++    await _emit_extraction_stage(on_stage, "locating")
++    candidates = await locate_candidates(claim, windows, title)
++
++    if not candidates:
++        # Fallback: use single-stage extractor (no candidates found)
++        await _emit_extraction_stage(on_stage, "judging")
++        result = await extract_passage_from_paper(
++            claim=claim, title=title, windows=windows
++        )
++        result.setdefault("llm_model", get_settings().ontology_residual_model)
++        return result
++
++    # Stage 2: Strict evidence judge on top candidates
++    await _emit_extraction_stage(on_stage, "judging")
++    result = await judge_candidates(claim, candidates, title)
++
++    # If judge found no evidence but we had candidates, still return with locator info
++    if result["overall_direction"] == "not_found" and candidates:
++        result["_stage1_candidates"] = len(candidates)
++        result["_stage1_top_relevance"] = candidates[0]["relevance"] if candidates else 0
++
++    result["_two_stage"] = True
++    result["_stage1_candidates"] = len(candidates)
++    return result
++
++
+ async def translate_text(text: str) -> dict:
+     cfg = get_settings()
+     provider = get_llm_provider("deepseek")
+     system = "You are a professional neuroscience translator. Reply with only the simplified Chinese translation."
+     user = f"Translate the following English passage into simplified Chinese:\n\n{text[:3000]}"
+     result = await provider.complete_text(
+         model=cfg.ontology_residual_model,
+         system_prompt=system,
+         user_prompt=user,
+         temperature=0.1,
+         max_tokens=cfg.ontology_residual_max_tokens,
+         json_mode=False,
+     )
+     return {"translated": (result.raw_text or "").strip()}
+ 
+ 
++async def translate_texts(texts: list[str]) -> dict:
++    """Batch translate N passages in ONE DeepSeek call (speed: N× faster than per-passage)."""
++    cfg = get_settings()
++    provider = get_llm_provider("deepseek")
++    clean = [t.strip() for t in (texts or []) if t and t.strip()]
++    if not clean:
++        return {"translations": []}
++    system = (
++        "You are a professional neuroscience translator. "
++        "Reply ONLY with a JSON object: {\"translations\": [\"...\", ...]} "
++        "with one simplified Chinese translation per input passage, in order."
++    )
++    user_lines = "\n\n".join(f"[{i + 1}] {t[:2000]}" for i, t in enumerate(clean))
++    user = f"Translate these {len(clean)} English passages into simplified Chinese:\n\n{user_lines}"
++    result = await provider.complete_text(
++        model=cfg.ontology_residual_model,
++        system_prompt=system,
++        user_prompt=user,
++        temperature=0.1,
++        max_tokens=cfg.ontology_residual_max_tokens,
++        json_mode=False,
++    )
++    raw = (result.raw_text or "").strip()
++    # parse JSON array (tolerate fences / extra text)
++    fence = re.search(r"```(?:json|JSON)?\s*(.*?)```", raw, re.DOTALL)
++    if fence:
++        raw = fence.group(1).strip()
++    start, end = raw.find("{"), raw.rfind("}")
++    if start >= 0 and end > start:
++        raw = raw[start : end + 1]
++    try:
++        parsed = json.loads(raw)
++        translations = parsed.get("translations") or []
++    except (ValueError, json.JSONDecodeError):
++        translations = []
++    # pad/truncate to input length
++    out = list(translations[: len(clean)])
++    while len(out) < len(clean):
++        out.append("")
++    return {"translations": out}
++
++
+ async def queue_targets(
+     session: AsyncSession, target_type: str, scope: str, limit: int
+ ) -> dict:
+     ids = await _resolve_scope_ids(session, target_type, scope, limit)
+     model = TARGET_MODELS.get(target_type)
+     items = []
+     for target_id in ids:
+         row = await session.get(model, uuid.UUID(target_id))
+         label = _name_parts(target_type, row)[0] if row is not None else target_id
+         items.append(
+@@ -2032,24 +2611,41 @@ async def run_batch_step(
+                 await session.execute(
+                     text(
+                         "UPDATE paper_evidence_task_items SET status='no_paper', updated_at=now() "
+                         "WHERE id::text = :iid"
+                     ),
+                     {"iid": item_id},
+                 )
+                 continue
+             paper = papers[0]
+             abstract = paper.get("abstract") or ""
+-            extraction = await extract_passage(
+-                term=info["function_term"], title=paper.get("title") or "", abstract=abstract
++            # Use unified extractor (#1) instead of old #3 — build simple windows from abstract
++            windows = [{
++                "paragraph_id": "abstract_p001",
++                "section": "Abstract",
++                "paragraph_index": 0,
++                "passage_text": abstract,
++            }] if abstract else []
++            claim = {"claim_text": info.get("function_term", ""),
++                     "claim_components": [],
++                     "claim_mode": mode,
++                     "structured_claim": ""}
++            extraction = await extract_passage_from_paper(
++                claim=claim, title=paper.get("title") or "", windows=windows
+             )
+-            if extraction["direction"] == "not_found":
++            # Compat shims for old batch code expecting legacy field names
++            extraction["direction"] = extraction.get("overall_direction", "not_found")
++            passages_list = extraction.get("passages") or []
++            extraction["passage"] = passages_list[0].get("passage", "") if passages_list else ""
++            extraction["confidence"] = passages_list[0].get("confidence", 0.5) if passages_list else 0.5
++            if extraction.get("overall_direction") == "not_found":
++                extraction["direction"] = "not_found"
+                 done += 1
+                 await session.execute(
+                     text(
+                         "UPDATE paper_evidence_task_items SET status='no_evidence', pmid=:pmid, "
+                         "title=:title, abstract=:abstract, passage=:passage, direction=:dir, "
+                         "confidence=:conf, updated_at=now() WHERE id::text = :iid"
+                     ),
+                     {"iid": item_id, "pmid": paper.get("pmid") or "", "title": paper.get("title") or "",
+                      "abstract": abstract, "passage": extraction["passage"],
+                      "dir": extraction["direction"], "conf": extraction["confidence"]},
+@@ -2142,20 +2738,25 @@ async def list_batch_items(
+         await session.execute(
+             text(
+                 "SELECT id::text, target_type, target_id::text, status, pmid, title, passage, "
+                 "direction, confidence, evidence_id::text, error_message, updated_at "
+                 "FROM paper_evidence_task_items WHERE task_id::text = :tid "
+                 "ORDER BY updated_at DESC LIMIT :lim OFFSET :off"
+             ),
+             {"tid": task_id, "lim": limit, "off": offset},
+         )
+     ).all()
++    def _summary_counts(task_id: str, summary) -> dict[str, int]:
++        if isinstance(summary, dict) and summary.get("counts"):
++            return {str(k): int(v) for k, v in summary["counts"].items()}
++        return fallback_counts.get(task_id, {})
++
+     return {
+         "items": [
+             {
+                 "id": r[0],
+                 "target_type": r[1],
+                 "target_id": r[2],
+                 "status": r[3],
+                 "pmid": r[4],
+                 "title": r[5],
+                 "passage": r[6],
+@@ -2178,23 +2779,23 @@ _TASK_STATUS = {"pending", "running", "paused", "completed", "partially_failed",
+ _ITEM_ACTIVE_STATUS = {"pending", "searching", "paper_found", "extracting", "awaiting_review"}
+ 
+ 
+ async def _batch_scope_label(session: AsyncSession, target_type: str, target_id: uuid.UUID) -> tuple[str, float | None]:
+     model = TARGET_MODELS.get(target_type)
+     if model is None:
+         return target_id, None
+     row = await session.get(model, target_id)
+     if row is None:
+         return target_id, None
+-    parts = _name_parts(target_type, row)
+-    label = " · ".join(parts[:3]) if parts else target_id
+-    conf = float(row.confidence) if getattr(row, "confidence", None) is not None else None
++    get = lambda c: getattr(row, c, None)
++    label = mirror_live_display_name(target_type, get) or target_id
++    conf = mirror_live_confidence(target_type, get)
+     return label, conf
+ 
+ 
+ async def create_batch_task(
+     session: AsyncSession,
+     *,
+     target_type: str,
+     scope: str,
+     mode: str,
+     max_papers_per_object: int,
+@@ -2503,25 +3104,34 @@ async def _verify_paper_with_retry(pmid: str) -> dict | None:
+     for attempt in range(BATCH_ITEM_RETRIES):
+         try:
+             return await verify_paper(pmid)
+         except (httpx.HTTPStatusError, httpx.TransportError) as exc:
+             last_exc = exc
+             if attempt < BATCH_ITEM_RETRIES - 1:
+                 await asyncio.sleep(BATCH_BACKOFF_SECONDS[min(attempt, len(BATCH_BACKOFF_SECONDS) - 1)])
+     raise last_exc or RuntimeError("paper verification failed")
+ 
+ 
+-async def _extract_from_paper_with_retry(*, claim: dict, title: str, windows: list[dict]) -> dict:
++async def _extract_from_paper_with_retry(
++    *,
++    claim: dict,
++    title: str,
++    windows: list[dict],
++    on_stage: ExtractionStageCallback | None = None,
++) -> dict:
++    """Try two-stage extraction first, fall back to single-stage on failure."""
+     last_exc: Exception | None = None
+     for attempt in range(BATCH_ITEM_RETRIES):
+         try:
+-            return await extract_passage_from_paper(claim=claim, title=title, windows=windows)
++            return await extract_passage_two_stage(
++                claim=claim, title=title, windows=windows, on_stage=on_stage
++            )
+         except (ValueError, ValidationError, httpx.HTTPError) as exc:
+             last_exc = exc
+             if attempt < BATCH_ITEM_RETRIES - 1:
+                 await asyncio.sleep(BATCH_BACKOFF_SECONDS[min(attempt, len(BATCH_BACKOFF_SECONDS) - 1)])
+     raise last_exc or RuntimeError("extraction failed")
+ 
+ 
+ def _parse_relevance_batch(raw_text: str) -> PaperRelevanceBatch:
+     """Parse a noisy DeepSeek relevance response into the batch schema."""
+     text_value = (raw_text or "").strip()
+@@ -2565,32 +3175,32 @@ async def semantic_filter_papers(
+     except Exception:  # noqa: BLE001 — advisory filter: never block extraction
+         return papers, []
+     claim_text = context.get("claim_text") or context.get("function_term") or ""
+     lines = []
+     for p in papers:
+         pmid = (p.get("pmid") or "").strip()
+         ident = pmid or (p.get("doi") or "").strip() or "?"
+         title = (p.get("title") or "").strip()
+         abstract = (p.get("abstract") or "").strip()[:1000]
+         lines.append(f"- id: {ident} | title: {title} | abstract: {abstract}")
+-    system = "You are a strict JSON API. Reply only with the requested JSON object. Never explain."
++    system = "你是神经科学论文筛选专家。只返回要求的JSON对象，不要解释。reason 字段使用中文。"
+     user = (
+-        f'Rate how relevant each paper is to the neuroscience claim: "{claim_text}".\n'
+-        "Rules:\n"
+-        "1. relevance is 0-1: 1 = the paper directly studies the claim "
+-        "(same regions and relation/function); 0 = unrelated.\n"
+-        "2. A paper that merely mentions a region name in passing is NOT relevant.\n"
+-        "3. Keyword co-occurrence is not evidence: 'A and B both participate in X' "
+-        "does not mean the paper supports the claim.\n"
+-        "4. Output ONLY one raw JSON object (no markdown, no code fences, no trailing commas):\n"
+-        '{"items": [{"pmid": "<id>", "relevance": 0.8, "reason": "<one sentence>"}]}\n'
+-        f"Papers:\n{chr(10).join(lines)}"
++        f'判断每篇论文与以下神经科学主张的相关度："{claim_text}"。\n'
++        "规则：\n"
++        "1. relevance 取值范围 0-1：1=论文直接研究该主张（涉及同脑区+同连接/功能关系）；0=完全无关。\n"
++        "2. 仅顺带提及脑区名称的论文不算相关（例如'对丘脑切片染色'而不讨论投射连接）。\n"
++        "3. 关键词共现不等同于证据：'A 和 B 都参与某过程'不等于'A 投射到 B'。\n"
++        "4. 关注论文是否真正研究了两个脑区之间的连接/投射/通路，而非泛泛提及。\n"
++        "5. 动物研究也算相关（大鼠/小鼠/猴），如果涉及相同脑区连接。\n"
++        "只返回一个纯JSON（无markdown/代码块）：\n"
++        '{"items": [{"pmid": "<id>", "relevance": 0.8, "reason": "<1句中">}]}\n'
++        f"论文列表：\n{chr(10).join(lines)}"
+     )
+     parsed = None
+     for attempt in range(3):
+         try:
+             if attempt == 0:
+                 resp = await provider.complete_json(
+                     model=cfg.ontology_residual_model,
+                     system_prompt=system,
+                     user_prompt=user,
+                     temperature=0.1,
+@@ -2630,213 +3240,406 @@ async def semantic_filter_papers(
+             if attempt < 2:
+                 await asyncio.sleep(cfg.ontology_residual_backoff_seconds)
+     if parsed is None:
+         return papers, []
+     scores = {it.pmid: (it.relevance, it.reason) for it in parsed.items}
+     keep: list[dict] = []
+     skipped: list[dict] = []
+     for p in papers:
+         pmid = (p.get("pmid") or "").strip()
+         ident = pmid or (p.get("doi") or "").strip()
+-        rel, reason = scores.get(pmid) or scores.get(ident) or (0.0, "")
++        score = scores.get(pmid) or scores.get(ident)
++        if score is None:
++            # A truncated/invalid LLM response is not evidence that the paper
++            # is irrelevant. Keep it so recall does not collapse silently.
++            keep.append({**p, "semantic_relevance": None, "semantic_unscored": True})
++            continue
++        rel, reason = score
+         if rel >= threshold:
+             keep.append({**p, "semantic_relevance": rel})
+         else:
+             skipped.append(
+                 {
+                     **p,
+                     "semantic_relevance": rel,
+                     "semantic_skip_reason": reason or "relevance below threshold",
+                 }
+             )
+     return keep, skipped
+ 
+ 
+-async def extract_candidates_for_target(
++async def _emit_extraction_stage(
++    on_stage: ExtractionStageCallback | None, stage: ExtractionStage
++) -> None:
++    """Best-effort callback dispatch; observers never affect extraction."""
++    if on_stage is not None and stage in STAGE_PROGRESS:
++        try:
++            await on_stage(stage)
++        except Exception:  # noqa: BLE001
++            logger.warning(
++                "paper evidence stage callback failed at %s",
++                stage,
++                exc_info=True,
++            )
++
++
++class _ExtractionStageEmitter:
++    """Emit monotonic per-paper progress, including one terminal outcome."""
++
++    def __init__(self, on_stage: ExtractionStageCallback | None):
++        self._on_stage = on_stage
++        self._last_progress = -1
++        self._terminal = False
++
++    async def emit(self, stage: ExtractionStage) -> None:
++        if stage not in STAGE_PROGRESS or self._terminal:
++            return
++        progress = STAGE_PROGRESS[stage]
++        if progress <= self._last_progress:
++            return
++        self._last_progress = progress
++        if stage in {"completed", "no_evidence", "failed", "cancelled"}:
++            self._terminal = True
++        await _emit_extraction_stage(self._on_stage, stage)
++
++
++async def extract_candidate_for_paper(
+     session: AsyncSession,
+     *,
+-    context: dict,
+-    papers: list[dict],
+-    max_papers: int,
++    context: dict[str, Any],
++    paper: dict[str, Any],
+     only_oa: bool = False,
+-    stop_after_strong_support: bool = False,
+-    mode: str = "function",
+     sem_fetch: asyncio.Semaphore,
+     sem_deepseek: asyncio.Semaphore,
+-    on_stage=None,
+-) -> tuple[list[dict], str | None]:
+-    """Run the full fetch→parse→retrieve→DeepSeek→verify pipeline for multiple papers.
++    mode: str = "function",
++    on_stage: ExtractionStageCallback | None = None,
++) -> ExtractionResultEnvelope:
++    """Run fetch through source verification for one paper.
+ 
+-    Returns (candidates, last_llm_model). Each candidate keeps paper metadata,
+-    model judgment, coverage and verified passages. A single paper failure is
+-    captured with an error code and does not stop the remaining papers.
++    The result envelope is persistence-friendly: ``candidate`` retains the
++    synchronous API shape, while ``status`` and ``reason`` distinguish a
++    completed candidate, no evidence/non-OA skip, and a failed operation.
+     """
+-    kept, semantic_skipped = await semantic_filter_papers(papers, context)
+-    ranked = _rank_papers(kept, context)
+-    selected = ranked[:max_papers]
+-    candidates: list[dict] = []
+-    last_llm_model: str | None = None
+-    for paper in selected:
++    del mode  # The resolved context already contains the selected claim mode.
++    stage_emitter = _ExtractionStageEmitter(on_stage)
++    emit_stage = stage_emitter.emit
++    stage = "fetch"
++    try:
++        await emit_stage("queued")
+         pmid = (paper.get("pmid") or "").strip()
+         doi = (paper.get("doi") or "").strip()
+         pmcid = (paper.get("pmcid") or "").strip()
+         if not (pmid or doi or pmcid):
+-            candidates.append(
+-                {
++            candidate = {
++                **paper,
++                "error_code": "PAPER_FETCH_FAILED",
++                "error_message": "paper has no identifier (pmid / pmcid / doi)",
++                "passages": [],
++            }
++            await emit_stage("failed")
++            return {
++                "status": "failed",
++                "reason": "missing_identifier",
++                "candidate": candidate,
++                "llm_model": None,
++                "error_stage": stage,
++            }
++
++        await emit_stage("fetching")
++        async with sem_fetch:
++            meta = await _verify_paper_with_retry(pmid) if pmid else None
++            if meta is None and (doi or pmcid):
++                meta = await pfs.fetch_paper_metadata(doi=doi, pmcid=pmcid)
++            if meta is None:
++                candidate = {
+                     **paper,
+                     "error_code": "PAPER_FETCH_FAILED",
+-                    "error_message": "paper has no identifier (pmid / pmcid / doi)",
++                    "error_message": "paper not found",
+                     "passages": [],
+                 }
+-            )
+-            continue
+-        if on_stage is not None:
+-            await on_stage("fetching")
+-        try:
+-            async with sem_fetch:
+-                meta = await _verify_paper_with_retry(pmid) if pmid else None
+-                if meta is None and (doi or pmcid):
+-                    meta = await pfs.fetch_paper_metadata(doi=doi, pmcid=pmcid)
+-                if meta is None:
+-                    candidates.append(
+-                        {**paper, "error_code": "PAPER_FETCH_FAILED", "error_message": "paper not found", "passages": []}
+-                    )
+-                    continue
+-                xml_text = await pfs.fetch_oa_fulltext_xml(
+-                    pmid=pmid or meta.get("pmid") or None,
+-                    pmcid=pmcid or meta.get("pmcid") or None,
+-                )
+-            if only_oa and not meta.get("is_open_access"):
+-                continue
+-            abstract = (meta.get("abstract") or "").strip()
+-            paper_source = await ensure_paper_source(
+-                session, {**meta, "abstract": abstract, "fulltext": ""}
+-            )
+-            if on_stage is not None:
+-                await on_stage("retrieving")
+-            paragraphs: list[dict] = []
+-            if abstract:
+-                paragraphs.append(
+-                    {
+-                        "source_scope": "abstract",
+-                        "section_title": "Abstract",
+-                        "paragraph_id": "abstract_p001",
+-                        "paragraph_index": 0,
+-                        "passage_text": abstract,
+-                        "text_hash": passage_hash(abstract),
+-                        "locator": "abstract:paragraph:0",
+-                    }
+-                )
+-            if xml_text.strip():
+-                paragraphs.extend(oa_xml_parser.parse_oa_xml(xml_text))
+-            await ensure_paper_passages(session, paper_source.id, paragraphs)
+-            await session.commit()
+-            all_paragraphs = await load_paper_passages(session, paper_source.id)
+-            ranked_paras = score_paragraphs(
+-                all_paragraphs,
+-                source_region=context.get("source_region") or "",
+-                target_region=context.get("target_region") or "",
+-                source_region_synonyms=context.get("source_region_synonyms") or [],
+-                target_region_synonyms=context.get("target_region_synonyms") or [],
+-                function_terms=context.get("function_terms") or [],
+-                function_synonyms=context.get("function_synonyms") or [],
+-                relation_keywords=context.get("relation_keywords") or [],
+-            )
+-            windows = build_windows(ranked_paras, all_paragraphs)
+-            if on_stage is not None:
+-                await on_stage("extracting")
+-            async with sem_deepseek:
+-                extraction = await _extract_from_paper_with_retry(
+-                    claim=context,
+-                    title=meta.get("title") or paper.get("title") or "",
+-                    windows=windows,
+-                )
+-            last_llm_model = extraction.get("llm_model") or last_llm_model
+-            if on_stage is not None:
+-                await on_stage("verifying")
+-            coverage = compute_coverage_summary(
+-                context.get("claim_components") or [],
+-                extraction.get("passages") or [],
+-            )
+-            coverage_overall = aggregate_overall_direction(
+-                coverage, extraction.get("passages") or []
+-            )
+-            passage_id_map: dict[str, uuid.UUID] = {}
+-            for p in extraction.get("passages") or []:
+-                p["paper_id"] = str(paper_source.id)
+-                if p.get("source_verified"):
+-                    found = (
+-                        await session.execute(
+-                            text(
+-                                "SELECT id FROM paper_passages WHERE paper_id=:pid AND text_hash=:h"
+-                            ),
+-                            {"pid": paper_source.id, "h": passage_hash(p.get("passage") or "")},
+-                        )
+-                    ).first()
+-                    p["paper_passage_id"] = str(found[0]) if found else None
+-            candidates.append(
+-                {
+-                    "paper_id": str(paper_source.id),
+-                    "pmid": meta.get("pmid") or pmid or "",
+-                    "doi": meta.get("doi") or doi or "",
+-                    "pmcid": meta.get("pmcid") or pmcid or "",
+-                    "title": meta.get("title") or "",
+-                    "journal": meta.get("journal") or "",
+-                    "year": meta.get("year") or "",
+-                    "is_oa": bool(meta.get("is_open_access")),
+-                    "fulltext_fetched": bool((xml_text or "").strip()),
+-                    "paper_match_score": paper.get("paper_match_score", 0),
+-                    "model_direction": extraction.get("overall_direction"),
+-                    "model_assessment": extraction.get("assessment"),
+-                    "coverage_summary": {**coverage, "overall_direction": coverage_overall},
+-                    "passages": extraction.get("passages") or [],
++                await emit_stage("failed")
++                return {
++                    "status": "failed",
++                    "reason": "paper_not_found",
++                    "candidate": candidate,
++                    "llm_model": None,
++                    "error_stage": stage,
+                 }
++            xml_text = await pfs.fetch_oa_fulltext_xml(
++                pmid=pmid or meta.get("pmid") or None,
++                pmcid=pmcid or meta.get("pmcid") or None,
+             )
+-            if (
+-                stop_after_strong_support
+-                and coverage_overall == "supports"
+-                and coverage.get("full_claim_supported")
+-            ):
+-                break
+-        except Exception as exc:  # noqa: BLE001
+-            candidates.append(
++
++        if only_oa and not meta.get("is_open_access"):
++            candidate = {
++                **paper,
++                "pmid": meta.get("pmid") or pmid or "",
++                "doi": meta.get("doi") or doi or "",
++                "pmcid": meta.get("pmcid") or pmcid or "",
++                "title": meta.get("title") or paper.get("title") or "",
++                "journal": meta.get("journal") or paper.get("journal") or "",
++                "year": meta.get("year") or paper.get("year") or "",
++                "is_oa": False,
++                "fulltext_fetched": bool((xml_text or "").strip()),
++                "passages": [],
++            }
++            await emit_stage("no_evidence")
++            return {
++                "status": "no_evidence",
++                "reason": "non_oa",
++                "candidate": candidate,
++                "llm_model": None,
++            }
++
++        stage = "parse"
++        await emit_stage("parsing")
++        abstract = (meta.get("abstract") or "").strip()
++        paper_source = await ensure_paper_source(
++            session, {**meta, "abstract": abstract, "fulltext": ""}
++        )
++        paragraphs: list[dict] = []
++        if abstract:
++            paragraphs.append(
+                 {
+-                    **paper,
+-                    "error_code": _classify_error(exc, "extract"),
+-                    "error_message": str(exc)[:500],
+-                    "passages": [],
++                    "source_scope": "abstract",
++                    "section_title": "Abstract",
++                    "paragraph_id": "abstract_p001",
++                    "paragraph_index": 0,
++                    "passage_text": abstract,
++                    "text_hash": passage_hash(abstract),
++                    "locator": "abstract:paragraph:0",
+                 }
+             )
+-    # audit-visible semantic skips (never silently dropped)
+-    for p in semantic_skipped:
+-        candidates.append(
+-            {
+-                **p,
+-                "error_code": "SEMANTIC_SKIPPED",
+-                "error_message": p.get("semantic_skip_reason") or "relevance below threshold",
++        if xml_text.strip():
++            paragraphs.extend(oa_xml_parser.parse_oa_xml(xml_text))
++        await ensure_paper_passages(session, paper_source.id, paragraphs)
++        await session.commit()
++
++        stage = "retrieve"
++        await emit_stage("retrieving")
++        all_paragraphs = await load_paper_passages(session, paper_source.id)
++        ranked_paras = score_paragraphs(
++            all_paragraphs,
++            source_region=context.get("source_region") or "",
++            target_region=context.get("target_region") or "",
++            source_region_synonyms=context.get("source_region_synonyms") or [],
++            target_region_synonyms=context.get("target_region_synonyms") or [],
++            function_terms=context.get("function_terms") or [],
++            function_synonyms=context.get("function_synonyms") or [],
++            relation_keywords=context.get("relation_keywords") or [],
++        )
++        windows = build_windows(ranked_paras, all_paragraphs)
++
++        stage = "extract"
++        async with sem_deepseek:
++            extraction = await _extract_from_paper_with_retry(
++                claim=context,
++                title=meta.get("title") or paper.get("title") or "",
++                windows=windows,
++                on_stage=emit_stage,
++            )
++        llm_model = extraction.get("llm_model")
++        parse_status = str(extraction.get("parse_status") or "").lower()
++        if parse_status in _EXTRACTION_FAILURE_PARSE_STATUSES:
++            candidate = {
++                **paper,
++                "error_code": "DEEPSEEK_PARSE_FAILED",
++                "error_message": f"extraction failed: {parse_status}",
+                 "passages": [],
+             }
++            await emit_stage("failed")
++            return {
++                "status": "failed",
++                "reason": parse_status,
++                "candidate": candidate,
++                "llm_model": llm_model,
++                "error_stage": stage,
++                "parse_status": parse_status,
++            }
++
++        stage = "verify"
++        await emit_stage("verifying")
++        coverage = compute_coverage_summary(
++            context.get("claim_components") or [],
++            extraction.get("passages") or [],
+         )
+-    return candidates, last_llm_model
++        coverage_overall = aggregate_overall_direction(
++            coverage, extraction.get("passages") or []
++        )
++        for passage in extraction.get("passages") or []:
++            passage["paper_id"] = str(paper_source.id)
++            if passage.get("source_verified"):
++                found = (
++                    await session.execute(
++                        text(
++                            "SELECT id FROM paper_passages "
++                            "WHERE paper_id=:pid AND text_hash=:h"
++                        ),
++                        {
++                            "pid": paper_source.id,
++                            "h": passage_hash(passage.get("passage") or ""),
++                        },
++                    )
++                ).first()
++                passage["paper_passage_id"] = str(found[0]) if found else None
++
++        candidate = {
++            "paper_id": str(paper_source.id),
++            "pmid": meta.get("pmid") or pmid or "",
++            "doi": meta.get("doi") or doi or "",
++            "pmcid": meta.get("pmcid") or pmcid or "",
++            "title": meta.get("title") or "",
++            "journal": meta.get("journal") or "",
++            "year": meta.get("year") or "",
++            "is_oa": bool(meta.get("is_open_access")),
++            "fulltext_fetched": bool((xml_text or "").strip()),
++            "paper_match_score": paper.get("paper_match_score", 0),
++            "model_direction": extraction.get("overall_direction"),
++            "model_assessment": extraction.get("assessment"),
++            "coverage_summary": {**coverage, "overall_direction": coverage_overall},
++            "passages": extraction.get("passages") or [],
++            "not_found_reason": extraction.get("not_found_reason"),
++            "cross_species_evidence": paper.get("cross_species_evidence", False),
++            "cross_species_note": paper.get("cross_species_note", ""),
++            "species": paper.get("species"),
++            "evidence_dimension": extraction.get("evidence_dimension"),
++        }
++        status: ExtractionStatus = (
++            "no_evidence" if coverage_overall == "not_found" else "completed"
++        )
++        await emit_stage(status)
++        return {
++            "status": status,
++            "reason": "no_verified_evidence" if status == "no_evidence" else None,
++            "candidate": candidate,
++            "llm_model": llm_model,
++        }
++    except Exception as exc:  # noqa: BLE001
++        candidate = {
++            **paper,
++            # Preserve the legacy synchronous endpoint classification.
++            "error_code": _classify_error(exc, stage),
++            "error_message": str(exc)[:500],
++            "passages": [],
++        }
++        await emit_stage("failed")
++        return {
++            "status": "failed",
++            "reason": str(exc)[:500],
++            "candidate": candidate,
++            "llm_model": None,
++            "error_stage": stage,
++        }
+ 
+ 
+-async def _run_batch_loop(session: AsyncSession, task_id: str) -> None:
+-    cfg = get_settings()
+-    while True:
+-        state = (
+-            await session.execute(
+-                text("SELECT status FROM paper_evidence_tasks WHERE id::text=:tid"),
+-                {"tid": task_id},
+-            )
+-        ).scalar_one_or_none()
+-        if state in ("cancelled", "paused"):
+-            return
++async def extract_candidates_for_target(
++    session: AsyncSession,
++    *,
++    context: dict,
++    papers: list[dict],
++    max_papers: int,
++    only_oa: bool = False,
++    stop_after_strong_support: bool = False,
++    mode: str = "function",
++    sem_fetch: asyncio.Semaphore,
++    sem_deepseek: asyncio.Semaphore,
++    apply_semantic_filter: bool = True,
++    on_stage: ExtractionStageCallback | None = None,
++) -> tuple[list[dict], str | None]:
++    """Run the full fetch→parse→retrieve→DeepSeek→verify pipeline for multiple papers.
++
++    Returns (candidates, last_llm_model). Each candidate keeps paper metadata,
++    model judgment, coverage and verified passages. A single paper failure is
++    captured with an error code and does not stop the remaining papers.
++    """
++    # Batch candidates may be filtered to conserve extraction capacity. A
++    # reviewer-selected interactive list must be processed exactly as chosen.
++    if apply_semantic_filter:
++        kept, semantic_skipped = await semantic_filter_papers(papers, context)
++    else:
++        kept, semantic_skipped = papers, []
++    # Cross-species tagging: papers from non-target species marked for review
++    expected_granularity = (context.get("granularity") or "").lower()
++    expected_atlas = (context.get("source_atlas") or "").lower()
++    for p in kept + semantic_skipped:
++        title = (p.get("title") or "").lower()
++        abstract = (p.get("abstract") or "").lower()
++        body = f"{title} {abstract}"
++        is_human = any(w in body for w in ("human", "patient", "subject"))
++        is_mouse = any(w in body for w in ("mouse", "mice", "murine"))
++        is_rat = "rat" in body
++        if "allen" in expected_atlas or "mouse" in expected_granularity:
++            if is_rat and not is_mouse:
++                p["cross_species_evidence"] = True
++                p["cross_species_note"] = "rat study applied to mouse target"
++            elif is_human and not is_mouse:
++                p["cross_species_evidence"] = True
++                p["cross_species_note"] = "human study applied to mouse target"
++        elif "human" in expected_granularity or "macro" in expected_granularity:
++            if is_mouse or is_rat:
++                p["cross_species_evidence"] = True
++                p["cross_species_note"] = f"{'mouse' if is_mouse else 'rat'} study applied to human target"
++
++    ranked = _rank_papers(kept, context)
++    selected = ranked[:max_papers] if max_papers < len(ranked) else ranked
++
++    candidates: list[dict] = []
++    last_llm_model: str | None = None
++    for paper in selected:
++        envelope = await extract_candidate_for_paper(
++            session,
++            context=context,
++            paper=paper,
++            only_oa=only_oa,
++            sem_fetch=sem_fetch,
++            sem_deepseek=sem_deepseek,
++            mode=mode,
++            on_stage=on_stage,
++        )
++        last_llm_model = envelope.get("llm_model") or last_llm_model
++        if envelope.get("reason") == "non_oa":
++            # Preserve the existing synchronous endpoint contract: only-OA
++            # filtering omits non-OA papers from the returned candidates.
++            continue
++        candidate = envelope["candidate"]
++        candidates.append(candidate)
++        coverage = candidate.get("coverage_summary") or {}
++        if (
++            stop_after_strong_support
++            and coverage.get("overall_direction") == "supports"
++            and coverage.get("full_claim_supported")
++        ):
++            break
++    # audit-visible semantic skips (never silently dropped)
++    for p in semantic_skipped:
++        candidates.append(
++            {
++                **p,
++                "error_code": "SEMANTIC_SKIPPED",
++                "error_message": p.get("semantic_skip_reason") or "relevance below threshold",
++                "passages": [],
++            }
++        )
++    return candidates, last_llm_model
++
++
++async def _run_batch_loop(session: AsyncSession, task_id: str) -> None:
++    cfg = get_settings()
++    while True:
++        state = (
++            await session.execute(
++                text("SELECT status FROM paper_evidence_tasks WHERE id::text=:tid"),
++                {"tid": task_id},
++            )
++        ).scalar_one_or_none()
++        if state in ("cancelled", "paused"):
++            return
+         await session.execute(
+             text(
+                 "UPDATE paper_evidence_tasks SET status='running', started_at=COALESCE(started_at, now()) "
+                 "WHERE id::text=:tid AND status IN ('pending','running')"
+             ),
+             {"tid": task_id},
+         )
+         await session.commit()
+         task_row = (
+             await session.execute(
+@@ -3073,74 +3876,172 @@ async def retry_failed_batch_items(session: AsyncSession, task_id: str, operator
+         entity_type="evidence_task",
+         entity_id=uuid.UUID(task_id),
+         after_data={"retried": result.rowcount or 0},
+         operator_id=operator_id,
+         reason="retry failed batch items",
+     )
+     await session.commit()
+     return {"task_id": task_id, "retried": result.rowcount or 0}
+ 
+ 
++_WORK_ACTIVE_STATUSES = ("searching", "fetching", "retrieving", "extracting", "verifying")
++
++_RAW_STATUS_FALLBACK: dict[str, str] = {
++    "pending": "processing",
++    "running": "processing",
++    "completed": "completed",
++    "failed": "failed",
++    "cancelled": "cancelled",
++}
++
++
++def _derive_work_status(raw_status: str, counts: dict[str, int]) -> str:
++    """任务统一工作状态(权威口径,基于全量对象计数;与 review 层无关)。
++
++    优先级:empty → paused → processing → awaiting_review → partially_failed → failed → completed → cancelled。
++    completed 仅表示对象处理完成,不等于审核通过。
++    """
++    total = sum(counts.values())
++    pending = counts.get("pending", 0)
++    processing = sum(counts.get(st, 0) for st in _WORK_ACTIVE_STATUSES)
++    awaiting = counts.get("awaiting_review", 0)
++    completed = counts.get("completed", 0)
++    skipped = counts.get("skipped", 0)
++    failed = counts.get("failed", 0)
++    if total == 0:
++        return "empty"
++    if raw_status == "paused":
++        return "paused"
++    if pending + processing > 0:
++        return "processing"
++    if awaiting > 0:
++        return "awaiting_review"
++    if failed > 0 and (awaiting + completed + skipped) > 0:
++        return "partially_failed"
++    if failed > 0:
++        return "failed"
++    if completed + skipped > 0:
++        return "completed"
++    if raw_status == "cancelled":
++        return "cancelled"
++    return _RAW_STATUS_FALLBACK.get(raw_status, "processing")
++
++
++def _build_item_counts(counts: dict[str, int]) -> dict:
++    active = sum(counts.get(st, 0) for st in _WORK_ACTIVE_STATUSES)
++    return {
++        "total": sum(counts.values()),
++        "processing": active,
++        "pending": counts.get("pending", 0),
++        "awaiting_review": counts.get("awaiting_review", 0),
++        "completed": counts.get("completed", 0),
++        "skipped": counts.get("skipped", 0),
++        "failed": counts.get("failed", 0),
++        "cancelled": counts.get("cancelled", 0),
++    }
++
++
++def _build_capabilities(raw_status: str, counts: dict[str, int]) -> dict:
++    failed = counts.get("failed", 0)
++    awaiting = counts.get("awaiting_review", 0)
++    terminal = counts.get("completed", 0) + counts.get("skipped", 0) + failed
++    return {
++        "can_pause": raw_status in ("pending", "running"),
++        "can_resume": raw_status == "paused",
++        "can_retry_failed": failed > 0 and raw_status != "cancelled",
++        "can_continue_review": awaiting > 0 and raw_status != "cancelled",
++        "can_view_results": terminal > 0,
++    }
++
++
+ async def list_paper_evidence_tasks(
+     session: AsyncSession, limit: int = 50, offset: int = 0, status: str | None = None
+ ) -> dict:
+     where = ""
+     params: dict = {"lim": limit, "off": offset}
+     if status:
+         where = "WHERE status = :st"
+         params["st"] = status
+     rows = (
+         await session.execute(
+             text(
+                 f"SELECT id::text, target_type, scope, mode, max_papers_per_object, status, "
+                 f"total_items, processed_items, awaiting_review_items, failed_items, summary, "
+                 f"created_by, created_at, started_at, finished_at, error_message, "
+                 f"review_status, name, granularity_level, materialization_status, "
+-                f"estimated_target_count, materialized_target_count "
++                f"estimated_target_count, materialized_target_count, confidence_lt "
+                 f"FROM paper_evidence_tasks {where} ORDER BY created_at DESC LIMIT :lim OFFSET :off"
+             ),
+             params,
+         )
+     ).all()
+     total = (
+         await session.execute(text(f"SELECT COUNT(*) FROM paper_evidence_tasks {where}"), params)
+     ).scalar_one()
+-    return {
+-        "items": [
++    # 旧任务可能缺 summary.counts:一次性批量聚合补齐(避免逐任务 N+1)
++    fallback_ids = [
++        r[0] for r in rows
++        if not (isinstance(r[10], dict) and r[10].get("counts"))
++    ]
++    fallback_counts: dict[str, dict[str, int]] = {}
++    if fallback_ids:
++        agg = (
++            await session.execute(
++                text(
++                    "SELECT task_id::text, status, COUNT(*) FROM paper_evidence_task_items "
++                    "WHERE task_id::text = ANY(:ids) GROUP BY 1, 2"
++                ),
++                {"ids": fallback_ids},
++            )
++        ).all()
++        for tid, st, n in agg:
++            fallback_counts.setdefault(tid, {})[st] = int(n)
++    def _summary_counts(task_id: str, summary) -> dict[str, int]:
++        if isinstance(summary, dict) and summary.get("counts"):
++            return {str(k): int(v) for k, v in summary["counts"].items()}
++        return fallback_counts.get(task_id, {})
++
++    items: list[dict] = []
++    for r in rows:
++        raw_status = r[5]
++        counts = _summary_counts(r[0], r[10])
++        items.append(
+             {
+                 "id": r[0],
+                 "target_type": r[1],
+                 "scope": r[2],
+                 "mode": r[3],
+                 "max_papers_per_object": r[4],
+-                "status": r[5],
++                "status": raw_status,
+                 "total_items": r[6],
+                 "processed_items": r[7],
+                 "awaiting_review_items": r[8],
+                 "failed_items": r[9],
+                 "summary": r[10],
+                 "created_by": r[11],
+                 "created_at": r[12].isoformat() if r[12] else None,
+                 "started_at": r[13].isoformat() if r[13] else None,
+                 "finished_at": r[14].isoformat() if r[14] else None,
+                 "error_message": r[15],
+                 "review_status": r[16],
+                 "name": r[17],
+                 "granularity_level": r[18],
+                 "materialization_status": r[19],
+                 "estimated_target_count": r[20],
+                 "materialized_target_count": r[21],
++                "confidence_lt": float(r[22]) if r[22] is not None else None,
++                "work_status": _derive_work_status(raw_status, counts),
++                "item_counts": _build_item_counts(counts),
++                "capabilities": _build_capabilities(raw_status, counts),
+             }
+-            for r in rows
+-        ],
+-        "total": total,
+-    }
++        )
++    return {"items": items, "total": total}
+ 
+ 
+ async def get_batch_task(session: AsyncSession, task_id: str) -> dict:
+     task = (
+         await session.execute(
+             text(
+                 "SELECT id::text, target_type, scope, mode, max_papers_per_object, status, summary, "
+                 "total_items, processed_items, awaiting_review_items, failed_items, created_by, "
+                 "created_at, started_at, finished_at, error_message, review_status, name, "
+                 "granularity_level, only_oa, confidence_lt, stop_after_strong_support, "
+@@ -3215,73 +4116,163 @@ async def get_batch_task(session: AsyncSession, task_id: str) -> dict:
+                 "prompt_version": versions[2] if versions else None,
+                 "llm_model": versions[3] if versions else None,
+             },
+         },
+         "counts": status_map,
+         "processed": processed,
+     }
+ 
+ 
+ async def list_batch_items(
+-    session: AsyncSession, task_id: str, limit: int = 50, offset: int = 0
++    session: AsyncSession,
++    task_id: str,
++    limit: int = 50,
++    offset: int = 0,
++    sort: str = "created_at",
++    status: str | None = None,
+ ) -> dict:
++    """任务对象列表:批量 JOIN 镜像表提供实时展示字段;支持置信度升序读取;返回真实 total。
++
++    - 历史快照 label/current_confidence 保持原样不改。
++    - live_* 为镜像行实时值;display_* 为展示优先级合成值(实时→快照→中文兜底)。
++    - 表名/排序列来自白名单,无用户输入拼接。
++    """
++    task_row = (
++        await session.execute(
++            text("SELECT target_type FROM paper_evidence_tasks WHERE id::text = :tid"),
++            {"tid": task_id},
++        )
++    ).first()
++    if task_row is None:
++        raise ValueError("task not found")
++    target_type = task_row[0]
++    table = TARGET_MODELS.get(target_type)
++    if table is None:
++        raise ValueError("unsupported target_type")
++
++    name_cols = _LIVE_NAME_COLUMNS.get(target_type, "")
++    live_cols = ", ".join(f"m.{c}" for c in name_cols.split(", "))
++    live_cols += ", m.confidence AS live_confidence"
++    if target_type == "circuit_function":
++        live_cols += ", m.confidence_score"
++
++    order = "i.created_at ASC, i.id ASC"
++    if sort == "confidence":
++        # 有评分在前(0.0 最前),数值升序,null 排后,同分按创建时间/ID 稳定
++        order = (
++            "(COALESCE(m.confidence, i.current_confidence) IS NULL) ASC, "
++            "COALESCE(m.confidence, i.current_confidence) ASC, "
++            "i.created_at ASC, i.id ASC"
++        )
++
+     rows = (
+         await session.execute(
+             text(
+-                "SELECT id::text, target_type, target_id::text, status, pmid, title, passage, "
+-                "direction, confidence, evidence_id::text, error_message, updated_at, label, "
+-                "current_confidence, passages_json, last_error, retry_count, attempt_count, "
+-                "last_error_code, last_error_message, preprocess_outcome, paper_id::text, model_direction, "
+-                "candidate_papers, review_draft, claim_text_snapshot, claim_components_snapshot, "
+-                "retrieval_version, draft_revision "
+-                "FROM paper_evidence_task_items WHERE task_id::text = :tid "
+-                "ORDER BY created_at LIMIT :lim OFFSET :off"
++                "SELECT i.id::text, i.target_type, i.target_id::text, i.status, i.pmid, i.title, i.passage, "
++                "i.direction, i.confidence, i.evidence_id::text, i.error_message, i.updated_at, i.label, "
++                "i.current_confidence, i.passages_json, i.last_error, i.retry_count, i.attempt_count, "
++                "i.last_error_code, i.last_error_message, i.preprocess_outcome, i.paper_id::text, i.model_direction, "
++                "i.candidate_papers, i.review_draft, i.claim_text_snapshot, i.claim_components_snapshot, "
++                "i.retrieval_version, i.draft_revision, "
++                "i.rescore_source_review_id::text, i.rescore_revision_no, " + live_cols + " "
++                f"FROM paper_evidence_task_items i "
++                f"LEFT JOIN {table.__tablename__} m ON m.id = i.target_id "
++                "WHERE i.task_id::text = :tid "
++                + ("AND i.status = :st " if status else "")
++                + f"ORDER BY {order} LIMIT :lim OFFSET :off"
+             ),
+-            {"tid": task_id, "lim": limit, "off": offset},
++            {"tid": task_id, "lim": limit, "off": offset, **({"st": status} if status else {})},
+         )
+     ).all()
+-    return {
+-        "items": [
++    total = (
++        await session.execute(
++            text(
++                "SELECT COUNT(*) FROM paper_evidence_task_items WHERE task_id::text = :tid"
++                + (" AND status = :st" if status else "")
++            ),
++            {"tid": task_id, **({"st": status} if status else {})},
++        )
++    ).scalar_one()
++
++    items: list[dict] = []
++    for r in rows:
++        mp = r._mapping
++        get = mp.get
++        live_name = mirror_live_display_name(target_type, get)
++        live_conf = mirror_live_confidence(target_type, get)
++        label = mp.get("label")
++        current_conf_raw = mp.get("current_confidence")
++        current_conf = float(current_conf_raw) if current_conf_raw is not None else None
++
++        if live_name is not None:
++            display_name = live_name
++            name_source = "mirror_live"
++        elif label and not _UUID_RE.fullmatch(label):
++            display_name = label
++            name_source = "task_snapshot"
++        else:
++            display_name = fallback_display_name(target_type, str(mp.get("target_id")), label)
++            name_source = "fallback"
++
++        if live_conf is not None:
++            display_confidence = live_conf
++            confidence_source = "mirror_live"
++        elif current_conf is not None:
++            display_confidence = current_conf
++            confidence_source = "task_snapshot"
++        else:
++            display_confidence = None
++            confidence_source = "missing"
++
++        items.append(
+             {
+-                "id": r[0],
+-                "target_type": r[1],
+-                "target_id": r[2],
+-                "status": r[3],
+-                "pmid": r[4],
+-                "title": r[5],
+-                "passage": r[6],
+-                "direction": r[7],
+-                "confidence": float(r[8]) if r[8] is not None else None,
+-                "evidence_id": r[9],
+-                "error_message": r[10],
+-                "updated_at": r[11].isoformat() if r[11] else None,
+-                "label": r[12],
+-                "current_confidence": float(r[13]) if r[13] is not None else None,
+-                "passages_json": r[14],
+-                "last_error": r[15],
+-                "retry_count": r[16],
+-                "attempt_count": r[17],
+-                "last_error_code": r[18],
+-                "last_error_message": r[19],
+-                "preprocess_outcome": r[20],
+-                "paper_id": r[21],
+-                "model_direction": r[22],
+-                "candidate_papers": r[23],
+-                "review_draft": r[24],
+-                "claim_text_snapshot": r[25],
+-                "claim_components_snapshot": r[26],
+-                "retrieval_version": r[27],
+-                "draft_revision": r[28],
++                "id": mp.get("id"),
++                "target_type": mp.get("target_type"),
++                "target_id": mp.get("target_id"),
++                "status": mp.get("status"),
++                "pmid": mp.get("pmid"),
++                "title": mp.get("title"),
++                "passage": mp.get("passage"),
++                "direction": mp.get("direction"),
++                "confidence": float(mp.get("confidence")) if mp.get("confidence") is not None else None,
++                "evidence_id": mp.get("evidence_id"),
++                "error_message": mp.get("error_message"),
++                "updated_at": mp.get("updated_at").isoformat() if mp.get("updated_at") else None,
++                "label": label,
++                "current_confidence": current_conf,
++                "live_display_name": live_name,
++                "live_confidence": live_conf,
++                "display_name": display_name,
++                "display_confidence": display_confidence,
++                "display_name_source": name_source,
++                "display_confidence_source": confidence_source,
++                "passages_json": mp.get("passages_json"),
++                "last_error": mp.get("last_error"),
++                "retry_count": mp.get("retry_count"),
++                "attempt_count": mp.get("attempt_count"),
++                "last_error_code": mp.get("last_error_code"),
++                "last_error_message": mp.get("last_error_message"),
++                "preprocess_outcome": mp.get("preprocess_outcome"),
++                "paper_id": mp.get("paper_id"),
++                "model_direction": mp.get("model_direction"),
++                "candidate_papers": mp.get("candidate_papers"),
++                "review_draft": mp.get("review_draft"),
++                "claim_text_snapshot": mp.get("claim_text_snapshot"),
++                "claim_components_snapshot": mp.get("claim_components_snapshot"),
++                "retrieval_version": mp.get("retrieval_version"),
++                "draft_revision": mp.get("draft_revision"),
++                # S7B:重评上下文(工作区显示「正在进行第 N 次评分」)
++                "rescore_source_review_id": mp.get("rescore_source_review_id"),
++                "rescore_revision_no": mp.get("rescore_revision_no"),
+             }
+-            for r in rows
+-        ]
+-    }
++        )
++    return {"items": items, "total": total}
+ 
+ 
+ async def complete_batch_item_reviewed(
+     session: AsyncSession,
+     task_id: str,
+     item_id: str,
+     evidence_id: str | None = None,
+     operator_id: str | None = None,
+ ) -> dict:
+     result = await session.execute(
+@@ -3502,20 +4493,25 @@ async def list_evidence_review_queue(
+             ),
+             {"st": status, "lim": limit, "off": offset},
+         )
+     ).all()
+     total = (
+         await session.execute(
+             text("SELECT COUNT(*) FROM evidence_validation_records WHERE status=:st"),
+             {"st": status},
+         )
+     ).scalar_one()
++    def _summary_counts(task_id: str, summary) -> dict[str, int]:
++        if isinstance(summary, dict) and summary.get("counts"):
++            return {str(k): int(v) for k, v in summary["counts"].items()}
++        return fallback_counts.get(task_id, {})
++
+     return {
+         "items": [
+             {
+                 "id": r[0],
+                 "evidence_id": r[1],
+                 "rule_code": r[2],
+                 "status": r[3],
+                 "target_type": r[4],
+                 "target_id": r[5],
+                 "direction": r[6],
+@@ -3545,20 +4541,25 @@ async def list_confidence_adjustments(
+                 "SELECT id::text, evidence_id::text, before_confidence, suggested_confidence, "
+                 "after_confidence, direction, formula_version, status, applied_by, applied_at, "
+                 "rolled_back_by, rolled_back_at, rollback_reason "
+                 "FROM confidence_adjustment_logs "
+                 "WHERE target_type=:tt AND target_id=:oid "
+                 "ORDER BY applied_at DESC NULLS LAST LIMIT :lim"
+             ),
+             {"tt": target_type, "oid": target_id, "lim": limit},
+         )
+     ).all()
++    def _summary_counts(task_id: str, summary) -> dict[str, int]:
++        if isinstance(summary, dict) and summary.get("counts"):
++            return {str(k): int(v) for k, v in summary["counts"].items()}
++        return fallback_counts.get(task_id, {})
++
+     return {
+         "items": [
+             {
+                 "id": r[0],
+                 "evidence_id": r[1],
+                 "before_confidence": float(r[2]) if r[2] is not None else None,
+                 "suggested_confidence": float(r[3]) if r[3] is not None else None,
+                 "after_confidence": float(r[4]) if r[4] is not None else None,
+                 "direction": r[5],
+                 "formula_version": r[6],
+@@ -3715,20 +4716,33 @@ def _rank_papers(papers: list[dict], context: dict) -> list[dict]:
+         tgt_score = max(
+             (_term_hit_score(t, title, title_weight=True) for t in all_target_terms if t),
+             default=0.0,
+         )
+         fn_hits = sum(
+             _term_hit_score(t, body) for t in all_fn_terms if t
+         )
+         fn_score = min(1.0, fn_hits * 0.5)  # cap at 1.0, 2 function hits = 1.0
+ 
+         score = src_score * 30 + tgt_score * 30 + fn_score * 25
++
++        # Prefer human/clinical papers (terms like "human", "patient", "subject")
++        _human_hints = {"human", "patient", "subject", "clinical", "cortex", "brain", "cerebral",
++                        "subcortical", "mri", "fmri", "dti", "tractography", "connectivity"}
++        _human_count = sum(1 for w in _human_hints if w in body)
++        score += min(8, _human_count * 3)
++        # Penalize animal-only papers slightly (but don't exclude)
++        _animal_hints = {"sheep", "frog", "lizard", "carp", "dove", "crocodile", "teleost",
++                         "xenopus", "gasterosteus", "squalus", "myxine", "ferret", "cyprinus",
++                         "nothobranchius", "streptopelia"}
++        if any(w in body for w in _animal_hints) and not any(w in body for w in _human_hints):
++            score -= 10
++
+         if p.get("fulltext_available"):
+             score += 12
+         elif p.get("is_open_access"):
+             score += 8
+         if p.get("abstract"):
+             score += 5
+         try:
+             score += max(0, 2 - (2026 - int(p.get("year") or 0))) * 0.2
+         except (TypeError, ValueError):
+             pass
+@@ -3816,29 +4830,30 @@ def _build_epmc_query(context: dict, *, abstract_only: bool = True) -> str:
+     abstract_only=True (default): all clauses target ABSTRACT — far less noise
+     than BODY (where "fiber"/"projection" appear everywhere). Callers fall back
+     to abstract_only=False when ABSTRACT-only returns nothing.
+ 
+     Each concept (source / target / function, canonical + synonyms + core term)
+     becomes an OR-group of `ABSTRACT:"term"` (or `OR BODY:"term"`) clauses joined
+     with AND. Connection-type objects also OR in the connection-evidence
+     vocabulary (tractography / fiber / projection / ...) instead of requiring
+     the rare exact phrase "structural_connection".
+     """
+-    def group(terms: list[str], limit: int = 4) -> str | None:
++    def group(terms: list[str], limit: int = 5) -> str | None:
+         clauses: list[str] = []
+         seen: set[str] = set()
+         for t in terms:
+             t = (t or "").strip().strip('"')
+             key = t.lower()
+             if t and len(t) <= 80 and key not in ("unknown", "none") and key not in seen:
+                 seen.add(key)
+-                clauses.append(f'ABSTRACT:"{t}"')
++                # Search in title OR abstract — wider than ABSTRACT-only, finds more relevant papers
++                clauses.append(f'(TITLE:"{t}" OR ABSTRACT:"{t}")')
+                 if not abstract_only:
+                     clauses.append(f'BODY:"{t}"')
+             if len(clauses) // (1 if abstract_only else 2) >= limit:
+                 break
+         return "(" + " OR ".join(clauses) + ")" if clauses else None
+ 
+     src = context.get("source_region") or ""
+     tgt = context.get("target_region") or ""
+     parts: list[str] = []
+     src_group = group(
+@@ -4435,43 +5450,70 @@ async def _materialize_page(
+             await session.execute(
+                 text(
+                     f"SELECT id FROM {table.__tablename__} WHERE {where} "
+                     "ORDER BY id LIMIT :lim"
+                 ),
+                 params,
+             )
+         ).all()
+         page_ids = [r[0] for r in rows]
+         next_cursor = page_ids[-1] if page_ids else None
+-    if not page_ids:
++    # selected 场景:镜像行已不存在的目标也要落 item(快照回退 target_id)
++    insert_ids = selected_ids if selected_ids is not None else page_ids
++    if not insert_ids:
+         return 0, next_cursor
++    # 批量读取镜像行名称与置信度(一次查询,不允许逐对象查询);
++    # 写入创建时的真实快照:名称缺失回退 target_id,置信度 0.0/null 原样保留
++    name_cols = _LIVE_NAME_COLUMNS.get(target_type, "")
++    live_cols = ", ".join(f"m.{c}" for c in name_cols.split(", ")) if name_cols else ""
++    live_cols += ", m.confidence AS live_confidence"
++    if target_type == "circuit_function":
++        live_cols += ", m.confidence_score"
++    live_rows = (
++        await session.execute(
++            text(
++                f"SELECT m.id, {live_cols} FROM {table.__tablename__} m "
++                "WHERE m.id = ANY(:ids)"
++            ),
++            {"ids": [uuid.UUID(str(x)) for x in insert_ids]},
++        )
++    ).all()
++    live_by_id = {r._mapping["id"]: r._mapping for r in live_rows}
+     inserted = 0
+-    for oid in page_ids:
++    for oid in insert_ids:
++        oid_uuid = uuid.UUID(str(oid))
++        live = live_by_id.get(oid_uuid)
++        if live is not None:
++            snapshot_label = mirror_live_display_name(target_type, live.get) or str(oid)
++            snapshot_conf = mirror_live_confidence(target_type, live.get)
++        else:
++            snapshot_label = str(oid)
++            snapshot_conf = None
+         result = await session.execute(
+             text(
+                 "INSERT INTO paper_evidence_task_items "
+                 "(task_id, target_type, target_id, label, current_confidence, status) "
+                 "SELECT CAST(:tid AS uuid), CAST(:tt AS varchar), t.id, CAST(:lbl AS varchar), :conf, 'pending' "
+                 "FROM unnest(ARRAY[:oid]::uuid[]) t(id) "
+                 "WHERE NOT EXISTS ("
+                 "  SELECT 1 FROM paper_evidence_task_items a "
+                 "  WHERE a.target_type = CAST(:tt AS varchar) AND a.target_id=t.id "
+                 "  AND a.status NOT IN ('completed','skipped','failed','cancelled')"
+                 ") "
+                 "ON CONFLICT (task_id, target_type, target_id) DO NOTHING"
+             ),
+             {
+                 "tid": task_id,
+                 "tt": target_type,
+                 "oid": oid,
+-                "lbl": str(oid),
+-                "conf": None,
++                "lbl": snapshot_label,
++                "conf": snapshot_conf,
+             },
+         )
+         inserted += result.rowcount or 0
+     return inserted, next_cursor
+ 
+ 
+ async def materialize_task_items_background(task_id: str) -> None:
+     from app.database import AsyncSessionLocal
+ 
+     if AsyncSessionLocal is None:
+@@ -4865,20 +5907,668 @@ async def _map_review_passage(p: dict, review_id: uuid.UUID, rank: int) -> dict:
+         "sl": p.get("source_locator"),
+         "sv": bool(p.get("source_verified", False)),
+         "svm": p.get("source_verification_method"),
+         "scm": json.dumps(list(p.get("supported_components") or []), ensure_ascii=False),
+         "ph": p.get("passage_hash") or passage_hash(p.get("passage") or p.get("passage_text") or ""),
+         "rank": rank,
+         "is_sel": bool(p.get("is_selected", True)),
+     }
+ 
+ 
++async def _resolve_review_task_item(
++    session: AsyncSession,
++    *,
++    task_id: uuid.UUID | None,
++    task_item_id: uuid.UUID | None,
++    target_type: str,
++    target_id: uuid.UUID,
++    for_update: bool = True,
++) -> tuple[uuid.UUID, uuid.UUID]:
++    """S6 关联校验:解析 (task_id, task_item_id) → 权威 (task_id, task_item_id)。
++
++    规则(不信任前端传入的两个 ID):
++    - 提供 task_item_id:item 必须存在、属于请求 task(若有)、target 一致、
++      item 状态允许审核、所属任务未取消;权威 task_id 取自 item。
++    - 只提供 task_id:按 task+target 查找,恰好一个匹配时补齐 item;
++      0 个 → ReviewNotFoundError;多个 → ReviewConflictError(要求客户端传 task_item_id)。
++    - 两者都未提供:返回 (None, None) 表示 standalone(调用方跳过任务校验)。
++    """
++    if task_item_id is None and task_id is None:
++        return None, None
++
++    lock_clause = " FOR UPDATE" if for_update else ""
++
++    if task_item_id is not None:
++        item_row = (
++            await session.execute(
++                text(
++                    "SELECT task_id, target_type, target_id, status "
++                    "FROM paper_evidence_task_items WHERE id = :iid" + lock_clause
++                ),
++                {"iid": task_item_id},
++            )
++        ).first()
++        if item_row is None:
++            raise ReviewNotFoundError(f"task item not found: {task_item_id}")
++        authoritative_task_id: uuid.UUID = item_row[0]
++        if task_id is not None and task_id != authoritative_task_id:
++            raise ReviewLinkError(
++                f"task_id '{task_id}' does not match task_item_id '{task_item_id}'"
++            )
++        if item_row[1] != target_type or item_row[2] != target_id:
++            raise ReviewLinkError(
++                f"target ({target_type}/{target_id}) does not match task item "
++                f"({item_row[1]}/{item_row[2]})"
++            )
++        if item_row[3] not in TASK_ITEM_ACTIVE_STATUSES:
++            raise ReviewLinkError(
++                f"task item status '{item_row[3]}' does not allow review"
++            )
++        task_state = (
++            await session.execute(
++                text("SELECT status FROM paper_evidence_tasks WHERE id = :tid"),
++                {"tid": authoritative_task_id},
++            )
++        ).first()
++        if task_state is None:
++            raise ReviewNotFoundError(f"task not found: {authoritative_task_id}")
++        if task_state[0] == "cancelled":
++            raise ReviewConflictError(f"task is cancelled: {authoritative_task_id}")
++        return authoritative_task_id, task_item_id
++
++    # 兼容旧客户端:只传 task_id,按 task+target 唯一匹配补齐(不按全局 target 猜测)
++    task_state = (
++        await session.execute(
++            text("SELECT status FROM paper_evidence_tasks WHERE id = :tid"),
++            {"tid": task_id},
++        )
++    ).first()
++    if task_state is None:
++        raise ReviewNotFoundError(f"task not found: {task_id}")
++    if task_state[0] == "cancelled":
++        raise ReviewConflictError(f"task is cancelled: {task_id}")
++    matches = (
++        await session.execute(
++            text(
++                "SELECT id, status FROM paper_evidence_task_items "
++                "WHERE task_id = :tid AND target_type = :tt AND target_id = :tgt" + lock_clause
++            ),
++            {"tid": task_id, "tt": target_type, "tgt": target_id},
++        )
++    ).all()
++    if len(matches) == 0:
++        raise ReviewNotFoundError(
++            f"no matching task item for target ({target_type}/{target_id}) in task {task_id}"
++        )
++    if len(matches) > 1:
++        raise ReviewConflictError(
++            f"ambiguous task item for target ({target_type}/{target_id}) in task {task_id}; "
++            "provide task_item_id"
++        )
++    matched_id, matched_status = matches[0][0], matches[0][1]
++    if matched_status not in TASK_ITEM_ACTIVE_STATUSES:
++        raise ReviewLinkError(
++            f"task item status '{matched_status}' does not allow review"
++        )
++    return task_id, matched_id
++
++
++async def resolve_task_item_for_target(
++    session: AsyncSession,
++    *,
++    task_id: uuid.UUID,
++    target_type: str,
++    target_id: uuid.UUID,
++    task_item_id: uuid.UUID | None = None,
++) -> dict:
++    """只读解析(前端 URL 补齐/审核前置校验):返回任务项权威身份。
++
++    - 提供 task_item_id:校验其存在、属于 task、target 一致(不校验状态,只读用途)。
++    - 未提供:按 task+target 查找;0 个 → ReviewNotFoundError;多个 → ReviewConflictError。
++    """
++    if task_item_id is not None:
++        row = (
++            await session.execute(
++                text(
++                    "SELECT id, task_id, target_type, target_id, status "
++                    "FROM paper_evidence_task_items WHERE id = :iid"
++                ),
++                {"iid": task_item_id},
++            )
++        ).first()
++        if row is None:
++            raise ReviewNotFoundError(f"task item not found: {task_item_id}")
++        if row[1] != task_id:
++            raise ReviewLinkError(
++                f"task_item_id '{task_item_id}' does not belong to task '{task_id}'"
++            )
++        if row[2] != target_type or row[3] != target_id:
++            raise ReviewLinkError(
++                f"target ({target_type}/{target_id}) does not match task item "
++                f"({row[2]}/{row[3]})"
++            )
++        return {
++            "task_id": str(row[1]),
++            "task_item_id": str(row[0]),
++            "target_type": row[2],
++            "target_id": str(row[3]),
++            "status": row[4],
++            "matched": "task_item_id",
++            "rescore_source_review_id": None,
++            "rescore_revision_no": None,
++        }
++    rows = (
++        await session.execute(
++            text(
++                "SELECT id, target_type, target_id, status, "
++                "rescore_source_review_id::text, rescore_revision_no "
++                "FROM paper_evidence_task_items "
++                "WHERE task_id = :tid AND target_type = :tt AND target_id = :tgt"
++            ),
++            {"tid": task_id, "tt": target_type, "tgt": target_id},
++        )
++    ).all()
++    if len(rows) == 0:
++        raise ReviewNotFoundError(
++            f"no matching task item for target ({target_type}/{target_id}) in task {task_id}"
++        )
++    if len(rows) > 1:
++        raise ReviewConflictError(
++            f"ambiguous task item for target ({target_type}/{target_id}) in task {task_id}"
++        )
++    r = rows[0]
++    return {
++        "task_id": str(task_id),
++        "task_item_id": str(r[0]),
++        "target_type": r[1],
++        "target_id": str(r[2]),
++        "status": r[3],
++        "matched": "task_target",
++        "rescore_source_review_id": r[4],
++        "rescore_revision_no": r[5],
++    }
++
++
++async def _count_current_terminal_peers(session: AsyncSession, review_map: dict) -> int:
++    """S8:同锚点下「未 superseded 的终态 review」数量(多链尾歧义防护)。
++
++    - linked 锚点 = task_item_id;legacy 锚点 = task+target;standalone 无共同锚点返回 0。
++    - 仅统计终态(approved/rejected)且 superseded_at IS NULL 的 review。
++    """
++    if review_map.get("task_item_id") is not None:
++        return (
++            await session.execute(
++                text(
++                    "SELECT COUNT(*) FROM paper_evidence_reviews "
++                    "WHERE task_item_id = :iid AND superseded_at IS NULL "
++                    "AND review_status IN ('approved', 'rejected')"
++                ),
++                {"iid": review_map["task_item_id"]},
++            )
++        ).scalar_one()
++    if review_map.get("task_id") is not None:
++        return (
++            await session.execute(
++                text(
++                    "SELECT COUNT(*) FROM paper_evidence_reviews "
++                    "WHERE task_id = :tid AND target_type = :tt AND target_id = :tgt "
++                    "AND superseded_at IS NULL AND review_status IN ('approved', 'rejected')"
++                ),
++                {
++                    "tid": review_map["task_id"],
++                    "tt": review_map["target_type"],
++                    "tgt": review_map["target_id"],
++                },
++            )
++        ).scalar_one()
++    return 0
++
++
++async def _review_rollback_capability(
++    session: AsyncSession,
++    review_map: dict,
++) -> tuple[bool, str | None]:
++    """S7B/S8:回退重评 capability(后端推导,前端不得自行判断)。
++
++    仅链尾终态(approved 且 superseded_at IS NULL)且关联上下文完整时开放;
++    同锚点存在多条未 superseded 的终态 review(历史多链尾)→ AMBIGUOUS_REVIEW_HISTORY。
++    """
++    if review_map.get("superseded_at") is not None:
++        return False, "ALREADY_SUPERSEDED"
++    status = review_map.get("review_status")
++    if status == "rejected":
++        return False, "REJECTED"
++    if status != "approved":
++        return False, "NOT_APPROVED"
++    task_id = review_map.get("task_id")
++    task_item_id = review_map.get("task_item_id")
++    target_type = review_map.get("target_type")
++    target_id = review_map.get("target_id")
++
++    if task_item_id is not None:
++        item_row = (
++            await session.execute(
++                text(
++                    "SELECT i.task_id, t.status FROM paper_evidence_task_items i "
++                    "LEFT JOIN paper_evidence_tasks t ON t.id = i.task_id "
++                    "WHERE i.id = :iid"
++                ),
++                {"iid": task_item_id},
++            )
++        ).first()
++        if item_row is None or item_row[0] is None:
++            return False, "ORPHAN_TASK_CONTEXT"
++        if item_row[1] == "cancelled":
++            return False, "TASK_CANCELLED"
++        if await _count_current_terminal_peers(session, review_map) > 1:
++            return False, "AMBIGUOUS_REVIEW_HISTORY"
++        return True, None
++
++    if task_id is not None:
++        matches = (
++            await session.execute(
++                text(
++                    "SELECT COUNT(*) FROM paper_evidence_task_items "
++                    "WHERE task_id = :tid AND target_type = :tt AND target_id = :tgt"
++                ),
++                {"tid": task_id, "tt": target_type, "tgt": target_id},
++            )
++        ).scalar_one()
++        task_row = (
++            await session.execute(
++                text("SELECT status FROM paper_evidence_tasks WHERE id = :tid"), {"tid": task_id}
++            )
++        ).first()
++        if task_row is None:
++            return False, "ORPHAN_TASK_CONTEXT"
++        if task_row[0] == "cancelled":
++            return False, "TASK_CANCELLED"
++        if matches == 0:
++            return False, "NO_TASK_ITEM"
++        if matches > 1:
++            return False, "AMBIGUOUS_TASK_ITEM"
++        if await _count_current_terminal_peers(session, review_map) > 1:
++            return False, "AMBIGUOUS_REVIEW_HISTORY"
++        return True, None
++
++    # standalone:target 行必须存在(回退时将基于其名称/置信度创建单对象任务)
++    model = TARGET_MODELS.get(target_type)
++    if model is None:
++        return False, "UNSUPPORTED_TARGET_TYPE"
++    row = await session.get(model, target_id)
++    if row is None:
++        return False, "TARGET_MISSING"
++    return True, None
++
++
++async def _derive_effective_promotion_status(
++    session: AsyncSession,
++    review_map: dict,
++    evidence_status_cache: dict[uuid.UUID, bool] | None = None,
++) -> str:
++    """S7B:派生有效晋升状态 active|rolled_back|not_promoted(不修改原始 promotion_status)。
++
++    S8:evidence_status_cache 批量预取(避免列表对每条 review 单独查询 evidence)。
++    """
++    if review_map.get("promotion_status") != "promoted":
++        return "not_promoted"
++    evidence_id = review_map.get("evidence_id")
++    if evidence_id is None:
++        return "rolled_back"
++    if evidence_status_cache is not None and evidence_id in evidence_status_cache:
++        return "active" if evidence_status_cache[evidence_id] else "rolled_back"
++    record = await session.get(MirrorEvidenceRecord, evidence_id)
++    if record is None:
++        return "rolled_back"
++    return "active" if record.verification_status != "invalidated" else "rolled_back"
++
++
++async def rollback_review_for_rescore(
++    session: AsyncSession,
++    review_id: uuid.UUID,
++    *,
++    reason: str,
++    actor: str | None = None,
++    idempotency_key: str | None = None,
++) -> dict:
++    """S7B:回退并重新评分。review 行锁串行化;证据撤销+supersede+item 重开(或 standalone 建任务)同一事务,任一步失败整体回滚。
++
++    规则:
++    - 仅链尾终态(approved 且未 superseded)可回退;不允许历史分叉;
++    - 旧 review 保留 approved 事实与全部评分快照,仅标 superseded_at/by + rollback_reason;
++    - linked:重开原 task item(保留名称/置信度快照,清 reviewed_at/by 与当前 evidence 指针);
++    - standalone:同一事务创建单对象重评任务(不伪造旧 task_id);
++    - legacy:任务内唯一匹配 item 才按 linked 路径,不改写旧 review 的历史 task 字段。
++    """
++    reason = (reason or "").strip()
++    if not reason:
++        raise EvidenceReviewError(
++            "rollback reason is required", code="ROLLBACK_REASON_REQUIRED", http_status=400
++        )
++
++    # 1) 行锁 source review
++    locked = (
++        await session.execute(
++            text(
++                "SELECT id, target_type, target_id, task_id, task_item_id, review_status, "
++                "promotion_status, evidence_id, revision_no, superseded_at "
++                "FROM paper_evidence_reviews WHERE id = :rid FOR UPDATE"
++            ),
++            {"rid": review_id},
++        )
++    ).first()
++    if locked is None:
++        raise ReviewNotFoundError(f"review not found: {review_id}")
++    rm = dict(locked._mapping)
++
++    # 2-4) 状态校验
++    if rm["review_status"] != "approved":
++        raise ReviewConflictError(
++            f"review '{review_id}' is in status '{rm['review_status']}'; only approved reviews can rollback for rescore",
++            code="REVIEW_NOT_ROLLBACKABLE",
++        )
++    if rm["superseded_at"] is not None:
++        raise ReviewConflictError(
++            f"review '{review_id}' has already been superseded",
++            code="REVIEW_ALREADY_SUPERSEDED",
++        )
++
++    # S8:端点级二次校验(不依赖列表 capability):同锚点多条未 superseded 终态 review → 拒绝,防多分支
++    if await _count_current_terminal_peers(session, rm) > 1:
++        raise ReviewConflictError(
++            f"multiple current terminal reviews exist for the same anchor as review '{review_id}'",
++            code="AMBIGUOUS_REVIEW_HISTORY",
++        )
++
++    # 5) 关联解析(linked / legacy / standalone)
++    target_type = rm["target_type"]
++    target_id = rm["target_id"]
++    linked_task_id: uuid.UUID | None = None
++    linked_item_id: uuid.UUID | None = None
++
++    if rm["task_item_id"] is not None:
++        item_row = (
++            await session.execute(
++                text(
++                    "SELECT id, task_id FROM paper_evidence_task_items "
++                    "WHERE id = :iid FOR UPDATE"
++                ),
++                {"iid": rm["task_item_id"]},
++            )
++        ).first()
++        if item_row is None:
++            raise ReviewConflictError(
++                f"review '{review_id}' references a missing task item",
++                code="ORPHAN_TASK_CONTEXT",
++            )
++        task_state = (
++            await session.execute(
++                text("SELECT status FROM paper_evidence_tasks WHERE id = :tid"),
++                {"tid": item_row[1]},
++            )
++        ).first()
++        if task_state is None:
++            raise ReviewConflictError(
++                f"review '{review_id}' references an orphan task",
++                code="ORPHAN_TASK_CONTEXT",
++            )
++        if task_state[0] == "cancelled":
++            raise ReviewConflictError(
++                f"task '{item_row[1]}' is cancelled; cannot rollback for rescore",
++                code="REVIEW_NOT_ROLLBACKABLE",
++            )
++        linked_task_id = item_row[1]
++        linked_item_id = item_row[0]
++    elif rm["task_id"] is not None:
++        matches = (
++            await session.execute(
++                text(
++                    "SELECT i.id, t.status FROM paper_evidence_task_items i "
++                    "JOIN paper_evidence_tasks t ON t.id = i.task_id "
++                    "WHERE i.task_id = :tid AND i.target_type = :tt AND i.target_id = :tgt "
++                    "FOR UPDATE OF i"
++                ),
++                {"tid": rm["task_id"], "tt": target_type, "tgt": target_id},
++            )
++        ).all()
++        if len(matches) == 0:
++            raise ReviewConflictError(
++                f"no task item matches target ({target_type}/{target_id}) in task {rm['task_id']}",
++                code="NO_TASK_ITEM",
++            )
++        if len(matches) > 1:
++            raise ReviewConflictError(
++                f"ambiguous task item for target ({target_type}/{target_id}) in task {rm['task_id']}",
++                code="AMBIGUOUS_TASK_ITEM",
++            )
++        if matches[0][1] == "cancelled":
++            raise ReviewConflictError(
++                f"task '{rm['task_id']}' is cancelled; cannot rollback for rescore",
++                code="REVIEW_NOT_ROLLBACKABLE",
++            )
++        # legacy 唯一匹配:复用该 item,不改写旧 review 的 task 字段
++        linked_task_id = rm["task_id"]
++        linked_item_id = matches[0][0]
++
++    # 6) 已晋升 → 同事务撤销证据(幂等接受已 invalidated)
++    promotion_rollback = "not_needed"
++    if rm["promotion_status"] == "promoted" and rm["evidence_id"] is not None:
++        try:
++            ev = await _invalidate_evidence_inplace(
++                session, rm["evidence_id"], reason=reason, operator_id=actor
++            )
++        except ValueError as exc:
++            raise EvidenceReviewError(
++                f"promotion rollback failed: {exc}",
++                code="PROMOTION_ROLLBACK_FAILED",
++                http_status=502,
++            )
++        promotion_rollback = "completed" if ev["changed"] or ev["status"] == "already_invalidated" else "not_needed"
++
++    # 7) supersede 旧 review
++    next_revision = int(rm["revision_no"] or 1) + 1
++    await session.execute(
++        text(
++            "UPDATE paper_evidence_reviews SET superseded_at=now(), superseded_by=:actor, "
++            "rollback_reason=:reason, updated_at=now() WHERE id = :rid"
++        ),
++        {"rid": review_id, "actor": actor, "reason": reason},
++    )
++
++    navigation: dict = {"module": "tasks"}
++    if linked_item_id is not None and linked_task_id is not None:
++        # 8) 重开原 task item(保留 label/current_confidence 快照;清当前 evidence 指针)
++        await session.execute(
++            text(
++                "UPDATE paper_evidence_task_items SET status='awaiting_review', "
++                "rescore_source_review_id=:src, rescore_revision_no=:rev, "
++                "reviewed_at=NULL, reviewed_by=NULL, evidence_id=NULL, updated_at=now() "
++                "WHERE id = :iid"
++            ),
++            {"iid": linked_item_id, "src": review_id, "rev": next_revision},
++        )
++        navigation = {
++            "module": "tasks",
++            "task_id": str(linked_task_id),
++            "task_item_id": str(linked_item_id),
++            "target_type": target_type,
++            "target_id": str(target_id),
++        }
++        await _update_task_totals(session, str(linked_task_id))
++        await _update_task_review_status(session, str(linked_task_id))
++    else:
++        # 9) standalone:同一事务创建单对象重评任务
++        dto = await build_target_dto(session, target_type, target_id)
++        new_task_id = uuid.uuid4()
++        new_item_id = uuid.uuid4()
++        display_name = dto.get("display_name") or str(target_id)
++        confidence = dto.get("current_confidence")
++        await session.execute(
++            text(
++                "INSERT INTO paper_evidence_tasks "
++                "(id, target_type, scope, mode, max_papers_per_object, status, name, "
++                "filter_snapshot, summary, materialized_target_count, materialization_status) "
++                "VALUES (:id, :tt, 'single_object', 'function', 3, 'pending', :name, "
++                "CAST(:fs AS jsonb), '{}'::jsonb, 1, 'completed')"
++            ),
++            {
++                "id": new_task_id,
++                "tt": target_type,
++                "name": f"重新评分 · {display_name}"[:200],
++                "fs": json.dumps({"rescore_of": str(review_id)}, ensure_ascii=False),
++            },
++        )
++        await session.execute(
++            text(
++                "INSERT INTO paper_evidence_task_items "
++                "(id, task_id, target_type, target_id, label, current_confidence, status, "
++                "rescore_source_review_id, rescore_revision_no) "
++                "VALUES (:id, :tid, :tt, :tgt, :lbl, :conf, 'awaiting_review', :src, :rev)"
++            ),
++            {
++                "id": new_item_id,
++                "tid": new_task_id,
++                "tt": target_type,
++                "tgt": target_id,
++                "lbl": display_name,
++                "conf": confidence,
++                "src": review_id,
++                "rev": next_revision,
++            },
++        )
++        navigation = {
++            "module": "tasks",
++            "task_id": str(new_task_id),
++            "task_item_id": str(new_item_id),
++            "target_type": target_type,
++            "target_id": str(target_id),
++        }
++        await _update_task_totals(session, str(new_task_id))
++        await _update_task_review_status(session, str(new_task_id))
++
++    # 10) 审计(幂等键一并留痕)
++    await _write_audit(
++        session,
++        action_type="EVIDENCE_REVIEW_SUPERSEDED",
++        entity_type="evidence_review",
++        entity_id=review_id,
++        before_data={"revision_no": rm["revision_no"], "review_status": rm["review_status"]},
++        after_data={
++            "reason": reason,
++            "next_revision_no": next_revision,
++            "promotion_rollback": promotion_rollback,
++            "idempotency_key": idempotency_key,
++            "navigation": navigation,
++        },
++        operator_id=actor,
++        reason=reason,
++    )
++    await session.commit()
++    return {
++        "source_review_id": str(review_id),
++        "new_review_id": None,
++        "task_id": navigation.get("task_id"),
++        "task_item_id": navigation.get("task_item_id"),
++        "target_type": target_type,
++        "target_id": str(target_id),
++        "revision_no": next_revision,
++        "promotion_rollback": promotion_rollback,
++        "navigation": navigation,
++    }
++
++
++async def get_review_history(session: AsyncSession, review_id: uuid.UUID) -> dict:
++    """S7B:版本链历史(祖先+后继),只按 supersedes 链查询,不按 target 混入其他任务。"""
++    root = (
++        await session.execute(
++            text("SELECT * FROM paper_evidence_reviews WHERE id = :rid"), {"rid": review_id}
++        )
++    ).first()
++    if root is None:
++        raise ReviewNotFoundError(f"review not found: {review_id}")
++
++    chain: dict[uuid.UUID, dict] = {}
++    # 祖先:沿 supersedes_review_id 向上(防环上限 50)
++    cursor = review_id
++    for _ in range(50):
++        row = (
++            await session.execute(
++                text("SELECT * FROM paper_evidence_reviews WHERE id = :rid"), {"rid": cursor}
++            )
++        ).first()
++        if row is None:
++            break
++        rm = dict(row._mapping)
++        chain[row.id] = rm
++        parent = rm.get("supersedes_review_id")
++        if parent is None or parent in chain:
++            break
++        cursor = parent
++    # 后继:supersedes_review_id 指向链中任意 review 的行(异常分叉也全量列出,只读)
++    ancestors = list(chain.keys())
++    if ancestors:
++        children = (
++            await session.execute(
++                text(
++                    "SELECT * FROM paper_evidence_reviews "
++                    "WHERE supersedes_review_id = ANY(:ids) ORDER BY created_at"
++                ),
++                {"ids": ancestors},
++            )
++        ).all()
++        for row in children:
++            rm = dict(row._mapping)
++            chain[row.id] = rm
++
++    # S8:N+1 优化——链内 evidence 状态批量预取
++    evidence_ids = [
++        rm["evidence_id"]
++        for rm in chain.values()
++        if rm.get("promotion_status") == "promoted" and rm.get("evidence_id") is not None
++    ]
++    evidence_status_cache: dict[uuid.UUID, bool] = {}
++    if evidence_ids:
++        records = (
++            await session.execute(
++                select(MirrorEvidenceRecord).where(MirrorEvidenceRecord.id.in_(evidence_ids))
++            )
++        ).scalars().all()
++        evidence_status_cache = {
++            rec.id: rec.verification_status != "invalidated" for rec in records
++        }
++    items = []
++    for rid, rm in chain.items():
++        eff = await _derive_effective_promotion_status(session, rm, evidence_status_cache)
++        items.append(
++            {
++                "review_id": str(rid),
++                "revision_no": int(rm.get("revision_no") or 1),
++                "review_status": rm.get("review_status"),
++                "promotion_status": rm.get("promotion_status"),
++                "effective_promotion_status": eff,
++                "reviewer_direction": rm.get("reviewer_direction"),
++                "reviewer_confidence": float(rm["reviewer_confidence"])
++                if rm.get("reviewer_confidence") is not None
++                else None,
++                "reviewed_at": rm["reviewed_at"].isoformat() if rm.get("reviewed_at") else None,
++                "approved_at": rm["approved_at"].isoformat() if rm.get("approved_at") else None,
++                "rejected_at": rm["rejected_at"].isoformat() if rm.get("rejected_at") else None,
++                "is_current": rm.get("superseded_at") is None,
++                "superseded_at": rm["superseded_at"].isoformat() if rm.get("superseded_at") else None,
++                "superseded_by": rm.get("superseded_by"),
++                "rollback_reason": rm.get("rollback_reason"),
++            }
++        )
++    items.sort(key=lambda x: (x["revision_no"], x["reviewed_at"] or ""))
++    return {"source_review_id": str(review_id), "items": items}
++
++
+ async def build_review(
+     session: AsyncSession,
+     *,
+     target_type: str,
+     target_id: uuid.UUID,
+     paper_id: uuid.UUID | None,
+     task_id: uuid.UUID | None,
+     task_item_id: uuid.UUID | None,
+     reviewer_id: str | None,
+     claim_version: str,
+@@ -4903,63 +6593,143 @@ async def build_review(
+     explicitly to advance to 'awaiting_promotion'.
+     """
+     # Determine review_status from reviewer_direction.
+     # 'approved' is reserved for approve_review() — build_review enters
+     # 'awaiting_review' so the explicit approve step is mandatory.
+     review_status = (
+         "awaiting_review"
+         if reviewer_direction not in ("not_found",)
+         else "rejected"
+     )
++    # ── S6 关联校验:不信任前端传入,以 task_item_id 为准(standalone → (None, None)) ──
++    resolved_task_id, resolved_item_id = await _resolve_review_task_item(
++        session,
++        task_id=task_id,
++        task_item_id=task_item_id,
++        target_type=target_type,
++        target_id=target_id,
++        for_update=True,
++    )
++    # 防重:同一 task item 只能有一个当前有效(非终态)review;item 行锁串行化并发 build
++    if resolved_item_id is not None:
++        existing = (
++            await session.execute(
++                text(
++                    "SELECT id FROM paper_evidence_reviews "
++                    "WHERE task_item_id = :iid AND review_status = ANY(:sts) "
++                    "ORDER BY created_at DESC LIMIT 1"
++                ),
++                {"iid": resolved_item_id, "sts": list(REVIEW_NON_TERMINAL_STATUSES)},
++            )
++        ).first()
++        if existing is not None:
++            raise ReviewConflictError(f"active review already exists: {existing[0]}")
++
++    # ── S7B 版本挂链:item 带 pending rescore 上下文时,新 review 挂 supersedes 链 ──
++    rescore_source_id: uuid.UUID | None = None
++    rescore_revision_no: int | None = None
++    if resolved_item_id is not None:
++        rescore_row = (
++            await session.execute(
++                text(
++                    "SELECT rescore_source_review_id::text, rescore_revision_no "
++                    "FROM paper_evidence_task_items WHERE id = :iid"
++                ),
++                {"iid": resolved_item_id},
++            )
++        ).first()
++        if rescore_row is not None and rescore_row[0]:
++            rescore_source_id = uuid.UUID(rescore_row[0])
++            rescore_revision_no = int(rescore_row[1] or 2)
++            # 校验 source review:存在、已 superseded、target 一致、且仍是链尾(禁止历史分叉)
++            src = (
++                await session.execute(
++                    text(
++                        "SELECT id, target_type, target_id, superseded_at "
++                        "FROM paper_evidence_reviews WHERE id = :rid"
++                    ),
++                    {"rid": rescore_source_id},
++                )
++            ).first()
++            if src is None:
++                raise ReviewLinkError("rescore source review not found")
++            if src[3] is None:
++                raise ReviewLinkError("rescore source review is not superseded")
++            if src[1] != target_type or src[2] != target_id:
++                raise ReviewLinkError("rescore context target mismatch")
++            child = (
++                await session.execute(
++                    text(
++                        "SELECT 1 FROM paper_evidence_reviews "
++                        "WHERE supersedes_review_id = :rid LIMIT 1"
++                    ),
++                    {"rid": rescore_source_id},
++                )
++            ).first()
++            if child is not None:
++                raise ReviewConflictError(
++                    "rescore chain already advanced; stale rescore context", code="REVIEW_CONFLICT"
++                )
+     review_id = (
+         await session.execute(
+             text(
+                 "INSERT INTO paper_evidence_reviews "
+                 "(target_type, target_id, paper_id, task_id, task_item_id, reviewer_id, "
+                 "review_status, promotion_status, claim_version, claim_text_snapshot, "
+                 "claim_components_snapshot, model_direction, model_assessment, "
+                 "reviewer_direction, reviewer_evidence_level, reviewer_confidence, "
+                 "reviewer_note, coverage_summary_snapshot, coverage_formula_version, "
+-                "draft_revision, reviewed_at, approved_at, rejected_at) "
++                "draft_revision, revision_no, supersedes_review_id, reviewed_at, approved_at, rejected_at) "
+                 "VALUES (:tt, :tid, :pid, :taskid, :itemid, :rev_id, :rstatus, :pstatus, "
+                 ":cv, :cs, CAST(:cc AS jsonb), :md, :ma, :rd, :rel, :rc, :rn, "
+-                "CAST(:cov AS jsonb), :cfv, :dr, now(), "
++                "CAST(:cov AS jsonb), :cfv, :dr, :revno, :supersedes, now(), "
+                 "CASE WHEN :is_approved THEN now() ELSE NULL END, "
+                 "CASE WHEN :is_rejected THEN now() ELSE NULL END) "
+                 "RETURNING id"
+             ),
+             {
+                 "tt": target_type,
+                 "tid": target_id,
+                 "pid": paper_id,
+-                "taskid": task_id,
+-                "itemid": task_item_id,
++                "taskid": resolved_task_id,
++                "itemid": resolved_item_id,
+                 "rev_id": reviewer_id,
+                 "rstatus": review_status,
+                 "pstatus": "not_ready",  # promotion_status always starts at not_ready
+                 "cv": claim_version,
+                 "cs": claim_text_snapshot,
+                 "cc": json.dumps(claim_components_snapshot, ensure_ascii=False),
+                 "md": model_direction,
+                 "ma": model_assessment,
+                 "rd": reviewer_direction,
+                 "rel": reviewer_evidence_level,
+                 "rc": reviewer_confidence,
+                 "rn": reviewer_note,
+                 "cov": json.dumps(coverage_summary_snapshot, ensure_ascii=False),
+                 "cfv": coverage_formula_version,
+                 "dr": draft_revision,
++                "revno": rescore_revision_no if rescore_revision_no is not None else 1,
++                "supersedes": rescore_source_id,
+                 "is_approved": review_status == "approved",
+                 "is_rejected": review_status == "rejected",
+             },
+         )
+     ).scalar_one()
++    # 新 review INSERT 成功 → 同事务清空 item 的 rescore 上下文(build 失败时保留,允许重试)
++    if resolved_item_id is not None and rescore_source_id is not None:
++        await session.execute(
++            text(
++                "UPDATE paper_evidence_task_items SET rescore_source_review_id=NULL, "
++                "rescore_revision_no=NULL, updated_at=now() WHERE id = :iid"
++            ),
++            {"iid": resolved_item_id},
++        )
+     # Insert frozen passages
+     for rank, p in enumerate(passages, 1):
+         params = await _map_review_passage(p, review_id, rank)
+         await session.execute(
+             text(
+                 "INSERT INTO paper_evidence_review_passages "
+                 "(review_id, paper_passage_id, passage_text, passage_text_snapshot, "
+                 "source_scope, section_title, paragraph_index, paragraph_id, "
+                 "translation_zh, direction, evidence_level, reason, confidence, "
+                 "semantic_confidence, source_locator, source_verified, "
+@@ -4984,20 +6754,51 @@ async def build_review(
+             "promotion_status": "not_ready",
+             "passage_count": len(passages),
+         },
+         operator_id=reviewer_id,
+         reason="formal review record created",
+     )
+     await session.commit()
+     return {"review_id": str(review_id), "status": review_status}
+ 
+ 
++async def _complete_linked_task_item(session: AsyncSession, review_id: uuid.UUID, operator_id: str | None) -> str | None:
++    """审核终态同步(第六步):review 带合法 task_item_id 时,同事务内完成对应任务项。
++
++    返回 task_id(用于随后重算统计),standalone review 返回 None。
++    不修改 item 的名称/置信度快照;review.id 不写入 evidence_id。
++    """
++    row = (
++        await session.execute(
++            text(
++                "SELECT task_item_id::text, task_id::text FROM paper_evidence_reviews WHERE id = :rid"
++            ),
++            {"rid": review_id},
++        )
++    ).first()
++    if row is None or row[0] is None:
++        return None
++    item_id, task_id = row[0], row[1]
++    if task_id is None:
++        return None
++    await session.execute(
++        text(
++            "UPDATE paper_evidence_task_items SET status='completed', reviewed_at=now(), "
++            "reviewed_by=:op, updated_at=now() "
++            "WHERE id = :iid AND status IN "
++            "('pending','searching','fetching','retrieving','extracting','verifying','awaiting_review')"
++        ),
++        {"iid": item_id, "op": operator_id},
++    )
++    return task_id
++
++
+ async def approve_review(
+     session: AsyncSession,
+     review_id: uuid.UUID,
+     *,
+     operator_id: str | None = None,
+ ) -> dict:
+     """Approve a review: locks snapshot, sets awaiting_promotion.
+ 
+     Can only be called from awaiting_review or returned states.
+     ('draft' is reserved for future multi-step review workflows and is not
+@@ -5005,33 +6806,40 @@ async def approve_review(
+     """
+     row = await session.execute(
+         text(
+             "SELECT id, review_status FROM paper_evidence_reviews "
+             "WHERE id = :rid FOR UPDATE"
+         ),
+         {"rid": review_id},
+     )
+     r = row.first()
+     if r is None:
+-        raise ValueError("review not found")
++        raise ReviewNotFoundError(f"review not found: {review_id}")
+     current_status = r[1]
+     if current_status not in ("awaiting_review", "returned"):
+-        raise ValueError(f"cannot approve review in status '{current_status}'; must be awaiting_review/returned")
++        raise ReviewConflictError(
++            f"cannot approve review in status '{current_status}'; must be awaiting_review/returned"
++        )
+     await session.execute(
+         text(
+             "UPDATE paper_evidence_reviews "
+             "SET review_status='approved', promotion_status='awaiting_promotion', "
+             "approved_at=now(), updated_at=now() "
+             "WHERE id = :rid"
+         ),
+         {"rid": review_id},
+     )
++    # S6:review 终态 + linked task item 完成 + 任务统计重算 + 审计同一事务提交
++    linked_task_id = await _complete_linked_task_item(session, review_id, operator_id)
++    if linked_task_id is not None:
++        await _update_task_totals(session, linked_task_id)
++        await _update_task_review_status(session, linked_task_id)
+     await _write_audit(
+         session,
+         action_type="EVIDENCE_REVIEW_APPROVED",
+         entity_type="evidence_review",
+         entity_id=review_id,
+         after_data={"review_status": "approved", "promotion_status": "awaiting_promotion"},
+         operator_id=operator_id,
+         reason="review approved for promotion",
+     )
+     await session.commit()
+@@ -5047,33 +6855,38 @@ async def reject_review(
+     """Reject a review. Cannot be called on already-promoted or already-rejected reviews."""
+     row = await session.execute(
+         text(
+             "SELECT id, review_status, promotion_status "
+             "FROM paper_evidence_reviews WHERE id = :rid FOR UPDATE"
+         ),
+         {"rid": review_id},
+     )
+     r = row.first()
+     if r is None:
+-        raise ValueError("review not found")
++        raise ReviewNotFoundError(f"review not found: {review_id}")
+     if r[2] == "promoted":
+-        raise ValueError("review has already been promoted; cannot reject")
++        raise ReviewConflictError("review has already been promoted; cannot reject")
+     if r[1] == "rejected":
+-        raise ValueError("review is already rejected")
++        raise ReviewConflictError("review is already rejected")
+     await session.execute(
+         text(
+             "UPDATE paper_evidence_reviews "
+             "SET review_status='rejected', rejected_at=now(), updated_at=now() "
+             "WHERE id = :rid"
+         ),
+         {"rid": review_id},
+     )
++    # S6:rejected 为终态 → linked task item 完成 + 任务统计重算 + 审计同一事务提交
++    linked_task_id = await _complete_linked_task_item(session, review_id, operator_id)
++    if linked_task_id is not None:
++        await _update_task_totals(session, linked_task_id)
++        await _update_task_review_status(session, linked_task_id)
+     await _write_audit(
+         session,
+         action_type="EVIDENCE_REVIEW_REJECTED",
+         entity_type="evidence_review",
+         entity_id=review_id,
+         after_data={"review_status": "rejected"},
+         operator_id=operator_id,
+         reason="review rejected",
+     )
+     await session.commit()
+@@ -5309,55 +7122,75 @@ async def cancel_review(
+         entity_type="evidence_review",
+         entity_id=review_id,
+         after_data={"promotion_status": "cancelled", "cancel_reason": reason},
+         operator_id=cancelled_by,
+         reason=reason or "review cancelled",
+     )
+     await session.commit()
+     return {"review_id": str(review_id), "status": "cancelled"}
+ 
+ 
+-def _review_row_to_dict(r: dict) -> dict:
+-    """Convert a raw review row mapping to a response dict."""
++async def _review_row_to_dict(
++    session: AsyncSession,
++    r: dict,
++    *,
++    evidence_status_cache: dict[uuid.UUID, bool] | None = None,
++) -> dict:
++    """Convert a raw review row mapping to a response dict(S7B 增版本字段与派生 capability)。"""
++    rm = dict(r)
++    can_rollback, block_reason = await _review_rollback_capability(session, rm)
++    effective_promotion = await _derive_effective_promotion_status(
++        session, rm, evidence_status_cache
++    )
+     return {
+-        "id": str(r["id"]),
+-        "target_type": r["target_type"],
+-        "target_id": str(r["target_id"]),
+-        "paper_id": str(r["paper_id"]) if r.get("paper_id") else None,
+-        "task_id": str(r["task_id"]) if r.get("task_id") else None,
+-        "task_item_id": str(r["task_item_id"]) if r.get("task_item_id") else None,
+-        "reviewer_id": r.get("reviewer_id"),
+-        "review_status": r["review_status"],
+-        "promotion_status": r["promotion_status"],
+-        "claim_version": r.get("claim_version"),
+-        "claim_text_snapshot": r.get("claim_text_snapshot"),
+-        "claim_components_snapshot": r.get("claim_components_snapshot"),
+-        "model_direction": r.get("model_direction"),
+-        "model_assessment": r.get("model_assessment"),
+-        "reviewer_direction": r.get("reviewer_direction"),
+-        "reviewer_evidence_level": r.get("reviewer_evidence_level"),
+-        "reviewer_confidence": float(r["reviewer_confidence"]) if r.get("reviewer_confidence") is not None else None,
+-        "reviewer_note": r.get("reviewer_note"),
+-        "coverage_summary_snapshot": r.get("coverage_summary_snapshot"),
+-        "coverage_formula_version": r.get("coverage_formula_version"),
+-        "draft_revision": int(r.get("draft_revision", 0)),
+-        "reviewed_at": r["reviewed_at"].isoformat() if r.get("reviewed_at") else None,
+-        "approved_at": r["approved_at"].isoformat() if r.get("approved_at") else None,
+-        "rejected_at": r["rejected_at"].isoformat() if r.get("rejected_at") else None,
+-        "promoted_at": r["promoted_at"].isoformat() if r.get("promoted_at") else None,
+-        "promoted_by": r.get("promoted_by"),
+-        "returned_at": r["returned_at"].isoformat() if r.get("returned_at") else None,
+-        "returned_by": r.get("returned_by"),
+-        "return_reason": r.get("return_reason"),
+-        "evidence_id": str(r["evidence_id"]) if r.get("evidence_id") else None,
+-        "created_at": r["created_at"].isoformat() if r.get("created_at") else None,
+-        "updated_at": r["updated_at"].isoformat() if r.get("updated_at") else None,
++        "id": str(rm["id"]),
++        "target_type": rm["target_type"],
++        "target_id": str(rm["target_id"]),
++        "paper_id": str(rm["paper_id"]) if rm.get("paper_id") else None,
++        "task_id": str(rm["task_id"]) if rm.get("task_id") else None,
++        "task_item_id": str(rm["task_item_id"]) if rm.get("task_item_id") else None,
++        "reviewer_id": rm.get("reviewer_id"),
++        "review_status": rm["review_status"],
++        "promotion_status": rm["promotion_status"],
++        "claim_version": rm.get("claim_version"),
++        "claim_text_snapshot": rm.get("claim_text_snapshot"),
++        "claim_components_snapshot": rm.get("claim_components_snapshot"),
++        "model_direction": rm.get("model_direction"),
++        "model_assessment": rm.get("model_assessment"),
++        "reviewer_direction": rm.get("reviewer_direction"),
++        "reviewer_evidence_level": rm.get("reviewer_evidence_level"),
++        "reviewer_confidence": float(rm["reviewer_confidence"]) if rm.get("reviewer_confidence") is not None else None,
++        "reviewer_note": rm.get("reviewer_note"),
++        "coverage_summary_snapshot": rm.get("coverage_summary_snapshot"),
++        "coverage_formula_version": rm.get("coverage_formula_version"),
++        "draft_revision": int(rm.get("draft_revision", 0)),
++        "reviewed_at": rm["reviewed_at"].isoformat() if rm.get("reviewed_at") else None,
++        "approved_at": rm["approved_at"].isoformat() if rm.get("approved_at") else None,
++        "rejected_at": rm["rejected_at"].isoformat() if rm.get("rejected_at") else None,
++        "promoted_at": rm["promoted_at"].isoformat() if rm.get("promoted_at") else None,
++        "promoted_by": rm.get("promoted_by"),
++        "returned_at": rm["returned_at"].isoformat() if rm.get("returned_at") else None,
++        "returned_by": rm.get("returned_by"),
++        "return_reason": rm.get("return_reason"),
++        "evidence_id": str(rm["evidence_id"]) if rm.get("evidence_id") else None,
++        "created_at": rm["created_at"].isoformat() if rm.get("created_at") else None,
++        "updated_at": rm["updated_at"].isoformat() if rm.get("updated_at") else None,
++        # S7B 版本链与派生字段
++        "revision_no": int(rm.get("revision_no") or 1),
++        "supersedes_review_id": str(rm["supersedes_review_id"]) if rm.get("supersedes_review_id") else None,
++        "superseded_at": rm["superseded_at"].isoformat() if rm.get("superseded_at") else None,
++        "superseded_by": rm.get("superseded_by"),
++        "rollback_reason": rm.get("rollback_reason"),
++        "is_current": rm.get("superseded_at") is None,
++        "effective_promotion_status": effective_promotion,
++        "can_rollback_rescore": can_rollback,
++        "rollback_block_reason": block_reason,
+         "passages": [],
+     }
+ 
+ 
+ def _passage_row_to_dict(p: dict) -> dict:
+     """Convert a raw review_passage row mapping to a response dict."""
+     return {
+         "id": str(p["id"]),
+         "review_id": str(p["review_id"]),
+         "paper_passage_id": str(p["paper_passage_id"]) if p.get("paper_passage_id") else None,
+@@ -5414,39 +7247,58 @@ async def list_reviews(
+             "ORDER BY created_at DESC LIMIT :lim OFFSET :off"
+         ),
+         params,
+     )
+     total = (
+         await session.execute(
+             text(f"SELECT COUNT(*) FROM paper_evidence_reviews WHERE {clause}"),
+             {k: v for k, v in params.items() if k not in ("lim", "off")},
+         )
+     ).scalar_one()
++    # S8:N+1 优化——批量预取 promoted review 的 evidence 有效状态,避免逐行查询
++    row_list = rows.all()
++    evidence_ids = [
++        r["evidence_id"]
++        for r in (dict(x._mapping) for x in row_list)
++        if r.get("promotion_status") == "promoted" and r.get("evidence_id") is not None
++    ]
++    evidence_status_cache: dict[uuid.UUID, bool] = {}
++    if evidence_ids:
++        records = (
++            await session.execute(
++                select(MirrorEvidenceRecord).where(MirrorEvidenceRecord.id.in_(evidence_ids))
++            )
++        ).scalars().all()
++        evidence_status_cache = {
++            rec.id: rec.verification_status != "invalidated" for rec in records
++        }
+     items = []
+-    for r in rows:
+-        item = _review_row_to_dict(r._mapping)
++    for r in row_list:
++        item = await _review_row_to_dict(
++            session, r._mapping, evidence_status_cache=evidence_status_cache
++        )
+         items.append(item)
+     return {"items": items, "total": int(total)}
+ 
+ 
+ async def get_review(
+     session: AsyncSession,
+     review_id: uuid.UUID,
+ ) -> dict:
+     """Get a review with its frozen passages."""
+     row = await session.execute(
+         text("SELECT * FROM paper_evidence_reviews WHERE id = :rid"),
+         {"rid": review_id},
+     )
+     r = row.first()
+     if r is None:
+         raise ValueError("review not found")
+-    item = _review_row_to_dict(r._mapping)
++    item = await _review_row_to_dict(session, r._mapping)
+     passage_rows = await session.execute(
+         text(
+             "SELECT * FROM paper_evidence_review_passages "
+             "WHERE review_id = :rid ORDER BY rank"
+         ),
+         {"rid": review_id},
+     )
+     item["passages"] = [_passage_row_to_dict(p._mapping) for p in passage_rows]
+     return item
+diff --git a/backend/tests/test_paper_evidence_display_parts.py b/backend/tests/test_paper_evidence_display_parts.py
+new file mode 100644
+index 0000000..c49fe69
+--- /dev/null
++++ b/backend/tests/test_paper_evidence_display_parts.py
+@@ -0,0 +1,106 @@
++# -*- coding: utf-8 -*-
++"""mirror_live_display_name_parts:中英文双名解析(纯函数,不触库)。"""
++
++from app.services.paper_evidence_service import mirror_live_display_name_parts as parts
++
++
++def _get(mapping):
++    return lambda c: mapping.get(c)
++
++
++def test_connection_both_languages():
++    get = _get({
++        "source_region_name_cn": "杏仁核", "source_region_name_en": "Amygdala",
++        "target_region_name_cn": "海马", "target_region_name_en": "Hippocampus",
++        "connection_type": "projection",
++    })
++    cn, en = parts("connection", get)
++    assert cn == "杏仁核 → 海马"
++    assert en == "Amygdala → Hippocampus"
++
++
++def test_connection_cn_missing_keeps_en():
++    get = _get({
++        "source_region_name_cn": None, "source_region_name_en": "Amygdala",
++        "target_region_name_cn": "海马", "target_region_name_en": "Hippocampus",
++    })
++    cn, en = parts("connection", get)
++    assert cn is None
++    assert en == "Amygdala → Hippocampus"
++
++
++def test_connection_en_missing_keeps_cn():
++    get = _get({
++        "source_region_name_cn": "杏仁核", "source_region_name_en": "Amygdala",
++        "target_region_name_cn": "海马", "target_region_name_en": None,
++    })
++    cn, en = parts("connection", get)
++    assert cn == "杏仁核 → 海马"
++    assert en is None
++
++
++def test_connection_all_missing():
++    get = _get({"source_region_name_cn": "", "source_region_name_en": None,
++                "target_region_name_cn": "", "target_region_name_en": ""})
++    assert parts("connection", get) == (None, None)
++
++
++def test_circuit_cn_en():
++    get = _get({"name_cn": "默认模式网络", "circuit_name": "Default Mode Network"})
++    assert parts("circuit", get) == ("默认模式网络", "Default Mode Network")
++
++
++def test_circuit_cn_only():
++    get = _get({"name_cn": "默认模式网络", "circuit_name": None})
++    assert parts("circuit", get) == ("默认模式网络", None)
++
++
++def test_circuit_step_en_only():
++    get = _get({"step_name": "input step", "role": "relay"})
++    cn, en = parts("circuit_step", get)
++    assert cn is None
++    assert en == "input step · relay"
++
++
++def test_circuit_function_cn_en():
++    get = _get({"function_term_cn": "记忆巩固", "function_term_en": "memory consolidation"})
++    assert parts("circuit_function", get) == ("记忆巩固", "memory consolidation")
++
++
++def test_region_function_cn_en():
++    get = _get({"function_term": "memory consolidation",
++                "region_name_cn": "海马", "region_name_en": "Hippocampus"})
++    cn, en = parts("region_function", get)
++    assert cn == "memory consolidation · 海马"
++    assert en == "memory consolidation · Hippocampus"
++
++
++def test_region_function_cn_missing_keeps_en_only():
++    get = _get({"function_term": "memory consolidation",
++                "region_name_cn": None, "region_name_en": "Hippocampus"})
++    cn, en = parts("region_function", get)
++    assert cn is None
++    assert en == "memory consolidation · Hippocampus"
++
++
++def test_region_function_en_missing_keeps_cn_only():
++    get = _get({"function_term": "memory consolidation",
++                "region_name_cn": "海马", "region_name_en": None})
++    cn, en = parts("region_function", get)
++    assert cn == "memory consolidation · 海马"
++    assert en is None
++
++
++def test_region_function_no_region_names():
++    get = _get({"function_term": "memory consolidation",
++                "region_name_cn": "", "region_name_en": ""})
++    assert parts("region_function", get) == (None, None)
++
++
++def test_projection_function_cn_en():
++    get = _get({"function_term_cn": "恐惧消退", "function_term": "fear extinction"})
++    assert parts("projection_function", get) == ("恐惧消退", "fear extinction")
++
++
++def test_unknown_type_returns_none_pair():
++    assert parts("unknown_type", _get({})) == (None, None)

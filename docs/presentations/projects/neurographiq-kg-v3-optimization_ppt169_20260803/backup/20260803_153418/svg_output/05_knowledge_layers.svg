@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 720" width="1280" height="720">
+  <g id="background"><rect width="1280" height="720" fill="#F7FAFC"/></g>
+  <g id="header">
+  <rect x="56" y="42" width="8" height="40" fill="#1F9FB5"/>
+  <text x="80" y="72" font-family="Microsoft YaHei, Arial, sans-serif" font-size="34" font-weight="700" fill="#17324D">七层知识阶梯</text>
+  <text x="80" y="104" font-family="Microsoft YaHei, Arial, sans-serif" font-size="16" fill="#5A6A7A">自下而上：结构与证据分层，避免混平</text>
+  </g>
+  <g id="stairs">
+  <rect x="430" y="140" width="420" height="56" rx="8" fill="#1F9FB5" stroke="#CBD5E0"/><text x="640" y="176" text-anchor="middle" font-family="Microsoft YaHei, Arial, sans-serif" font-size="20" font-weight="700" fill="#FFFFFF">映射</text>
+  <rect x="385" y="210" width="510" height="56" rx="8" fill="#17324D" stroke="#CBD5E0"/><text x="640" y="246" text-anchor="middle" font-family="Microsoft YaHei, Arial, sans-serif" font-size="20" font-weight="700" fill="#FFFFFF">三元组</text>
+  <rect x="340" y="280" width="600" height="56" rx="8" fill="#17324D" stroke="#CBD5E0"/><text x="640" y="316" text-anchor="middle" font-family="Microsoft YaHei, Arial, sans-serif" font-size="20" font-weight="700" fill="#FFFFFF">证据</text>
+  <rect x="295" y="350" width="690" height="56" rx="8" fill="#EDF2F7" stroke="#CBD5E0"/><text x="640" y="386" text-anchor="middle" font-family="Microsoft YaHei, Arial, sans-serif" font-size="20" font-weight="700" fill="#243447">功能</text>
+  <rect x="250" y="420" width="780" height="56" rx="8" fill="#EDF2F7" stroke="#CBD5E0"/><text x="640" y="456" text-anchor="middle" font-family="Microsoft YaHei, Arial, sans-serif" font-size="20" font-weight="700" fill="#243447">回路</text>
+  <rect x="205" y="490" width="870" height="56" rx="8" fill="#EDF2F7" stroke="#CBD5E0"/><text x="640" y="526" text-anchor="middle" font-family="Microsoft YaHei, Arial, sans-serif" font-size="20" font-weight="700" fill="#243447">连接</text>
+  <rect x="160" y="560" width="960" height="56" rx="8" fill="#EDF2F7" stroke="#CBD5E0"/><text x="640" y="596" text-anchor="middle" font-family="Microsoft YaHei, Arial, sans-serif" font-size="20" font-weight="700" fill="#243447">实体</text>
+  </g>
+  <g id="footer"><text x="1224" y="696" text-anchor="end" font-family="Arial, sans-serif" font-size="12" fill="#8492A0">5</text></g>
+</svg>
