@@ -1,20 +1,21 @@
 # =============================================================================
-# NeuroGraphIQ Macro96 Ontology — V1.0 Gate 2B
+# NeuroGraphIQ Macro96 Ontology — V1.0 Gate 3B
 #
 #   Ontology IRI : https://neurographiq.org/ontology/macro96
 #   Namespace    : https://neurographiq.org/ontology/macro96#   (prefix: ngiq:)
-#   Version      : 0.2.0-gate2b (Status: draft — for human review in Protégé)
+#   Version      : 0.3.0-gate3b (Status: draft — for human review in Protégé)
 #
-# Scope of Gate 2B (incremental over Gate 1):
+# Scope of Gate 3B (incremental over Gate 2B):
 #   - Gate 1: ontology declaration + namespace/prefix + version metadata
 #             + 24 top-level classes with English/Chinese labels and short comments
-#   - Gate 2B: ConnectionType sub-hierarchy (4 classes, frozen by Gate 2A review):
-#             StructuralConnection, Projection, FunctionalConnectivity,
-#             EffectiveConnectivity
+#   - Gate 2B: ConnectionType sub-hierarchy (4 classes, frozen by Gate 2A review)
+#   - Gate 3B: Circuit scientific definition + CircuitType reserved-extension-point
+#             status (no new classes added)
 #
 # Explicitly absent (reserved for later gates):
 #   - ObjectProperty / DataProperty / custom AnnotationProperty
-#   - CircuitType / EvidenceType sub-hierarchies
+#   - EvidenceType sub-hierarchy
+#   - CircuitType sub-hierarchy (V1 keeps CircuitType as a reserved extension point)
 #   - Function hierarchy, BrainRegion hierarchy, SHACL constraints
 #   - Individuals, Macro96 BrainRegion instances, ConnectionAssessment instances
 #   - HBAO / Uberon / NeuroNames mapping
@@ -31,8 +32,8 @@
 <https://neurographiq.org/ontology/macro96> a owl:Ontology ;
     rdfs:label "NeuroGraphIQ Macro96 Ontology"@en ;
     rdfs:label "NeuroGraphIQ Macro96 本体"@zh ;
-    rdfs:comment "Concept skeleton of the NeuroGraphIQ Macro96 knowledge-production ontology. Status: draft. Gate 2B scope: ontology metadata, 24 top-level classes, and the ConnectionType sub-hierarchy (4 classes)."@en ;
-    owl:versionInfo "0.2.0-gate2b" .
+    rdfs:comment "Concept skeleton of the NeuroGraphIQ Macro96 knowledge-production ontology. Status: draft. Gate 3B scope: ontology metadata, 24 top-level classes, the ConnectionType sub-hierarchy (4 classes), and the Circuit / CircuitType semantic definitions (no new classes)."@en ;
+    owl:versionInfo "0.3.0-gate3b" .
 
 # ---------------------------------------------------------------------------
 # Gate 1 — 24 top-level classes (direct children of owl:Thing)
@@ -61,12 +62,14 @@ ngiq:ConnectionType a owl:Class ;
 ngiq:Circuit a owl:Class ;
     rdfs:label "Circuit"@en ;
     rdfs:label "回路"@zh ;
-    rdfs:comment "A promoted, canonical circuit composed of regions and their connections."@en .
+    rdfs:comment "Circuit (neural circuit). A unified neural unit composed of multiple BrainRegions and their organized Connections, with biological, structural, or functional meaning. Circuit is a biological / functional concept, not a graph-theoretical concept: a graph cycle (e.g. A->B->C->A) is not by itself a Circuit. A general Circuit does not require a closed loop, and its Connections are not required to all have known direction (direction is recorded only when scientifically meaningful and supported by evidence). A set of Connections alone is not a Circuit; multiple Connections form a Circuit only when organized with circuit-level biological meaning/evidence. A confirmed / canonical Circuit requires reported circuit evidence or human-approved authoritative circuit-level evidence; results from Connection + topology + function reasoning alone are only composed / inferred / hypothesis circuits and are not automatically promoted to confirmed. Macro96 V1 curation policy: by default >=3 Macro96 BrainRegion + >=2 Connection to avoid mistaking an ordinary region pair for a Circuit; literature-reported exceptions (e.g. a two-region reciprocal system reported as a circuit) may enter human review. If circuit-level evidence reports A->B->C->A but the database lacks C->A, the missing edge may only enter as ConnectionCandidate / hypothesis / targeted-search target and must not be directly generated as a confirmed Connection."@en ;
+    rdfs:comment "回路（神经回路）。由多个 BrainRegion 及其有组织关系的 Connection 构成、具有生物学/结构/功能意义的统一神经单元。Circuit 是生物学/功能性概念，不是图论概念：图论 cycle（如 A→B→C→A）本身不是 Circuit。General Circuit 不要求 closed loop；其 Connection 也不要求全部有已知方向（方向只在科学语义需要且证据支持时记录）。Connection 集合本身不等于 Circuit；多条 Connection 只有在具有组织关系和 circuit-level biological meaning/evidence 时才可能形成 Circuit。confirmed / canonical Circuit 必须具有 reported circuit evidence 或人工认可的权威 circuit-level evidence；由 Connection + topology + function reasoning 产生的结果只能先是 composed / inferred / hypothesis，不能自动晋升 confirmed。Macro96 V1 curation policy 默认要求 ≥3 Macro96 BrainRegion + ≥2 Connection（用于避免普通脑区对被误收为 Circuit）；允许 literature-reported exception（权威文献将双区域 reciprocal system 报道为 circuit 时可进入人工审核）。若 circuit-level evidence 表明 A→B→C→A 但数据库缺少 C→A，缺失边只能进入 ConnectionCandidate / hypothesis / targeted-search target，不得直接生成 confirmed Connection。"@zh .
 
 ngiq:CircuitType a owl:Class ;
     rdfs:label "CircuitType"@en ;
     rdfs:label "回路类型"@zh ;
-    rdfs:comment "Controlled-vocabulary class for circuit types (hierarchy defined in Gate 3)."@en .
+    rdfs:comment "CircuitType. Reserved as an extension point in NeuroGraphIQ Macro96 V1: no subclasses, no individuals, and not currently used for circuit classification. It is NOT owl:Nothing and is not defined as an empty class through any logical axiom. Pathway / Loop / Feedforward / Feedback / Recurrent are not CircuitTypes in V1 (they are topology features reserved for a future Property Gate). Whether to retain CircuitType long-term will be decided at Ontology Freeze."@en ;
+    rdfs:comment "回路类型。在 NeuroGraphIQ Macro96 V1 中作为 reserved extension point（保留扩展点）：无子类、无 individual、当前不用于回路分类。它不是 owl:Nothing，也不通过任何逻辑公理被定义为空类。Pathway / Loop / Feedforward / Feedback / Recurrent 在 V1 中不作为 CircuitType（它们属于未来 Property Gate 的 topology 特征）。是否长期保留 CircuitType，留待 Ontology Freeze 阶段决定。"@zh .
 
 ngiq:CircuitConnectionMembership a owl:Class ;
     rdfs:label "CircuitConnectionMembership"@en ;
