@@ -1,17 +1,20 @@
 # =============================================================================
-# NeuroGraphIQ Macro96 Ontology — V1.0 Gate 1 skeleton
+# NeuroGraphIQ Macro96 Ontology — V1.0 Gate 2B
 #
 #   Ontology IRI : https://neurographiq.org/ontology/macro96
 #   Namespace    : https://neurographiq.org/ontology/macro96#   (prefix: ngiq:)
-#   Version      : 0.1.0-gate1 (Status: draft — for human review in Protégé)
+#   Version      : 0.2.0-gate2b (Status: draft — for human review in Protégé)
 #
-# Scope of Gate 1 (intentionally minimal):
-#   - ontology declaration + namespace/prefix + version metadata
-#   - 24 top-level classes with English/Chinese labels and short comments
+# Scope of Gate 2B (incremental over Gate 1):
+#   - Gate 1: ontology declaration + namespace/prefix + version metadata
+#             + 24 top-level classes with English/Chinese labels and short comments
+#   - Gate 2B: ConnectionType sub-hierarchy (4 classes, frozen by Gate 2A review):
+#             StructuralConnection, Projection, FunctionalConnectivity,
+#             EffectiveConnectivity
 #
 # Explicitly absent (reserved for later gates):
 #   - ObjectProperty / DataProperty / custom AnnotationProperty
-#   - ConnectionType / CircuitType / EvidenceType sub-hierarchies
+#   - CircuitType / EvidenceType sub-hierarchies
 #   - Function hierarchy, BrainRegion hierarchy, SHACL constraints
 #   - Individuals, Macro96 BrainRegion instances, ConnectionAssessment instances
 #   - HBAO / Uberon / NeuroNames mapping
@@ -28,8 +31,8 @@
 <https://neurographiq.org/ontology/macro96> a owl:Ontology ;
     rdfs:label "NeuroGraphIQ Macro96 Ontology"@en ;
     rdfs:label "NeuroGraphIQ Macro96 本体"@zh ;
-    rdfs:comment "Top-level concept skeleton of the NeuroGraphIQ Macro96 knowledge-production ontology. Status: draft. Gate 1 scope: ontology metadata and 24 top-level classes only."@en ;
-    owl:versionInfo "0.1.0-gate1" .
+    rdfs:comment "Concept skeleton of the NeuroGraphIQ Macro96 knowledge-production ontology. Status: draft. Gate 2B scope: ontology metadata, 24 top-level classes, and the ConnectionType sub-hierarchy (4 classes)."@en ;
+    owl:versionInfo "0.2.0-gate2b" .
 
 # ---------------------------------------------------------------------------
 # Gate 1 — 24 top-level classes (direct children of owl:Thing)
@@ -154,3 +157,35 @@ ngiq:ConceptDefinition a owl:Class ;
     rdfs:label "ConceptDefinition"@en ;
     rdfs:label "概念定义"@zh ;
     rdfs:comment "A definition of a concept used by the ontology."@en .
+
+# ---------------------------------------------------------------------------
+# Gate 2B — ConnectionType sub-hierarchy (4 classes, frozen by Gate 2A review)
+# ---------------------------------------------------------------------------
+
+ngiq:StructuralConnection a owl:Class ;
+    rdfs:subClassOf ngiq:ConnectionType ;
+    rdfs:label "Structural Connection"@en ;
+    rdfs:label "结构连接"@zh ;
+    rdfs:comment "Structural Connection (alternative term: anatomical connection). A structural, physical neuroanatomical pathway between two brain regions. It asserts only the existence of a physical pathway; it is NOT equivalent to functional statistical correlation, nor to model-inferred directed influence. Direction may be directed, reciprocal, or direction_unknown. Current evidence may be insufficient to confirm synaptic-level directness; a polysynaptic / indirect pathway mediated by intermediate regions must not be collapsed into a single StructuralConnection and should be expressed via Path / Circuit / Inference."@en ;
+    rdfs:comment "结构连接（替代术语：解剖连接 anatomical connection）。两个脑区之间存在结构性、物理性的神经解剖通路。它仅断言物理通路的存在；不等于功能统计相关，也不等于模型推断的有向影响。方向可以是 directed / reciprocal / direction_unknown。当前证据可能不足以确认突触级 directness；由多个中间脑区介导的 polysynaptic / indirect pathway 不能压缩为单条 StructuralConnection，应由 Path / Circuit / Inference 表达。"@zh .
+
+ngiq:Projection a owl:Class ;
+    rdfs:subClassOf ngiq:StructuralConnection ;
+    rdfs:label "Projection"@en ;
+    rdfs:label "投射"@zh ;
+    rdfs:comment "Projection. A StructuralConnection with a definite source->target and axonal projection semantics/evidence (e.g., axons from A terminate in B; afferents to B originate from A). Being directed is necessary but not sufficient: direction_known alone does not imply Projection; axonal projection semantics/evidence is also required. DTI tractography alone cannot determine the A->B projection direction."@en ;
+    rdfs:comment "投射。具有明确 source→target 且具有 axonal projection 语义/证据的 StructuralConnection 子类（如：A 的轴突终止于 B；B 的传入源自 A）。direction_known 是必要条件但不是充分条件，仍需 axonal projection semantics/evidence。DTI tractography 不能单独确定 A→B 投射方向。"@zh .
+
+ngiq:FunctionalConnectivity a owl:Class ;
+    rdfs:subClassOf ngiq:ConnectionType ;
+    rdfs:label "Functional Connectivity"@en ;
+    rdfs:label "功能连接"@zh ;
+    rdfs:comment "Functional Connectivity. A statistical dependence or temporal correlation between the neural activities of two brain regions. In V1 it is modelled as non-directional by default. It does NOT imply a StructuralConnection. fMRI / EEG / MEG are evidence/measurement modalities, not connection types. Coactivation cannot by itself be promoted automatically to FunctionalConnectivity."@en ;
+    rdfs:comment "功能连接。两个脑区神经活动之间存在统计依赖或时间相关关系。V1 默认建模为 non-directional。不隐含 StructuralConnection。fMRI / EEG / MEG 是证据/测量模态，不是 ConnectionType。Coactivation 不能仅凭自身自动晋升为 FunctionalConnectivity。"@zh .
+
+ngiq:EffectiveConnectivity a owl:Class ;
+    rdfs:subClassOf ngiq:ConnectionType ;
+    rdfs:label "Effective Connectivity"@en ;
+    rdfs:label "有效连接"@zh ;
+    rdfs:comment "Effective Connectivity. A model-dependent directed influence / directed coupling of one neural system on another, within a model or experimental framework. The causal interpretation depends on the specific method, model assumptions and experimental design. EffectiveConnectivity is NOT equivalent to Projection, nor to StructuralConnection, unless independent structural evidence exists."@en ;
+    rdfs:comment "有效连接。在模型或实验框架下，一个神经系统对另一个神经系统的 model-dependent directed influence / directed coupling。causal interpretation 取决于具体方法、模型假设和实验设计。EffectiveConnectivity ≠ Projection，也 ≠ StructuralConnection，除非另有独立结构证据。"@zh .

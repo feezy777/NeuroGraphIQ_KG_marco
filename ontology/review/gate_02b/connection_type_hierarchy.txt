@@ -1,0 +1,13 @@
+NeuroGraphIQ Macro96 Ontology — Gate 2B ConnectionType hierarchy
+Ontology IRI : https://neurographiq.org/ontology/macro96
+Namespace    : https://neurographiq.org/ontology/macro96#
+Version      : 0.2.0-gate2b (draft)
+
+ConnectionType
+├─ StructuralConnection
+│   └─ Projection
+├─ FunctionalConnectivity
+└─ EffectiveConnectivity
+
+(ConnectionType has exactly 3 direct subclasses; Projection is the sole
+ subclass of StructuralConnection. Total 4 new classes added in Gate 2B.)
