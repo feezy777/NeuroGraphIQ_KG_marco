@@ -1,6 +1,7 @@
 """Workbench database administration API.
 
-List / validate / switch PostgreSQL databases for local development.
+List / validate PostgreSQL databases for local development (read-only).
+Runtime database switching is DISABLED in Macro96 (code DATABASE_SWITCH_DISABLED).
 Does NOT create databases, drop databases, or run migrations.
 """
 
@@ -46,9 +47,19 @@ async def switch_database(body: DatabaseSwitchRequest):
         raise HTTPException(
             status_code=409,
             detail={
+                "code": "DATABASE_SWITCH_NOT_ALLOWED",
                 "message": exc.reason,
                 "database": exc.database,
                 "schema_status": exc.status.value,
+            },
+        ) from exc
+    except database_admin_service.DatabaseSwitchDisabledError as exc:
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "code": "DATABASE_SWITCH_DISABLED",
+                "message": str(exc),
+                "database": exc.database,
             },
         ) from exc
     return DatabaseSwitchResponse.model_validate(data)

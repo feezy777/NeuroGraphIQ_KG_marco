@@ -1,6 +1,8 @@
 """Minimal async database access for Resource Registry (MVP 1).
 
-Supports runtime database switching via database_admin_service + runtime JSON.
+Macro96 boundary: the main database comes ONLY from settings DATABASE_URL
+(.env / env vars). The legacy runtime JSON override and runtime switching
+are disabled — see app/database_guard.py and database_admin_service.py.
 """
 
 from __future__ import annotations
@@ -32,9 +34,11 @@ def _create_engine_and_factory(database_url: str) -> tuple[AsyncEngine, async_se
 
 def _bootstrap_engine() -> None:
     global _engine, AsyncSessionLocal
-    from app.services.database_admin_service import resolve_active_database_url
+    from app.database_guard import assert_allowed_database
+    from app.services.database_admin_service import parse_database_name
 
-    url = resolve_active_database_url()
+    url = get_settings().database_url
+    assert_allowed_database(parse_database_name(url))
     _engine, AsyncSessionLocal = _create_engine_and_factory(url)
 
 
@@ -42,8 +46,15 @@ _bootstrap_engine()
 
 
 async def reload_database_engine(database: str) -> str:
-    """Dispose current engine and bind to a new database. Called after runtime switch."""
+    """Dispose current engine and bind to a new database (allowed Macro96 names only).
+
+    Not exposed as a runtime switch; kept for tooling that must rebind the
+    engine to the isolated test database.
+    """
     global _engine, AsyncSessionLocal
+    from app.database_guard import assert_allowed_database
+
+    assert_allowed_database(database)
     settings = get_settings()
     new_url = settings.build_database_url(database=database)
     async with _engine_lock:

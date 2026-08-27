@@ -22,38 +22,42 @@ def pytest_configure(config):
         "(skips the autouse AsyncMock of function_term_service paths)",
     )
 
-# 数据库写测试硬门禁(S7B 安全门禁 + S8 修订):
-# - 真实连接后执行 SELECT current_database(),只允许仓库明确的隔离测试库后缀
-#   (默认 _e2e,可用 TEST_DB_SUFFIXES 环境变量以逗号分隔扩展,如 "_e2e,_test");
+# 数据库写测试硬门禁(S7B 安全门禁 + S8 修订 + Macro96 修订):
+# - 真实连接后执行 SELECT current_database(),只允许 Macro96 隔离测试库
+#   (默认 neurographiq_macro96_v1_e2e,可用 TEST_DB_SUFFIXES 环境变量以逗号分隔扩展后缀,
+#   如 "_e2e,_test");旧 V3 库名(neurographiq_kg_v3* 等)一律拒绝;
 # - 连接成功但库名不满足时立即终止整个测试会话(returncode 非 0),不能仅 warning;
 # - 连接失败(无数据库环境)时仅警告放行:纯单元测试不依赖真实数据库,任何 DB 写测试会自然失败;
 # - 不能只依赖 .env 字符串判断。
-_DEFAULT_E2E_SUFFIXES = ("_e2e",)
 
 
 @pytest.fixture(scope="session", autouse=True)
 def _guard_e2e_test_database():
-    import os
-
     from sqlalchemy import text
 
     from app.database import AsyncSessionLocal
-
-    suffixes = tuple(
-        s.strip()
-        for s in os.environ.get("TEST_DB_SUFFIXES", "_e2e").split(",")
-        if s.strip()
-    ) or _DEFAULT_E2E_SUFFIXES
+    from app.database_guard import (
+        E2E_DATABASE,
+        FORBIDDEN_DB_PREFIXES,
+        is_allowed_test_database,
+    )
 
     async def _check() -> None:
         async with AsyncSessionLocal() as s:
             name = str((await s.execute(text("SELECT current_database()"))).scalar_one())
-            if not name.endswith(suffixes):
-                pytest.exit(
-                    f"DB write guard: connected database '{name}' is not an isolated test "
-                    f"database (must end with one of {suffixes}); refusing to run tests.",
-                    returncode=3,
-                )
+            if not is_allowed_test_database(name):
+                if name.startswith(FORBIDDEN_DB_PREFIXES):
+                    reason = (
+                        f"connected database '{name}' is a legacy NeuroGraphIQ V3 database; "
+                        "the Macro96 test guard refuses to touch it"
+                    )
+                else:
+                    reason = (
+                        f"connected database '{name}' is not an isolated Macro96 test "
+                        f"database (must be '{E2E_DATABASE}' or end with a TEST_DB_SUFFIXES "
+                        "suffix); refusing to run tests"
+                    )
+                pytest.exit(f"DB write guard: {reason}.", returncode=3)
 
     try:
         asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())

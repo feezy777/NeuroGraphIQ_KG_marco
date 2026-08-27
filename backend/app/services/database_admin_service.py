@@ -1,10 +1,12 @@
-"""Database administration for Workbench — list, validate, switch.
+"""Database administration for Workbench — list, validate.
 
-Boundaries:
-  - Does NOT create or drop databases
-  - Does NOT run migrations
-  - Does NOT write final_* / kg_* or call LLM
-  - Never returns passwords or full DATABASE_URL
+Macro96 boundaries:
+  - Runtime database SWITCHING IS DISABLED (error code DATABASE_SWITCH_DISABLED).
+  - The legacy data/runtime/database.local.json override no longer controls the
+    main connection; if present it is surfaced as a diagnostic note only.
+  - Only Macro96 allowlisted databases may be used (app/database_guard.py).
+  - Does NOT create or drop databases; does NOT run migrations.
+  - Never returns passwords or full DATABASE_URL.
 """
 
 from __future__ import annotations
@@ -55,6 +57,17 @@ class DatabaseSwitchNotAllowedError(Exception):
         super().__init__(reason)
 
 
+class DatabaseSwitchDisabledError(Exception):
+    """Runtime database switching is disabled in Macro96 (code DATABASE_SWITCH_DISABLED)."""
+
+    def __init__(self, database: str):
+        self.database = database
+        super().__init__(
+            f"runtime database switching is disabled in Macro96 (requested {database!r}); "
+            "change DATABASE_URL in backend/.env and restart instead"
+        )
+
+
 def _read_runtime_database() -> str | None:
     if not RUNTIME_DATABASE_PATH.exists():
         return None
@@ -68,12 +81,13 @@ def _read_runtime_database() -> str | None:
     return str(db).strip() if db else None
 
 
-def _write_runtime_database(database: str) -> None:
-    RUNTIME_DATABASE_PATH.parent.mkdir(parents=True, exist_ok=True)
-    RUNTIME_DATABASE_PATH.write_text(
-        json.dumps({"postgres_db": database}, ensure_ascii=False, indent=2),
-        encoding="utf-8",
-    )
+def get_ignored_runtime_override() -> str | None:
+    """Legacy data/runtime/database.local.json value, for diagnostics only.
+
+    The file no longer controls the main connection and nothing writes it
+    anymore; if a stale copy exists it is reported (and ignored) here.
+    """
+    return _read_runtime_database()
 
 
 def parse_database_name(database_url: str) -> str:
@@ -83,11 +97,16 @@ def parse_database_name(database_url: str) -> str:
 
 
 def resolve_active_database_name(settings: Settings | None = None) -> str:
+    """Active database name from settings only; legacy runtime JSON is ignored.
+
+    Raises DatabaseGuardError if the resolved name is not a Macro96 database.
+    """
+    from app.database_guard import assert_allowed_database
+
     cfg = settings or get_settings()
-    runtime_db = _read_runtime_database()
-    if runtime_db:
-        return runtime_db
-    return parse_database_name(cfg.database_url) or cfg.postgres_db
+    name = parse_database_name(cfg.database_url) or cfg.postgres_db
+    assert_allowed_database(name)
+    return name
 
 
 def resolve_active_database_url(settings: Settings | None = None) -> str:
@@ -218,6 +237,8 @@ async def get_connection_status() -> dict:
         "schema_status": validation["schema_status"],
         "missing_tables": validation["missing_tables"],
         "notes": validation["notes"],
+        # Macro96: legacy runtime override file is ignored for connections; report it.
+        "runtime_override_ignored": get_ignored_runtime_override(),
     }
 
 
@@ -268,31 +289,13 @@ async def list_postgres_databases() -> dict:
 
 
 async def switch_database(database: str) -> dict:
+    """Runtime database switching is disabled in Macro96.
+
+    Raises explicitly (never silently ignored) so legacy callers cannot
+    continue against another database.
+    """
     if not _DB_NAME_PATTERN.match(database):
         raise DatabaseSwitchNotAllowedError(
             database, DatabaseSchemaStatus.unreachable, "invalid database name"
         )
-
-    previous = resolve_active_database_name()
-    validation = await validate_database_schema(database)
-    status = validation["schema_status"]
-    if status != DatabaseSchemaStatus.mvp1_ready:
-        raise DatabaseSwitchNotAllowedError(
-            database,
-            status,
-            f"database {database!r} is not MVP1-ready (status={status.value})",
-        )
-
-    _write_runtime_database(database)
-
-    from app.database import reload_database_engine
-
-    await reload_database_engine(database)
-
-    return {
-        "ok": True,
-        "previous_database": previous,
-        "current_database": database,
-        "schema_status": status,
-        "message": f"switched to {database}",
-    }
+    raise DatabaseSwitchDisabledError(database)

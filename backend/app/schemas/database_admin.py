@@ -27,6 +27,8 @@ class DatabaseConnectionInfo(BaseModel):
     schema_status: DatabaseSchemaStatus
     missing_tables: list[str] = Field(default_factory=list)
     notes: list[str] = Field(default_factory=list)
+    # Macro96: legacy data/runtime/database.local.json value, reported but never applied.
+    runtime_override_ignored: str | None = None
 
 
 class DatabaseListItem(BaseModel):
