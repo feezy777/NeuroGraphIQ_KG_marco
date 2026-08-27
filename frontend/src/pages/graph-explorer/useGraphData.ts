@@ -12,17 +12,16 @@
 import { useCallback, useRef, useState } from 'react'
 import {
   getCandidateRegion,
-  getFinalGraph,
   listMirrorCircuits,
   listMirrorConnections,
   listMirrorFunctions,
 } from '../../api/endpoints'
 import {
-  adaptFinalGraphResponse,
   mergeCanonicalGraphs,
   type CanonicalGraph,
 } from './adapters/finalKgAdapter'
 import { adaptMirrorGraphResponse } from './adapters/mirrorKgAdapter'
+import { fetchFinalEgoGraph } from './adapters/finalEgoGraph'
 
 export interface GraphLoadParams {
   center_type: string
@@ -36,7 +35,10 @@ export interface GraphLoadParams {
   limit?: number
 }
 
-/** 图数据源：mirror（当前有数据） / final（晋升后使用） */
+/**
+ * 图数据源：final（默认——canonical 层 Final KG / final_canonical_connections，
+ * Graph Explorer Data Adapter V1：连接折叠为边 + ego 查询）/ mirror（镜像候选对象）。
+ */
 export type GraphDataSource = 'mirror' | 'final'
 
 const EMPTY_GRAPH: CanonicalGraph = { nodes: [], edges: [], centerNodeId: null, warnings: [] }
@@ -53,20 +55,13 @@ export interface GraphDataState {
   expandGraph: (params: GraphLoadParams) => Promise<void>
 }
 
-/** 组装 final 图请求并拉取 Canonical 图 */
+/**
+ * Final/Canonical 源图获取(Data Adapter V1)：
+ * center 为 canonical 脑区 id（搜索窗选择）;Ego Graph(1-hop)；
+ * connection 折叠为 region--region 边,Connection 不再是独立节点。
+ */
 async function fetchFinalGraph(params: GraphLoadParams): Promise<CanonicalGraph> {
-  const res = await getFinalGraph({
-    center_type: params.center_type,
-    center_id: params.center_id,
-    depth: params.depth ?? 1,
-    source_atlas: params.source_atlas || undefined,
-    granularity_level: params.granularity_level || undefined,
-    include_functions: params.include_functions ?? true,
-    include_evidence: params.include_evidence ?? false,
-    include_triples: params.include_triples ?? true,
-    limit: params.limit ?? 200,
-  })
-  return adaptFinalGraphResponse(res)
+  return fetchFinalEgoGraph({ centerRegionId: params.center_id })
 }
 
 /**
@@ -135,6 +130,7 @@ export function useGraphData(): GraphDataState {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [fitKey, setFitKey] = useState(0)
+  // 默认数据源：Mirror KG（用户最近规格——页面首次即镜像网络；Final 为晋升后数据）
   const [dataSource, setDataSourceState] = useState<GraphDataSource>('mirror')
   const sourceRef = useRef<GraphDataSource>('mirror')
 

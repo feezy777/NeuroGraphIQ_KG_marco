@@ -19,6 +19,7 @@ from __future__ import annotations
 import re
 import unicodedata
 import uuid
+from collections import deque
 from typing import Any
 
 from sqlalchemy import select
@@ -28,9 +29,11 @@ from app.models.candidate import CandidateBrainRegion
 from app.models.canonical_region import CanonicalBrainRegion
 from app.models.canonical_region_alias import CanonicalRegionAlias
 from app.models.multiscale import AtlasRegionMapping, AtlasRegionResource
-from app.models.ontology import OntologyTerm, OntologyTermSynonym
+from app.models.ontology import OntologyTerm, OntologyTermRelation, OntologyTermSynonym
 from app.services import canonical_multiscale_service as cms
 from app.services import canonical_region_service as crs
+from app.services.function_term_service import TERM_TYPE_FUNCTION
+from app.services.ontology_hierarchy_service import PREDICATE_SUBCLASS_OF
 
 # --------------------------------------------------------------------------- #
 # 意图定义（规则分类，不调用 LLM）
@@ -41,11 +44,17 @@ INTENT_REGION_CONNECTIONS = "region_connections"
 INTENT_REGION_CIRCUITS = "region_circuits"
 INTENT_REGION_FUNCTIONS = "region_functions"
 INTENT_REGION_MULTISCALE = "region_multiscale"
+INTENT_FUNCTION_CHILDREN = "function_children"
+INTENT_FUNCTION_ANCESTORS = "function_ancestors"
 INTENT_UNRESOLVED = "unresolved"
 
 # 顺序即优先级：越具体的名词性意图越靠前（circuits 最具体），
 # 命中即停止；多意图关键词同时出现时取首个命中的意图。
+# function_children/ancestors 必须在 region_children 之前（"子功能" 类词
+# 不能被 region 的 "包含/分区" 意图抢先命中）。
 _INTENT_RULES: tuple[tuple[str, tuple[str, ...]], ...] = (
+    (INTENT_FUNCTION_CHILDREN, ("子功能", "下级功能", "亚功能", "下位功能", "细分功能", "subfunction", "descendant", "subtype")),
+    (INTENT_FUNCTION_ANCESTORS, ("上级功能", "父功能", "上位功能", "顶层功能", "ancestor", "parent function")),
     (INTENT_REGION_CIRCUITS, ("回路", "环路", "环", "circuit")),
     (INTENT_REGION_MULTISCALE, ("细胞", "分子", "基因", "蛋白", "受体", "神经递质", "神经元类型")),
     (INTENT_REGION_CONNECTIONS, ("连接", "投射", "纤维", "传出", "传入", "输入", "输出", "联系", "connect")),
@@ -378,6 +387,156 @@ async def resolve_region(session: AsyncSession, name: str) -> RegionResolution |
     return None
 
 # --------------------------------------------------------------------------- #
+# Function Hierarchy Traversal（读取 ontology_term_relations subclass_of 边）
+# --------------------------------------------------------------------------- #
+
+# 扩展一级 children 时的整体上限（region_functions 意图的 hierarchy 增强，
+# 防止 memory/attention 这类大概念把结果撑爆）
+_FUNCTION_EXPANSION_CAP = 200
+
+
+async def load_subclass_graph(
+    session: AsyncSession,
+) -> tuple[dict[uuid.UUID, list[uuid.UUID]], dict[uuid.UUID, list[uuid.UUID]]]:
+    """加载全部 subclass_of 边（proposed+active），一次查询。
+
+    返回 (children_of, parents_of)：
+      children_of[parent] = [children]  — 沿边向下
+      parents_of[child]   = [parents]   — 沿边向上
+    """
+    rows = (
+        await session.execute(
+            select(OntologyTermRelation).where(
+                OntologyTermRelation.predicate == PREDICATE_SUBCLASS_OF,
+                OntologyTermRelation.status.in_(("proposed", "active")),
+            )
+        )
+    ).scalars().all()
+    children_of: dict[uuid.UUID, list[uuid.UUID]] = {}
+    parents_of: dict[uuid.UUID, list[uuid.UUID]] = {}
+    for r in rows:
+        children_of.setdefault(r.object_term_id, []).append(r.subject_term_id)
+        parents_of.setdefault(r.subject_term_id, []).append(r.object_term_id)
+    return children_of, parents_of
+
+
+async def _term_name_map(session: AsyncSession, term_ids: set[uuid.UUID]) -> dict[uuid.UUID, str]:
+    if not term_ids:
+        return {}
+    terms = (
+        await session.execute(select(OntologyTerm).where(OntologyTerm.id.in_(term_ids)))
+    ).scalars().all()
+    return {
+        t.id: t.canonical_term_en or t.canonical_term_cn or t.term_code
+        for t in terms
+    }
+
+
+async def get_function_descendants(
+    session: AsyncSession,
+    term_id: uuid.UUID,
+    *,
+    max_depth: int | None = None,
+) -> list[dict[str, Any]]:
+    """BFS 沿 subclass_of 向下：返回全部 descendant functions（传递闭包）。
+
+    每条: {term_id, name, depth, path_names}；path_names 为从查询 term 到该
+    desc 的路径（不含查询 term 自身，含该 desc 的直接 parent）。visited 集合
+    防环（subclass_of 是 DAG，但旧数据/手动边可能有环）。
+    """
+    children_of, _ = await load_subclass_graph(session)
+    out: list[dict[str, Any]] = []
+    seen: set[uuid.UUID] = {term_id}
+    queue: deque[tuple[uuid.UUID, int, list[uuid.UUID]]] = deque([(term_id, 0, [])])
+    while queue:
+        node, depth, path = queue.popleft()
+        for kid in children_of.get(node, ()):
+            if kid in seen:
+                continue
+            seen.add(kid)
+            child_path = path + [node]
+            out.append({"term_id": kid, "depth": depth + 1, "path": child_path})
+            if max_depth is None or depth + 1 < max_depth:
+                queue.append((kid, depth + 1, child_path))
+    names = await _term_name_map(session, seen)
+    for d in out:
+        d["name"] = names.get(d["term_id"], "")
+        d["path_names"] = [names.get(p, "") for p in d["path"]]
+    return out
+
+
+async def get_function_ancestors(
+    session: AsyncSession,
+    term_id: uuid.UUID,
+) -> list[dict[str, Any]]:
+    """BFS 沿 subclass_of 向上：返回全部 ancestor functions（传递闭包）。"""
+    _, parents_of = await load_subclass_graph(session)
+    out: list[dict[str, Any]] = []
+    seen: set[uuid.UUID] = {term_id}
+    queue: deque[tuple[uuid.UUID, int, list[uuid.UUID]]] = deque([(term_id, 0, [])])
+    while queue:
+        node, depth, path = queue.popleft()
+        for parent in parents_of.get(node, ()):
+            if parent in seen:
+                continue
+            seen.add(parent)
+            ancestor_path = path + [node]
+            out.append({"term_id": parent, "depth": depth + 1, "path": ancestor_path})
+            queue.append((parent, depth + 1, ancestor_path))
+    names = await _term_name_map(session, seen)
+    for d in out:
+        d["name"] = names.get(d["term_id"], "")
+        d["path_names"] = [names.get(p, "") for p in d["path"]]
+    return out
+
+
+def _as_uuid(value: Any) -> uuid.UUID | None:
+    try:
+        return uuid.UUID(str(value))
+    except (ValueError, TypeError):
+        return None
+
+
+async def resolve_function_term(
+    session: AsyncSession,
+    name: str,
+) -> tuple[OntologyTerm | None, str, str]:
+    """function term 解析：canonical cn/en 全等 → 同义词全等（不模糊猜测）。
+
+    返回 (term, matched_by, matched_name)。matched_by 形如
+    function_canonical_term_en / function_canonical_term_cn / function_synonym。
+    """
+    norm = _norm_name(name)
+    if not norm:
+        return None, "", ""
+    terms = (
+        await session.execute(
+            select(OntologyTerm).where(
+                OntologyTerm.term_type == TERM_TYPE_FUNCTION,
+                OntologyTerm.status.in_(("active", "proposed")),
+            )
+        )
+    ).scalars().all()
+    for t in terms:
+        for field in ("canonical_term_cn", "canonical_term_en"):
+            value = getattr(t, field, None)
+            if value and _norm_name(str(value)) == norm:
+                return t, f"function_{field}", str(value)
+    syn_rows = (
+        await session.execute(
+            select(OntologyTermSynonym, OntologyTerm)
+            .join(OntologyTerm, OntologyTerm.id == OntologyTermSynonym.term_id)
+            .where(OntologyTerm.term_type == TERM_TYPE_FUNCTION)
+            .where(OntologyTermSynonym.status == "active")
+        )
+    ).all()
+    for syn, term in syn_rows:
+        if _norm_name(syn.synonym_text) == norm:
+            return term, "function_synonym", syn.synonym_text
+    return None, "", ""
+
+
+# --------------------------------------------------------------------------- #
 # Handlers（复用 canonical service，禁止重复写 SQL；输出统一结果条目）
 # --------------------------------------------------------------------------- #
 
@@ -467,9 +626,17 @@ async def _handle_circuits(session: AsyncSession, region: CanonicalBrainRegion) 
     ]
 
 
-async def _handle_functions(session: AsyncSession, region: CanonicalBrainRegion) -> list[dict[str, Any]]:
+async def _handle_functions(
+    session: AsyncSession,
+    region: CanonicalBrainRegion,
+) -> tuple[list[dict[str, Any]], dict[str, Any] | None]:
+    """region 关联功能 + function hierarchy 扩展（每个功能的一级子功能）。
+
+    返回 (items, hierarchy_analysis)。扩展受 _FUNCTION_EXPANSION_CAP 上限
+    约束，超出部分截断（warnings 由主流程附注）；未扩展时 analysis 为 None。
+    """
     rows = await crs.get_region_functions(session, region.id)
-    return [
+    items = [
         _item(
             entity_id=row.get("function_term_id"),
             code=row.get("term_code"),
@@ -486,6 +653,135 @@ async def _handle_functions(session: AsyncSession, region: CanonicalBrainRegion)
         )
         for row in rows
     ]
+
+    # ── hierarchy 增强：每个关联 function 的一级 children ──
+    children_of, _ = await load_subclass_graph(session)
+    parent_ids: set[uuid.UUID] = set()
+    for row in rows:
+        fid = _as_uuid(row.get("function_term_id"))
+        if fid is not None:
+            parent_ids.add(fid)
+    if not parent_ids:
+        return items, None
+
+    names = await _term_name_map(session, parent_ids)
+    kid_ids: set[uuid.UUID] = set()
+    parent_by_kid: dict[uuid.UUID, uuid.UUID] = {}
+    for pid in parent_ids:
+        for kid in children_of.get(pid, ()):
+            if kid not in kid_ids:
+                kid_ids.add(kid)
+                parent_by_kid[kid] = pid
+    if not kid_ids:
+        return items, None
+
+    kid_names = await _term_name_map(session, kid_ids)
+    added: list[dict[str, Any]] = []
+    paths: list[str] = []
+    for kid in kid_ids:
+        if len(added) >= _FUNCTION_EXPANSION_CAP:
+            break
+        parent_name = names.get(parent_by_kid[kid], "")
+        added.append(
+            _item(
+                entity_id=kid,
+                code=None,
+                name=kid_names.get(kid, ""),
+                category="function_descendant",
+                detail={
+                    "parent_function": parent_name,
+                    "hierarchy_path": [parent_name, kid_names.get(kid, "")],
+                    "relation": "subclass_of",
+                    "depth": 1,
+                },
+                confidence=None,
+                provenance="ontology_term_relations.subclass_of",
+            )
+        )
+        paths.append(f"{parent_name} → {kid_names.get(kid, '')}")
+
+    analysis: dict[str, Any] | None = None
+    if added:
+        truncated = len(kid_ids) - len(added)
+        analysis = {
+            "without_hierarchy_count": len(items),
+            "with_hierarchy_count": len(items) + len(added),
+            "added_descendant_count": len(added),
+            "expansion": "direct children of region-associated functions (depth 1)",
+            "truncated": truncated,
+            "added_paths": paths[:20],
+        }
+    return items + added, analysis
+
+
+async def _handle_function_children(
+    session: AsyncSession,
+    term: OntologyTerm,
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    """parent function 查询 → 全部 descendant functions（BFS 传递闭包）。"""
+    descs = await get_function_descendants(session, term.id)
+    items = [
+        _item(
+            entity_id=d["term_id"],
+            code=None,
+            name=d["name"],
+            category="function_descendant",
+            detail={
+                "hierarchy_path": d["path_names"],
+                "relation": "subclass_of",
+                "depth": d["depth"],
+            },
+            confidence=None,
+            provenance="ontology_term_relations.subclass_of",
+        )
+        for d in descs
+    ]
+    analysis = {
+        "without_hierarchy_count": 1,  # 仅实体自身，无层级扩展
+        "with_hierarchy_count": len(descs),
+        "added_descendant_count": len(descs),
+        "expansion": "all descendants via subclass_of (BFS closure)",
+        "added_paths": [
+            f"{term.canonical_term_en or term.term_code} → {d['name']}"
+            for d in descs[:20]
+        ],
+    }
+    return items, analysis
+
+
+async def _handle_function_ancestors(
+    session: AsyncSession,
+    term: OntologyTerm,
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    """child function 查询 → 全部 ancestor functions（BFS 向上闭包）。"""
+    ancestors = await get_function_ancestors(session, term.id)
+    items = [
+        _item(
+            entity_id=a["term_id"],
+            code=None,
+            name=a["name"],
+            category="function_ancestor",
+            detail={
+                "hierarchy_path": a["path_names"],
+                "relation": "subclass_of",
+                "depth": a["depth"],
+            },
+            confidence=None,
+            provenance="ontology_term_relations.subclass_of",
+        )
+        for a in ancestors
+    ]
+    analysis = {
+        "without_hierarchy_count": 1,
+        "with_hierarchy_count": len(ancestors),
+        "added_descendant_count": len(ancestors),
+        "expansion": "all ancestors via subclass_of (BFS closure)",
+        "added_paths": [
+            f"{a['name']} → {term.canonical_term_en or term.term_code}"
+            for a in ancestors[:20]
+        ],
+    }
+    return items, analysis
 
 
 async def _handle_multiscale(session: AsyncSession, region: CanonicalBrainRegion) -> list[dict[str, Any]]:
@@ -534,6 +830,8 @@ _HANDLERS: dict[str, Any] = {
     INTENT_REGION_CIRCUITS: _handle_circuits,
     INTENT_REGION_FUNCTIONS: _handle_functions,
     INTENT_REGION_MULTISCALE: _handle_multiscale,
+    INTENT_FUNCTION_CHILDREN: _handle_function_children,
+    INTENT_FUNCTION_ANCESTORS: _handle_function_ancestors,
 }
 
 _CONFIDENCE_BY_MATCH: dict[str, float] = {
@@ -541,6 +839,9 @@ _CONFIDENCE_BY_MATCH: dict[str, float] = {
     "canonical_name_en": 0.95,
     "alias": 0.9,
     "synonym": 0.85,
+    "function_canonical_term_cn": 0.95,
+    "function_canonical_term_en": 0.95,
+    "function_synonym": 0.85,
 }
 
 # --------------------------------------------------------------------------- #
@@ -592,25 +893,76 @@ async def handle_ontology_query(session: AsyncSession, question: str) -> dict[st
         return _unresolved(["问题为空或仅包含标点符号。"])
 
     intent, intent_keywords = classify_intent(normalized)
-    if intent == INTENT_UNRESOLVED:
-        return _unresolved(
-            [
-                f"无法识别查询意图（当前支持：亚区/连接/回路/功能/细胞与分子）。问题：「{normalized}」"
-            ]
-        )
+    # 注意：unresolved 不在此处返回 —— 裸 function 名（如 "Memory"）需要
+    # 走到 function 回退；若 function 也未命中，在下方组装完整提示。
 
     name = extract_entity_name(normalized, intent_keywords)
     if not name:
         return _unresolved([f"无法从问题中提取实体名称。问题：「{normalized}」"])
 
     resolution = await resolve_region(session, name)
-    if resolution is None:
-        return _unresolved(
-            [
-                f"未找到与「{name}」完全匹配的脑区（已按 canonical 名称/别名/Atlas 名称/同义词"
-                f"精确匹配，并做过模糊候选；仍无结果，请尝试更标准的名称）。"
-            ]
+
+    # ── function 路径：function 意图直接解析 function term；
+    #    其他意图 region 未真正命中（None 或 fuzzy 候选）时回退 function
+    #    （如 "memory 的功能"；function 全等匹配优先于 region 模糊候选）。──
+    want_function = (
+        intent in (INTENT_FUNCTION_CHILDREN, INTENT_FUNCTION_ANCESTORS)
+        or resolution is None
+        or (resolution is not None and resolution.region is None)
+    )
+    function_term: OntologyTerm | None = None
+    f_matched_by = ""
+    f_matched_name = ""
+    if want_function:
+        function_term, f_matched_by, f_matched_name = await resolve_function_term(session, name)
+
+    if function_term is not None and want_function:
+        resolved_intent = (
+            INTENT_FUNCTION_ANCESTORS
+            if intent == INTENT_FUNCTION_ANCESTORS
+            else INTENT_FUNCTION_CHILDREN
         )
+        results, analysis = await _HANDLERS[resolved_intent](session, function_term)
+        display_name = function_term.canonical_term_cn or function_term.canonical_term_en
+        warnings: list[str] = []
+        if intent == INTENT_UNRESOLVED:
+            warnings.append(f"未识别意图关键词，已按子功能层级查询「{f_matched_name}」。")
+        if not results:
+            warnings.append(f"「{f_matched_name}」暂无{'上级' if resolved_intent == INTENT_FUNCTION_ANCESTORS else '下级'}功能（层级为空）。")
+        entity = {
+            "type": "function",
+            "id": str(function_term.id),
+            "code": function_term.term_code,
+            "name": display_name,
+            "matched_by": f_matched_by,
+        }
+        return {
+            "intent": resolved_intent,
+            "entity": entity,
+            "results": results,
+            "confidence": _CONFIDENCE_BY_MATCH.get(f_matched_by, 0.9),
+            "warnings": warnings,
+            "source_entities": [entity],
+            "entity_match_detail": {
+                "matched_by": f_matched_by,
+                "source": "ontology_terms",
+                "confidence": _CONFIDENCE_BY_MATCH.get(f_matched_by, 0.9),
+            },
+            "hierarchy_analysis": analysis,
+        }
+
+    if resolution is None:
+        messages = [
+            f"未找到与「{name}」完全匹配的脑区或功能（已按 canonical 名称/别名/Atlas 名称/"
+            f"同义词精确匹配，并做过模糊候选；仍无结果，请尝试更标准的名称）。"
+        ]
+        if intent == INTENT_UNRESOLVED:
+            messages.insert(
+                0,
+                f"无法识别查询意图（当前支持：亚区/连接/回路/功能/细胞与分子、"
+                f"子功能/上级功能）。问题：「{normalized}」",
+            )
+        return _unresolved(messages)
 
     if resolution.region is None:
         # 多候选/模糊：不自动选择，候选随 source_entities 返回供前端未来消歧
@@ -625,12 +977,20 @@ async def handle_ontology_query(session: AsyncSession, question: str) -> dict[st
         )
 
     handler = _HANDLERS[intent]
-    results = await handler(session, resolution.region)
+    handled = await handler(session, resolution.region)
+    if isinstance(handled, tuple):
+        results, analysis = handled
+    else:
+        results, analysis = handled, None
 
     warnings: list[str] = []
     if not results:
         warnings.append(
             f"「{resolution.matched_name}」暂无{_intent_label(intent)}记录（结果为空，属正常情况）。"
+        )
+    if analysis and analysis.get("truncated"):
+        warnings.append(
+            f"function hierarchy 扩展超过上限，截断了 {analysis['truncated']} 条子功能。"
         )
 
     confidence = (
@@ -646,6 +1006,7 @@ async def handle_ontology_query(session: AsyncSession, question: str) -> dict[st
         "warnings": warnings,
         "source_entities": [_entity_dict(resolution)],
         "entity_match_detail": _match_detail(resolution),
+        "hierarchy_analysis": analysis,
     }
 
 
@@ -656,4 +1017,6 @@ def _intent_label(intent: str) -> str:
         INTENT_REGION_CIRCUITS: "回路",
         INTENT_REGION_FUNCTIONS: "功能",
         INTENT_REGION_MULTISCALE: "细胞与分子",
+        INTENT_FUNCTION_CHILDREN: "子功能",
+        INTENT_FUNCTION_ANCESTORS: "上级功能",
     }.get(intent, "相关")

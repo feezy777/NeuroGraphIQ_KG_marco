@@ -421,6 +421,43 @@ class PaperSource(Base):
     )
 
 
+class ConnectionPaperEvidence(Base):
+    """Connection-Paper 关联:final connection ↔ paper_sources 正式关联。
+
+    由 Macro Connection 论文数据导入(20260910)建立 —— 每条关联对应
+    final.evidence_reference 中一条 literature reference 元素。
+    """
+
+    __tablename__ = "connection_paper_evidence"
+    __table_args__ = (
+        UniqueConstraint("connection_id", "paper_id",
+                         name="uq_connection_paper"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    connection_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("final_canonical_connections.id", ondelete="CASCADE"),
+        nullable=False)
+    paper_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("paper_sources.id", ondelete="CASCADE"),
+        nullable=False)
+    support_type: Mapped[str] = mapped_column(
+        String(64), nullable=False, default="literature")
+    evidence_reference: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, nullable=False, default=dict)
+    confidence: Mapped[float] = mapped_column(
+        Numeric, nullable=False, default=0)
+    provenance_json: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, nullable=False, default=dict)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
 class PaperPassage(Base):
     __tablename__ = "paper_passages"
     __table_args__ = (

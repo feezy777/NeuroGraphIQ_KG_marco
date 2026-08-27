@@ -168,7 +168,7 @@ def get_deepseek_runtime_config() -> DeepSeekRuntimeConfig:
 
 
 def get_ontology_query_runtime_config() -> OntologyQueryRuntimeSettings:
-    """Phase Q4 — Ontology Query LLM 解释层配置（默认 deepseek / deepseek-v4 / 0.1）。"""
+    """Phase Q4 — Ontology Query LLM 解释层配置（默认 deepseek / deepseek-v4-flash / 0.1）。"""
     return load_runtime_settings().ontology_query
 
 

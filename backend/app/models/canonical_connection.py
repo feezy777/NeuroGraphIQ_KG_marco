@@ -74,9 +74,78 @@ class CanonicalConnection(Base):
     source_summary: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
     evidence_summary: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
     provenance_json: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
+    # Inference governance (20260902): assertion_type 事实/推理分层 + provenance metadata
+    assertion_type: Mapped[str] = mapped_column(String(32), nullable=False, default="reported_fact")
+    source_type: Mapped[str] = mapped_column(String(32), nullable=False, default="unknown")
+    generation_method: Mapped[str] = mapped_column(String(64), nullable=False, default="unknown")
+    evidence_reference: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
     replaced_by_connection_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("canonical_connections.id", ondelete="SET NULL"), nullable=True
     )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class MirrorConnectionCanonicalGrounding(Base):
+    """Mirror Connection → Canonical Connection grounding record (CN1).
+
+    One row per mirror connection (UNIQUE): the endpoint canonical resolution
+    outcome (source/target region + method), the standardized connection
+    type / directionality policy (frozen rules), and the grounding status.
+    Unresolved rows keep their failure reason so re-runs are idempotent and
+    the unresolved report is traceable. The mirror row itself is never
+    modified; the canonical side is only referenced, never created here.
+    """
+
+    __tablename__ = "mirror_connection_canonical_grounding"
+    __table_args__ = (
+        UniqueConstraint("mirror_connection_id", name="uq_grounding_mirror_connection"),
+        CheckConstraint(
+            "status IN ('grounded', 'unresolved')",
+            name="chk_grounding_status",
+        ),
+        CheckConstraint(
+            "source_resolution_method IN ('candidate_grounded','name_canonical_exact',"
+            "'name_alias_exact','name_normalized_exact','unresolved')"
+            " AND target_resolution_method IN ('candidate_grounded','name_canonical_exact',"
+            "'name_alias_exact','name_normalized_exact','unresolved')",
+            name="chk_grounding_method",
+        ),
+        CheckConstraint(
+            "source_region_id IS NULL OR target_region_id IS NULL"
+            " OR source_region_id <> target_region_id",
+            name="chk_grounding_not_self",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    mirror_connection_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("mirror_region_connections.id", ondelete="CASCADE"),
+        nullable=False,
+        unique=True,
+    )
+    canonical_connection_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("canonical_connections.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    source_region_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("canonical_brain_regions.id", ondelete="SET NULL"), nullable=True
+    )
+    target_region_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("canonical_brain_regions.id", ondelete="SET NULL"), nullable=True
+    )
+    source_resolution_method: Mapped[str] = mapped_column(String(32), nullable=False, default="unresolved")
+    target_resolution_method: Mapped[str] = mapped_column(String(32), nullable=False, default="unresolved")
+    connection_type: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    directionality_policy: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="unresolved")
+    unresolved_reason: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    confidence: Mapped[float | None] = mapped_column(Numeric, nullable=True)
+    created_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()

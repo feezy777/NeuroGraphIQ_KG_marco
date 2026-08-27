@@ -18,10 +18,13 @@ from sqlalchemy import text
 
 from app.config import get_settings
 from app.routers import (
+    paper_evidence_workbench,
     candidate,
     canonical_circuit,
     canonical_connection,
+    canonical_connection_evidence,
     canonical_region,
+    macro_candidate_governance,
     candidate_pool,
     connection_pool,
     database_admin,
@@ -321,6 +324,7 @@ app.include_router(
     llm_extraction.candidate_router, prefix="/api/candidates", tags=["Candidate LLM Extraction"]
 )
 app.include_router(mirror_kg.router, prefix="/api/mirror-kg", tags=["Mirror KG"])
+app.include_router(paper_evidence_workbench.router, prefix="/api/paper-evidence-workbench", tags=["Paper Evidence Workbench"])
 app.include_router(
     mirror_dual_model_verification.router,
     prefix="/api/mirror-kg/dual-model-verification",
@@ -374,6 +378,14 @@ app.include_router(
 )
 app.include_router(
     canonical_connection.router, prefix="/api/canonical-connections", tags=["Canonical Connections"]
+)
+app.include_router(
+    canonical_connection_evidence.router, prefix="/api/canonical-connections",
+    tags=["Canonical Connection Evidence"]
+)
+app.include_router(
+    macro_candidate_governance.router, prefix="/api/macro-candidates",
+    tags=["Macro Candidate Governance"]
 )
 app.include_router(
     canonical_circuit.router, prefix="/api/canonical-circuits", tags=["Canonical Circuits"]

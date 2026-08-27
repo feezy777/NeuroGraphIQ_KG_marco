@@ -4311,13 +4311,16 @@ _GRANULARITY_FAMILY: dict[str, str] = {
 
 async def list_paper_evidence_tasks(
     session: AsyncSession, limit: int = 50, offset: int = 0, status: str | None = None,
-    granularity_level: str | None = None,
+    granularity_level: str | None = None, include_deleted: bool = False,
 ) -> dict:
     where = ""
     params: dict = {"lim": limit, "off": offset}
+    # 软删除:默认排除 deleted;历史视图传入 include_deleted=True
+    if not include_deleted:
+        where = "WHERE deleted_at IS NULL"
     if status:
-        where = "WHERE status = :st"
         params["st"] = status
+        where = f"{where} AND status = :st" if where else "WHERE status = :st"
     if granularity_level:
         # 跟随系统颗粒度:匹配 workbench 级别或其 family(任务表旧数据存级别、新数据存 family)
         family = _GRANULARITY_FAMILY.get(granularity_level, granularity_level)
@@ -6275,14 +6278,18 @@ async def list_papers(
     oa: bool | None = None,
     year: int | None = None,
     has_fulltext: bool | None = None,
+    journal: str | None = None,
+    evidence_min: int | None = None,
     page: int = 1,
     page_size: int = 20,
 ) -> dict:
-    """Paper Library: paginated read-only list over paper_sources."""
-    where = ["1=1"]
+    """Paper Library: paginated read-only list over paper_sources(默认排除软删)。"""
+    where = ["deleted_at IS NULL"]
     params: dict = {}
     if search:
-        where.append("(title ILIKE :q OR journal ILIKE :q OR pmid ILIKE :q OR doi ILIKE :q)")
+        where.append(
+            "(title ILIKE :q OR journal ILIKE :q OR pmid ILIKE :q OR doi ILIKE :q "
+            "OR metadata_json->>'authors' ILIKE :q OR enrichment_json::text ILIKE :q)")
         params["q"] = f"%{search}%"
     if oa is not None:
         where.append("is_oa = :oa")
@@ -6293,6 +6300,12 @@ async def list_papers(
     if has_fulltext is not None:
         where.append("fulltext_available = :ft")
         params["ft"] = has_fulltext
+    if journal:
+        where.append("journal ILIKE :jn")
+        params["jn"] = f"%{journal}%"
+    if evidence_min is not None:
+        where.append("(SELECT COUNT(*) FROM mirror_evidence_records er WHERE er.paper_id = ps.id) >= :em")
+        params["em"] = evidence_min
     clause = " AND ".join(where)
     params["lim"] = page_size
     params["off"] = (max(1, page) - 1) * page_size
@@ -6310,7 +6323,7 @@ async def list_papers(
         )
     ).all()
     total = (
-        await session.execute(text(f"SELECT COUNT(*) FROM paper_sources WHERE {clause}"), params)
+        await session.execute(text(f"SELECT COUNT(*) FROM paper_sources ps WHERE {clause}"), params)
     ).scalar_one()
     return {
         "items": [
@@ -6340,7 +6353,9 @@ async def get_paper_detail(session: AsyncSession, paper_id: uuid.UUID) -> dict:
         await session.execute(
             text(
                 "SELECT id, source, pmid, pmcid, doi, title, journal, publication_year, "
-                "is_oa, abstract_available, fulltext_available, metadata_json "
+                "is_oa, abstract_available, fulltext_available, metadata_json, "
+                "metadata_json->>'authors' AS authors, "
+                "COALESCE(enrichment_json->>'abstract', metadata_json->>'abstract') AS abstract "
                 "FROM paper_sources WHERE id = :pid"
             ),
             {"pid": paper_id},
@@ -6348,6 +6363,10 @@ async def get_paper_detail(session: AsyncSession, paper_id: uuid.UUID) -> dict:
     ).first()
     if row is None:
         raise ValueError("paper not found")
+    review_count = int(
+        (await session.execute(
+            text("SELECT COUNT(*) FROM paper_evidence_reviews WHERE paper_id = :pid"),
+            {"pid": paper_id})).scalar() or 0)
     paragraphs = (
         await session.execute(
             text(
@@ -6380,6 +6399,9 @@ async def get_paper_detail(session: AsyncSession, paper_id: uuid.UUID) -> dict:
             "abstract_available": bool(row[9]),
             "fulltext_available": bool(row[10]),
             "metadata_json": row[11],
+            "authors": row[12],
+            "abstract": row[13],
+            "review_count": review_count,
         },
         "paragraphs": [
             {
@@ -7816,3 +7838,218 @@ async def get_review(
     )
     item["passages"] = [_passage_row_to_dict(p._mapping) for p in passage_rows]
     return item
+
+
+def _fmt_ts(v) -> str | None:
+    if v is None:
+        return None
+    if hasattr(v, "isoformat"):
+        return v.isoformat()
+    return str(v)
+
+
+async def soft_delete_paper_evidence_task(
+    session: AsyncSession, task_id: str, actor: str | None = None,
+) -> dict:
+    """任务软删除(最小字段):deleted_at/deleted_by;历史数据零删除。
+
+    幂等:已删除 → 返回当前状态;deleted 后不再出现在默认任务列表。
+    """
+    cur = (await session.execute(
+        text("SELECT deleted_at FROM paper_evidence_tasks WHERE id::text = :tid"),
+        {"tid": task_id})).first()
+    if cur is None:
+        raise ValueError("task not found")
+    already = cur[0] is not None
+    row = (await session.execute(
+        text("""UPDATE paper_evidence_tasks SET deleted_at = now(), deleted_by = :actor
+               WHERE id::text = :tid RETURNING id::text, deleted_at, deleted_by"""),
+        {"tid": task_id, "actor": actor})).first()
+    await session.commit()
+    return {
+        "task_id": str(row[0]),
+        "deleted": not already,   # 幂等:已删除 → False
+        "deleted_at": _fmt_ts(row[1]),
+        "deleted_by": row[2],
+    }
+
+
+TERMINAL_TASK_STATUSES = ("completed", "cancelled", "paused")
+
+
+async def list_task_center_history(
+    session: AsyncSession, limit: int = 100, offset: int = 0,
+) -> dict:
+    """任务中心历史聚合(只读):已完成/已暂停/已取消任务 + 该任务最新审核简况。
+
+    每行:
+      task({id,target_type,name,status,created_by,finished_at,deleted_at})
+      review_brief({reviewed_at, reviewer_id, review_status, promotion_status,
+                    effective_promotion_status, review_count})
+      evidence_count(该任务对象证据记录数)
+    Final KG 状态由 effective_promotion_status 表达(active=已入库/rolled_back=已回退/not_promoted=未入库)。
+    """
+    rows = (
+        await session.execute(
+            text(
+                "SELECT id::text, target_type, name, status, created_by, started_at, "
+                "finished_at, deleted_at::text, review_status, granularity_level "
+                "FROM paper_evidence_tasks "
+                "WHERE deleted_at IS NULL AND status IN ('completed','cancelled','paused') "
+                "ORDER BY COALESCE(finished_at, created_at) DESC LIMIT :lim OFFSET :off"
+            ),
+            {"lim": limit, "off": offset},
+        )
+    ).all()
+    total = (
+        await session.execute(
+            text(
+                "SELECT COUNT(*) FROM paper_evidence_tasks "
+                "WHERE deleted_at IS NULL AND status IN ('completed','cancelled','paused')"
+            )
+        )
+    ).scalar_one()
+    if not rows:
+        return {"total": int(total), "limit": limit, "offset": offset, "items": []}
+
+    task_ids = [r[0] for r in rows]
+    reviews = (
+        await session.execute(
+            text(
+                "SELECT task_id::text, "
+                "MAX(reviewed_at) AS last_reviewed_at, "
+                "MAX(CASE WHEN reviewed_at = (SELECT MAX(reviewed_at) FROM paper_evidence_reviews r2 "
+                "     WHERE r2.task_id = paper_evidence_reviews.task_id AND r2.reviewed_at IS NOT NULL) "
+                "     THEN reviewer_id END), "
+                "MAX(CASE WHEN reviewed_at = (SELECT MAX(reviewed_at) FROM paper_evidence_reviews r2 "
+                "     WHERE r2.task_id = paper_evidence_reviews.task_id AND r2.reviewed_at IS NOT NULL) "
+                "     THEN review_status END), "
+                "MAX(CASE WHEN reviewed_at = (SELECT MAX(reviewed_at) FROM paper_evidence_reviews r2 "
+                "     WHERE r2.task_id = paper_evidence_reviews.task_id AND r2.reviewed_at IS NOT NULL) "
+                "     THEN promotion_status END), "
+                "MAX(CASE WHEN reviewed_at = (SELECT MAX(reviewed_at) FROM paper_evidence_reviews r2 "
+                "     WHERE r2.task_id = paper_evidence_reviews.task_id AND r2.reviewed_at IS NOT NULL) "
+                "     THEN id::text END) AS latest_review_id, "
+                "MAX(CASE WHEN superseded_at IS NOT NULL THEN 1 ELSE 0 END) AS has_superseded, "
+                "COUNT(*) "
+                "FROM paper_evidence_reviews WHERE task_id = ANY(:ids) GROUP BY task_id"
+            ),
+            {"ids": task_ids},
+        )
+    ).all()
+    review_by_task = {r[0]: r for r in reviews}
+
+    items = []
+    for r in rows:
+        rb = review_by_task.get(r[0])
+        items.append({
+            "task_id": r[0],
+            "target_type": r[1],
+            "name": r[2],
+            "status": r[3],
+            "created_by": r[4],
+            "started_at": _fmt_ts(r[5]),
+            "finished_at": _fmt_ts(r[6]),
+            "deleted_at": r[7],
+            "review_status": r[8],
+            "granularity_level": r[9],
+            "review_brief": {
+                "last_reviewed_at": _fmt_ts(rb[1]) if rb else None,
+                "reviewer_id": rb[2] if rb else None,
+                "review_status": rb[3] if rb else None,
+                "promotion_status": rb[4] if rb else None,
+                "latest_review_id": str(rb[5]) if rb and rb[5] else None,
+                "has_superseded": bool(rb[6]) if rb else False,
+                "review_count": int(rb[7]) if rb else 0,
+            } if rb else None,
+        })
+    return {"total": int(total), "limit": limit, "offset": offset, "items": items}
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# Paper Library ops (add / soft delete)
+# ════════════════════════════════════════════════════════════════════════════
+
+_URL_DOI_RE = re.compile(r"10\.\d{4,9}/[^\s\"'<>]+")
+
+async def add_paper_to_library(
+    session: AsyncSession,
+    *,
+    pmid: str | None = None,
+    doi: str | None = None,
+    url: str | None = None,
+) -> dict:
+    """添加论文到 Paper Library(幂等,禁止重复创建)。
+
+    * URL 支持 DOI 提取(如 issuu/doi.org 链接);
+    * 已有(pmid / normalized_doi 唯一约束) → 返回现有记录 created=false;
+    * 无 → fetch_paper_metadata(外部解析)+ ensure_paper_source(upsert)自动入库。
+    """
+    params = {
+        "pmid": (pmid or "").strip() or None,
+        "doi": (doi or "").strip() or None,
+        "url": (url or "").strip() or None,
+    }
+    # URL → DOI 提取
+    if not params["pmid"] and not params["doi"] and params["url"]:
+        m = _URL_DOI_RE.search(params["url"])
+        if m:
+            raw = m.group(0).rstrip(".,;").split("#")[0].split("?")[0].strip()
+            params["doi"] = raw or None
+    if not params["pmid"] and not params["doi"]:
+        raise ValueError("pmid/doi/url 至少提供一个")
+
+    # 1) 重复检查(pmid 优先,其次 normalized_doi)
+    pmid = params["pmid"]
+    norm_doi = normalize_doi(params["doi"]) if params["doi"] else ""
+    existing = None
+    if pmid:
+        existing = (await session.execute(
+            text("SELECT id::text FROM paper_sources WHERE pmid = :pm AND deleted_at IS NULL"),
+            {"pm": pmid})).first()
+    if existing is None and norm_doi:
+        existing = (await session.execute(
+            text("SELECT id::text FROM paper_sources WHERE normalized_doi = :nd AND deleted_at IS NULL"),
+            {"nd": norm_doi})).first()
+    if existing is not None:
+        return {"paper_id": str(existing[0]), "created": False, "message": "already_exists"}
+
+    # 2) 抓取元数据(外部解析)并幂等入库
+    from app.services import paper_fetch_service as pfs
+    metadata = await pfs.fetch_paper_metadata(pmid=pmid, doi=params["doi"])
+    if metadata is None:
+        raise ValueError("paper not found or invalid identifier")
+    paper = {
+        "source": "manual_add",
+        "pmid": pmid or str(metadata.get("pmid") or ""),
+        "pmcid": metadata.get("pmcid") or "",
+        "doi": metadata.get("doi") or params["doi"] or "",
+        "title": metadata.get("title") or "",
+        "journal": metadata.get("journal") or "",
+        "year": metadata.get("year") or metadata.get("publication_year"),
+        "abstract": metadata.get("abstract") or "",
+        "fulltext": "",
+        "authors": metadata.get("authors") or "",
+        "is_open_access": bool(metadata.get("is_open_access")),
+    }
+    source_row = await ensure_paper_source(session, paper, fetched_at=True)
+    await session.commit()
+    return {"paper_id": str(source_row.id), "created": True, "message": "created"}
+
+
+async def soft_delete_paper(
+    session: AsyncSession, paper_id: str, actor: str | None = None,
+) -> dict:
+    """论文软删除:仅标记 deleted_at/deleted_by;幂等(二次删除 deleted=false)。"""
+    cur = (await session.execute(
+        text("SELECT deleted_at FROM paper_sources WHERE id = :pid"),
+        {"pid": paper_id})).first()
+    if cur is None:
+        raise ValueError("paper not found")
+    already = cur[0] is not None
+    row = (await session.execute(
+        text("""UPDATE paper_sources SET deleted_at = now(), deleted_by = :actor
+                WHERE id = :pid RETURNING id::text, deleted_at, deleted_by"""),
+        {"pid": paper_id, "actor": actor})).first()
+    await session.commit()
+    return {"paper_id": str(row[0]), "deleted": not already, "deleted_at": _fmt_ts(row[1]), "deleted_by": row[2]}

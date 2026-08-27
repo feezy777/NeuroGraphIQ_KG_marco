@@ -242,6 +242,8 @@ function QueueSeeder() {
 
 /** 点击右栏唯一 attach 入口(确认晋升)→ PromotionDialog → 返回弹窗确认按钮 */
 async function openConfirmDialog() {
+  // promotionImpact 由异步 effect 推送 → 先等待右栏按钮出现(稳定性)
+  await waitFor(() => expect(screen.getByTestId('pi-promote-btn')).toBeTruthy())
   fireEvent.click(screen.getByTestId('pi-promote-btn'))
   const confirmBtn = screen.getByTestId('ew-confirm-attach') as HTMLButtonElement
   await waitFor(() => expect(confirmBtn.disabled).toBe(false))

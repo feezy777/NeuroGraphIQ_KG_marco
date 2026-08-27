@@ -12,6 +12,7 @@ import asyncio
 import uuid
 
 import pytest
+from sqlalchemy import func as sa_func
 from sqlalchemy import select
 
 from app.database import AsyncSessionLocal
@@ -44,9 +45,11 @@ def _run(coro):
 def db():
     async def _cleanup():
         async with AsyncSessionLocal() as session:
+            # match on term_code: raw-name fixtures keep the ng:func:o13a_test_
+            # prefix in term_code even when canonical_term_en is unprefixed
             terms = (await session.execute(
                 select(OntologyTerm).where(
-                    OntologyTerm.canonical_term_en.like(f"{TEST_PREFIX}%")
+                    OntologyTerm.term_code.like(f"ng:func:{TEST_PREFIX}%")
                 )
             )).scalars().all()
             if terms:
@@ -81,6 +84,30 @@ def _term(session, name: str, *, status: str = "active") -> OntologyTerm:
     )
     session.add(term)
     return term
+
+
+def _raw_term(session, name: str, *, status: str = "active") -> OntologyTerm:
+    """Term whose canonical name is raw (no test prefix) — for single-token
+    semantics (e.g. generic-token filtering) that prefixed fixtures break.
+
+    term_code keeps the test prefix (unique vs real terms, removable by the
+    db fixture cleanup); canonical_term_en carries the raw name for
+    token-level logic only.
+    """
+    t = _term(session, f"{TEST_PREFIX}{name}", status=status)
+    t.canonical_term_en = name
+    return t
+
+
+async def _raw_terms(session, *names, **kw):
+    out = {}
+    status = kw.get("status", "active")
+    for n in names:
+        t = _raw_term(session, n, status=status)
+        session.add(t)
+        out[n] = t
+    await session.flush()
+    return out
 
 
 async def _terms(session, *names, **kw):
@@ -148,7 +175,8 @@ def test_03_synonym_does_not_create_candidate(db):
                 match_type="synonym", operator_id="o13a_test", reason="test",
             )
             await session.flush()
-            idx = _idx(ts)
+            # Must use DB-loaded index so synonyms are included
+            idx = await fhcs.load_term_index(session, include_proposed=False)
             cands, _ = fhcs.generate_candidates_for_term(ts["fear extinction old"], idx, top_k=5)
             assert not any(c.parent_term_id == ts["fear extinction"].id for c in cands)
     _run(_case())
@@ -178,7 +206,9 @@ def test_05_self_candidate_filtered(db):
 def test_06_generic_token_parent_filtered(db):
     async def _case():
         async with AsyncSessionLocal() as session:
-            ts = await _terms(session, "modulation", "cognitive modulation")
+            # raw names (no test prefix) so 'modulation' is a single-token
+            # parent whose token is in GENERIC_PARENT_TOKENS → filtered
+            ts = await _raw_terms(session, "modulation", "cognitive modulation")
             idx = _idx(ts)
             cands, _ = fhcs.generate_candidates_for_term(ts["cognitive modulation"], idx, top_k=5)
             assert not any(c.parent_term_id == ts["modulation"].id for c in cands)
@@ -188,27 +218,35 @@ def test_06_generic_token_parent_filtered(db):
 def test_07_active_parent_preferred(db):
     async def _case():
         async with AsyncSessionLocal() as session:
-            ts = await _terms(session, "memory", "working memory")
+            # Scenario A: only a proposed parent is available → it is returned
+            ts = await _raw_terms(session, "memory", "episodic memory")
             ts["memory"].status = "proposed"
             await session.flush()
-            idx = await fhcs.load_term_index(session, include_proposed=True)
-            cands, _ = fhcs.generate_candidates_for_term(ts["working memory"], idx, top_k=5)
-            assert cands and cands[0].parent_status == "proposed"  # only parent available
-            # with both statuses, active ranks first
-            ts2 = await _terms(session, "memory2", "memory3")
-            ts2["memory2"].status = "proposed"
+            idx = _idx(ts)
+            cands, _ = fhcs.generate_candidates_for_term(ts["episodic memory"], idx, top_k=5)
+            assert cands and cands[0].parent_status == "proposed"
+            # Scenario B: active + proposed parents coexist; ranking is
+            # score-driven (v2 has no status bonus — active parent wins via
+            # higher usage-context overlap with the child)
+            ts2 = await _raw_terms(
+                session,
+                "working memory consolidation", "working memory", "memory consolidation",
+            )
+            ts2["memory consolidation"].status = "proposed"
             await session.flush()
-            # reindex
-            idx2 = await fhcs.load_term_index(session, include_proposed=True)
-            child = _term(session, f"{TEST_PREFIX}working memory2")
-            session.add(child)
-            await session.flush()
-            cands2, _ = fhcs.generate_candidates_for_term(child, idx2, top_k=5)
-            # both parents share tokens; active memory3 should outrank proposed memory2
+            subj = uuid.uuid4()
+            idx2 = _idx(ts2, usage={
+                ts2["working memory consolidation"].id: {subj},
+                ts2["working memory"].id: {subj},   # shared subject → jaccard 1.0
+                ts2["memory consolidation"].id: set(),
+            })
+            cands2, _ = fhcs.generate_candidates_for_term(
+                ts2["working memory consolidation"], idx2, top_k=5,
+            )
             actives = [c for c in cands2 if c.parent_status == "active"]
             props = [c for c in cands2 if c.parent_status == "proposed"]
             assert actives and props
-            assert max(c.candidate_score for c in actives) >= max(c.candidate_score for c in props)
+            assert max(c.candidate_score for c in actives) > max(c.candidate_score for c in props)
     _run(_case())
 
 
@@ -244,10 +282,14 @@ def test_09_metadata_score(db):
 def test_10_usage_context_score(db):
     async def _case():
         async with AsyncSessionLocal() as session:
+            from app.models.candidate import CandidateBrainRegion
             from app.models.mirror_kg import MirrorRegionFunction
 
             ts = await _terms(session, "memory", "working memory")
-            subj = uuid.uuid4()
+            # region_candidate_id is a real FK → use an existing candidate row
+            subj = (await session.execute(
+                select(CandidateBrainRegion.id).limit(1)
+            )).scalar_one()
             for t in (ts["memory"], ts["working memory"]):
                 session.add(MirrorRegionFunction(
                     region_candidate_id=subj, term_id=t.id,
@@ -322,15 +364,21 @@ def test_15_generation_version_idempotent(db):
             await fhcs.generate_candidates_for_term_id(
                 session, ts["working memory"].id, top_k=5, created_by="o13a_test"
             )
+            n1 = (await session.execute(
+                select(sa_func.count()).select_from(OntologyHierarchyCandidate).where(
+                    OntologyHierarchyCandidate.child_term_id == ts["working memory"].id
+                )
+            )).scalar_one()
+            assert n1 > 0  # candidates exist (incl. real-DB terms in the index)
             await fhcs.generate_candidates_for_term_id(
                 session, ts["working memory"].id, top_k=5, created_by="o13a_test"
             )
-            rows = (await session.execute(
-                select(OntologyHierarchyCandidate).where(
+            n2 = (await session.execute(
+                select(sa_func.count()).select_from(OntologyHierarchyCandidate).where(
                     OntologyHierarchyCandidate.child_term_id == ts["working memory"].id
                 )
-            )).scalars().all()
-            assert len(rows) == 1  # same version → no duplicates
+            )).scalar_one()
+            assert n2 == n1  # same version → no new rows
     _run(_case())
 
 
@@ -351,7 +399,11 @@ def test_16_regeneration_new_version(db):
                     OntologyHierarchyCandidate.child_term_id == ts["working memory"].id
                 )
             )).scalars().all()
-            assert len(rows) == 2  # one per version
+            versions = {r.generation_version for r in rows}
+            assert versions == {"v1", "v2"}  # one row-set per version, both present
+            for v in ("v1", "v2"):
+                n = sum(1 for r in rows if r.generation_version == v)
+                assert n > 0, f"version {v} produced no rows"
     _run(_case())
 
 

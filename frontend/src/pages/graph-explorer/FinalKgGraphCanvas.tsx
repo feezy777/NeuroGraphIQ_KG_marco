@@ -1,60 +1,24 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent } from 'react'
-import {
-  Background,
-  BackgroundVariant,
-  BaseEdge,
-  Controls,
-  MarkerType,
-  MiniMap,
-  ReactFlow,
-  useEdgesState,
-  useNodesState,
-  useReactFlow,
-  getStraightPath,
-  type Edge,
-  type EdgeProps,
-  type Node,
-  type OnSelectionChangeParams,
-} from '@xyflow/react'
-import {
-  canExpandNode,
-  relationGroupOf,
-  type CanonicalEdge,
-  type CanonicalNode,
-  type CanonicalNodeType,
-} from './adapters/finalKgAdapter'
-import { canExpandMirrorNode } from './adapters/mirrorKgAdapter'
-import { canonicalEdgeOf, toXyflowEdges, toXyflowNodes } from './graphToXyflow'
-import { EDGE_FALLBACK_COLOR, EDGE_GROUP_COLORS, NODE_TYPE_COLORS } from './graphTheme'
-import { layoutCanonicalGraph } from './layout/dagreLayout'
-import { nodeTypes } from './nodeViews'
+/**
+ * Canonical KG Explorer Canvas 壳（图可视化引擎升级）：
+ * 图计算/布局/渲染/交互全部委托给 GraphVisualizationAdapter（Cytoscape.js）。
+ * 本文件只负责：数据传递 + loading/error/hint + 图例浮层 + 回调上抛。
+ *
+ * 接口（与页面约定,保持不变）：
+ *   graph / loading / error / fitKey / selectedNodeId / dataSource /
+ *   onNodeClick / onEdgeClick / onExpandNode
+ * → FinalKgGraphPage / Inspector / Sidebar / PathExplorer 零改动。
+ */
+import { useState } from 'react'
+import type { CanonicalEdge, CanonicalGraph, CanonicalNode } from './adapters/finalKgAdapter'
+import { GraphVisualizationAdapter } from './GraphVisualizationAdapter'
+import { ENTITY_LEGEND_ORDER, entityStyleOf } from './entityStyleConfig'
+import { RELATION_LEGEND_ORDER, relationStyleOf } from './relationStyleConfig'
 
-// ── 边渲染 ─────────────────────────────────────────────────────────────────────
+// ── 图例浮层数据 ────────────────────────────────────────────────────────────────
 
-function CanonicalEdgeView({ id, sourceX, sourceY, targetX, targetY, data }: EdgeProps) {
-  const edge = canonicalEdgeOf(data as Record<string, unknown>)
-  const color = edge ? (EDGE_GROUP_COLORS[relationGroupOf(edge)] ?? EDGE_GROUP_COLORS.structural) : EDGE_FALLBACK_COLOR
-  const [path] = getStraightPath({ sourceX, sourceY, targetX, targetY })
-  return (
-    <BaseEdge
-      id={id}
-      path={path}
-      style={{ stroke: color, strokeWidth: 1.5 }}
-      markerEnd={MarkerType.ArrowClosed}
-      interactionWidth={16}
-    />
-  )
-}
-
-const edgeTypes = { canonical: CanonicalEdgeView }
-
-// ── 上下文菜单 ─────────────────────────────────────────────────────────────────
-
-interface ContextMenuState {
-  x: number
-  y: number
-  nodeId: string
-}
+/** 图例数据 —— 与节点/边渲染共同引用 entityStyleConfig / relationStyleConfig（唯一事实源） */
+const LEGEND_NODE_TYPES = ENTITY_LEGEND_ORDER
+const LEGEND_EDGE_GROUPS = RELATION_LEGEND_ORDER.map(group => ({ group, label: relationStyleOf(group).label }))
 
 interface FinalKgGraphCanvasProps {
   graph: {
@@ -65,13 +29,15 @@ interface FinalKgGraphCanvasProps {
   }
   loading: boolean
   error: string | null
-  /** 每次成功加载 +1 → 触发 fitView */
+  /** 每次成功加载 +1（适配器内以 graph 变化驱动重建+auto-fit,此值保留接口兼容） */
   fitKey: number
   /** 当前选中节点 id（由页面持有；用于图重载后保持高亮） */
   selectedNodeId: string | null
-  /** 数据源：mirror 模式仅 brain_region 可展开 */
+  /** 数据源：mirror / final */
   dataSource?: 'mirror' | 'final'
   onNodeClick: (nodeId: string | null) => void
+  /** 点击连接边（折叠边 → Inspector 连接详情） */
+  onEdgeClick: (edgeId: string | null) => void
   onExpandNode: (nodeId: string) => void
 }
 
@@ -81,153 +47,78 @@ export function FinalKgGraphCanvas({
   error,
   fitKey,
   selectedNodeId,
-  dataSource = 'final',
   onNodeClick,
+  onEdgeClick,
   onExpandNode,
 }: FinalKgGraphCanvasProps) {
-  const [rfNodes, setRfNodes, onNodesChange] = useNodesState<Node>([])
-  const [rfEdges, setRfEdges, onEdgesChange] = useEdgesState<Edge>([])
-  const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null)
-  const { fitView } = useReactFlow()
-  const selectedRef = useRef(selectedNodeId)
-  selectedRef.current = selectedNodeId
+  const [legendOpen, setLegendOpen] = useState(true)
 
-  // 图数据变化 → 用确定性布局重置节点位置（加载时刻），保持先前选中态
-  const nodesForGraph = useMemo(() => {
-    const positions = layoutCanonicalGraph(graph.nodes, graph.edges, graph.centerNodeId)
-    return toXyflowNodes(graph, positions)
-  }, [graph])
+  return (
+    <div className="cg-canvas">
+      {/* adapter 常驻：默认全景模式自动加载 Mirror 全局网络（无需先搜索）;
+          探索模式数据为空时由 adapter 内部显示引导提示 */}
+      <GraphVisualizationAdapter
+        graph={graph as CanonicalGraph}
+        selectedNodeId={selectedNodeId}
+        onNodeSelect={onNodeClick}
+        onEdgeSelect={onEdgeClick}
+        onExpandNode={onExpandNode}
+      />
 
-  useEffect(() => {
-    setRfNodes(nodesForGraph.map(n => ({ ...n, selected: n.id === selectedRef.current })))
-  }, [nodesForGraph, setRfNodes])
-
-  useEffect(() => {
-    setRfEdges(toXyflowEdges(graph))
-  }, [graph, setRfEdges])
-
-  // 加载完成 → fitView（延迟一帧，等节点渲染）
-  useEffect(() => {
-    if (fitKey > 0 && rfNodes.length > 0) {
-      const timer = setTimeout(() => fitView({ padding: 0.15, duration: 400 }), 50)
-      return () => clearTimeout(timer)
-    }
-  }, [fitKey, rfNodes.length, fitView])
-
-  const onSelectionChange = useCallback(
-    ({ nodes }: OnSelectionChangeParams) => {
-      onNodeClick(nodes.length > 0 ? nodes[0].id : null)
-    },
-    [onNodeClick],
-  )
-
-  const onNodeContextMenu = useCallback((event: MouseEvent, node: Node) => {
-    event.preventDefault()
-    setContextMenu({ x: event.clientX, y: event.clientY, nodeId: node.id })
-  }, [])
-
-  const handleExpand = useCallback(() => {
-    if (contextMenu) {
-      onExpandNode(contextMenu.nodeId)
-      setContextMenu(null)
-    }
-  }, [contextMenu, onExpandNode])
-
-  const handleHideDetails = useCallback(() => {
-    onNodeClick(null)
-    setContextMenu(null)
-  }, [onNodeClick])
-
-  // 点击空白处关闭菜单
-  useEffect(() => {
-    if (!contextMenu) return
-    const close = () => setContextMenu(null)
-    document.addEventListener('click', close)
-    return () => document.removeEventListener('click', close)
-  }, [contextMenu])
-
-  const menuNode = contextMenu
-    ? graph.nodes.find(n => n.id === contextMenu.nodeId)
-    : null
-  const menuExpandable = menuNode
-    ? dataSource === 'mirror'
-      ? canExpandMirrorNode(menuNode)
-      : canExpandNode(menuNode)
-    : false
-
-  // MiniMap 节点配色：由 graph 派生 id → 类型映射（不直接访问后端字段）
-  const nodeTypeById = useMemo(() => {
-    const map = new Map<string, CanonicalNodeType>()
-    for (const n of graph.nodes) map.set(n.id, n.type)
-    return map
-  }, [graph])
-
-  if (loading) {
-    return (
-      <div className="cg-canvas">
+      {loading && (
         <div className="cg-canvas-overlay">
           <div className="cg-spinner" />
           <span>加载图谱数据…</span>
         </div>
-      </div>
-    )
-  }
-
-  if (error) {
-    return (
-      <div className="cg-canvas">
+      )}
+      {!loading && error && (
         <div className="cg-error-banner">
           <strong>加载失败：</strong>
           <span>{error}</span>
         </div>
+      )}
+
+      {/* ── 左下角图例浮层（可折叠；数据全部派生自主题常量） ── */}
+      <div className="cg-canvas-legend">
+        <button
+          type="button"
+          className="cg-canvas-legend-toggle"
+          onClick={() => setLegendOpen(o => !o)}
+          aria-expanded={legendOpen}
+        >
+          {legendOpen ? '图例 ▾' : '图例 ▸'}
+        </button>
+        {legendOpen && (
+          <div className="cg-canvas-legend-body">
+            <div className="cg-canvas-legend-group">
+              {LEGEND_NODE_TYPES.map(type => (
+                <div key={type} className="cg-legend-row">
+                  <span className="cg-legend-swatch" style={{ background: entityStyleOf(type).color }} />
+                  <span className="cg-legend-text">{entityStyleOf(type).icon} {entityStyleOf(type).label}</span>
+                </div>
+              ))}
+            </div>
+            <div className="cg-canvas-legend-group">
+              {LEGEND_EDGE_GROUPS.map(({ group, label }) => (
+                <div key={group} className="cg-legend-row">
+                  <span
+                    className="cg-legend-line"
+                    style={{
+                      borderTopColor: relationStyleOf(group).color,
+                      borderTopStyle: relationStyleOf(group).dashed ? 'dashed' : 'solid',
+                    }}
+                  />
+                  <span className="cg-legend-text">{label}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
-    )
-  }
-
-  return (
-    <div className="cg-canvas">
-      {rfNodes.length === 0 && (
-        <div className="cg-canvas-hint">
-          <p>暂无图谱数据</p>
-          <span>在左侧搜索脑区/回路/投射并加载，或右键节点增量展开。</span>
-        </div>
-      )}
-      <ReactFlow
-        nodes={rfNodes}
-        edges={rfEdges}
-        onNodesChange={onNodesChange}
-        onEdgesChange={onEdgesChange}
-        nodeTypes={nodeTypes}
-        edgeTypes={edgeTypes}
-        onSelectionChange={onSelectionChange}
-        onNodeContextMenu={onNodeContextMenu}
-        onPaneClick={() => setContextMenu(null)}
-        minZoom={0.02}
-        fitView
-        attributionPosition="bottom-left"
-      >
-        <Background variant={BackgroundVariant.Dots} gap={24} size={1} color="#e2e8f0" />
-        <Controls showInteractive={false} />
-        <MiniMap
-          nodeStrokeWidth={3}
-          nodeColor={n => {
-            const type = nodeTypeById.get(n.id)
-            return type ? NODE_TYPE_COLORS[type] : EDGE_FALLBACK_COLOR
-          }}
-          maskColor="rgba(0,0,0,0.08)"
-        />
-      </ReactFlow>
-
-      {contextMenu && (
-        <div className="cg-context-menu" style={{ left: contextMenu.x, top: contextMenu.y }}>
-          <button type="button" className="cg-context-item" onClick={handleExpand} disabled={!menuExpandable}>
-            Expand（增量展开）
-          </button>
-          <button type="button" className="cg-context-item" onClick={handleHideDetails}>
-            Hide Details
-          </button>
-        </div>
-      )}
     </div>
   )
 }
+
+// fitKey 保留兼容导出（页面传参不变）
+export type { FinalKgGraphCanvasProps }
+export const CANVAS_FITKEY_DEFAULT = 0

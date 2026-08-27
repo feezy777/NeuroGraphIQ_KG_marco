@@ -30,6 +30,9 @@ vi.mock('../../api/endpoints', () => ({
   buildReview: vi.fn(),
   approveReview: vi.fn(),
   rejectReview: vi.fn(),
+  listMacroCandidateRankings: vi.fn(),
+  getMacroCandidateRankingDetail: vi.fn(),
+  listMacroCandidateReviews: vi.fn(),
 }))
 
 describe('Provider smoke', () => {

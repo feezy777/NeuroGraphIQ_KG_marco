@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from 'react'
-import { ChevronDown, ChevronUp, Copy, Trash2, X } from 'lucide-react'
+import { ChevronDown, Copy, Terminal, Trash2, X } from 'lucide-react'
 import { useI18n } from '../i18n-context'
 import { useWorkbenchLog } from '../logging/useWorkbenchLog'
 import type { WorkbenchLogEntry, WorkbenchLogLevelFilter } from '../logging/workbenchLogTypes'
@@ -129,10 +129,33 @@ export function BottomLogConsole() {
     logs,
     clearLogs,
     errorCount,
-    lastError,
   } = useWorkbenchLog()
 
   const consoleRef = useRef<HTMLDivElement>(null)
+
+  const lastActivityRef = useRef(Date.now())
+
+  // Any new log resets the idle clock (live progress keeps the console open),
+  // so the console auto-collapses only when it is idle AND unused.
+  useEffect(() => {
+    lastActivityRef.current = Date.now()
+  }, [logs])
+
+  // Auto-collapse after 12s of no log activity and no mouse usage.
+  useEffect(() => {
+    if (!expanded) return
+    const timer = setInterval(() => {
+      if (Date.now() - lastActivityRef.current > 12000) {
+        setExpanded(false)
+      }
+    }, 5000)
+    return () => clearInterval(timer)
+  }, [expanded])
+
+  const expandConsole = useCallback(() => {
+    lastActivityRef.current = Date.now()
+    setExpanded(true)
+  }, [])
 
   // Dynamically set --log-console-actual-height on the layout parent
   // so main content padding matches the actual console height
@@ -162,71 +185,72 @@ export function BottomLogConsole() {
     }
   }, [logs])
 
-  const collapsedSummary = lastError
-    ? `${lastError.title}${lastError.message ? `: ${lastError.message}` : ''}`
-    : t('logConsole.noErrors')
+  if (!expanded) {
+    return (
+      <button
+        type="button"
+        className="log-console-edge-tab"
+        onClick={() => expandConsole()}
+        title={t('logConsole.title')}
+      >
+        <Terminal size={14} />
+        <span className="log-console-edge-label">{t('logConsole.edgeTab')}</span>
+        {errorCount > 0 && <span className="log-error-count">{errorCount}</span>}
+      </button>
+    )
+  }
 
   return (
     <div
       ref={consoleRef}
-      className={`workbench-log-console${expanded ? ' expanded' : ' collapsed'}`}
+      className="workbench-log-console expanded"
       data-error-count={errorCount}
+      onMouseEnter={() => { lastActivityRef.current = Date.now() }}
     >
       <div className="log-console-bar">
         <button
           type="button"
           className="log-console-toggle"
-          onClick={() => setExpanded(!expanded)}
-          title={expanded ? t('logConsole.collapse') : t('logConsole.expand')}
+          onClick={() => setExpanded(false)}
+          title={t('logConsole.collapse')}
         >
-          {expanded ? <ChevronDown size={16} /> : <ChevronUp size={16} />}
+          <ChevronDown size={16} />
           <span className="log-console-title">{t('logConsole.title')}</span>
           {errorCount > 0 && (
             <span className="log-error-count">{errorCount}</span>
           )}
-          {!expanded && (
-            <span className="log-collapsed-summary" title={collapsedSummary}>
-              {collapsedSummary}
-            </span>
-          )}
         </button>
         <div className="log-console-actions">
-          {expanded && (
-            <>
-              <div className="log-filter-tabs">
-                {FILTERS.map(f => (
-                  <button
-                    key={f}
-                    type="button"
-                    className={`log-filter-btn${levelFilter === f ? ' active' : ''}`}
-                    onClick={() => setLevelFilter(f)}
-                  >
-                    {t(`logConsole.filter.${f}`)}
-                  </button>
-                ))}
-              </div>
-              <button type="button" className="log-action-btn" onClick={() => void copyAll()} title={t('logConsole.copyAll')}>
-                <Copy size={14} />
+          <div className="log-filter-tabs">
+            {FILTERS.map(f => (
+              <button
+                key={f}
+                type="button"
+                className={`log-filter-btn${levelFilter === f ? ' active' : ''}`}
+                onClick={() => setLevelFilter(f)}
+              >
+                {t(`logConsole.filter.${f}`)}
               </button>
-              <button type="button" className="log-action-btn" onClick={clearLogs} title={t('logConsole.clear')}>
-                <Trash2 size={14} />
-              </button>
-              <button type="button" className="log-action-btn" onClick={() => setExpanded(false)} title={t('logConsole.collapse')}>
-                <X size={14} />
-              </button>
-            </>
-          )}
+            ))}
+          </div>
+          <button type="button" className="log-action-btn" onClick={() => void copyAll()} title={t('logConsole.copyAll')}>
+            <Copy size={14} />
+          </button>
+          <button type="button" className="log-action-btn" onClick={clearLogs} title={t('logConsole.clear')}>
+            <Trash2 size={14} />
+          </button>
+          <button type="button" className="log-action-btn" onClick={() => setExpanded(false)} title={t('logConsole.collapse')}>
+            <X size={14} />
+          </button>
         </div>
       </div>
-      {expanded && (
-        <div className="log-console-panel">
-          {filteredLogs.length === 0 ? (
-            <div className="log-console-empty">{t('logConsole.empty')}</div>
-          ) : (
-            filteredLogs.map(entry => <LogEntryRow key={entry.id} entry={entry} />)
-          )}
-        </div>
-      )}
+      <div className="log-console-panel">
+        {filteredLogs.length === 0 ? (
+          <div className="log-console-empty">{t('logConsole.empty')}</div>
+        ) : (
+          filteredLogs.map(entry => <LogEntryRow key={entry.id} entry={entry} />)
+        )}
+      </div>
     </div>
   )
 }

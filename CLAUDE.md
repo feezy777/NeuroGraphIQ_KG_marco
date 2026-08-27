@@ -310,6 +310,7 @@ The project has [Superpowers](https://github.com/obra/superpowers) methodology s
 
 ### Key Architecture Documents
 
+- `docs/VALIDATION_CENTER_PRD.md` — **验证中心产品需求 PRD V1.0（当前构建指导：任务中心/论文库/证据候选/人工审核/证据晋升五页 + 全局状态模型 + 四原则 + 四阶段优先级）**
 - `docs/NEUROGRAPHIQ_KG_V3_TARGET_ARCHITECTURE.md` — 目标架构
 - `docs/NEUROGRAPHIQ_VIBE_CODING_GUIDE.md` — Vibe Coding 指南（核心约束 3000+ 行）
 - `docs/FINAL_KG_TRIPLE_GRAPH_DESIGN.md` — 三元组图谱模型（脑区→连接→功能→回路→三元组）

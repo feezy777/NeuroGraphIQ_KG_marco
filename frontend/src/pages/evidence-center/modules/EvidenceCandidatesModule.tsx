@@ -16,6 +16,10 @@ import {
 } from '../../../api/endpoints'
 import { ApiError } from '../../../api/client'
 import { useEvidenceCenter } from '../EvidenceCenterContext'
+import { useSelectedValidationTask } from '../SelectedValidationTaskContext'
+import { useMacroCandidates } from '../../validation-center/macro-governance/useMacroCandidates'
+import type { MacroCandidateView } from '../../validation-center/macro-governance/useMacroCandidates'
+import type { ClaimComponent } from '../components/types'
 import { INITIAL_QUEUE_KEY } from '../evidenceCenterUrl'
 import { candidatePassagesToWorkbench } from '../components/candidatePassages'
 import { aggregateTmpDirection, computeTmpCoverage } from '../components/claimCoverage'
@@ -32,6 +36,9 @@ import { PaperEvidenceView } from '../components/PaperEvidenceView'
 import { loadReviewStatus } from '../components/ReviewStatusStore'
 import type { CandidatePassageItem } from '../components/PassageSummary'
 import type { QueueEntry, QueueStatus, WorkbenchPassage } from '../components/types'
+import { MacroCandidateSection } from '../../validation-center/macro-governance/MacroGovernanceIntegration'
+import { MACRO_EVIDENCE_TARGET_TYPES, MacroEvidenceCandidatePanel } from '../../validation-center/macro-governance/MacroEvidenceCandidatePanel'
+import { EvidenceDiscoveryWorkspace } from './paper-workbench/EvidenceDiscoveryWorkspace'
 
 const DRAFT_PREFIX = 'evidence-center.review-draft.'
 const EXTRACTION_RUN_KEY_PREFIX = 'evidence-center.extraction-run.'
@@ -238,8 +245,54 @@ function TargetNotFoundPanel({ targetType, name, shortId, hasTask, onBack, onRet
   )
 }
 
+/** Macro 候选视图 → 合成左栏「当前需要验证的事实」(固定结构:
+ *  类型/Source/Target/Connection Type/Direction/Granularity/来源/Ranking ID/Workflow Mode;
+ *  不混入论文列表/规则卡片/AI 结果——那些在右栏展示) */
+function macroClaimOf(view: MacroCandidateView, mode: 'new_knowledge' | 'evidence_enhancement') {
+  const components: ClaimComponent[] = [
+    { component_type: 'source_region', statement: view.sourceName, required: false, metadata: {} },
+    { component_type: 'target_region', statement: view.targetName, required: false, metadata: {} },
+    { component_type: 'relation', statement: view.review?.connection_type ?? 'structural_connection', required: false, metadata: {} },
+    { component_type: 'direction', statement: 'A → B', required: false, metadata: {} },
+    { component_type: 'context', statement: '来源：Paper Discovery', required: false, metadata: {} },
+    { component_type: 'context', statement: `Ranking ID：${view.ranking?.id ?? '—'}`, required: false, metadata: {} },
+    { component_type: 'context', statement: `Workflow Mode：${mode === 'evidence_enhancement' ? '已有连接证据增强' : '新增连接候选'}`, required: false, metadata: {} },
+  ]
+  return {
+    claimText: `${view.sourceName} → ${view.targetName}`,
+    components,
+    granularity: 'Macro',
+    targetType: 'Connection',
+  }
+}
+
 export function EvidenceCandidatesModule() {
   const { state, queue, setQueue, openTarget, closeTarget, closeTask, setCandidateClaim, setProgress, setCandidatePassages, setViewCandidatePaper, setSelectAllCandidatePassages, setEnterReviewFromPassages, setCandidateSelectedHashes } = useEvidenceCenter()
+  // 统一「当前验证任务」：evidence_task 走原有逻辑;paper_discovery 按 ranking_id 解析
+  const { selectedTask } = useSelectedValidationTask()
+  const { candidates: macroViews, loading: macroLoading } = useMacroCandidates()
+  const isMacroTask = selectedTask?.sourceType === 'paper_discovery'
+  const macroView = useMemo(() => {
+    if (!isMacroTask) return null
+    return macroViews.find(v => v.ranking?.id === selectedTask.sourceId) ?? null
+  }, [isMacroTask, macroViews, selectedTask])
+
+  // Macro 任务：解析视图 → 合成左栏「当前需要验证的事实」（复用 ClaimSummaryPanel）
+  useEffect(() => {
+    if (!isMacroTask) return
+    if (macroView) {
+      setCandidateClaim(macroClaimOf(macroView, selectedTask.workflowMode))
+    } else if (!macroLoading && macroViews.length > 0) {
+      // Provider 已加载但无该 ranking → 降级提示（不伪造数据）
+      setCandidateClaim({
+        claimText: `Paper Discovery 候选未找到（ranking_id=${selectedTask.sourceId}）`,
+        components: [],
+        granularity: 'macro',
+        targetType: 'Connection',
+      })
+    }
+    return () => { if (isMacroTask) setCandidateClaim(null) }
+  }, [isMacroTask, macroView, macroViews, macroLoading, selectedTask, setCandidateClaim])
   const [items, setItems] = useState<PaperEvidenceTaskItem[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -269,7 +322,8 @@ export function EvidenceCandidatesModule() {
   const [clearedTerms, setClearedTerms] = useState<Set<string>>(new Set())
 
   const loadItems = useCallback(async () => {
-    if (!state.taskId) {
+    // Macro(Paper Discovery)任务:无 evidence_task items,直接空队列(工作台走 ranking 数据)
+    if (isMacroTask || !state.taskId) {
       setItems([])
       setQueue([])
       setLoading(false)
@@ -288,7 +342,7 @@ export function EvidenceCandidatesModule() {
     } finally {
       setLoading(false)
     }
-  }, [state.taskId, setQueue])
+  }, [isMacroTask, state.taskId, setQueue])
 
   useEffect(() => { void loadItems() }, [loadItems])
 
@@ -299,6 +353,9 @@ export function EvidenceCandidatesModule() {
   }, [setViewCandidatePaper])
 
   const current = useMemo(() => {
+    // ⚠️ Macro(Paper Discovery)任务:无任务 items,不得用残留 state.target 合成 dummy current
+    // (否则切任务后旧 URL 参数会串线到新任务,工作台必须走 selectedTask.sourceId 路径)
+    if (isMacroTask && items.length === 0) return null
     if (items.length > 0) {
       if (state.targetType && state.targetId) {
         const found = items.find(it => it.target_type === state.targetType && it.target_id === state.targetId)
@@ -316,7 +373,7 @@ export function EvidenceCandidatesModule() {
       } as unknown as PaperEvidenceTaskItem
     }
     return null
-  }, [items, state.targetType, state.targetId])
+  }, [isMacroTask, items, state.targetType, state.targetId])
 
   // 自动将当前项同步到 URL(便于直接进入人工审核时带上 target):
   // - URL 无 target 时选中首个 item;
@@ -370,7 +427,10 @@ export function EvidenceCandidatesModule() {
   }, [current?.target_type, current?.target_id, dtoReload])
 
   // 左栏 ClaimSummaryPanel 数据源:DTO 加载后推送当前对象验证事实到 Context(页面左栏渲染);卸载/切对象清空
+  // ⚠️ macro 模式跳过:宏 claim 由上方宏解析 effect 管理（DTO 流程只服务 evidence 对象——
+  // 否则此 effect 会在宏 push 之后用 null 覆盖而显示「事实 —」）
   useEffect(() => {
+    if (isMacroTask) return
     if (!dto) {
       setCandidateClaim(null)
       return
@@ -381,7 +441,7 @@ export function EvidenceCandidatesModule() {
       granularity: dto.granularity ?? null,
       targetType: dto.target_type,
     })
-  }, [dto, setCandidateClaim])
+  }, [dto, isMacroTask, setCandidateClaim])
 
   useEffect(() => () => { setCandidateClaim(null) }, [setCandidateClaim])
 
@@ -926,6 +986,21 @@ export function EvidenceCandidatesModule() {
     setCandidateSelectedHashes(new Set(selectedHashes))
   }, [selectedHashes, setCandidateSelectedHashes])
 
+  // Macro 治理候选分支:对象 = ranking_id(target_id 唯一),不走任务 items 派生路径;
+  // 直接展示 DTO 组装(Macro Candidate 信息 + 论文证据片段 + AI 判定 + 进入人工审核)
+  if (current && MACRO_EVIDENCE_TARGET_TYPES.has(current.target_type)) {
+    return (
+      <div className="evidence-candidates" data-testid="evidence-macro-candidates">
+        <div className="evidence-candidates-main">
+          <MacroEvidenceCandidatePanel
+            targetType={current.target_type}
+            targetId={current.target_id}
+          />
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="evidence-candidates">
       <div className="evidence-candidates-main">
@@ -936,13 +1011,30 @@ export function EvidenceCandidatesModule() {
             <button type="button" className="btn btn-sm" onClick={() => void loadItems()}>重试</button>
           </div>
         )}
-        {!loading && !error && !current && (
+        {!loading && !error && !current && (isMacroTask ? (
+          macroView ? (
+            <EvidenceDiscoveryWorkspace
+              rankingId={selectedTask.sourceId}
+              paperCount={macroView.paperCount}
+              workflowModeLabel={selectedTask.workflowMode === 'evidence_enhancement' ? '已有连接证据增强' : '新增连接候选'}
+              sourceRegion={macroView.sourceName}
+              targetRegion={macroView.targetName}
+              connectionType={macroView.review?.connection_type ?? 'structural_connection'}
+            />
+          ) : (
+            <EmptyState
+              icon={<MousePointerClick size={24} />}
+              title="正在解析当前任务…"
+              description="按 ranking_id 解析 Paper Discovery 候选（Provider 数据加载中）"
+            />
+          )
+        ) : (
           <EmptyState
             icon={<MousePointerClick size={24} />}
             title="请先在「佐证任务」中打开一个任务"
             description="或从上方任务列表进入一个目标对象。"
           />
-        )}
+        ))}
         {!loading && !error && current && (
           <>
             {dtoStatus === 'loading' && <div className="evidence-task-loading">对象数据加载中…</div>}
@@ -968,6 +1060,15 @@ export function EvidenceCandidatesModule() {
             {dtoStatus === 'success' && (
             <>
             {message && <div className="ontology-page-message">{message}</div>}
+
+            {/* Macro 候选治理融合:canonical region id 级匹配(Evidence object → mirror → candidate → canonical) */}
+            <MacroCandidateSection
+              targetId={current?.target_id ?? ''}
+              sourceName={dto?.source_region}
+              targetName={dto?.target_region}
+              sourceCanonicalId={dto?.source_region_canonical_id}
+              targetCanonicalId={dto?.target_region_canonical_id}
+            />
 
             {evidencePaper ? (
               <>

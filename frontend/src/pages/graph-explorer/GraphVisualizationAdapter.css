@@ -1,0 +1,212 @@
+/* GraphVisualizationAdapter（Cytoscape 画布容器 + hover tooltip）
+   科研级脑网络探索器：浅色科技风容器、canvas 渲染、圆形/胶囊节点、轻型 tooltip。 */
+
+.kg-cy-wrap {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(1200px 700px at 50% 42%, #ffffff 0%, #f7f9fc 55%, #f2f5fa 100%);
+}
+
+.kg-cy-container {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+}
+
+.kg-cy-container:focus,
+.kg-cy-container:focus-visible {
+  outline: none;
+}
+
+/* ── hover tooltip（浮于画布;跟随 rendered 坐标） ── */
+.kg-cy-tooltip {
+  position: absolute;
+  z-index: 20;
+  min-width: 136px;
+  max-width: 220px;
+  padding: 7px 10px;
+  border: 1px solid #e2e8f0;
+  border-radius: 9px;
+  background: #ffffff;
+  box-shadow: 0 10px 26px rgba(15, 23, 42, 0.16);
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 10.5px;
+  color: #334155;
+  pointer-events: none;
+  /* 轻微偏移,避免遮挡节点本身 */
+  transform: translate(14px, -50%);
+}
+
+.kg-cy-tooltip-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  white-space: nowrap;
+}
+
+.kg-cy-tooltip-row span {
+  color: var(--text-muted);
+}
+
+.kg-cy-tooltip-row strong {
+  color: #0f172a;
+  font-weight: 600;
+}
+
+
+/* ── 模式切换（探索 / 全景） ── */
+.kg-cy-modes {
+  position: absolute;
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 15;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px;
+  border: 1px solid #e2e8f0;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.1);
+}
+
+.kg-cy-mode {
+  padding: 4px 14px;
+  border: none;
+  border-radius: 999px;
+  background: none;
+  font-size: 12px;
+  font-weight: 500;
+  color: #475569;
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+
+.kg-cy-mode:hover { background: #f1f5f9; }
+
+.kg-cy-mode.is-active {
+  background: #2563eb;
+  color: #ffffff;
+}
+
+.kg-cy-mode-note {
+  font-size: 11px;
+  color: #64748b;
+  padding: 0 6px;
+  white-space: nowrap;
+}
+
+/* ── 右上角完整工具栏 ── */
+.kg-cy-toolbar {
+  position: absolute;
+  top: 10px;
+  right: 12px;
+  z-index: 15;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.kg-cy-tool {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 10px;
+  min-width: 112px;
+  border: 1px solid #e2e8f0;
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.96);
+  font-size: 13px;
+  color: #334155;
+  cursor: pointer;
+  box-shadow: 0 3px 10px rgba(15, 23, 42, 0.08);
+  transition: background 0.12s ease, border-color 0.12s ease;
+}
+
+.kg-cy-tool:hover { background: #f8fafc; border-color: #bfdbfe; }
+
+.kg-cy-tool.is-active {
+  background: #eff6ff;
+  border-color: #2563eb;
+  color: #1d4ed8;
+}
+
+.kg-cy-tool-label { font-size: 11px; color: inherit; }
+
+.kg-cy-tool-expand { border-color: #bfdbfe; color: #1d4ed8; }
+
+/* ── 放大镜（跟随鼠标,2.5x,croppable） ── */
+.kg-cy-magnifier {
+  position: absolute;
+  z-index: 30;
+  width: 220px;
+  height: 220px;
+  border: 2px solid #bfdbfe;
+  border-radius: 50%;
+  overflow: hidden;
+  background: #ffffff;
+  box-shadow: 0 8px 26px rgba(15, 23, 42, 0.22);
+  pointer-events: none;
+}
+
+.kg-cy-magnifier-canvas {
+  width: 100%;
+  height: 100%;
+  image-rendering: auto;
+}
+
+.kg-cy-magnifier-badge {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: rgba(37, 99, 235, 0.9);
+  color: #ffffff;
+  font-size: 10px;
+  font-weight: 600;
+}
+
+/* ── MiniMap（右下角） ── */
+.kg-cy-minimap {
+  position: absolute;
+  right: 14px;
+  bottom: 14px;
+  z-index: 12;
+  padding: 5px;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.12);
+}
+
+.kg-cy-minimap canvas {
+  display: block;
+  border-radius: 7px;
+  background: linear-gradient(180deg, #fafbfd 0%, #f2f5fa 100%);
+  cursor: crosshair;
+}
+
+
+/* ── Evidence 显示开关（全景模式;默认隐藏,开启后拉取 evidence 层） ── */
+.kg-evidence-toggle {
+  position: absolute;
+  top: 52px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 15;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  color: #475569;
+  user-select: none;
+  padding: 4px 10px;
+  border: 1px solid #e2e8f0;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.94);
+  cursor: pointer;
+}

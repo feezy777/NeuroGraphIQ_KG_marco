@@ -28,6 +28,9 @@ vi.mock('../../api/endpoints', () => ({
   createPaperEvidenceBatch: vi.fn(),
   previewEvidenceBatchScope: vi.fn(),
   listEvidenceReviews: vi.fn(),
+  listMacroCandidateRankings: vi.fn(),
+  getMacroCandidateRankingDetail: vi.fn(),
+  listMacroCandidateReviews: vi.fn(),
 }))
 
 function makeItem(overrides: Record<string, unknown>) {

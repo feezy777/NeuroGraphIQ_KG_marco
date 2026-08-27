@@ -143,7 +143,7 @@ const EXPAND_CENTER_TYPES: Record<string, string> = {
 
 /** 图 API 支持的 center_type 选项（侧栏手动加载入口用） */
 export const GRAPH_CENTER_TYPES: { value: string; label: string }[] = [
-  { value: 'region', label: 'Region（candidate_id）' },
+  { value: 'region', label: 'Region（canonical id）' },
   { value: 'circuit', label: 'Circuit（final_id）' },
   { value: 'projection', label: 'Projection（final_id）' },
   { value: 'circuit_step', label: 'Circuit Step（final_id）' },
@@ -181,6 +181,7 @@ export const RELATION_GROUPS: RelationGroupDef[] = [
     value: 'structural',
     label: 'Structural',
     edgeTypes: [
+      'connection', // Data Adapter V1：Final KG 连接折叠边（region--region）
       'projection_source',
       'projection_target',
       'contains_projection',

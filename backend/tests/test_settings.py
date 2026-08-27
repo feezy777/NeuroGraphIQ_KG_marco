@@ -17,7 +17,7 @@ def test_runtime_settings_defaults_do_not_expose_api_key(tmp_path, monkeypatch):
 
     runtime = settings_service.load_runtime_settings()
     assert runtime.api_providers.deepseek.enabled is True
-    assert runtime.api_providers.deepseek.default_model == "deepseek-chat"
+    assert runtime.api_providers.deepseek.default_model == "deepseek-v4-flash"
 
     public = settings_service.to_public_runtime_settings(runtime)
     deepseek = public.api_providers.deepseek

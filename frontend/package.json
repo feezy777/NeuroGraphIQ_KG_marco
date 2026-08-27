@@ -13,6 +13,9 @@
     "@dagrejs/dagre": "^3.1.1",
     "@types/d3": "^7.4.3",
     "@xyflow/react": "^12.11.2",
+    "cytoscape": "^3.34.1",
+    "cytoscape-dagre": "^4.0.0",
+    "cytoscape-fcose": "^2.2.0",
     "d3": "^7.9.0",
     "lucide-react": "^0.468.0",
     "react": "^18.3.1",
@@ -23,6 +26,7 @@
   "devDependencies": {
     "@playwright/test": "^1.61.1",
     "@testing-library/react": "^16.3.2",
+    "@types/cytoscape": "^3.21.9",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
     "@types/three": "^0.185.1",

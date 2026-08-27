@@ -1,171 +1,181 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import * as endpoints from '../../../api/endpoints'
 import { EvidenceCenterProvider } from '../EvidenceCenterContext'
+import { TaskItemsRefreshProvider } from '../components/taskItemsRefreshContext'
 import { PaperLibraryModule } from './PaperLibraryModule'
 
 vi.mock('../../../api/endpoints', () => ({
   listEvidencePapers: vi.fn(),
   getEvidencePaperDetail: vi.fn(),
+  addPaperToLibrary: vi.fn(),
+  deletePaperSoft: vi.fn(),
+  listPaperEvidenceTasks: vi.fn(),
+  listPaperEvidenceTaskItems: vi.fn(),
+  listEvidenceReviews: vi.fn(),
+  listEvidencePapersDetail: vi.fn(),
 }))
 
-const PAPER_A = {
-  id: 'p1',
-  pmid: '12345678',
-  pmcid: 'PMC1234567',
-  doi: '10.1000/xyz123',
-  title: 'Neural circuits of the prefrontal cortex',
-  journal: 'Nature Neuroscience',
-  publication_year: 2023,
-  is_oa: true,
-  abstract_available: true,
-  fulltext_available: true,
-  paragraph_count: 12,
-  evidence_count: 3,
+const PAPER: Partial<endpoints.EvidencePaperItem> = {
+  id: 'p-1111', pmid: '12345678', pmcid: null, doi: '10.1000/xyz',
+  title: 'Thalamic projections to motor cortex: a long title that wraps over two lines properly',
+  journal: 'Nature Neuroscience', publication_year: 2024, is_oa: false,
+  abstract_available: true, fulltext_available: true, paragraph_count: 12, evidence_count: 12,
 }
 
-const PAPER_B = {
-  id: 'p2',
-  pmid: null,
-  pmcid: null,
-  doi: '10.1000/abc456',
-  title: 'Thalamocortical loops in working memory',
-  journal: 'Brain Research',
-  publication_year: 2021,
-  is_oa: false,
-  abstract_available: false,
-  fulltext_available: false,
-  paragraph_count: 0,
-  evidence_count: 0,
-}
-
-const DETAIL = {
-  paper: PAPER_A,
+const DETAIL: endpoints.EvidencePaperDetail = {
+  paper: {
+    id: 'p-1111', pmid: '12345678', pmcid: null, doi: '10.1000/xyz',
+    title: 'Thalamic projections to motor cortex', journal: 'Nature Neuroscience',
+    publication_year: 2024, is_oa: false, abstract_available: true, fulltext_available: true,
+    paragraph_count: 12, evidence_count: 12, authors: 'A. Author, B. Author',
+    abstract: 'We studied thalamic projections to motor cortex using tract tracing.',
+    review_count: 3,
+  },
   paragraphs: [
-    { paragraph_id: 'pa1', section_title: 'Abstract', paragraph_index: 0, passage_text: 'The prefrontal cortex integrates sensory input with mnemonic content.', source_scope: 'abstract' },
-    { paragraph_id: 'pa2', section_title: 'Abstract', paragraph_index: 1, passage_text: 'Here we show that recurrent dynamics support working memory.', source_scope: 'abstract' },
-    { paragraph_id: 'pf1', section_title: 'Results', paragraph_index: 2, passage_text: 'We found elevated gamma power in layer 5.', source_scope: 'fulltext' },
-    { paragraph_id: 'pf2', section_title: 'Discussion', paragraph_index: 3, passage_text: 'These findings suggest a distributed mnemonic network.', source_scope: 'fulltext' },
+    { paragraph_id: 'pa-1', section_title: 'Abstract', paragraph_index: 1, passage_text: 'We studied thalamic projections.', source_scope: 'abstract' },
+    { paragraph_id: 'pa-2', section_title: 'Methods', paragraph_index: 2, passage_text: 'Subjects were traced.', source_scope: 'fulltext' },
+    { paragraph_id: 'pa-3', section_title: 'Results', paragraph_index: 3, passage_text: 'Dense projections were found.', source_scope: 'fulltext' },
   ],
-  evidence_count: 3,
-  targets: [{ target_type: 'connection', target_id: 'conn-1' }],
+  evidence_count: 12,
+  targets: [
+    { target_type: 'connection', target_id: 'conn-1' },
+    { target_type: 'circuit', target_id: 'circ-1' },
+  ],
 }
 
-const renderModule = () =>
-  render(<EvidenceCenterProvider><PaperLibraryModule /></EvidenceCenterProvider>)
+function renderModule() {
+  return render(
+    <EvidenceCenterProvider>
+      <TaskItemsRefreshProvider>
+        <PaperLibraryModule />
+      </TaskItemsRefreshProvider>
+    </EvidenceCenterProvider>,
+  )
+}
 
-describe('PaperLibraryModule', () => {
-  afterEach(() => { cleanup(); window.location.hash = '' })
+describe('PaperLibraryModule(论文资产中心三栏)', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    vi.mocked(endpoints.listEvidencePapers).mockResolvedValue({ items: [PAPER_A, PAPER_B], total: 2 })
-    vi.mocked(endpoints.getEvidencePaperDetail).mockResolvedValue(DETAIL)
+    window.location.hash = ''
+    vi.mocked(endpoints.listPaperEvidenceTasks).mockResolvedValue({ items: [], total: 0 })
+    vi.mocked(endpoints.listPaperEvidenceTaskItems).mockResolvedValue({ items: [] })
+    vi.mocked(endpoints.listEvidenceReviews).mockResolvedValue({ items: [], total: 0 })
+    vi.mocked(endpoints.listEvidencePapers).mockResolvedValue({ items: [PAPER as never], total: 1 })
+    vi.mocked(endpoints.getEvidencePaperDetail).mockResolvedValue(DETAIL as never)
+  })
+  afterEach(() => { cleanup(); window.location.hash = ''; sessionStorage.clear() })
+
+  it('渲染三栏:列表卡(PMID/DOI/状态标签) + 详情 + 资产关系', async () => {
+    renderModule()
+    const card = await screen.findByTestId('paper-card-p-1111')
+    expect(card.textContent).toContain('PMID: 12345678')
+    expect(card.textContent).toContain('DOI: 10.1000/xyz')
+    expect(card.textContent).toContain('全文可用')
+    expect(card.textContent).toContain('已生成 12 条证据')
+    // 点击 → 中栏详情
+    fireEvent.click(card)
+    await waitFor(() => expect(vi.mocked(endpoints.getEvidencePaperDetail)).toHaveBeenCalledWith('p-1111'))
+    expect(await screen.findByText('Paper Information')).toBeTruthy()
+    expect(screen.getByText('We studied thalamic projections to motor cortex using tract tracing.')).toBeTruthy()
+    // 右栏统计
+    const right = screen.getByTestId('paper-library-right')
+    expect(within(right).getByText('Evidence')).toBeTruthy()
+    expect(within(right).getByText('Reviews')).toBeTruthy()
   })
 
-  it('列表渲染 title/journal/年份/OA 徽章/段落数/证据数', async () => {
+  it('FullText 分章节展示(Abstract 聚合;无全文显示等待文案)', async () => {
     renderModule()
-    expect(await screen.findByText('Neural circuits of the prefrontal cortex')).toBeTruthy()
-    expect(screen.getByText('Nature Neuroscience (2023)')).toBeTruthy()
-    expect(screen.getByText('Brain Research (2021)')).toBeTruthy()
-    // OA 徽章(仅 PAPER_A)
-    expect(screen.getByText('OA')).toBeTruthy()
-    // 摘要/全文可用徽章 + 段落数 + 证据数
-    expect(screen.getByText('摘要可用')).toBeTruthy()
-    expect(screen.getByText('全文可用')).toBeTruthy()
-    expect(screen.getByText('12 段')).toBeTruthy()
-    expect(screen.getByText('3 条证据')).toBeTruthy()
-    expect(screen.getByText('0 段')).toBeTruthy()
-    // 标识
-    expect(screen.getByText('PMID 12345678')).toBeTruthy()
-    expect(screen.getByText('DOI 10.1000/abc456')).toBeTruthy()
-    // 论文库不渲染 Reviewer/Attach/Coverage 控件
-    expect(screen.queryByText(/确认晋升|Reviewer|Coverage|Attach/i)).toBeNull()
+    fireEvent.click(await screen.findByTestId('paper-card-p-1111'))
+    await screen.findByText('Paper Information')
+    expect(screen.getAllByText(/Methods/).length).toBeGreaterThan(0)
+    expect(screen.getByText('Dense projections were found.')).toBeTruthy()
   })
 
-  it('搜索与过滤条件携带参数重新请求', async () => {
+  it('Evidence Preview: 点击「进入证据候选」→ openTarget(candidates)', async () => {
     renderModule()
-    await screen.findByText('Neural circuits of the prefrontal cortex')
-    fireEvent.change(screen.getByPlaceholderText(/搜索/), { target: { value: 'prefrontal' } })
-    fireEvent.click(screen.getByLabelText('仅开放获取'))
-    fireEvent.change(screen.getByLabelText('年份'), { target: { value: '2023' } })
-    fireEvent.click(screen.getByLabelText('已解析全文'))
-    fireEvent.click(screen.getByText('搜索'))
-    await waitFor(() =>
-      expect(endpoints.listEvidencePapers).toHaveBeenLastCalledWith(
-        expect.objectContaining({ search: 'prefrontal', oa: true, year: 2023, has_fulltext: true, page: 1 }),
-      ),
-    )
-    // 再次搜索会重置页码
-    fireEvent.change(screen.getByPlaceholderText(/搜索/), { target: { value: '' } })
-    fireEvent.click(screen.getByText('搜索'))
-    await waitFor(() =>
-      expect(endpoints.listEvidencePapers).toHaveBeenLastCalledWith(
-        expect.objectContaining({ search: undefined, oa: true, year: 2023, has_fulltext: true, page: 1 }),
-      ),
-    )
-  })
-
-  it('点击论文卡片打开详情抽屉(metadata + abstract + section 结构)', async () => {
-    renderModule()
-    await screen.findByText('Neural circuits of the prefrontal cortex')
-    fireEvent.click(screen.getByText('Neural circuits of the prefrontal cortex'))
-    await waitFor(() => expect(endpoints.getEvidencePaperDetail).toHaveBeenCalledWith('p1'))
-    // metadata 行
-    expect(screen.getByText('期刊')).toBeTruthy()
-    expect(screen.getByText('PMID')).toBeTruthy()
-    expect(screen.getByText('DOI')).toBeTruthy()
-    expect(screen.getAllByText('Nature Neuroscience (2023)').length).toBeGreaterThanOrEqual(2)
-    // abstract 段落默认展开
-    expect(screen.getByText('The prefrontal cortex integrates sensory input with mnemonic content.')).toBeTruthy()
-    // section 分组默认折叠:标题可见,段落隐藏
-    expect(screen.getByText('Results')).toBeTruthy()
-    expect(screen.queryByText('We found elevated gamma power in layer 5.')).toBeNull()
-    // 展开后显示段落
-    fireEvent.click(screen.getByText('Results'))
-    expect(screen.getByText('We found elevated gamma power in layer 5.')).toBeTruthy()
-    // 关联证据数 + targets 列表
-    expect(screen.getByText('关联证据')).toBeTruthy()
-    expect(screen.getByText('3 条')).toBeTruthy()
-    expect(screen.getByText('connection · conn-1')).toBeTruthy()
-    // 抽屉内同样不渲染 Reviewer/Attach/Coverage
-    expect(screen.queryByText(/确认晋升|Reviewer|Coverage|Attach/i)).toBeNull()
-  })
-
-  it('点击 target 跳转证据候选模块', async () => {
-    renderModule()
-    await screen.findByText('Neural circuits of the prefrontal cortex')
-    fireEvent.click(screen.getByText('Neural circuits of the prefrontal cortex'))
-    await waitFor(() => expect(screen.getByText('connection · conn-1')).toBeTruthy())
-    fireEvent.click(screen.getByText('connection · conn-1'))
-    await waitFor(() => expect(window.location.hash).toContain('module=candidates'))
-    expect(window.location.hash).toContain('target_type=connection')
+    fireEvent.click(await screen.findByTestId('paper-card-p-1111'))
+    await screen.findByText(/Evidence Candidates:/)
+    fireEvent.click(screen.getByTestId('paper-target-open-0'))
+    await waitFor(() => expect(window.location.hash).toContain('target_type=connection'))
     expect(window.location.hash).toContain('target_id=conn-1')
+    expect(window.location.hash).toContain('module=candidates')
   })
 
-  it('分页切换重新请求(上一页/下一页)', async () => {
-    vi.mocked(endpoints.listEvidencePapers).mockResolvedValue({ items: [PAPER_A], total: 25 })
+  it('PMID 搜索提交:调用 listEvidencePapers(search=', async () => {
     renderModule()
-    await screen.findByText('Neural circuits of the prefrontal cortex')
-    // 第 1 页:上一页禁用
-    expect((screen.getByText('上一页') as HTMLButtonElement).disabled).toBe(true)
-    fireEvent.click(screen.getByText('下一页'))
+    const input = await screen.findByTestId('paper-search-input')
+    fireEvent.change(input, { target: { value: '12345678' } })
+    fireEvent.click(screen.getByRole('button', { name: '搜索' }))
     await waitFor(() =>
-      expect(endpoints.listEvidencePapers).toHaveBeenLastCalledWith(expect.objectContaining({ page: 2 })),
-    )
-    // 第 2 页:下一页禁用,上一页可用
-    await waitFor(() => expect((screen.getByText('下一页') as HTMLButtonElement).disabled).toBe(true))
-    expect((screen.getByText('上一页') as HTMLButtonElement).disabled).toBe(false)
-    fireEvent.click(screen.getByText('上一页'))
-    await waitFor(() =>
-      expect(endpoints.listEvidencePapers).toHaveBeenLastCalledWith(expect.objectContaining({ page: 1 })),
-    )
+      expect(vi.mocked(endpoints.listEvidencePapers)).toHaveBeenCalledWith(
+        expect.objectContaining({ search: '12345678' })))
   })
 
-  it('加载失败显示错误并可重试', async () => {
-    vi.mocked(endpoints.listEvidencePapers).mockRejectedValueOnce(new Error('503 backend down'))
+  it('添加论文:PMID 填写 → 提交(addPaperToLibrary);重复返回提示不重复创建', async () => {
+    vi.mocked(endpoints.addPaperToLibrary).mockResolvedValue({
+      paper_id: 'p-x', created: false, message: 'already_exists',
+    })
     renderModule()
-    await waitFor(() => expect(screen.getByText(/论文加载失败/)).toBeTruthy())
-    fireEvent.click(screen.getByText('重试'))
-    await waitFor(() => expect(screen.getByText('Neural circuits of the prefrontal cortex')).toBeTruthy())
+    fireEvent.click(await screen.findByTestId('paper-add-btn'))
+    fireEvent.change(screen.getByLabelText('PMID'), { target: { value: '99999999' } })
+    fireEvent.click(screen.getByTestId('paper-add-confirm'))
+    await waitFor(() =>
+      expect(vi.mocked(endpoints.addPaperToLibrary))
+        .toHaveBeenCalledWith({ pmid: '99999999', doi: null, url: null }))
+    const msg = await screen.findByTestId('paper-add-msg')
+    expect(msg.textContent).toContain('已存在')
+    expect(msg.textContent).toContain('未重复创建')
+  })
+
+  it('删除为软删除:确认 → deletePaperSoft 调用 + 列表刷新', async () => {
+    vi.mocked(endpoints.deletePaperSoft).mockResolvedValue({
+      paper_id: 'p-1111', deleted: true, deleted_at: '2026-09-28T00:00:00Z', deleted_by: 'reviewer',
+    })
+    renderModule()
+    fireEvent.click(await screen.findByTestId('paper-delete-p-1111'))
+    fireEvent.click(await screen.findByText('删除'))
+    await waitFor(() => expect(vi.mocked(endpoints.deletePaperSoft)).toHaveBeenCalledWith('p-1111'))
+    expect(await screen.findByText(/软删除/)).toBeTruthy()
+  })
+
+  it('无全文论文 → 显示「摘要可用 · 等待全文解析」', async () => {
+    vi.mocked(endpoints.listEvidencePapers).mockResolvedValue({
+      items: [{ ...PAPER, fulltext_available: false, abstract_available: true } as never], total: 1,
+    })
+    vi.mocked(endpoints.getEvidencePaperDetail).mockResolvedValue({
+      ...DETAIL,
+      paper: { ...DETAIL.paper, fulltext_available: false },
+      paragraphs: [DETAIL.paragraphs[0]],
+    } as never)
+    renderModule()
+    fireEvent.click(await screen.findByTestId('paper-card-p-1111'))
+    const txt = await screen.findByTestId('paper-fulltext-empty')
+    expect(txt.textContent).toContain('摘要可用')
+    expect(txt.textContent).toContain('等待全文解析')
+  })
+
+  it('结构检查:container > body > (sidebar + detail-panel + relation-panel) 三栏层级,未选论文显示空态', async () => {
+    const { container } = renderModule()
+    const root = container.querySelector('.paper-library-container')
+    const body = root?.querySelector('.paper-library-body')
+    const sidebar = body?.querySelector('.paper-library-sidebar')
+    const detail = body?.querySelector('.paper-detail-panel')
+    const relation = body?.querySelector('.paper-relation-panel')
+    expect(root).toBeTruthy()
+    expect(body).toBeTruthy()
+    // 三栏兄弟层级(container>body 内并列)
+    expect(sidebar).toBeTruthy()
+    expect(detail).toBeTruthy()
+    expect(relation).toBeTruthy()
+    expect(detail?.parentElement).toBe(body ?? null)
+    expect(sidebar?.parentElement).toBe(body ?? null)
+    expect(relation?.parentElement).toBe(body ?? null)
+    // 未选论文:中栏空态文案(不留白)
+    expect(screen.getByText('请选择论文查看详情')).toBeTruthy()
+    // 三栏元素均在 DOM(宽度契约由 CSS 表达,测试保留 testid 断言)
+    expect(screen.getByTestId('paper-library-center')).toBeTruthy()
+    expect(screen.getByTestId('paper-library-right')).toBeTruthy()
   })
 })
+

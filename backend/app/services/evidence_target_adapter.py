@@ -286,9 +286,152 @@ _DTO_BUILDERS = {
 }
 
 
+async def _macro_review_target_dto(
+    session: AsyncSession, target_type: str, target_id: uuid.UUID,
+) -> dict | None:
+    """Macro 治理审核目标 DTO(不落库,纯查询组装)。
+
+    * existing_connection_evidence —— 证据增强任务:已有连接 + 论文新证据 + AI 判定
+      (rule BLOCKED/duplicate)  ⇒ 审核语义「这篇论文能否作为该已有连接的新证据」
+    * macro_candidate_connection  —— 新增连接候选人工审核
+      (rule PASS + AI SUPPORTED) ⇒ 审核新增连接
+    """
+    ranking = (await session.execute(
+        text("""\
+SELECT rk.id, rk.paper_count, rk.evidence_count, rk.score, rk.priority_level,
+       rs.canonical_name_en AS src, rt.canonical_name_en AS tgt,
+       rk.source_region_id, rk.target_region_id, rk.candidate_pair_ids
+FROM paper_connection_candidate_rankings rk
+JOIN canonical_brain_regions rs ON rs.id = rk.source_region_id
+JOIN canonical_brain_regions rt ON rt.id = rk.target_region_id
+WHERE rk.id = :rid"""),
+        {"rid": str(target_id)})).first()
+    if ranking is None:
+        return None
+    review = (await session.execute(
+        text("""SELECT decision, connection_type, direction, confidence,
+                  evidence_strength, reasoning, model_name, created_at
+           FROM macro_candidate_connection_llm_reviews WHERE ranking_id = :rid LIMIT 1"""),
+        {"rid": str(target_id)})).first()
+    rule = (await session.execute(
+        text("""SELECT validation_status, duplicate_existing
+           FROM macro_candidate_rule_validation_results WHERE ranking_id = :rid
+           ORDER BY validation_timestamp DESC LIMIT 1"""),
+        {"rid": str(target_id)})).first()
+    a, b = sorted([str(ranking[7]), str(ranking[8])])
+    existing = (await session.execute(
+        text("""SELECT id, connection_code, confidence
+           FROM final_canonical_connections
+           WHERE (source_region_id = :a AND target_region_id = :b)
+              OR (source_region_id = :b AND target_region_id = :a)
+           LIMIT 1"""),
+        {"a": a, "b": b})).first()
+
+    dto = {
+        "granularity": "macro_clinical",
+        "display_name": f"{ranking[5]} → {ranking[6]}",
+        "source_region": ranking[5],
+        "target_region": ranking[6],
+        "relation": "连接",
+        "connection_type": None,
+        "directionality": None,
+        "existing_connection_id": str(existing[0]) if existing else None,
+        "existing_connection_code": existing[1] if existing else None,
+        "existing_connection_confidence": float(existing[2]) if existing and existing[2] is not None else None,
+        "ranking_id": str(target_id),
+        "ranking_score": float(ranking[3]) if ranking[3] is not None else None,
+        "ranking_priority": ranking[4],
+        "paper_count": ranking[1],
+        "evidence_count": ranking[2],
+        "ai_decision": review[0] if review else None,
+        "ai_connection_type": review[1] if review else None,
+        "ai_direction": review[2] if review else None,
+        "ai_confidence": float(review[3]) if review and review[3] is not None else None,
+        "ai_evidence_strength": review[4] if review else None,
+        "ai_reasoning": review[5] if review else None,
+        "ai_model": review[6] if review else None,
+        "ai_reviewed_at": _fmt_ts(review[7]) if review else None,
+        "rule_status": rule[0] if rule else None,
+        "rule_duplicate_existing": rule[1] if rule else None,
+        "review_kind": "enhancement" if target_type == "existing_connection_evidence" else "novel",
+        "evidence_papers": [],  # 由下方 pair 查询填充
+    }
+    # 两端 canonical id(供前端 id 级上下文匹配)
+    dto["source_region_canonical_id"] = str(ranking[7])
+    dto["target_region_canonical_id"] = str(ranking[8])
+    # 论文证据片段(ranking → candidate_pair_ids → paper_region_pair_candidates
+    # → paper_sources;按共现质量 TOP 3;人工审核页直接展示)
+    pair_ids = [str(x) for x in (ranking[9] or [])]
+    if pair_ids:
+        pair_rows = (await session.execute(
+            text("""SELECT p.paper_id, p.evidence_sentence, p.section_name, p.cooccurrence
+               FROM paper_region_pair_candidates p
+               WHERE p.id = ANY(:ids)"""),
+            {"ids": pair_ids})).all()
+        paper_ids = list({str(r[0]) for r in pair_rows})
+        paper_rows = (await session.execute(
+            text("SELECT id, title, pmid FROM paper_sources WHERE id = ANY(:ids)"),
+            {"ids": paper_ids})).all() if paper_ids else []
+        paper_info = {str(p[0]): (p[1], p[2]) for p in paper_rows}
+        q = {"same_sentence": 0, "same_section": 1, "same_paper": 2}
+        evs = []
+        for pid, sentence, section, cooc in pair_rows:
+            evs.append({
+                "paper_title": paper_info.get(str(pid), ("unknown", "unknown"))[0],
+                "pmid": paper_info.get(str(pid), ("unknown", "unknown"))[1],
+                "section": section or "",
+                "sentence": sentence,
+                "cooccurrence": cooc,
+                "_q": q.get(cooc, 9),
+            })
+        evs.sort(key=lambda e: e["_q"])
+        for e in evs:
+            e.pop("_q", None)
+        dto["evidence_papers"] = evs[:3]
+    else:
+        dto["evidence_papers"] = []
+    return dto
+
+
+def _fmt_ts(v) -> str | None:
+    if v is None:
+        return None
+    if hasattr(v, "isoformat"):
+        return v.isoformat()
+    return str(v)
+
+
 async def build_target_dto(
     session: AsyncSession, target_type: str, target_id: uuid.UUID
 ) -> dict:
+    # Macro 治理审核目标(connection-like 组装,不落库)
+    # 命名:enhancement=existing_connection_evidence;novel=macro_connection_candidate
+    # (兼容历史别名 macro_candidate_connection / macro_candidate_evidence)
+    if target_type in (
+        "existing_connection_evidence", "macro_connection_candidate",
+        "macro_candidate_connection", "macro_candidate_evidence",
+    ):
+        dto = await _macro_review_target_dto(session, target_type, target_id)
+        if dto is None:
+            raise ValueError("target not found")
+        dto.update({
+            "target_type": target_type,
+            "target_id": str(target_id),
+            "current_confidence": dto.get("existing_connection_confidence"),
+            "existing_evidence": 0,
+        })
+        dto["claim_text"] = _build_claim("connection", dto)
+        dto["structured_claim"] = {
+            "target_type": target_type,
+            "target_id": str(target_id),
+            "source_region": dto.get("source_region") or None,
+            "target_region": dto.get("target_region") or None,
+            "relation": dto.get("relation") or None,
+            "canonical_terms": [dto.get("source_region"), dto.get("target_region")],
+        }
+        dto["claim_components"] = _build_claim_components("connection", dto)
+        dto["claim_version"] = CLAIM_VERSION
+        return dto
     model = TARGET_MODELS.get(target_type)
     builder = _DTO_BUILDERS.get(target_type)
     if model is None or builder is None:
@@ -310,6 +453,9 @@ async def build_target_dto(
             "existing_evidence": await _count_evidence(session, target_type, target_id),
         }
     )
+    # Macro 治理匹配:connection 对象附带 canonical 区 id(既有 mirror→candidate→canonical FK)
+    if target_type == "connection":
+        await attach_canonical_region_ids(session, dto, row)
     # circuit_function / circuit_step carry circuit_id as circuit_context:
     # resolve it to the circuit name so claims read "回路「xxx」" not a UUID.
     if target_type in ("circuit_function", "circuit_step") and dto.get("circuit_context"):
@@ -333,6 +479,37 @@ async def build_target_dto(
     dto["claim_components"] = _build_claim_components(target_type, dto)
     dto["claim_version"] = CLAIM_VERSION
     return dto
+
+
+async def attach_canonical_region_ids(
+    session: AsyncSession, dto: dict, row: MirrorRegionConnection,
+) -> None:
+    """Macro 治理匹配:mirror connection → candidate → canonical 区 id(既有 FK 链路)。
+
+    mirror_region_connections.source_region_candidate_id → candidate_brain_regions
+    → candidate_brain_regions.canonical_region_id → canonical_brain_regions.id
+    (= paper_connection_candidate_rankings 的 source/target_region_id)。
+
+    仅命中已有 mapping(Macro96 池 96 行 candidate 有 canonical_region_id);
+    未映射的对象两字段保持 null,由前端名称级回退继续。
+    """
+    src_cid = getattr(row, "source_region_candidate_id", None)
+    tgt_cid = getattr(row, "target_region_candidate_id", None)
+    from app.models.candidate import CandidateBrainRegion  # noqa: PLC0415
+    from sqlalchemy import select  # noqa: PLC0415
+    if src_cid is None and tgt_cid is None:
+        return
+    rows = (await session.execute(
+        select(CandidateBrainRegion)
+        .where(CandidateBrainRegion.id.in_([c for c in (src_cid, tgt_cid) if c is not None]))
+    )).scalars().all()
+    by_id = {str(r.id): r.canonical_region_id for r in rows}
+    dto["source_region_canonical_id"] = (
+        str(by_id[str(src_cid)]) if src_cid and str(src_cid) in by_id and by_id[str(src_cid)] else None
+    )
+    dto["target_region_canonical_id"] = (
+        str(by_id[str(tgt_cid)]) if tgt_cid and str(tgt_cid) in by_id and by_id[str(tgt_cid)] else None
+    )
 
 
 async def _count_evidence(session: AsyncSession, target_type: str, target_id: uuid.UUID) -> int:

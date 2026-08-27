@@ -1,40 +1,31 @@
 /**
- * 顶部过滤条（Phase 7）：
- * 实体类型 / 粒度 / 关系分组 三组 chip 开关 + 重置。
+ * 顶部知识图谱导航栏（Phase 7；V2 改造）：
+ * 标题 + 模式徽章 + 数据源状态 + 粒度 pills + 保存/分享视图。
+ * 实体类型 / 关系分组过滤已移至左侧探索面板（V2）；
+ * 粒度仍在顶部作为一级导航（spec：粒度是首层切换）。
  * 只过滤前端展示（filterCanonicalGraph），不修改数据库、不发请求。
  */
-import { useCallback } from 'react'
+import { useCallback, useState } from 'react'
+import { BookOpen, Link as LinkIcon, Save } from 'lucide-react'
 import { GRANULARITY_LEVELS } from '../../hooks/useGlobalGranularity'
-import {
-  CANONICAL_NODE_TYPE_LABELS,
-  RELATION_GROUPS,
-  type CanonicalNodeType,
-} from './adapters/finalKgAdapter'
-import {
-  emptyDisplayFilters,
-  toggleSetValue,
-  type DisplayFilters,
-} from './graphFilter'
+import type { DisplayFilters } from './graphFilter'
+import type { GraphDataSource } from './useGraphData'
 
 interface FinalKgGraphFilterBarProps {
   filters: DisplayFilters
   onFiltersChange: (filters: DisplayFilters) => void
+  dataSource: GraphDataSource
+  /** 保存视图：把当前过滤写入 URL hash（页面实现，防循环） */
+  onSaveView: () => void
 }
 
-export function FinalKgGraphFilterBar({ filters, onFiltersChange }: FinalKgGraphFilterBarProps) {
-  const toggleEntity = useCallback(
-    (type: CanonicalNodeType) => {
-      onFiltersChange({ ...filters, entityTypes: toggleSetValue(filters.entityTypes, type) })
-    },
-    [filters, onFiltersChange],
-  )
-
-  const toggleGroup = useCallback(
-    (group: string) => {
-      onFiltersChange({ ...filters, relationGroups: toggleSetValue(filters.relationGroups, group) })
-    },
-    [filters, onFiltersChange],
-  )
+export function FinalKgGraphFilterBar({
+  filters,
+  onFiltersChange,
+  dataSource,
+  onSaveView,
+}: FinalKgGraphFilterBarProps) {
+  const [copied, setCopied] = useState(false)
 
   const selectGranularity = useCallback(
     (value: string) => {
@@ -44,32 +35,43 @@ export function FinalKgGraphFilterBar({ filters, onFiltersChange }: FinalKgGraph
   )
 
   const reset = useCallback(() => {
-    onFiltersChange(emptyDisplayFilters())
+    onFiltersChange({ entityTypes: new Set(), granularity: '', relationGroups: new Set() })
   }, [onFiltersChange])
 
+  const handleShare = useCallback(async () => {
+    try {
+      onSaveView()
+      await navigator.clipboard.writeText(window.location.href)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    } catch {
+      // clipboard 不可用（http 或权限）→ 忽略
+    }
+  }, [onSaveView])
+
+  const granularity = filters.granularity
+
   return (
-    <div className="cg-filterbar" role="toolbar" aria-label="图谱展示过滤">
-      <div className="cg-filterbar-group">
-        <span className="cg-filterbar-label">实体</span>
-        {(Object.keys(CANONICAL_NODE_TYPE_LABELS) as CanonicalNodeType[]).map(type => (
-          <button
-            key={type}
-            type="button"
-            className={`cg-filter-chip${filters.entityTypes.has(type) ? ' cg-filter-chip-active' : ''}`}
-            aria-pressed={filters.entityTypes.has(type)}
-            onClick={() => toggleEntity(type)}
-          >
-            {CANONICAL_NODE_TYPE_LABELS[type]}
-          </button>
-        ))}
+    <div className="kg-header" role="toolbar" aria-label="知识图谱导航栏">
+      <div className="kg-header-left">
+        <span className="kg-header-icon">
+          <BookOpen size={15} />
+        </span>
+        <div className="kg-header-titles">
+          <span className="kg-header-title">Canonical Knowledge Graph</span>
+          <span className="kg-header-badge kg-header-badge-mode">Canonical</span>
+          <span className={`kg-header-badge kg-header-badge-source${dataSource === 'mirror' ? ' is-mirror' : ' is-final'}`}>
+            {dataSource === 'mirror' ? 'Mirror KG' : 'Final KG'}
+          </span>
+        </div>
       </div>
 
-      <div className="cg-filterbar-group">
-        <span className="cg-filterbar-label">粒度</span>
+      <div className="kg-header-group">
+        <span className="kg-header-label">粒度</span>
         <button
           type="button"
-          className={`cg-filter-chip${filters.granularity === '' ? ' cg-filter-chip-active' : ''}`}
-          aria-pressed={filters.granularity === ''}
+          className={`kg-header-chip${granularity === '' ? ' is-active' : ''}`}
+          aria-pressed={granularity === ''}
           onClick={() => selectGranularity('')}
         >
           全部
@@ -78,8 +80,8 @@ export function FinalKgGraphFilterBar({ filters, onFiltersChange }: FinalKgGraph
           <button
             key={g.key}
             type="button"
-            className={`cg-filter-chip${filters.granularity === g.key ? ' cg-filter-chip-active' : ''}`}
-            aria-pressed={filters.granularity === g.key}
+            className={`kg-header-chip${granularity === g.key ? ' is-active' : ''}`}
+            aria-pressed={granularity === g.key}
             onClick={() => selectGranularity(g.key)}
           >
             {g.label}
@@ -87,24 +89,19 @@ export function FinalKgGraphFilterBar({ filters, onFiltersChange }: FinalKgGraph
         ))}
       </div>
 
-      <div className="cg-filterbar-group">
-        <span className="cg-filterbar-label">关系</span>
-        {RELATION_GROUPS.map(group => (
-          <button
-            key={group.value}
-            type="button"
-            className={`cg-filter-chip${filters.relationGroups.has(group.value) ? ' cg-filter-chip-active' : ''}`}
-            aria-pressed={filters.relationGroups.has(group.value)}
-            onClick={() => toggleGroup(group.value)}
-          >
-            {group.label}
-          </button>
-        ))}
+      <div className="kg-header-right">
+        <button type="button" className="kg-header-action" onClick={onSaveView}>
+          <Save size={13} />
+          保存视图
+        </button>
+        <button type="button" className="kg-header-action" onClick={handleShare}>
+          <LinkIcon size={13} />
+          {copied ? '已复制链接' : '分享视图'}
+        </button>
+        <button type="button" className="kg-header-action" onClick={reset}>
+          重置
+        </button>
       </div>
-
-      <button type="button" className="cg-filterbar-reset" onClick={reset}>
-        重置
-      </button>
     </div>
   )
 }

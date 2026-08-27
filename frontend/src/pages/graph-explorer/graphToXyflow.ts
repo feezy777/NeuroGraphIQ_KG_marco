@@ -41,11 +41,27 @@ export function connectionLabelsOf(graph: CanonicalGraph): Map<string, string> {
 
 export function toXyflowNodes(graph: CanonicalGraph, positions: Map<string, Point>): Node[] {
   const connectionLabels = connectionLabelsOf(graph)
+  // 派生展示统计（tooltip 用；纯展示,不触碰数据源）：
+  // connectionCount = 图内与该节点相连的连接折叠边数；evidenceCount = 证据边数
+  const statsByNodeId = new Map<string, { connectionCount: number; evidenceCount: number }>()
+  for (const e of graph.edges) {
+    if (e.type !== 'connection' && e.type !== 'evidence') continue
+    for (const nodeId of [e.source, e.target]) {
+      const cur = statsByNodeId.get(nodeId) ?? { connectionCount: 0, evidenceCount: 0 }
+      if (e.type === 'connection') cur.connectionCount += 1
+      else cur.evidenceCount += 1
+      statsByNodeId.set(nodeId, cur)
+    }
+  }
   return graph.nodes.map(n => ({
     id: n.id,
     type: XYFLOW_NODE_TYPE,
     position: positions.get(n.id) ?? { x: 0, y: 0 },
-    data: { node: n, connectionLabel: connectionLabels.get(n.id) },
+    data: {
+      node: n,
+      connectionLabel: connectionLabels.get(n.id),
+      nodeStats: statsByNodeId.get(n.id) ?? { connectionCount: 0, evidenceCount: 0 },
+    },
   }))
 }
 
@@ -56,6 +72,8 @@ export function toXyflowEdges(graph: CanonicalGraph): Edge[] {
     target: e.target,
     type: XYFLOW_EDGE_TYPE,
     data: { edge: e },
+    // 连接折叠边:标签显示 connection_type(边中点 chip)
+    label: e.type === 'connection' ? (e.metadata.predicate || e.label || 'connection') : undefined,
   }))
 }
 

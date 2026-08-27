@@ -86,8 +86,8 @@ function formatValue(v: unknown): string {
 // ── Model presets ───────────────────────────────────────────────────────────
 
 const DS_MODELS = [
-  { value: 'deepseek-chat', label: 'deepseek-chat（推荐，速度快）' },
-  { value: 'deepseek-v4-flash', label: 'deepseek-v4-flash（最新极速版，成本低）' },
+  { value: 'deepseek-v4-flash', label: 'deepseek-v4-flash（推荐，速度快）' },
+  { value: 'deepseek-chat', label: 'deepseek-chat（V3）' },
   { value: 'deepseek-v4-pro', label: 'deepseek-v4-pro（高精度）' },
   { value: 'deepseek-reasoner', label: 'deepseek-reasoner（推理模型）' },
 ]
@@ -113,7 +113,7 @@ export function MultiTargetFieldCompletionModal({
   // ── Wizard state ──────────────────────────────────────────────────────────
   const [step, setStep] = useState<Step>(0)
   const [selProvider, setSelProvider] = useState('deepseek')
-  const [selModel, setSelModel] = useState('deepseek-chat')
+  const [selModel, setSelModel] = useState('deepseek-v4-flash')
   const [customModel, setCustomModel] = useState('')
   const [options, setOptions] = useState<FieldCompletionFormOptions>(DEFAULT_FIELD_COMPLETION_OPTIONS)
   const effectiveModel = customModel || selModel
@@ -122,7 +122,7 @@ export function MultiTargetFieldCompletionModal({
 
   const handleProviderChange = (p: string) => {
     setSelProvider(p)
-    setSelModel(p === 'kimi' ? 'moonshot-v1-auto' : 'deepseek-chat')
+    setSelModel(p === 'kimi' ? 'moonshot-v1-auto' : 'deepseek-v4-flash')
   }
 
   // ── Bundle state ──────────────────────────────────────────────────────────
@@ -181,7 +181,7 @@ export function MultiTargetFieldCompletionModal({
     if (!open || !bundle) return
     setStep(0)
     setSelProvider('deepseek')
-    setSelModel('deepseek-chat')
+    setSelModel('deepseek-v4-flash')
     setCustomModel('')
     setOptions(DEFAULT_FIELD_COMPLETION_OPTIONS)
     setBundleWarnings([])

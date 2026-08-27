@@ -86,6 +86,11 @@ class AtlasRegionMapping(Base):
     species_relation: Mapped[str] = mapped_column(String(32), nullable=False, default="same_species")
     match_details: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
     provenance: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    # Inference governance (20260902): assertion_type 事实/推理分层 + provenance metadata
+    assertion_type: Mapped[str] = mapped_column(String(32), nullable=False, default="reported_fact")
+    source_type: Mapped[str] = mapped_column(String(32), nullable=False, default="unknown")
+    generation_method: Mapped[str] = mapped_column(String(64), nullable=False, default="unknown")
+    evidence_reference: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="active")
     created_by: Mapped[str] = mapped_column(String(64), nullable=False, default="manual")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

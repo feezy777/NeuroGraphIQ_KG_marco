@@ -7,6 +7,7 @@ import uuid
 
 import httpx
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
+from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
@@ -1037,9 +1038,23 @@ async def paper_evidence_batch_list(
     offset: int = Query(default=0, ge=0),
     status: str | None = Query(default=None),
     granularity_level: str | None = Query(default=None, description="workbench 颗粒度级别(macro/meso/sub_connectivity/fine_cyto/molecular_attr)"),
+    include_deleted: bool = Query(default=False, description="包含软删除任务(历史视图)"),
     session: AsyncSession = Depends(get_db),
 ):
-    return await pes.list_paper_evidence_tasks(session, limit=limit, offset=offset, status=status, granularity_level=granularity_level)
+    return await pes.list_paper_evidence_tasks(
+        session, limit=limit, offset=offset, status=status,
+        granularity_level=granularity_level, include_deleted=include_deleted,
+    )
+
+
+@router.get("/evidence/batch/history")
+async def paper_evidence_batch_history(
+    limit: int = Query(default=100, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+    session: AsyncSession = Depends(get_db),
+):
+    """任务中心历史聚合(只读):已完成/暂停/取消任务 + 最新审核简况 + 审核次数。"""
+    return await pes.list_task_center_history(session, limit=limit, offset=offset)
 
 
 @router.get("/evidence/batch/preview")
@@ -1129,6 +1144,22 @@ async def paper_evidence_batch_get(
 ):
     try:
         return await pes.get_batch_task(session, task_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail={"code": "INVALID_REQUEST", "message": str(exc)})
+
+
+@router.post("/evidence/batch/{task_id}/delete")
+async def paper_evidence_batch_soft_delete(
+    task_id: str,
+    session: AsyncSession = Depends(get_db),
+    auth_role: str = Depends(require_role("reviewer")),
+):
+    """任务软删除:仅标记 deleted_at/deleted_by,不物理删除(历史数据全保留)。
+
+    幂等:重复删除返回当前状态;已删除任务不可再进入验证流程。
+    """
+    try:
+        return await pes.soft_delete_paper_evidence_task(session, task_id, actor=auth_role)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail={"code": "INVALID_REQUEST", "message": str(exc)})
 
@@ -1258,6 +1289,8 @@ async def paper_library_list(
     oa: bool | None = Query(default=None),
     year: int | None = Query(default=None),
     has_fulltext: bool | None = Query(default=None),
+    journal: str | None = Query(default=None, description="期刊名(子串)"),
+    evidence_min: int | None = Query(default=None, ge=1, description="至少 N 条证据"),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=100),
     session: AsyncSession = Depends(get_db),
@@ -1268,9 +1301,47 @@ async def paper_library_list(
         oa=oa,
         year=year,
         has_fulltext=has_fulltext,
+        journal=journal,
+        evidence_min=evidence_min,
         page=page,
         page_size=page_size,
     )
+
+
+class PaperAddRequest(BaseModel):
+    pmid: str | None = None
+    doi: str | None = None
+    url: str | None = None
+
+
+@router.post("/evidence/papers", response_model=dict)
+async def paper_library_add(
+    body: PaperAddRequest,
+    session: AsyncSession = Depends(get_db),
+    auth_role: str = Depends(require_role("reviewer")),
+):
+    """添加论文(PMID / DOI / URL):自动获取元数据并幂等入库;已存在禁止重复创建。
+
+    仅写 paper_sources(upsert);不调用 LLM。
+    """
+    try:
+        return await pes.add_paper_to_library(
+            session, pmid=body.pmid, doi=body.doi, url=body.url)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail={"code": "INVALID_REQUEST", "message": str(exc)})
+
+
+@router.post("/evidence/papers/{paper_id}/delete")
+async def paper_library_soft_delete(
+    paper_id: uuid.UUID,
+    session: AsyncSession = Depends(get_db),
+    auth_role: str = Depends(require_role("reviewer")),
+):
+    """论文软删除(禁止物理删除;历史证据/引用全保留)。"""
+    try:
+        return await pes.soft_delete_paper(session, str(paper_id), actor=auth_role)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail={"code": "INVALID_REQUEST", "message": str(exc)})
 
 
 @router.get("/evidence/papers/{paper_id}")

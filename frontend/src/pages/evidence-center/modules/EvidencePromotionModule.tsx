@@ -24,6 +24,8 @@ import { clearReviewStatus, listReviewApproved } from '../components/ReviewStatu
 import { aggregateTmpDirection, computeTmpCoverage } from '../components/claimCoverage'
 import type { Direction, EvidenceLevel, WorkbenchPassage } from '../components/types'
 import { DIRECTION_LABEL, LEVEL_LABEL } from '../components/types'
+import { MacroPromotionGate } from '../../validation-center/macro-governance/MacroGovernanceIntegration'
+import { useMacroViewForEvidence } from '../../validation-center/macro-governance/useMacroCandidates'
 
 const DRAFT_PREFIX = 'evidence-center.review-draft.'
 
@@ -169,6 +171,23 @@ export function EvidencePromotionModule() {
 
   const selectedPassages = useMemo(() => (draft?.passages ?? []).filter(p => p.source_verified), [draft])
   const claimComponents = useMemo(() => dto?.claim_components ?? [], [dto])
+
+  // Macro 治理晋升门禁:Rule PASS + Human Approved + Evidence 存在(macro 匹配时才生效)
+  const macroView = useMacroViewForEvidence(
+    selectedPending?.targetId ?? null,
+    dto?.source_region,
+    dto?.target_region,
+    dto?.source_region_canonical_id,
+    dto?.target_region_canonical_id,
+  )
+  const macroGateOk = useMemo(() => {
+    if (!macroView) return true
+    return Boolean(
+      macroView.ruleResult?.passed
+      && (macroView.status === 'promotion_ready' || macroView.status === 'promoted')
+      && selectedPassages.length > 0,
+    )
+  }, [macroView, selectedPassages.length])
   const coverage = useMemo(() => computeTmpCoverage(claimComponents, selectedPassages), [claimComponents, selectedPassages])
   const coverageDirection = useMemo(() => aggregateTmpDirection(coverage, selectedPassages), [coverage, selectedPassages])
   const currentConfidence = dto?.current_confidence ?? selectedQueueEntry?.confidence ?? null
@@ -332,6 +351,16 @@ export function EvidencePromotionModule() {
 
         {message && <div className="ontology-page-message">{message}</div>}
 
+        {/* Macro 治理晋升门禁:Rule PASS + Human Approved + Evidence 存在(仅 macro 候选匹配时显示) */}
+        <MacroPromotionGate
+          targetId={selectedPending?.targetId ?? ''}
+          sourceName={dto?.source_region}
+          targetName={dto?.target_region}
+          sourceCanonicalId={dto?.source_region_canonical_id}
+          targetCanonicalId={dto?.target_region_canonical_id}
+          evidenceCount={selectedPassages.length}
+        />
+
         {/* 待晋升列表(晋升前可手动切换选中项;第3-5步重构后恢复,防多待晋升无法切换) */}
         {pendingItems.length > 1 && (
           <div className="evidence-promotion-pending-list" data-testid="promotion-pending-list">
@@ -435,11 +464,16 @@ export function EvidencePromotionModule() {
               </button>
               <button
                 type="button" className="btn btn-sm btn-primary" data-testid="promotion-confirm-btn"
-                disabled={promoteBusy || !draft || selectedPassages.length === 0}
+                disabled={promoteBusy || !draft || selectedPassages.length === 0 || !macroGateOk}
                 onClick={() => setConfirmOpen(true)}
               >
                 {promoteBusy ? '处理中…' : '确认入库'}
               </button>
+              {!macroGateOk && (
+                <span className="ew-bad" data-testid="promotion-macro-gate-blocked">
+                  Macro 晋升条件未满足(Rule PASS + Human Approved + Evidence 存在),先处理后再入库
+                </span>
+              )}
             </div>
 
             <div className="ew-meta" style={{ marginTop: 8 }}>审核状态：review_approved · {fmtDate(selectedPending.approvedAt)}</div>

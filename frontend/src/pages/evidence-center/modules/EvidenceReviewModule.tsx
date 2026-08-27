@@ -22,6 +22,8 @@ import { PassageEvidenceCard } from '../components/PassageEvidenceCard'
 import { loadReviewStatus, saveReviewStatus, type ReviewStatusMeta, type ReviewStatusRecord } from '../components/ReviewStatusStore'
 import type { ReviewDecisionState } from '../components/ReviewerDecisionPanel'
 import { aggregateTmpDirection, computeTmpCoverage } from '../components/claimCoverage'
+import { MacroReviewContext } from '../../validation-center/macro-governance/MacroGovernanceIntegration'
+import { GovernanceReviewQueueToggle } from '../components/GovernanceReviewQueueToggle'
 
 /** 队列中已完成/终态的对象(审核通过/驳回/跳过/失败后不再作为下一条跳转目标) */
 const REVIEWED_STATUSES = new Set(['completed', 'skipped', 'failed', 'cancelled'])
@@ -565,6 +567,8 @@ export function EvidenceReviewModule() {
       <p className="evidence-module-hint">
         勾选已核验片段，设置人工方向/证据等级/置信度后完成审核；审核通过 ≠ 晋升入库，将进入「证据晋升」待晋升队列。
       </p>
+      {/* Phase 4: Macro 治理双队列入口(复用本面板;task 默认行为不变) */}
+      <GovernanceReviewQueueToggle />
     </div>
   )
 
@@ -614,6 +618,16 @@ export function EvidenceReviewModule() {
           <h4>当前论文</h4>
           <span className="ew-meta">{paperTitle || '—'} · PMID {pmid || '—'}{doi ? ` · DOI ${doi}` : ''}</span>
         </div>
+
+        {/* Macro 治理上下文:规则验证结果 + AI 审核意见 + 论文证据片段(不改变现有审核交互) */}
+        <MacroReviewContext
+          targetId={targetId ?? ''}
+          sourceName={dto?.source_region}
+          targetName={dto?.target_region}
+          sourceCanonicalId={dto?.source_region_canonical_id}
+          targetCanonicalId={dto?.target_region_canonical_id}
+          dto={dto}
+        />
 
         {rescoreRevisionNo !== null && (
           <div className="ontology-page-message" data-testid="evidence-rescore-banner">

@@ -5778,9 +5778,45 @@ export interface PaperEvidencePassageDetail {
   is_selected: boolean
 }
 
-export interface EvidenceTargetDto {
+export interface EvidenceTargetDto extends EvidenceClaimBlock {
   target_type: string
   target_id: string
+  /** Macro 治理:mirror 连接两端 canonical 区 id(既有 mirror→candidate→canonical FK),未映射为 null */
+  source_region_canonical_id?: string | null
+  target_region_canonical_id?: string | null
+  /** Macro 治理候选(lookup target_type=macro_*)：已有连接 + AI 判定 + 论文证据片段 */
+  existing_connection_id?: string | null
+  existing_connection_code?: string | null
+  existing_connection_confidence?: number | null
+  ranking_id?: string | null
+  ranking_score?: number | null
+  ranking_priority?: string | null
+  paper_count?: number | null
+  ai_decision?: string | null
+  ai_connection_type?: string | null
+  ai_direction?: string | null
+  ai_confidence?: number | null
+  ai_evidence_strength?: string | null
+  ai_reasoning?: string | null
+  ai_model?: string | null
+  ai_reviewed_at?: string | null
+  rule_status?: string | null
+  rule_duplicate_existing?: Record<string, unknown> | null
+  review_kind?: 'enhancement' | 'novel' | null
+  /** 论文证据片段(ranking → candidate_pair_ids → pair → paper;TOP 3)空态=该候选暂无可审核证据 */
+  evidence_papers?: MacroEvidencePaper[]
+}
+
+export interface MacroEvidencePaper {
+  paper_title: string | null
+  pmid: string | null
+  section: string | null
+  sentence: string | null
+  cooccurrence: string | null
+}
+
+/** claim 描述字段（并行会话追加：/ontology/evidence/target 同一端点返回,并入 EvidenceTargetDto） */
+export interface EvidenceClaimBlock {
   granularity: string
   display_name: string
   source_region: string
@@ -6531,6 +6567,14 @@ export interface EvidencePaperItem {
   evidence_count: number
 }
 
+/** Paper Library 详情扩展字段(2026-09-28: authors/abstract/review_count) */
+export interface EvidencePaperDetailPaper extends EvidencePaperItem {
+  source?: string | null
+  authors: string | null
+  abstract: string | null
+  review_count: number
+}
+
 export interface EvidencePaperParagraph {
   paragraph_id: string
   section_title: string | null
@@ -6540,7 +6584,7 @@ export interface EvidencePaperParagraph {
 }
 
 export interface EvidencePaperDetail {
-  paper: EvidencePaperItem
+  paper: EvidencePaperDetailPaper
   paragraphs: EvidencePaperParagraph[]
   evidence_count: number
   targets: Array<{ target_type: string; target_id: string }>
@@ -6551,3 +6595,151 @@ export const listEvidencePapers = (p?: Record<string, string | number | boolean 
 
 export const getEvidencePaperDetail = (paperId: string) =>
   getJson<EvidencePaperDetail>(`/api/ontology/evidence/papers/${paperId}`)
+
+export const addPaperToLibrary = (body: { pmid?: string | null; doi?: string | null; url?: string | null }) =>
+  postJson<{ paper_id: string; created: boolean; message: string }>('/api/ontology/evidence/papers', body)
+
+export const deletePaperSoft = (paperId: string) =>
+  postJson<{ paper_id: string; deleted: boolean; deleted_at: string | null; deleted_by: string | null }>(
+    `/api/ontology/evidence/papers/${paperId}/delete`,
+  )
+
+// ── Macro Candidate Governance ────────────────────────────────────────────────
+// 只读查询(macro_candidate_governance router):候选连接排名 + LLM 科学审核结果。
+// 前端仅用于展示/状态派生,不写任何治理表。
+
+export interface MacroCandidateRankingItem {
+  id: string
+  source_region_id: string
+  target_region_id: string
+  source_name: string
+  target_name: string
+  paper_count: number
+  evidence_count: number
+  score: number | null
+  priority_level: 'A' | 'B' | 'C'
+  created_at: string | null
+}
+
+export interface MacroCandidateRankingDetail extends MacroCandidateRankingItem {
+  candidate_pair_ids: string[]
+  ranking_reason: Record<string, unknown>
+  provenance_json: Record<string, unknown>
+  source_parent_name: string | null
+  target_parent_name: string | null
+}
+
+export interface MacroCandidateReviewItem {
+  ranking_id: string
+  source_region_id: string
+  target_region_id: string
+  source_name: string
+  target_name: string
+  decision: 'supported' | 'uncertain' | 'not_supported'
+  connection_type: 'structural_connection' | 'functional_connectivity' | 'projection' | 'association' | 'unknown'
+  direction: 'A_to_B' | 'B_to_A' | 'bidirectional' | 'unknown'
+  confidence: number | null
+  evidence_strength: 'high' | 'medium' | 'low'
+  reasoning: string
+  model_name: string
+  raw_response_json: Record<string, unknown>
+  created_at: string | null
+  paper_count: number | null
+  evidence_count: number | null
+  score: number | null
+}
+
+export const listMacroCandidateRankings = (p?: Record<string, string | number | boolean | undefined>) =>
+  getJson<{ total: number; limit: number; offset: number; items: MacroCandidateRankingItem[] }>('/api/macro-candidates/rankings', p)
+
+export const getMacroCandidateRankingDetail = (rankingId: string) =>
+  getJson<MacroCandidateRankingDetail>(`/api/macro-candidates/rankings/${rankingId}`)
+
+export const listMacroCandidateReviews = (p?: Record<string, string | number | boolean | undefined>) =>
+  getJson<{ total: number; limit: number; offset: number; items: MacroCandidateReviewItem[] }>('/api/macro-candidates/reviews', p)
+
+// ---- Macro 候选规则验证(Rule Validation V1:candidate 层) ----
+
+export interface MacroCandidateRuleCheck {
+  code: string
+  name: string
+  passed: boolean
+  severity?: 'normal' | 'block'
+  detail: string
+}
+
+export interface MacroCandidateRuleValidationItem {
+  ranking_id: string
+  validation_status: 'PASS' | 'FAIL' | 'BLOCKED'
+  rule_results: MacroCandidateRuleCheck[]
+  duplicate_existing: Record<string, unknown> | null
+  failed_rules: Array<{ code: string; name: string; detail: string }>
+  validator_version: string
+  validation_timestamp: string | null
+  source_name: string
+  target_name: string
+  paper_count: number | null
+  score: number | null
+}
+
+export const listMacroCandidateRuleValidations = (p?: Record<string, string | number | boolean | undefined>) =>
+  getJson<{ total: number; limit: number; offset: number; items: MacroCandidateRuleValidationItem[] }>('/api/macro-candidates/rule-validations', p)
+
+// ---- Macro 治理人工审核双队列(Phase 4,复用现有 HumanReviewPanel) ----
+
+export type MacroReviewQueueKind = 'enhancement' | 'novel'
+
+export interface MacroReviewQueueItem {
+  kind: 'enhancement' | 'novel'
+  target_type: 'existing_connection_evidence' | 'macro_candidate_connection'
+  target_id: string
+  label: string
+  confidence: number | null
+  status: 'awaiting_review'
+  evidenceCount: number
+  ranking_score: number | null
+  priority_level: string | null
+  ai_decision: string | null
+  ai_connection_type: string | null
+  rule_status: string | null
+}
+
+export const listMacroCandidateReviewQueue = (kind: MacroReviewQueueKind) =>
+  getJson<{ kind: string; total: number; limit: number; items: MacroReviewQueueItem[] }>(
+    '/api/macro-candidates/review-queue',
+    { kind, limit: 300 },
+  )
+
+// ── Task Center(任务中心):软删除 + 历史聚合 ─────────────────────────────────────
+
+export interface EvidenceHistoryItem {
+  task_id: string
+  target_type: string
+  name: string | null
+  status: string
+  created_by: string | null
+  started_at: string | null
+  finished_at: string | null
+  deleted_at: string | null
+  review_status: string | null
+  granularity_level: string | null
+  review_brief: {
+    last_reviewed_at: string | null
+    reviewer_id: string | null
+    review_status: string | null
+    promotion_status: string | null
+    latest_review_id: string | null
+    has_superseded: boolean
+    review_count: number
+  } | null
+}
+
+export const listEvidenceTaskHistory = (p?: { limit?: number; offset?: number }) =>
+  getJson<{ total: number; limit: number; offset: number; items: EvidenceHistoryItem[] }>(
+    '/api/ontology/evidence/batch/history', p,
+  )
+
+export const deletePaperEvidenceTask = (taskId: string) =>
+  postJson<{ task_id: string; deleted: boolean; deleted_at: string | null; deleted_by: string | null }>(
+    `/api/ontology/evidence/batch/${taskId}/delete`,
+  )

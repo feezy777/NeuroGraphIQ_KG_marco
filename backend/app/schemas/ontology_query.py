@@ -38,7 +38,7 @@ class OntologyQueryResultItem(BaseModel):
     name: str = Field(..., description="展示名")
     category: str = Field(
         ...,
-        description="children | connection | circuit | function | cell_type | molecule",
+        description="children | connection | circuit | function | function_descendant | function_ancestor | cell_type | molecule",
     )
     detail: dict[str, Any] = Field(default_factory=dict, description="意图特定字段（direction/role 等）")
     confidence: float | None = Field(default=None)
@@ -68,7 +68,7 @@ class OntologyQueryMatchDetail(BaseModel):
 
 
 class OntologyQueryResponse(BaseModel):
-    intent: str = Field(..., description="region_children/region_connections/region_circuits/region_functions/region_multiscale/unresolved")
+    intent: str = Field(..., description="region_children/region_connections/region_circuits/region_functions/region_multiscale/function_children/function_ancestors/unresolved")
     entity: OntologyQueryEntity | None = Field(default=None, description="解析到的实体；unresolved 时为 null")
     results: list[OntologyQueryResultItem] = Field(default_factory=list)
     confidence: float = Field(default=0.0, description="0..1；unresolved 恒为 0")
@@ -80,6 +80,13 @@ class OntologyQueryResponse(BaseModel):
     entity_match_detail: OntologyQueryMatchDetail | None = Field(
         default=None,
         description="实体解析溯源（Phase Q1.5）；unresolved 恒为 null",
+    )
+    hierarchy_analysis: dict[str, Any] | None = Field(
+        default=None,
+        description=(
+            "function hierarchy 扩展分析（without/with 结果数对比 + 新增关联路径）；"
+            "function 意图与 region_functions 增强时出现，其余意图为 null"
+        ),
     )
 
 

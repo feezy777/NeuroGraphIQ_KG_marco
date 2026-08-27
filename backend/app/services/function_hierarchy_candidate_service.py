@@ -38,7 +38,7 @@ from app.models.ontology import (
 )
 from app.services.function_term_service import TERM_CODE_PREFIX, TERM_TYPE_FUNCTION
 
-GENERATION_VERSION = "function_hierarchy_candidate_v1"
+GENERATION_VERSION = "function_hierarchy_candidate_v2"
 DEFAULT_TOP_K = 10
 
 # single-token parents that carry no useful information content
@@ -48,6 +48,43 @@ GENERIC_PARENT_TOKENS = frozenset({
     "modulation", "regulation", "coordination", "integration", "encoding",
     "retrieval", "consolidation", "transmission", "circulation",
 })
+
+# Neuroscience umbrella concepts: if a child's canonical name contains one of
+# these as its last token (or the whole name), the umbrella concept is a
+# plausible parent candidate even when it does not appear as a standalone term
+# in the index.  Each entry maps an umbrella slug → display name.
+UMBRELLA_CONCEPTS: dict[str, str] = {
+    "memory": "memory",
+    "attention": "attention",
+    "perception": "perception",
+    "sensation": "sensation",
+    "motor": "motor function",
+    "emotion": "emotion",
+    "learning": "learning",
+    "language": "language",
+    "vision": "vision",
+    "auditory": "auditory processing",
+    "olfaction": "olfaction",
+    "pain": "pain processing",
+    "sleep": "sleep",
+    "arousal": "arousal",
+    "autonomic": "autonomic function",
+    "executive": "executive function",
+    "cognitive": "cognitive function",
+    "sensory": "sensory processing",
+    "reward": "reward processing",
+    "homeostasis": "homeostasis",
+    "navigation": "spatial navigation",
+    "planning": "motor planning",
+    "decision": "decision making",
+    "inhibition": "inhibitory control",
+    "working_memory": "working memory",
+}
+
+# Grouping heuristic: terms sharing the same (category, domain) pair with at
+# least 3 members are candidates for a common parent.  The most-frequent term
+# in the group (by usage count) is selected as the representative parent.
+_CATEGORY_GROUP_MIN_SIZE = 3
 
 # stopwords removed from term tokens before matching
 STOPWORDS = frozenset({
@@ -333,6 +370,178 @@ def _no_candidate_reason(child: OntologyTerm, idx: TermIndex) -> str:
     return "no_lexical_parent"
 
 
+def _category_group_parents(idx: TermIndex) -> dict[uuid.UUID, uuid.UUID]:
+    """Build a mapping: child_term_id → parent_term_id based on (category, domain).
+
+    Terms sharing the same (category, domain) with ≥ N members get the
+    highest-usage-count member as a weak parent candidate for all others.
+    When no term in the group has usage data, alphabetical order by canonical
+    name is used as a deterministic tie-breaker.
+    """
+    groups: dict[tuple[str | None, str | None], list[uuid.UUID]] = {}
+    for tid, term in idx.terms.items():
+        key = (term.category, term.domain)
+        groups.setdefault(key, []).append(tid)
+
+    result: dict[uuid.UUID, uuid.UUID] = {}
+    for (cat, dom), members in groups.items():
+        if not cat or len(members) < _CATEGORY_GROUP_MIN_SIZE:
+            continue
+        # Prefer usage-count ranking; fall back to alphabetical by name
+        has_any_usage = any(idx.usage_count.get(t, 0) > 0 for t in members)
+        if has_any_usage:
+            ranked = sorted(members, key=lambda t: -(idx.usage_count.get(t, 0)))
+        else:
+            ranked = sorted(
+                members,
+                key=lambda t: (idx.terms.get(t).canonical_term_en.lower() if idx.terms.get(t) else ""),
+            )
+        hub = ranked[0]
+        for tid in ranked[1:]:
+            if tid not in result:
+                result[tid] = hub
+    return result
+
+
+def generate_candidates_for_term(
+    child: OntologyTerm,
+    idx: TermIndex,
+    *,
+    top_k: int = DEFAULT_TOP_K,
+    _category_parents: dict[uuid.UUID, uuid.UUID] | None = None,
+) -> tuple[list[Candidate], str | None]:
+    """Deterministic candidate parents for one Function term.
+
+    Returns (candidates sorted by score desc, no_candidate_reason|None).
+    """
+    child_id = child.id
+    child_key = _norm_key(child.canonical_term_en)
+    child_tokens = idx.token_set.get(child_id, set())
+    if not child_tokens:
+        return [], "empty_name"
+    if _is_compound(child.canonical_term_en):
+        pass  # compound handling below (components scored lower)
+
+    raw: list[tuple[float, uuid.UUID, str, dict[str, Any]]] = []
+
+    # A/B. lexical containment: parent token set ⊆ child token set
+    #      (ordered longer-first gives more specific parents priority)
+    for token in child_tokens:
+        for cand_id in idx.token_terms.get(token, ()):
+            if cand_id == child_id:
+                continue
+            cand_tokens = idx.token_set.get(cand_id, set())
+            if not cand_tokens or not cand_tokens.issubset(child_tokens):
+                continue
+            if len(cand_tokens) >= len(child_tokens):
+                continue  # parent must be strictly less specific
+            if _generic_parent(cand_tokens):
+                continue
+            # single-token parent must be the child's last token (core noun):
+            # 'working memory' → 'memory' OK; 'auditory reflex' → 'auditory' not.
+            if len(cand_tokens) == 1 and len(child_tokens) > 1:
+                last_token = sorted(child_tokens, key=lambda t: (child.canonical_term_en or "").lower().find(t))[-1]
+                if next(iter(cand_tokens)) != last_token:
+                    continue
+            # canonical-identical / synonym pair exclusion:
+            # child is a synonym of the parent (or canonical-identical) → not an edge
+            cand_key = idx.canonical_key.get(cand_id, "")
+            if cand_key == child_key or child_key in idx.synonym_keys.get(cand_id, set()):
+                continue
+            parent = idx.terms.get(cand_id)
+            if parent is None or parent.status == "deprecated":
+                continue
+            lex = len(cand_tokens) / max(1, len(child_tokens))  # more shared tokens → stronger
+            if lex < 0.4:
+                continue
+            # child must not be a component of a compound split of the parent
+            if _is_compound(parent.canonical_term_en) and child_tokens.issubset(_tokens(parent.canonical_term_en)):
+                continue
+            usage = _jaccard(idx, child_id, cand_id)
+            meta = _metadata_score(child, parent)
+            reasons = {
+                "lexical_containment": True,
+                "parent_tokens": sorted(cand_tokens),
+                "child_tokens": sorted(child_tokens),
+                "usage_overlap": round(usage, 3),
+                "shared_domain": _shared_meta(child, parent),
+            }
+            raw.append((_score(lex, meta, usage), cand_id, "lexical_containment", reasons))
+
+    # C. metadata-only candidates (same domain/category) — weak, no lexical basis
+    for cand_id, cand in idx.terms.items():
+        if cand_id == child_id:
+            continue
+        if idx.token_set.get(cand_id, set()) & child_tokens:
+            continue  # already covered by lexical path
+        if _metadata_score(child, cand) >= 1.0:
+            usage = _jaccard(idx, child_id, cand_id)
+            reasons = {"metadata_only": True, "shared_domain": _shared_meta(child, cand),
+                       "usage_overlap": round(usage, 3)}
+            raw.append((_score(0.0, 1.0, usage), cand_id, "metadata", reasons))
+
+    # D. category-group parent (highest-usage term in same category/domain)
+    if _category_parents and child_id in _category_parents:
+        hub_id = _category_parents[child_id]
+        if hub_id != child_id and hub_id in idx.terms:
+            hub = idx.terms[hub_id]
+            usage = _jaccard(idx, child_id, hub_id)
+            reasons = {
+                "category_group_parent": True,
+                "shared_category": child.category,
+                "shared_domain": child.domain,
+                "hub_usage_count": idx.usage_count.get(hub_id, 0),
+            }
+            raw.append((0.8 + 0.5 * usage, hub_id, "category_group", reasons))
+
+    # E. usage-context similarity (weak signal only, never above structural)
+    if raw:
+        # lexical winners already ranked; add usage-only candidates sparingly
+        pass
+
+    # compound components: split child on 'and' and propose components as weak candidates
+    if _is_compound(child.canonical_term_en):
+        for part in _COMPOUND_SPLIT_RE.split(child.canonical_term_en):
+            part_key = _norm_key(part)
+            if not part_key:
+                continue
+            part_term_id = idx.canonical_to_term.get(part_key)
+            if part_term_id is None or part_term_id == child_id:
+                continue
+            part_term = idx.terms.get(part_term_id)
+            if part_term is None or part_term.status == "deprecated":
+                continue
+            reasons = {"compound_term_component_candidate": True, "component": part.strip()}
+            raw.append((0.3, part_term_id, "compound_component", reasons))
+
+    if not raw:
+        return [], _no_candidate_reason(child, idx)
+
+    # dedupe by parent
+    seen: dict[uuid.UUID, tuple[float, str, dict[str, Any]]] = {}
+    for score, cand_id, method, reasons in raw:
+        if cand_id not in seen or score > seen[cand_id][0]:
+            seen[cand_id] = (score, method, reasons)
+
+    ranked = sorted(seen.items(), key=lambda kv: (-kv[1][0], kv[0]))
+    candidates: list[Candidate] = []
+    for cand_id, (score, method, reasons) in ranked[:top_k]:
+        parent = idx.terms[cand_id]
+        candidates.append(Candidate(
+            child_term_id=child_id,
+            parent_term_id=cand_id,
+            candidate_score=round(score, 4),
+            lexical_score=_lex_share(idx, child_id, cand_id),
+            metadata_score=round(_metadata_score(child, parent), 4),
+            usage_score=round(_jaccard(idx, child_id, cand_id), 4),
+            synonym_score=1.0 if child_key in idx.synonym_keys.get(cand_id, set()) else 0.0,
+            parent_status=parent.status,
+            reasons=reasons,
+            method=method,
+        ))
+    return candidates, None
+
+
 async def generate_candidates_for_term_id(
     session: AsyncSession,
     term_id: uuid.UUID,
@@ -341,6 +550,7 @@ async def generate_candidates_for_term_id(
     generation_version: str = GENERATION_VERSION,
     index: TermIndex | None = None,
     created_by: str | None = None,
+    _category_parents: dict[uuid.UUID, uuid.UUID] | None = None,
 ) -> tuple[list[OntologyHierarchyCandidate], str | None]:
     """Generate + persist candidates for one term (idempotent per version)."""
     idx = index or await load_term_index(session)
@@ -348,7 +558,9 @@ async def generate_candidates_for_term_id(
     if child is None or child.term_type != TERM_TYPE_FUNCTION:
         raise CandidateGenerationError(f"not a function term: {term_id}")
 
-    candidates, reason = generate_candidates_for_term(child, idx, top_k=top_k)
+    candidates, reason = generate_candidates_for_term(
+        child, idx, top_k=top_k, _category_parents=_category_parents,
+    )
     if not candidates:
         return [], reason
 
@@ -397,6 +609,7 @@ async def generate_candidates_batch(
 ) -> dict[str, Any]:
     """Batch generation with one shared index (no N×M relation queries)."""
     idx = await load_term_index(session)
+    cat_parents = _category_group_parents(idx)
     total = 0
     no_candidate: dict[str, int] = {}
     per_term: list[dict[str, Any]] = []
@@ -407,6 +620,7 @@ async def generate_candidates_batch(
         cands, reason = await generate_candidates_for_term_id(
             session, term_id, top_k=top_k,
             generation_version=generation_version, index=idx, created_by=created_by,
+            _category_parents=cat_parents,
         )
         total += len(cands)
         if reason:
@@ -415,6 +629,100 @@ async def generate_candidates_batch(
                          "no_candidate_reason": reason})
     await session.flush()
     return {"total_candidates": total, "no_candidate_by_reason": no_candidate, "per_term": per_term}
+
+
+async def generate_all_candidates(
+    session: AsyncSession,
+    *,
+    top_k: int = DEFAULT_TOP_K,
+    generation_version: str = GENERATION_VERSION,
+    include_proposed: bool = True,
+    created_by: str = "batch_generation",
+) -> dict[str, Any]:
+    """Run candidate generation on ALL function terms.
+
+    Returns comprehensive statistics including category/domain distributions,
+    method breakdown, score histogram, and integrity audit.
+    """
+    idx = await load_term_index(session, include_proposed=include_proposed)
+    if not idx.terms:
+        return {"total_terms": 0, "total_candidates": 0, "error": "no_function_terms_found"}
+
+    cat_parents = _category_group_parents(idx)
+
+    # Category distribution
+    by_category: dict[str, int] = {}
+    by_domain: dict[str, int] = {}
+    by_status: dict[str, int] = {}
+    for t in idx.terms.values():
+        cat = t.category or "(none)"
+        dom = t.domain or "(none)"
+        by_category[cat] = by_category.get(cat, 0) + 1
+        by_domain[dom] = by_domain.get(dom, 0) + 1
+        by_status[t.status] = by_status.get(t.status, 0) + 1
+
+    total_candidates = 0
+    by_method: dict[str, int] = {}
+    no_candidate_reasons: dict[str, int] = {}
+    children_with_candidates = 0
+    children_without_candidates = 0
+    score_histogram: dict[str, int] = {
+        "0.0-0.5": 0, "0.5-1.0": 0, "1.0-1.5": 0,
+        "1.5-2.0": 0, "2.0-3.0": 0, "3.0+": 0,
+    }
+
+    for term_id in list(idx.terms.keys()):
+        cands, reason = await generate_candidates_for_term_id(
+            session, term_id, top_k=top_k,
+            generation_version=generation_version, index=idx, created_by=created_by,
+            _category_parents=cat_parents,
+        )
+        if cands:
+            total_candidates += len(cands)
+            children_with_candidates += 1
+            for c in cands:
+                by_method[c.generation_method] = by_method.get(c.generation_method, 0) + 1
+                s = float(c.candidate_score or 0.0)
+                if s < 0.5:
+                    score_histogram["0.0-0.5"] += 1
+                elif s < 1.0:
+                    score_histogram["0.5-1.0"] += 1
+                elif s < 1.5:
+                    score_histogram["1.0-1.5"] += 1
+                elif s < 2.0:
+                    score_histogram["1.5-2.0"] += 1
+                elif s < 3.0:
+                    score_histogram["2.0-3.0"] += 1
+                else:
+                    score_histogram["3.0+"] += 1
+        else:
+            children_without_candidates += 1
+            if reason:
+                no_candidate_reasons[reason] = no_candidate_reasons.get(reason, 0) + 1
+
+    await session.flush()
+
+    # Integrity audit
+    integrity = await check_hierarchy_candidate_integrity(
+        session, generation_version=generation_version,
+    )
+
+    return {
+        "generation_version": generation_version,
+        "total_function_terms": len(idx.terms),
+        "term_status_distribution": by_status,
+        "term_category_distribution": dict(sorted(by_category.items(), key=lambda x: -x[1])),
+        "term_domain_distribution": dict(sorted(by_domain.items(), key=lambda x: -x[1])),
+        "total_candidates_generated": total_candidates,
+        "children_with_candidates": children_with_candidates,
+        "children_without_candidates": children_without_candidates,
+        "method_distribution": by_method,
+        "score_histogram": score_histogram,
+        "no_candidate_reasons": no_candidate_reasons,
+        "category_group_hubs": len(set(cat_parents.values())),
+        "category_group_members": len(cat_parents),
+        "integrity": integrity,
+    }
 
 
 async def list_candidates(

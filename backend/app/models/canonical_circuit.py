@@ -17,7 +17,7 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Numeric, String, Text, UniqueConstraint, func
+from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint, func
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -62,6 +62,11 @@ class CanonicalCircuit(Base):
     confidence: Mapped[float | None] = mapped_column(Numeric, nullable=True)
     source_summary: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
     provenance_json: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
+    # Inference governance (20260902): assertion_type 事实/推理分层 + provenance metadata
+    assertion_type: Mapped[str] = mapped_column(String(32), nullable=False, default="reported_fact")
+    source_type: Mapped[str] = mapped_column(String(32), nullable=False, default="unknown")
+    generation_method: Mapped[str] = mapped_column(String(64), nullable=False, default="unknown")
+    evidence_reference: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
     replaced_by_circuit_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("canonical_circuits.id", ondelete="SET NULL"), nullable=True
     )
@@ -147,4 +152,73 @@ class CanonicalCircuitFunction(Base):
     relation_type: Mapped[str] = mapped_column(String(32), nullable=False, default="associated_with")
     confidence: Mapped[float | None] = mapped_column(Numeric, nullable=True)
     provenance_json: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
+    # Inference governance (20260902): assertion_type 事实/推理分层 + provenance metadata
+    assertion_type: Mapped[str] = mapped_column(String(32), nullable=False, default="reported_fact")
+    source_type: Mapped[str] = mapped_column(String(32), nullable=False, default="unknown")
+    generation_method: Mapped[str] = mapped_column(String(64), nullable=False, default="unknown")
+    evidence_reference: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class MirrorCircuitCanonicalGrounding(Base):
+    """Mirror Circuit → Canonical Circuit grounding record (CR1).
+
+    One row per mirror circuit (UNIQUE 1:1): the canonicalization outcome —
+    which canonical circuit (if any) the mirror circuit maps to, the
+    standardized name, region-member grounding statistics, connection-member
+    association (projection memberships → resolved canonical connections),
+    and the function association preserved as a count + provenance. Unresolved
+    rows keep their frozen reason so re-runs are idempotent and the unresolved
+    report is traceable.
+
+    CR1 never creates canonical circuits and never modifies mirror rows: it
+    only records the mapping state (backfilling the 293 circuits already
+    canonicalized by CI1.2-B) and classifies the rest.
+    """
+
+    __tablename__ = "mirror_circuit_canonical_grounding"
+    __table_args__ = (
+        UniqueConstraint("mirror_circuit_id", name="uq_circuit_grounding_mirror_circuit"),
+        CheckConstraint(
+            "status IN ('grounded', 'unresolved')",
+            name="chk_circuit_grounding_status",
+        ),
+        CheckConstraint(
+            "ungrounded_region_members = total_region_members - grounded_region_members",
+            name="chk_circuit_grounding_members",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    mirror_circuit_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("mirror_region_circuits.id", ondelete="CASCADE"),
+        nullable=False,
+        unique=True,
+    )
+    canonical_circuit_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("canonical_circuits.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    canonical_name_en: Mapped[str | None] = mapped_column(Text, nullable=True)
+    canonical_name_cn: Mapped[str | None] = mapped_column(Text, nullable=True)
+    granularity_level: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    source_atlas: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    circuit_type: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    total_region_members: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    grounded_region_members: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    ungrounded_region_members: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    projection_membership_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    resolved_connection_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    function_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    mapping_method: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="unresolved")
+    unresolved_reason: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    confidence: Mapped[float | None] = mapped_column(Numeric, nullable=True)
+    provenance_json: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
+    created_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )

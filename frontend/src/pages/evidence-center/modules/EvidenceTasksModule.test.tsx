@@ -61,17 +61,21 @@ describe('EvidenceTasksModule(对象级任务卡:命名/跳转/排序/筛选)', 
     expect(within(card).getByText('Amygdala → Hippocampus')).toBeTruthy()
     expect(within(card).getByText('连接')).toBeTruthy()
     expect(within(card).getByText('置信度 35%')).toBeTruthy()
-    expect(within(card).getByText('待验证')).toBeTruthy()
+    // 状态在 header badge 与信息区「当前状态」行双处展示(布局优化)
+    expect(within(card).getAllByText('待验证').length).toBeGreaterThan(0)
   })
 
-  it('非神经靶标任务卡显示「结构性不存在」徽章', async () => {
+  it('非神经靶标任务卡显示短标签「⚠ 非神经结构」(长文案 hover 展示,不撑开卡片)', async () => {
     vi.mocked(endpoints.listPaperEvidenceTasks).mockResolvedValue({
       items: [makeTask({ id: 't-nn', target_id: 'c1', display_name_cn: '右旁中央 → 右侧脑室', work_status: 'awaiting_review', preprocess_outcome: 'non_neural_target' })],
       total: 1,
     })
     renderModule()
     const card = await screen.findByTestId('evidence-task-card-t-nn')
-    expect(within(card).getByText(/结构性不存在/)).toBeTruthy()
+    const badge = within(card).getByText(/非神经结构/)
+    expect(badge.textContent).toContain('非神经结构')
+    // 长文案保留在 title(悬停查看完整 reason)
+    expect(badge.getAttribute('title')).toContain('非神经结构')
   })
 
   it('中文缺失仅英文;卡片标题不被内部名抢占', async () => {

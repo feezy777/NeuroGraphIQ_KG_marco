@@ -1,7 +1,7 @@
 :root {
   --sidebar-w: 220px;
   --topbar-h: 52px;
-  --log-console-height-collapsed: 44px;
+  --log-console-height-collapsed: 0px;
   --log-console-height-expanded: 320px;
   --bg: #f2f3f5;
   --sidebar-bg: #001529;
@@ -2674,10 +2674,36 @@ tr:hover td { background: #fafbfc; cursor: pointer; }
   font-size: 12px;
   box-shadow: 0 -2px 12px rgba(0, 0, 0, 0.12);
 }
-.workbench-log-console.collapsed .log-console-bar {
+/* Collapsed: nothing at the bottom - only a slim tab on the left edge (click to expand). */
+.log-console-edge-tab {
+  position: fixed;
+  left: 0;
+  top: 68%;
+  transform: translateY(-50%);
+  z-index: 1100;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 6px 10px;
   background: #1f1f1f;
   color: #e8e8e8;
-  border-top: 1px solid #333;
+  border: 1px solid #333;
+  border-left: none;
+  border-radius: 0 10px 10px 0;
+  cursor: pointer;
+  box-shadow: 2px 0 10px rgba(0, 0, 0, 0.3);
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.log-console-edge-tab:hover {
+  background: #2a2a2a;
+  color: #fff;
+}
+.log-console-edge-label {
+  writing-mode: vertical-rl;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 3px;
 }
 .workbench-log-console.expanded .log-console-bar {
   background: #141414;
@@ -14610,3 +14636,598 @@ a.paper-card-title[href]:hover { color: var(--primary, #1a73e8); text-decoration
 }
 .oq-spin { animation: oq-rotate 0.9s linear infinite; }
 @keyframes oq-rotate { to { transform: rotate(360deg); } }
+
+/* ---- Task Center:任务卡操作菜单 + 历史 Tab ---- */
+.evidence-task-card-head { position: relative; }
+.evidence-task-card-menu-btn {
+  margin-left: auto;
+  padding: 0 4px;
+  color: #5b6472;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  user-select: none;
+}
+.evidence-task-card-menu-btn:hover { background: #eef2f7; }
+.evidence-task-card-menu {
+  position: absolute;
+  right: 0;
+  top: 18px;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  background: #fff;
+  border: 1px solid #e3e8ef;
+  border-radius: 8px;
+  padding: 6px;
+  box-shadow: 0 6px 18px rgba(15, 34, 58, .12);
+  min-width: 108px;
+}
+.evidence-task-card-menu .btn { text-align: left; justify-content: flex-start; }
+.evidence-task-tabs {
+  display: flex;
+  gap: 4px;
+  margin-right: 10px;
+}
+.evidence-task-tabs .evidence-module-btn { padding: 5px 12px; font-size: 12.5px; }
+.evidence-history-table {
+  background: #fff;
+  border: 1px solid #e3e8ef;
+  border-radius: 10px;
+  overflow: hidden;
+}
+.evidence-history-table table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.evidence-history-table thead th {
+  text-align: left; padding: 9px 12px;
+  background: #f6f8fb; color: #5b6472; font-weight: 600; font-size: 12px;
+  border-bottom: 1px solid #e3e8ef; white-space: nowrap;
+}
+.evidence-history-table tbody td {
+  padding: 9px 12px; border-bottom: 1px solid #e3e8ef; vertical-align: top;
+}
+.evidence-history-table tbody tr:hover { background: #f7fafc; }
+
+/* ---- Task Center 布局优化(2026-08-27):统一卡片尺寸 + Footer 固定 ---- */
+/* 卡片统一尺寸:260px 下限;内容溢出裁剪,高度一致 */
+.evidence-task-card-iso {
+  min-height: 260px;
+  height: 278px;
+  overflow: hidden;
+  gap: 6px;
+}
+/* Footer 永远贴底:主体不拉伸,footer 用 margin-top:auto 固定 */
+.evidence-task-card-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: auto;
+  position: relative;
+  padding-top: 6px;
+}
+.evidence-task-card-actions { margin-top: 0; }
+/* ⋯ 菜单从 footer 向上弹出,避免被下一行卡片遮挡 */
+.evidence-task-card-menu {
+  bottom: calc(100% + 6px);
+  top: auto;
+}
+/* 异常短标签:单行截断,长文案 hover(title)查看 */
+.evidence-task-outcome-short {
+  max-width: 172px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* 三列 → 两列(1500 已存在) → 单列(窄视口),禁止横向滚动 */
+@media (max-width: 1150px) {
+  .evidence-task-card-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 900px) {
+  .evidence-task-card-grid { grid-template-columns: minmax(0, 1fr); }
+}
+.evidence-task-card-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+
+/* ---- Paper Library V3:论文资产中心布局修复(标准三栏:320 / flex:1 / 320) ---- */
+/* 最外层容器:铺满验证中心内容区;页面不滚动,三个区各自滚动;禁止横向滚动 */
+.paper-library-container {
+  flex: 1;
+  min-height: 0;
+  height: auto;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  overflow-x: hidden;
+}
+/* 三栏容器 */
+.paper-library-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  overflow: hidden;
+}
+
+/* 左栏:论文库(固定 320px,内部 header/filter/list 纵向,list 自己滚动) */
+.paper-library-sidebar {
+  width: 340px;
+  min-width: 340px;
+  max-width: 340px;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  padding-right: 12px;
+  overflow: hidden;
+  overflow-x: hidden;
+}
+.paper-library-sidebar .paper-search-bar {
+  flex: none;
+}
+.paper-card-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-right: 2px;
+}
+
+/* 论文卡片:统一尺寸,标题两行,按钮 32px */
+.paper-card {
+  flex: none;
+  padding: 16px;
+  margin-bottom: 0;
+  min-height: 120px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  border: 1px solid #e6eaf0;
+  border-radius: 10px;
+  background: #fff;
+  cursor: pointer;
+  transition: border-color 0.15s ease;
+}
+.paper-card:hover { border-color: #b9c8e4; }
+.paper-card-selected,
+.paper-library-card-selected { border-color: #1677ff; background: #f4f8ff; }
+.paper-card .paper-library-card-title {
+  font-weight: 600;
+  font-size: 13.5px;
+  color: #1b2a3f;
+  line-height: 1.4;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.paper-card .paper-library-card-actions .btn,
+.paper-card .btn {
+  height: 32px;
+  min-height: 32px;
+  display: inline-flex;
+  align-items: center;
+}
+
+/* 中栏:论文详情(flex:1,自己滚动;未选论文显示空态而非空白) */
+.paper-detail-panel {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 0 12px;
+}
+
+/* 右栏:资产关系(固定 320px + border-left,自己滚动) */
+.paper-relation-panel {
+  width: 300px;
+  min-width: 300px;
+  max-width: 300px;
+  height: 100%;
+  border-left: 1px solid #e6eaf0;
+  padding-left: 12px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.paper-relation-card {
+  background: #fff;
+  border: 1px solid #e6eaf0;
+  border-radius: 10px;
+  padding: 12px;
+}
+.paper-relation-card h4 { margin: 0 0 10px; font-size: 12.5px; color: #5b6472; }
+
+/* 全局:禁止验证中心内容区横向滚动 */
+.evidence-center-layout { overflow-x: hidden; }
+.evidence-main { overflow-x: hidden; }
+.paper-module { overflow: hidden; overflow-x: hidden; }
+
+/* ---- Paper Library 内部样式(详情/关系面板填充) ---- */
+.paper-library-search { flex-direction: column; align-items: stretch; gap: 8px; display: flex; }
+.paper-library-filters { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.paper-library-filters .paper-filter-label { grid-column: span 2; }
+.paper-library-card-meta { font-size: 12px; color: #5b6472; display: flex; gap: 10px; flex-wrap: wrap; }
+.paper-library-card-ids { font-size: 11.5px; color: #8a94a6; display: flex; gap: 10px; flex-wrap: wrap; }
+.paper-library-card-tags { display: flex; gap: 6px; flex-wrap: wrap; }
+.paper-library-card-actions { margin-top: auto; display: flex; gap: 6px; }
+.paper-library-card-actions .btn-danger { border-color: #e3c8c8; color: #b33131; }
+.paper-detail-section { background: #fff; border: 1px solid #e6eaf0; border-radius: 10px; padding: 12px 14px; margin-bottom: 10px; }
+.paper-detail-section h4 { margin: 0 0 8px; font-size: 13px; }
+.paper-detail-kv { display: grid; grid-template-columns: 96px 1fr; gap: 4px 10px; font-size: 13px; }
+.paper-detail-kv dt { color: #5b6472; }
+.paper-detail-kv dd { margin: 0; word-break: break-word; }
+.paper-detail-abstract { font-size: 13px; line-height: 1.6; color: #37465c; }
+.paper-detail-section-block { border-left: 3px solid #b9c8e4; padding: 4px 10px; margin: 6px 0; }
+.paper-detail-section-block summary { cursor: pointer; font-weight: 600; font-size: 13px; color: #1b2a3f; }
+.paper-detail-para { font-size: 12.5px; line-height: 1.6; color: #37465c; margin: 6px 0; }
+.paper-detail-evidence-count { font-size: 13px; margin-bottom: 8px; }
+.paper-detail-targets { display: flex; flex-direction: column; gap: 6px; }
+.paper-detail-target-row { display: flex; align-items: center; gap: 10px; padding: 6px 8px; background: #f6f8fb; border-radius: 8px; font-size: 12px; }
+.paper-detail-target-id { color: #5b6472; flex: 1; font-family: ui-monospace, Monaco, monospace; }
+.paper-relation-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.paper-relation-stat { background: #f6f8fb; border-radius: 8px; padding: 8px; text-align: center; }
+.paper-relation-stat b { display: block; font-size: 18px; color: #1b2a3f; }
+.paper-relation-stat span { font-size: 11px; color: #5b6472; }
+.paper-relation-links { display: flex; flex-direction: column; gap: 6px; }
+.paper-relation-link { display: flex; align-items: center; gap: 8px; font-size: 12px; padding: 6px 8px; background: #f6f8fb; border-radius: 8px; }
+.paper-relation-link-id { color: #5b6472; font-family: ui-monospace, Monaco, monospace; }
+.paper-add-form { display: flex; flex-direction: column; gap: 8px; }
+.paper-add-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }
+
+/* ---- Paper Library 结构兜底(高权重,防任何旧规则覆盖;与 .paper-library-body 相同契约) ---- */
+.validation-center-page .paper-library-container {
+  flex: 1;
+  min-height: 0;
+  height: auto;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  overflow-x: hidden;
+  gap: 12px;
+}
+.validation-center-page .paper-library-container .paper-library-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  overflow: hidden;
+}
+.validation-center-page .paper-library-container .paper-library-sidebar {
+  width: 340px;
+  min-width: 340px;
+  max-width: 340px;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  flex: 0 0 340px;
+}
+.validation-center-page .paper-library-container .paper-detail-panel {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 0 12px;
+  display: block;
+}
+.validation-center-page .paper-library-container .paper-relation-panel {
+  width: 300px;
+  min-width: 300px;
+  max-width: 300px;
+  height: 100%;
+  border-left: 1px solid #e6eaf0;
+  padding-left: 12px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* ---- Paper Library 组件级权重(双类 0,2,0 > 任何单类旧规则,与顺序无关) ---- */
+.paper-library-container.paper-module {
+  flex: 1;
+  min-height: 0;
+  height: auto;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  overflow-x: hidden;
+  gap: 12px;
+}
+.paper-library-container.paper-module .paper-library-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  overflow: hidden;
+}
+/* 高度链补强:evidence-main(grid 外层)与模块容器同时给 flex 空间 */
+.evidence-main { flex: 1; min-height: 0; }
+
+/* ---- 覆盖 12980 行后置重定义:papers 走 layout-full(单列全宽),双类权重保证最终生效 ---- */
+.evidence-center-layout.evidence-center-layout-full {
+  grid-template-columns: 1fr;
+}
+.evidence-center-layout.evidence-center-layout-full .evidence-main {
+  min-width: 0;
+  width: 100%;
+}
+
+/* ---- Paper Library 视觉优化:高度填满/空态限高/OA 徽章/右栏分组 ---- */
+/* 论文库路径下 evidence-main 全宽且不滚动(内容由三栏内部滚动),底不留白 */
+.evidence-center-layout-full .evidence-main { overflow: hidden; }
+.paper-library-body { height: 100%; }
+.paper-library-sidebar, .paper-detail-panel, .paper-relation-panel { height: 100%; }
+/* 卡片统一最小高度 150 + OA 徽章 */
+.paper-card { min-height: 150px; }
+.paper-card-oa {
+  background: #e5eefb; color: #1d5fb8;
+  padding: 1px 8px; border-radius: 999px; font-size: 11px; font-weight: 600;
+}
+/* 空态限高(不再撑满中栏) */
+.paper-detail-empty {
+  height: 260px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+}
+.paper-detail-empty > * { width: 100%; }
+/* 右栏分组 */
+.paper-relation-group { display: flex; flex-direction: column; gap: 4px; margin-bottom: 8px; }
+.paper-relation-group-label {
+  font-size: 11px; color: #8a94a6; text-transform: uppercase; letter-spacing: .3px;
+}
+
+
+/* ── Task Center 统一列表:来源/阶段筛选 + 统计 + 分页 ── */
+.evidence-task-toolbar-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: #94a3b8;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  margin-right: 6px;
+  white-space: nowrap;
+}
+
+.evidence-task-toolbar-stats {
+  gap: 8px;
+  font-size: 12px;
+  color: #475569;
+  flex-wrap: wrap;
+}
+
+.evidence-task-toolbar-stats strong {
+  color: #0f172a;
+  font-variant-numeric: tabular-nums;
+}
+
+.evidence-task-condensed {
+  font-size: 11.5px;
+  color: #64748b;
+  white-space: nowrap;
+}
+
+.evidence-task-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 12px 0 4px;
+}
+
+.evidence-task-pagination-info {
+  font-size: 12px;
+  color: #64748b;
+}
+
+/* ── Evidence Discovery Workspace(证据发现工作台)-骨架 Stage1 布局 ── */
+.edw-root { display: flex; flex-direction: column; gap: 12px; height: 100%; min-height: 0; }
+/* 四阶段 Stepper(页面内步骤;当前步蓝 / 完成绿 / 未到灰) */
+.edw-stepper {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  padding: 10px 14px; border: 1px solid var(--border); border-radius: var(--card-radius);
+  background: var(--bg-soft);
+}
+.edw-step { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--text-muted); }
+.edw-step-no {
+  width: 22px; height: 22px; border-radius: 50%; display: inline-flex; align-items: center;
+  justify-content: center; font-size: 12px; font-weight: 600; background: var(--white);
+  border: 1px solid var(--border); color: var(--text-muted);
+}
+.edw-step-label { white-space: nowrap; }
+.edw-step-active { color: var(--primary); font-weight: 600; }
+.edw-step-active .edw-step-no { background: var(--primary); border-color: var(--primary); color: #fff; }
+.edw-step-done .edw-step-no { background: var(--success); border-color: var(--success); color: #fff; }
+.edw-step-arrow { color: var(--border); }
+/* Step1 空态主区 */
+.edw-stage { flex: 1; min-height: 0; overflow-y: auto; padding: 2px; }
+.edw-stage-title { font-size: 16px; margin: 0 0 4px; color: var(--text); }
+.edw-stage-desc { font-size: 12.5px; color: var(--text-muted); margin: 0 0 14px; }
+.edw-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
+.edw-clue {
+  display: flex; align-items: center; gap: 10px; padding: 8px 12px; margin-bottom: 14px;
+  border: 1px solid rgba(22, 119, 255, .35); background: var(--info-bg); border-radius: 8px;
+}
+.edw-clue-text { flex: 1; font-size: 12.5px; color: var(--text); }
+.edw-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+.edw-stat {
+  border: 1px solid var(--border); border-radius: 10px; padding: 12px 10px;
+  text-align: center; background: var(--white); min-width: 0;
+}
+.edw-stat-value { font-size: 20px; font-weight: 700; color: var(--primary); }
+.edw-stat-label { font-size: 11.5px; color: var(--text-muted); margin-top: 2px; }
+.edw-meta { margin-top: 12px; font-size: 11.5px; color: var(--text-muted); }
+/* 右栏:规则验证 / 处理进度 / 已选候选证据 */
+.edw-side { display: flex; flex-direction: column; gap: 12px; height: 100%; min-height: 0; }
+.edw-side-card { border: 1px solid var(--border); border-radius: 10px; padding: 12px; background: var(--white); flex-shrink: 0; }
+.edw-side-title { font-size: 13px; margin: 0 0 8px; color: var(--text); display: flex; align-items: center; gap: 8px; }
+.edw-overall { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+.edw-overall-label { font-size: 12.5px; font-weight: 600; }
+.edw-overall-block { color: var(--danger); }
+.edw-rule-badge {
+  font-size: 10px; font-weight: 700; border-radius: 999px; padding: 2px 8px;
+  letter-spacing: .3px; white-space: nowrap;
+}
+.edw-rule-badge-pass { background: rgba(82,196,26,.12); color: #389e0d; border: 1px solid rgba(82,196,26,.35); }
+.edw-rule-badge-existing { background: rgba(22,119,255,.10); color: var(--primary); border: 1px solid rgba(22,119,255,.35); }
+.edw-rule-badge-warning { background: rgba(250,173,20,.12); color: #d48806; border: 1px solid rgba(250,173,20,.4); }
+.edw-rule-badge-block { background: rgba(255,77,79,.10); color: var(--danger); border: 1px solid rgba(255,77,79,.35); }
+.edw-rule-badge-pending { background: var(--bg-soft); color: var(--text-muted); border: 1px solid var(--border); }
+.edw-rule-list { display: grid; gap: 8px; }
+.edw-rule { border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; background: var(--white); }
+.edw-rule-line { display: flex; align-items: center; gap: 6px; font-size: 12.5px; }
+.edw-rule-code {
+  font-weight: 700; font-size: 11px; color: var(--text);
+  background: var(--bg-soft); border: 1px solid var(--border); border-radius: 6px; padding: 0 6px;
+}
+.edw-rule-name { color: var(--text); font-weight: 500; }
+.edw-rule-detail { margin-top: 3px; font-size: 11.5px; color: var(--text-muted); }
+.edw-progress-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.edw-progress-item { border: 1px solid var(--border); border-radius: 8px; padding: 8px 6px; text-align: center; background: var(--bg-soft); min-width: 0; }
+.edw-progress-value { font-size: 15px; font-weight: 700; color: var(--text); }
+.edw-progress-label { font-size: 10.5px; color: var(--text-muted); margin-top: 2px; }
+.edw-selected-count { font-size: 12px; font-weight: 600; color: var(--text-muted); margin-left: auto; }
+.edw-selected-empty { font-size: 12px; color: var(--text-muted); line-height: 1.7; margin: 0; }
+/* 宏发现工作台专用三栏(260 / 1fr / 320;中栏禁止横向滚动) */
+.evidence-center-layout-macro { grid-template-columns: 260px minmax(0, 1fr) 320px; }
+
+/* ── EDW Step1(检索/入库/卡片/库选择) ── */
+.edw-querybar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 10px; }
+.edw-query-summary { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; padding: 6px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--white); }
+.edw-query-label { font-size: 12px; font-weight: 600; color: var(--text-muted); white-space: nowrap; }
+.edw-query-text { font-size: 12px; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.edw-query-editor { border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; margin-bottom: 10px; background: var(--bg-soft); display: grid; gap: 6px; }
+.edw-query-row { display: flex; align-items: center; gap: 8px; }
+.edw-query-src { font-size: 10.5px; color: var(--text-muted); background: var(--white); border: 1px solid var(--border); border-radius: 6px; padding: 1px 6px; white-space: nowrap; }
+.edw-query-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 4px; }
+.edw-muted-hint { font-size: 11.5px; color: var(--text-muted); }
+.edw-error-inline { font-size: 11px; color: var(--danger); font-weight: 600; }
+.edw-feedback { padding: 8px 12px; margin-bottom: 10px; border-radius: 8px; background: var(--info-bg); border: 1px solid rgba(22,119,255,.3); font-size: 12.5px; color: var(--text); }
+.edw-feedback-error { background: rgba(255,77,79,.08); border: 1px solid rgba(255,77,79,.35); color: var(--danger); }
+.edw-stats-results { margin-bottom: 12px; }
+.edw-stat-found { color: var(--primary); }
+.edw-stat-created { color: var(--success); }
+.edw-clue-stats { color: var(--text-muted); font-weight: 500; }
+.edw-noresult { border: 1px solid var(--border); border-radius: 10px; padding: 14px; margin-bottom: 12px; background: var(--white); }
+.edw-noresult-title { font-size: 13px; font-weight: 600; margin: 0 0 4px; color: var(--text); }
+.edw-papers { margin-top: 6px; }
+.edw-papers-title { font-size: 13.5px; margin: 0 0 8px; color: var(--text); }
+.edw-paper-list { display: grid; gap: 8px; }
+.edw-paper-card {
+  display: flex; gap: 12px; align-items: flex-start; padding: 10px 12px;
+  border: 1px solid var(--border); border-radius: 10px; background: var(--white);
+}
+.edw-paper-main { flex: 1; min-width: 0; }
+.edw-paper-title { font-size: 13px; font-weight: 600; color: var(--text); line-height: 1.45; }
+.edw-paper-meta { font-size: 11.5px; color: var(--text-muted); margin-top: 2px; }
+.edw-paper-ids { display: flex; gap: 6px; margin-top: 4px; }
+.edw-chip { font-size: 10.5px; background: var(--bg-soft); border: 1px solid var(--border); border-radius: 999px; padding: 1px 8px; color: var(--text-muted); white-space: nowrap; }
+.edw-paper-badges { display: flex; gap: 6px; flex-wrap: wrap; max-width: 220px; justify-content: flex-end; }
+.edw-badge { font-size: 10.5px; font-weight: 600; border-radius: 999px; padding: 2px 10px; white-space: nowrap; }
+.edw-badge-exists { background: rgba(22,119,255,.10); color: var(--primary); border: 1px solid rgba(22,119,255,.35); }
+.edw-badge-created { background: rgba(82,196,26,.12); color: #389e0d; border: 1px solid rgba(82,196,26,.35); }
+.edw-badge-content { background: var(--bg-soft); color: var(--text-muted); border: 1px solid var(--border); }
+.edw-badge-task { background: rgba(82,196,26,.10); color: #389e0d; border: 1px dashed rgba(82,196,26,.4); }
+.edw-paper-actions { display: flex; flex-direction: column; gap: 6px; }
+.edw-rule-card, .edw-paper-actions .btn { white-space: nowrap; }
+.edw-ready-badge { margin-left: 6px; font-size: 10.5px; padding: 1px 8px; border-radius: 999px; height: auto; }
+/* 从论文库选择 Modal */
+.edw-modal-backdrop { position: fixed; inset: 0; background: rgba(15, 23, 42, .35); display: flex; align-items: center; justify-content: center; z-index: 200; }
+.edw-modal { width: 640px; max-width: calc(100vw - 48px); max-height: 70vh; background: var(--white); border-radius: 12px; padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; box-shadow: 0 12px 40px rgba(15,23,42,.25); }
+.edw-modal-title { margin: 0; font-size: 14px; color: var(--text); }
+.edw-picker-search { display: flex; gap: 8px; }
+.edw-picker-list { flex: 1; min-height: 0; overflow-y: auto; display: grid; gap: 4px; }
+.edw-picker-row { display: flex; gap: 8px; align-items: flex-start; padding: 6px 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--white); cursor: pointer; }
+.edw-picker-row:hover { border-color: rgba(22,119,255,.4); }
+.edw-picker-info { display: grid; gap: 2px; font-size: 12px; }
+.edw-picker-actions { display: flex; gap: 8px; align-items: center; }
+
+/* ── EDW 按钮层级(Stage1 优化):更多 ▾ / 卡片 ⋯ / 轻量导入 / 绿色任务标签 ── */
+.edw-menu-wrap { position: relative; display: inline-block; }
+.edw-menu {
+  position: absolute; right: 0; top: calc(100% + 4px); z-index: 120; min-width: 168px;
+  background: var(--white); border: 1px solid var(--border); border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, .14); padding: 4px; display: grid; gap: 2px;
+}
+.edw-menu-item {
+  display: block; width: 100%; text-align: left; border: 0; background: transparent;
+  padding: 7px 10px; font-size: 12.5px; color: var(--text); border-radius: 7px; cursor: pointer;
+}
+.edw-menu-item:hover { background: var(--info-bg); color: var(--primary); }
+.edw-link-btn {
+  border: 0; background: transparent; color: var(--primary); font-size: 12.5px;
+  font-weight: 600; padding: 2px 4px; cursor: pointer; border-radius: 6px;
+}
+.edw-link-btn:hover { background: var(--info-bg); }
+.edw-link-btn:disabled { color: var(--text-muted); cursor: default; }
+.edw-badge-in-task { background: rgba(82,196,26,.12); color: #389e0d; border: 1px solid rgba(82,196,26,.4); }
+.edw-papers-head { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+.edw-papers-head .edw-papers-title { margin: 0; }
+.edw-card-menu-btn { padding: 4px 10px; line-height: 1.2; }
+
+/* ── EDW 自动整理(失败项/汇总) ── */
+.edw-fail-summary { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--danger); font-weight: 600; }
+.edw-failed-list { border: 1px solid rgba(255,77,79,.3); background: rgba(255,77,79,.05); border-radius: 8px; padding: 10px 12px; margin-bottom: 10px; display: grid; gap: 6px; }
+.edw-failed-item { display: flex; gap: 10px; align-items: baseline; font-size: 12px; color: var(--text); }
+
+/* ── EDW Step 2 片段筛选 ── */
+.edw-screen-progress { display: flex; gap: 14px; flex-wrap: wrap; padding: 8px 12px; margin-bottom: 10px; background: var(--info-bg); border: 1px solid rgba(22,119,255,.3); border-radius: 8px; font-size: 12.5px; color: var(--text); }
+.edw-lvl-tabs { display: flex; gap: 6px; margin-bottom: 10px; flex-wrap: wrap; }
+.edw-frag-list { display: grid; gap: 10px; }
+.edw-frag-card { border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; background: var(--white); display: grid; gap: 6px; }
+.edw-frag-card.edw-lvl-strong { border-left: 3px solid var(--success); }
+.edw-frag-card.edw-lvl-medium { border-left: 3px solid var(--primary); }
+.edw-frag-card.edw-lvl-weak { border-left: 3px solid var(--text-muted); }
+.edw-frag-head { display: flex; align-items: center; gap: 10px; }
+.edw-frag-title { font-size: 13px; font-weight: 600; color: var(--text); flex: 1; min-width: 0; }
+.edw-frag-sentence { font-size: 13px; color: var(--text); line-height: 1.6; margin: 2px 0; }
+.edw-frag-context { border-left: 2px solid var(--border); padding-left: 10px; display: grid; gap: 4px; }
+.edw-frag-tags { display: flex; gap: 6px; flex-wrap: wrap; }
+.edw-frag-actions { display: flex; gap: 8px; }
+.edw-lvl-strong-txt { color: var(--success); }
+.edw-step-enterable { cursor: pointer; }
+
+/* ── EDW Step 3 AI 审核 ── */
+.edw-dec-supported, .edw-frag-card.edw-dec-supported { border-left: 3px solid var(--success); }
+.edw-frag-card.edw-dec-partial { border-left: 3px solid var(--warning); }
+.edw-frag-card.edw-dec-uncertain { border-left: 3px solid #8c9bb0; }
+.edw-frag-card.edw-dec-notsupported { border-left: 3px solid var(--danger); }
+.edw-dec-badge { font-size: 11px; font-weight: 700; border-radius: 999px; padding: 2px 10px; white-space: nowrap; }
+.edw-dec-badge.edw-dec-supported { background: rgba(82,196,26,.12); color: #389e0d; border: 1px solid rgba(82,196,26,.35); }
+.edw-dec-badge.edw-dec-partial { background: rgba(250,173,20,.12); color: #d48806; border: 1px solid rgba(250,173,20,.4); }
+.edw-dec-badge.edw-dec-uncertain { background: rgba(140,155,176,.15); color: #5c6b81; border: 1px solid rgba(140,155,176,.35); }
+.edw-dec-badge.edw-dec-notsupported { background: rgba(255,77,79,.10); color: var(--danger); border: 1px solid rgba(255,77,79,.35); }
+.edw-dec-badge.edw-dec-failed { background: var(--bg-soft); color: var(--text-muted); border: 1px solid var(--border); }
+.edw-ai-review { border-top: 1px dashed var(--border); padding-top: 6px; display: grid; gap: 3px; }
+.edw-ai-row { display: grid; grid-template-columns: 168px 1fr; gap: 8px; font-size: 12px; color: var(--text-muted); }
+.edw-ai-row b { color: var(--text); font-weight: 600; }
+.edw-raw-pre { font-size: 11px; background: var(--bg-soft); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; max-height: 260px; overflow: auto; }
+.edw-progress-bar { flex: 1; min-width: 120px; height: 8px; background: var(--bg); border: 1px solid var(--border); border-radius: 999px; overflow: hidden; }
+.edw-progress-fill { display: block; height: 100%; background: var(--primary); border-radius: 999px; }
+/* Step2 sticky footer:唯一主流程按钮 */
+.edw-s2-footer {
+  position: sticky; bottom: 2px; z-index: 20;
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  padding: 10px 12px; margin-top: 12px;
+  background: rgba(255, 255, 255, .97);
+  border: 1px solid var(--border); border-radius: 10px;
+  box-shadow: 0 -4px 16px rgba(15, 23, 42, .08);
+}
+/* Step2 标题行:右上角动作区(主流程按钮置顶) */
+.edw-stage-head-row { display: flex; align-items: flex-start; gap: 14px; justify-content: space-between; flex-wrap: wrap; }
+.edw-head-actions { display: flex; gap: 8px; align-items: flex-start; }
+.edw-head-actions .btn-primary { font-size: 13.5px; padding: 7px 18px; }
+
+/* ── EDW Step 4 候选证据(研究者视角) ── */
+.edw-frag-title-sub { font-size: 11.5px; font-weight: 700; color: var(--text-muted); margin: 6px 0 2px; }
+.edw-selected-item { font-size: 12px; color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 6px 8px; background: var(--bg-soft); }

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { listPaperEvidenceTasks } from '../../api/endpoints'
 import { EvidenceCenterProvider, useEvidenceCenter, type ModuleKey } from './EvidenceCenterContext'
+import { SelectedValidationTaskProvider, useSelectedValidationTask } from './SelectedValidationTaskContext'
 import { EvidenceCenterHeader } from './EvidenceCenterHeader'
 import { ClaimSummaryPanel } from './components/ClaimSummaryPanel'
 import { composeClaimSentence, ContextBar } from './components/ContextBar'
@@ -15,6 +16,7 @@ import { EvidencePromotionModule } from './modules/EvidencePromotionModule'
 import { EvidenceReviewModule } from './modules/EvidenceReviewModule'
 import { EvidenceTasksModule } from './modules/EvidenceTasksModule'
 import { PaperLibraryModule } from './modules/PaperLibraryModule'
+import { MacroCandidatesProvider } from '../validation-center/macro-governance/useMacroCandidates'
 
 const MODULE_TITLE: Record<ModuleKey, string> = {
   tasks: '佐证任务',
@@ -33,6 +35,7 @@ const MODULE_HINT: Record<ModuleKey, string> = {
 
 function EvidenceCenterBody({ embedded }: { embedded?: boolean }) {
   const { state, queue, openTarget, progress, candidateClaim } = useEvidenceCenter()
+  const { selectedTask } = useSelectedValidationTask()
   const [taskName, setTaskName] = useState<string | null>(null)
 
   // 任务名:从 tasks 列表按 state.taskId 推导(ContextBar 展示用)
@@ -88,7 +91,15 @@ function EvidenceCenterBody({ embedded }: { embedded?: boolean }) {
           <StepPills module={state.module} progress={progress} />
         </>
       )}
-      <div className={`evidence-center-layout${isPapers ? ' evidence-center-layout-full' : ''}`} data-testid="evidence-center-layout">
+      <div
+        className={
+          'evidence-center-layout'
+          + (isPapers ? ' evidence-center-layout-full' : '')
+          + (state.module === 'candidates' && selectedTask?.sourceType === 'paper_discovery'
+            ? ' evidence-center-layout-macro' : '')
+        }
+        data-testid="evidence-center-layout"
+      >
         {!isPapers && (
           <aside className="evidence-left">
             {state.module === 'tasks' ? (
@@ -115,7 +126,11 @@ function EvidenceCenterBody({ embedded }: { embedded?: boolean }) {
           </aside>
         )}
         <main className="evidence-main">
-          <div className="evidence-module-hint">{MODULE_HINT[state.module]}</div>
+          <div className="evidence-module-hint">
+            {state.module === 'candidates' && selectedTask?.sourceType === 'paper_discovery'
+              ? '从论文发现线索到证据候选:论文检索 → 函数片段筛选 → AI 语义审核 → 候选证据。'
+              : MODULE_HINT[state.module]}
+          </div>
           {state.module === 'tasks' && <EvidenceTasksModule />}
           {state.module === 'papers' && <PaperLibraryModule />}
           {state.module === 'candidates' && <EvidenceCandidatesModule />}
@@ -135,20 +150,27 @@ function EvidenceCenterBody({ embedded }: { embedded?: boolean }) {
 export function EvidenceCenterPage({ embedded }: { embedded?: boolean }) {
   return (
     <EvidenceCenterProvider embedded={embedded}>
+      <SelectedValidationTaskProvider>
       <TaskItemsRefreshProvider>
       <div className="evidence-center" data-testid="evidence-center">
         {embedded ? (
-          <div className="evidence-module-nav" data-testid="evidence-module-nav" style={{ marginBottom: 12 }}>
-            {(['tasks', 'papers', 'candidates', 'review', 'promotion'] as ModuleKey[]).map(m => (
-              <EvidenceModuleNavButton key={m} moduleKey={m} />
-            ))}
-          </div>
+          <MacroCandidatesProvider>
+            <div className="evidence-module-nav" data-testid="evidence-module-nav" style={{ marginBottom: 12 }}>
+              {(['tasks', 'papers', 'candidates', 'review', 'promotion'] as ModuleKey[]).map(m => (
+                <EvidenceModuleNavButton key={m} moduleKey={m} />
+              ))}
+            </div>
+            <EvidenceCenterBody embedded />
+          </MacroCandidatesProvider>
         ) : (
-          <EvidenceCenterHeader moduleTitles={MODULE_TITLE} />
+          <>
+            <EvidenceCenterHeader moduleTitles={MODULE_TITLE} />
+            <EvidenceCenterBody />
+          </>
         )}
-        <EvidenceCenterBody embedded={embedded} />
       </div>
       </TaskItemsRefreshProvider>
+      </SelectedValidationTaskProvider>
     </EvidenceCenterProvider>
   )
 }

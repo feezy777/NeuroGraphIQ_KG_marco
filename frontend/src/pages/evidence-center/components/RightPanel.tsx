@@ -1,11 +1,14 @@
 import { useMemo } from 'react'
 import { useEvidenceCenter, type ModuleKey } from '../EvidenceCenterContext'
+import { useSelectedValidationTask } from '../SelectedValidationTaskContext'
+import { useMacroCandidates } from '../../validation-center/macro-governance/useMacroCandidates'
 import { EvidenceQueuePanel } from './EvidenceQueuePanel'
 import { ObjectQueue } from './ObjectQueue'
 import { PassageSummary } from './PassageSummary'
 import { PromotionImpact } from './PromotionImpact'
 import { ReviewerDecisionPanel } from './ReviewerDecisionPanel'
 import { TaskProcessedPanel } from './TaskProcessedPanel'
+import { MacroDiscoverySidePanel } from '../modules/paper-workbench/MacroDiscoverySidePanel'
 
 const RIGHT_TITLES: Record<ModuleKey, string> = {
   tasks: '任务与队列概览',
@@ -30,6 +33,15 @@ export function RightPanel({ module }: { module: ModuleKey }) {
     enterReviewFromPassages,
     openTarget,
   } = useEvidenceCenter()
+  const { selectedTask } = useSelectedValidationTask()
+  const { candidates: macroCandidates } = useMacroCandidates()
+
+  // 宏发现工作台(Paper Discovery 任务):右栏切换为 规则验证/处理进度/已选候选证据
+  const isMacroDiscovery = module === 'candidates' && selectedTask?.sourceType === 'paper_discovery'
+  const macroView = useMemo(() => {
+    if (!isMacroDiscovery) return null
+    return macroCandidates.find(v => v.ranking?.id === selectedTask.sourceId) ?? null
+  }, [isMacroDiscovery, macroCandidates, selectedTask])
 
   // 候选模块右栏队列的当前对象下标(与页面左栏队列同逻辑;仅 candidates 分支使用)
   const candidateQueueIndex = useMemo(() => {
@@ -47,6 +59,18 @@ export function RightPanel({ module }: { module: ModuleKey }) {
   }
 
   if (module === 'candidates') {
+    // Macro 发现工作台:右栏 = 规则验证(R1-R6) + 处理进度 + 已选候选证据
+    if (isMacroDiscovery) {
+      return (
+        <aside className="evidence-right-panel" data-testid="evidence-right-panel">
+          <MacroDiscoverySidePanel
+            view={macroView}
+            evidenceEnhance={selectedTask.workflowMode === 'evidence_enhancement'}
+            rankingId={selectedTask.sourceId}
+          />
+        </aside>
+      )
+    }
     // 候选模块右栏 = 待处理对象队列(Top) + 候选佐证原文片段聚合(Bottom)
     return (
       <aside className="evidence-right-panel" data-testid="evidence-right-panel">

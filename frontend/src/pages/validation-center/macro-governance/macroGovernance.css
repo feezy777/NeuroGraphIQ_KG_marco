@@ -1,0 +1,203 @@
+/* Macro 候选治理 — 有机融合层(视觉延续验证中心证据页风格:医学蓝/白卡/灰底) */
+
+/* ---- 状态徽章 ---- */
+.govw-status {
+  display: inline-block;
+  padding: 1px 8px;
+  font-size: 11px;
+  line-height: 16px;
+  border-radius: 9px;
+  font-weight: 500;
+}
+.govw-status-neutral { background: #eef1f5; color: #5b6472; }
+.govw-status-ok { background: #e4f4ec; color: #1d7a4f; }
+.govw-status-warn { background: #fdf1e0; color: #a8680c; }
+.govw-status-bad { background: #fbe6e6; color: #b33131; }
+.govw-status-blue { background: #e5eefb; color: #1d5fb8; }
+
+/* ---- Strip(证据候选页状态行) ---- */
+.govw-strip {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  background: #fff;
+  border: 1px solid #e3e8ef;
+  border-left: 3px solid #2563b4;
+  border-radius: 8px;
+  padding: 8px 12px;
+  margin-bottom: 10px;
+  font-size: 12.5px;
+}
+.govw-strip-pair b { color: #1f2937; font-size: 13px; }
+.govw-strip-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: #1d5fb8;
+  text-transform: uppercase;
+  letter-spacing: .4px;
+}
+.govw-arrow { margin: 0 5px; color: #9aa3b0; }
+.govw-strip-cell { color: #5b6472; }
+.govw-strip-cell b { color: #1f2937; }
+.govw-chip {
+  display: inline-block;
+  padding: 1px 8px;
+  font-size: 11px;
+  border-radius: 8px;
+  background: #f1f4f8;
+  color: #5b6472;
+}
+.govw-detail-btn { margin-left: auto; }
+.govw-muted { color: #5b6472; font-size: 12.5px; }
+.govw-pass { color: #1d7a4f; font-weight: 600; margin-left: 6px; }
+.govw-fail { color: #b33131; font-weight: 600; margin-left: 6px; }
+.govw-blocked {
+  margin-left: 8px;
+  background: #fbe6e6;
+  color: #b33131;
+  padding: 1px 7px;
+  font-size: 10.5px;
+  border-radius: 8px;
+}
+
+/* ---- 卡片 ---- */
+.govw-card {
+  background: #fff;
+  border: 1px solid #e3e8ef;
+  border-radius: 10px;
+  padding: 12px 14px;
+  margin-bottom: 10px;
+  font-size: 13px;
+}
+.govw-card h5 {
+  margin: 0 0 10px;
+  font-size: 12.5px;
+  color: #5b6472;
+  text-transform: uppercase;
+  letter-spacing: .4px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.govw-card h5 .govw-pass, .govw-card h5 .govw-fail { font-size: 11px; }
+
+/* ---- 规则网格 ---- */
+.govw-rule-grid { display: flex; flex-direction: column; gap: 6px; }
+.govw-rule {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  background: #f6f8fb;
+  border-radius: 8px;
+  padding: 7px 10px;
+}
+.govw-rule-code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  color: #5b6472;
+  background: #fff;
+  border: 1px solid #e3e8ef;
+  border-radius: 6px;
+  padding: 0 5px;
+  margin-top: 1px;
+}
+.govw-rule-name { font-weight: 500; color: #1f2937; }
+.govw-rule-name .govw-pass, .govw-rule-name .govw-fail { font-size: 11px; margin-left: 8px; }
+.govw-rule-detail { color: #5b6472; font-size: 12px; margin-top: 1px; }
+
+/* ---- AI 卡 ---- */
+.govw-ai-row {
+  display: grid;
+  grid-template-columns: 96px 1fr;
+  gap: 3px 8px;
+  padding: 3px 0;
+}
+.govw-ai-row span:first-child { color: #5b6472; }
+.govw-ai-reason { margin-top: 8px; padding-top: 8px; border-top: 1px dashed #e3e8ef; }
+.govw-ai-reason b { font-size: 12px; color: #5b6472; }
+.govw-ai-reason p { margin: 3px 0 0; line-height: 1.55; }
+.govw-raw-toggle {
+  background: none;
+  border: none;
+  color: #1d5fb8;
+  font-size: 12px;
+  cursor: pointer;
+  padding: 6px 0 0;
+}
+.govw-raw-pre {
+  background: #122034;
+  color: #cfe3ff;
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 11.5px;
+  line-height: 1.5;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  margin-top: 6px;
+}
+
+/* ---- 时间线 ---- */
+.govw-timeline {
+  position: relative;
+  padding-left: 16px;
+}
+.govw-timeline::before {
+  content: '';
+  position: absolute;
+  left: 4px; top: 5px; bottom: 5px;
+  width: 2px;
+  background: #e3e8ef;
+}
+.govw-tl-item {
+  position: relative;
+  padding-bottom: 10px;
+}
+.govw-tl-item:last-child { padding-bottom: 0; }
+.govw-tl-dot {
+  position: absolute;
+  left: -15px; top: 3px;
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: #fff;
+  border: 2px solid #2563b4;
+}
+.govw-tl-dot-ok { border-color: #1d7a4f; }
+.govw-tl-dot-warn { border-color: #d9a441; background: #fdf1e0; }
+.govw-tl-dot-bad { border-color: #b33131; background: #fbe6e6; }
+.govw-tl-dot-neu { border-color: #9aa3b0; }
+.govw-tl-meta { font-size: 11.5px; color: #5b6472; }
+
+/* ---- 晋升门禁 ---- */
+.govw-gate {
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+  background: #f6f8fb;
+  border: 1px solid #e3e8ef;
+  border-radius: 8px;
+  padding: 8px 12px;
+  margin-bottom: 10px;
+  font-size: 12.5px;
+}
+.govw-gate-item { display: flex; align-items: center; gap: 6px; color: #5b6472; }
+.govw-gate-item b { color: #1f2937; }
+.govw-gate-item .govw-pass, .govw-gate-item .govw-fail { margin: 0; }
+
+/* ---- 人工审核上下文条 ---- */
+.govw-review-context {
+  background: #fff;
+  border: 1px solid #e3e8ef;
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin-bottom: 10px;
+}
+.govw-review-context-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+  font-size: 13px;
+}
+.govw-review-context-head b { color: #1f2937; }

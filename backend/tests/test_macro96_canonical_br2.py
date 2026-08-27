@@ -166,7 +166,10 @@ def test_left_right_share_single_concept(db):
 def test_no_duplicate_concepts_for_paired_structures(db):
     async def _t():
         async with AsyncSessionLocal() as s:
-            # exactly 48 L2 clinical concepts (44 pairs + 5 midline + 3 vermal - reused L1 keys)
+            # exactly 52 L2 clinical concepts:
+            #   48 br2_seed (44 pairs + 5 midline + 3 vermal - reused L1 keys)
+            #   + 1 其他来源 + 3 macro_region_alignment_v1 (cerebellum exterior /
+            #     cerebellum white matter / ventral diencephalon, 2026-08-25 收口)
             count = int(
                 (
                     await s.execute(
@@ -177,7 +180,7 @@ def test_no_duplicate_concepts_for_paired_structures(db):
                     )
                 ).scalar_one()
             )
-            assert count == 48
+            assert count == 52
             # no two clinical concepts share the same canonical_name_en
             dup = int(
                 (

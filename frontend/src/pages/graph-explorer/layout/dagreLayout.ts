@@ -115,6 +115,93 @@ function shift(positions: Map<string, Point>, dx: number, dy: number): Map<strin
  * - 各带水平居中对齐
  * - 节点数 > DAGRE_MAX_NODES 时走确定性网格布局（防大图卡顿）
  */
+/**
+ * Hub/Ego 圆形簇布局（Data Adapter V1；V3 radial 分组分层升级）：
+ * 连接折叠为边后的 Final 图 = 中心脑区 + 邻域脑区（纯 brain_region 节点）。
+ * 布局策略（确定性、无随机、科研级网络图风格）：
+ * - Ring 0：中心实体（画布中枢）
+ * - Ring 1：直接连接邻居 —— 按「与中心的连接关系组」分段弧（structural 弧段、
+ *   function 弧段、projection/参与 弧段、evidence 弧段），段内按 label 排序等角；
+ *   组内同弧 = 同色同型边，天然减少交叉与平行线堆叠
+ * - Ring 2（预留）：非直接邻居（future 2-hop 展开时进入）
+ * 仅当全图为 brain_region 且中心存在时触发，其余图走既有三段带布局。
+ */
+
+/** 关系组弧段顺序（与 graphTheme 四色一致） */
+export const HUB_GROUP_SECTORS: string[] = [
+  'structural',
+  'has_function',
+  'participates_in',
+  'evidence',
+]
+
+function relationGroupOfEdge(edges: CanonicalEdge[], nodeId: string, centerNodeId: string): string {
+  for (const e of edges) {
+    if (e.source === nodeId && e.target === centerNodeId) return e.metadata.predicate || e.type || 'structural'
+    if (e.source === centerNodeId && e.target === nodeId) return e.metadata.predicate || e.type || 'structural'
+  }
+  return 'structural'
+}
+
+/** 边 predicate → 组（'connection' 语义即 structural 组；'has_function' 等直通） */
+function hubGroupOf(predicate: string): string {
+  if (predicate === 'connection') return 'structural'
+  if (HUB_GROUP_SECTORS.includes(predicate)) return predicate
+  // 其他边类型（projection_source 等镜像图模式）→ structural 兜底
+  return 'structural'
+}
+
+export function layoutHubEgoGraph(
+  nodes: CanonicalNode[],
+  edges: CanonicalEdge[],
+  centerNodeId: string,
+): Map<string, Point> {
+  const centerNode = nodes.find(n => n.id === centerNodeId) ?? null
+  const neighbors = nodes
+    .filter(n => n.id !== centerNodeId)
+    .sort((a, b) => (gridSortKey(a) < gridSortKey(b) ? -1 : 1))
+
+  const out = new Map<string, Point>()
+  const { width: cw, height: ch } = measureNode(centerNode ?? nodes[0])
+  // 中心置于原点（画布中枢），节点左上角坐标换算
+  out.set(centerNodeId, { x: -cw / 2, y: -ch / 2 })
+
+  const n = neighbors.length
+  if (n === 0) return out
+
+  // 按关系组分类（弧段内排序已由 gridSortKey 保证）
+  const byGroup = new Map<string, CanonicalNode[]>()
+  for (const node of neighbors) {
+    const group = hubGroupOf(relationGroupOfEdge(edges, node.id, centerNodeId))
+    const arr = byGroup.get(group) ?? []
+    arr.push(node)
+    byGroup.set(group, arr)
+  }
+
+  const radius = 250 + 40 * Math.sqrt(n)
+  // 组 → 弧段角度区间（顺序从正上方顺时针；组间空隙 6°）
+  const sectorOrder = HUB_GROUP_SECTORS.filter(g => byGroup.has(g))
+  const totalWeight = sectorOrder.reduce((sum, g) => sum + (byGroup.get(g)?.length ?? 0), 0)
+  const gap = 0.06 // 弧度（约 3.4°）
+  let cursor = -Math.PI / 2
+  for (const group of sectorOrder) {
+    const members = byGroup.get(group) ?? []
+    const sectorSpan = (2 * Math.PI) * (members.length / totalWeight)
+    const usable = sectorSpan - gap * (sectorOrder.length > 1 ? 1 : 0)
+    const start = cursor + gap / 2
+    members.forEach((node, i) => {
+      const angle = start + (usable * (i + 0.5)) / members.length
+      const { width, height } = measureNode(node)
+      out.set(node.id, {
+        x: radius * Math.cos(angle) - width / 2,
+        y: radius * Math.sin(angle) - height / 2,
+      })
+    })
+    cursor += sectorSpan
+  }
+  return out
+}
+
 export function layoutCanonicalGraph(
   nodes: CanonicalNode[],
   edges: CanonicalEdge[],
@@ -123,6 +210,11 @@ export function layoutCanonicalGraph(
   if (nodes.length === 0) return new Map()
 
   if (nodes.length > DAGRE_MAX_NODES) return layoutCanonicalGraphGrid(nodes, centerNodeId)
+
+  // Data Adapter V1：连接折叠为边后的 Ego 图（仅脑区节点）→ 圆形簇（radial 分组分层）
+  if (centerNodeId && nodes.every(n => n.type === 'brain_region')) {
+    return layoutHubEgoGraph(nodes, edges, centerNodeId)
+  }
 
   const isCenterBand = (n: CanonicalNode): boolean =>
     n.id === centerNodeId || (n.type !== 'function' && n.type !== 'evidence' && n.type !== 'circuit')
