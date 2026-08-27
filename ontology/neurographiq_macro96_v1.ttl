@@ -1,0 +1,156 @@
+# =============================================================================
+# NeuroGraphIQ Macro96 Ontology — V1.0 Gate 1 skeleton
+#
+#   Ontology IRI : https://neurographiq.org/ontology/macro96
+#   Namespace    : https://neurographiq.org/ontology/macro96#   (prefix: ngiq:)
+#   Version      : 0.1.0-gate1 (Status: draft — for human review in Protégé)
+#
+# Scope of Gate 1 (intentionally minimal):
+#   - ontology declaration + namespace/prefix + version metadata
+#   - 24 top-level classes with English/Chinese labels and short comments
+#
+# Explicitly absent (reserved for later gates):
+#   - ObjectProperty / DataProperty / custom AnnotationProperty
+#   - ConnectionType / CircuitType / EvidenceType sub-hierarchies
+#   - Function hierarchy, BrainRegion hierarchy, SHACL constraints
+#   - Individuals, Macro96 BrainRegion instances, ConnectionAssessment instances
+#   - HBAO / Uberon / NeuroNames mapping
+#   - owl:imports (must remain empty)
+# =============================================================================
+
+@prefix :     <https://neurographiq.org/ontology/macro96#> .
+@prefix ngiq: <https://neurographiq.org/ontology/macro96#> .
+@prefix owl:  <http://www.w3.org/2002/07/owl#> .
+@prefix rdf:  <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd:  <http://www.w3.org/2001/XMLSchema#> .
+
+<https://neurographiq.org/ontology/macro96> a owl:Ontology ;
+    rdfs:label "NeuroGraphIQ Macro96 Ontology"@en ;
+    rdfs:label "NeuroGraphIQ Macro96 本体"@zh ;
+    rdfs:comment "Top-level concept skeleton of the NeuroGraphIQ Macro96 knowledge-production ontology. Status: draft. Gate 1 scope: ontology metadata and 24 top-level classes only."@en ;
+    owl:versionInfo "0.1.0-gate1" .
+
+# ---------------------------------------------------------------------------
+# Gate 1 — 24 top-level classes (direct children of owl:Thing)
+# ---------------------------------------------------------------------------
+
+ngiq:BrainRegion a owl:Class ;
+    rdfs:label "BrainRegion"@en ;
+    rdfs:label "脑区"@zh ;
+    rdfs:comment "A distinct region of the brain; the core anchor concept of the Macro96 system."@en .
+
+ngiq:Function a owl:Class ;
+    rdfs:label "Function"@en ;
+    rdfs:label "功能"@zh ;
+    rdfs:comment "A biological or cognitive function performed by brain regions or circuits."@en .
+
+ngiq:Connection a owl:Class ;
+    rdfs:label "Connection"@en ;
+    rdfs:label "连接"@zh ;
+    rdfs:comment "A promoted, canonical connection between two brain regions."@en .
+
+ngiq:ConnectionType a owl:Class ;
+    rdfs:label "ConnectionType"@en ;
+    rdfs:label "连接类型"@zh ;
+    rdfs:comment "Controlled-vocabulary class for connection types (hierarchy defined in Gate 2)."@en .
+
+ngiq:Circuit a owl:Class ;
+    rdfs:label "Circuit"@en ;
+    rdfs:label "回路"@zh ;
+    rdfs:comment "A promoted, canonical circuit composed of regions and their connections."@en .
+
+ngiq:CircuitType a owl:Class ;
+    rdfs:label "CircuitType"@en ;
+    rdfs:label "回路类型"@zh ;
+    rdfs:comment "Controlled-vocabulary class for circuit types (hierarchy defined in Gate 3)."@en .
+
+ngiq:CircuitConnectionMembership a owl:Class ;
+    rdfs:label "CircuitConnectionMembership"@en ;
+    rdfs:label "回路连接成员关系"@zh ;
+    rdfs:comment "Membership of a Connection within a Circuit."@en .
+
+ngiq:Publication a owl:Class ;
+    rdfs:label "Publication"@en ;
+    rdfs:label "文献"@zh ;
+    rdfs:comment "A scientific paper or other literature source used in knowledge production."@en .
+
+ngiq:Evidence a owl:Class ;
+    rdfs:label "Evidence"@en ;
+    rdfs:label "证据"@zh ;
+    rdfs:comment "A promoted piece of evidence supporting a connection or circuit claim."@en .
+
+ngiq:EvidenceType a owl:Class ;
+    rdfs:label "EvidenceType"@en ;
+    rdfs:label "证据类型"@zh ;
+    rdfs:comment "Controlled-vocabulary class for evidence types (hierarchy defined in a later gate)."@en .
+
+ngiq:Atlas a owl:Class ;
+    rdfs:label "Atlas"@en ;
+    rdfs:label "脑图谱"@zh ;
+    rdfs:comment "A brain atlas providing parcellation and/or spatial coordinates."@en .
+
+ngiq:ExternalRegion a owl:Class ;
+    rdfs:label "ExternalRegion"@en ;
+    rdfs:label "外部脑区"@zh ;
+    rdfs:comment "A brain region defined by an external source (atlas or terminology), prior to canonical mapping."@en .
+
+ngiq:RegionMapping a owl:Class ;
+    rdfs:label "RegionMapping"@en ;
+    rdfs:label "脑区映射"@zh ;
+    rdfs:comment "A mapping between an ExternalRegion and a canonical BrainRegion."@en .
+
+ngiq:ConnectionAssessment a owl:Class ;
+    rdfs:label "ConnectionAssessment"@en ;
+    rdfs:label "连接评估"@zh ;
+    rdfs:comment "An assessment run over a pair of brain regions for a possible connection."@en .
+
+ngiq:ConnectionCandidate a owl:Class ;
+    rdfs:label "ConnectionCandidate"@en ;
+    rdfs:label "连接候选"@zh ;
+    rdfs:comment "A proposed connection awaiting validation, review and promotion."@en .
+
+ngiq:CircuitCandidate a owl:Class ;
+    rdfs:label "CircuitCandidate"@en ;
+    rdfs:label "回路候选"@zh ;
+    rdfs:comment "A proposed circuit awaiting validation, review and promotion."@en .
+
+ngiq:EvidenceCandidate a owl:Class ;
+    rdfs:label "EvidenceCandidate"@en ;
+    rdfs:label "证据候选"@zh ;
+    rdfs:comment "A candidate piece of evidence awaiting model and human review."@en .
+
+ngiq:SearchRun a owl:Class ;
+    rdfs:label "SearchRun"@en ;
+    rdfs:label "检索运行"@zh ;
+    rdfs:comment "A literature search run over publication sources."@en .
+
+ngiq:ExtractionRun a owl:Class ;
+    rdfs:label "ExtractionRun"@en ;
+    rdfs:label "抽取运行"@zh ;
+    rdfs:comment "An LLM extraction run over publications."@en .
+
+ngiq:ModelReview a owl:Class ;
+    rdfs:label "ModelReview"@en ;
+    rdfs:label "模型审核"@zh ;
+    rdfs:comment "An automated model review of a candidate."@en .
+
+ngiq:HumanReview a owl:Class ;
+    rdfs:label "HumanReview"@en ;
+    rdfs:label "人工审核"@zh ;
+    rdfs:comment "A human review of a candidate."@en .
+
+ngiq:InferenceRecord a owl:Class ;
+    rdfs:label "InferenceRecord"@en ;
+    rdfs:label "推断记录"@zh ;
+    rdfs:comment "A record of an inference made during knowledge production."@en .
+
+ngiq:ValidationRecord a owl:Class ;
+    rdfs:label "ValidationRecord"@en ;
+    rdfs:label "验证记录"@zh ;
+    rdfs:comment "A record of a validation decision or rule check."@en .
+
+ngiq:ConceptDefinition a owl:Class ;
+    rdfs:label "ConceptDefinition"@en ;
+    rdfs:label "概念定义"@zh ;
+    rdfs:comment "A definition of a concept used by the ontology."@en .

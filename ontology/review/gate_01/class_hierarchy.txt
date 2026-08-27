@@ -1,0 +1,32 @@
+NeuroGraphIQ Macro96 Ontology — Gate 1 class hierarchy
+Ontology IRI : https://neurographiq.org/ontology/macro96
+Version      : 0.1.0-gate1 (draft)
+
+owl:Thing
+├─ Atlas
+├─ BrainRegion
+├─ Circuit
+├─ CircuitCandidate
+├─ CircuitConnectionMembership
+├─ CircuitType
+├─ ConceptDefinition
+├─ Connection
+├─ ConnectionAssessment
+├─ ConnectionCandidate
+├─ ConnectionType
+├─ Evidence
+├─ EvidenceCandidate
+├─ EvidenceType
+├─ ExternalRegion
+├─ ExtractionRun
+├─ Function
+├─ HumanReview
+├─ InferenceRecord
+├─ ModelReview
+├─ Publication
+├─ RegionMapping
+├─ SearchRun
+└─ ValidationRecord
+
+(24 business classes; no subclass hierarchy in Gate 1 — all direct children of owl:Thing.
+ Protégé may render the list in alphabetical order, which is expected.)
