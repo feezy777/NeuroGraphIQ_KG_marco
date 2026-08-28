@@ -11,8 +11,8 @@ from app.services import database_admin_service
 
 
 def test_parse_database_name_from_async_url():
-    url = "postgresql+psycopg_async://postgres:secret@127.0.0.1:5432/neurographiq_macro96_v1_e2e"
-    assert database_admin_service.parse_database_name(url) == "neurographiq_macro96_v1_e2e"
+    url = "postgresql+psycopg_async://postgres:secret@127.0.0.1:5432/neurographiq_human_brain_v1_e2e"
+    assert database_admin_service.parse_database_name(url) == "neurographiq_human_brain_v1_e2e"
 
 
 def test_resolve_active_database_ignores_runtime_override(tmp_path, monkeypatch):

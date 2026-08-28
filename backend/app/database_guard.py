@@ -1,9 +1,9 @@
-"""Macro96 database safety guard.
+"""Human-brain KG database safety guard.
 
-Single source of truth for the database names the Macro96 runtime may use:
+Single source of truth for the database names the human-brain runtime may use:
 
-- main development database: ``neurographiq_macro96_v1``
-- isolated test database(s):  ``neurographiq_macro96_v1_e2e``
+- main development database: ``neurographiq_human_brain_v1``
+- isolated test database(s):  ``neurographiq_human_brain_v1_e2e``
   (extendable via the ``TEST_DB_SUFFIXES`` env var, same convention as tests/conftest.py)
 
 Legacy NeuroGraphIQ V3 database names (``neurographiq_kg_v3*``, ``NeuroGraphIQ_KG*``,
@@ -15,15 +15,15 @@ from __future__ import annotations
 
 import os
 
-MAIN_DATABASE = "neurographiq_macro96_v1"
-E2E_DATABASE = "neurographiq_macro96_v1_e2e"
+MAIN_DATABASE = "neurographiq_human_brain_v1"
+E2E_DATABASE = "neurographiq_human_brain_v1_e2e"
 
-# Legacy V3 family that must never be touched by the Macro96 runtime.
+# Legacy V3 family that must never be touched by the human-brain runtime.
 FORBIDDEN_DB_PREFIXES = ("neurographiq_kg_v3", "NeuroGraphIQ_KG", "NeuroGraphIQ_Workbench")
 
 
 class DatabaseGuardError(Exception):
-    """Raised when a database name is not allowed by the Macro96 guard."""
+    """Raised when a database name is not allowed by the human-brain guard."""
 
 
 def test_database_suffixes() -> tuple[str, ...]:
@@ -48,20 +48,20 @@ def is_allowed_test_database(name: str) -> bool:
 
 
 def is_allowed_database(name: str) -> bool:
-    """Any database name the Macro96 runtime may connect to (main or isolated test)."""
+    """Any database name the human-brain runtime may connect to (main or isolated test)."""
     return is_allowed_main_database(name) or is_allowed_test_database(name)
 
 
 def assert_allowed_database(name: str) -> None:
-    """Raise DatabaseGuardError unless ``name`` is an allowed Macro96 database."""
+    """Raise DatabaseGuardError unless ``name`` is an allowed human-brain database."""
     if is_allowed_database(name):
         return
     if is_forbidden_legacy_database(name):
         raise DatabaseGuardError(
-            f"database '{name}' is a legacy NeuroGraphIQ V3 database; the Macro96 runtime "
+            f"database '{name}' is a legacy NeuroGraphIQ V3 database; the human-brain runtime "
             f"only allows '{MAIN_DATABASE}' (main) or '{E2E_DATABASE}' (test)."
         )
     raise DatabaseGuardError(
-        f"database '{name}' is not an allowed Macro96 database "
+        f"database '{name}' is not an allowed human-brain database "
         f"(allowed: '{MAIN_DATABASE}', '{E2E_DATABASE}')."
     )

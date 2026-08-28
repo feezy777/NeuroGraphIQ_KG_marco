@@ -58,8 +58,8 @@ function Get-ProjectDbConfig {
     $port = if ($envFile['POSTGRES_PORT']) { [int]$envFile['POSTGRES_PORT'] } else { 5432 }
     $user = if ($envFile['POSTGRES_USER']) { $envFile['POSTGRES_USER'] } else { 'postgres' }
     $pass = if ($null -ne $envFile['POSTGRES_PASSWORD']) { $envFile['POSTGRES_PASSWORD'] } else { '' }
-    $wbDb = if ($envFile['POSTGRES_DB']) { $envFile['POSTGRES_DB'] } else { 'neurographiq_macro96_v1' }
-    $candDb = if ($envFile['POSTGRES_DB_TEST']) { $envFile['POSTGRES_DB_TEST'] } else { 'neurographiq_macro96_v1_e2e' }
+    $wbDb = if ($envFile['POSTGRES_DB']) { $envFile['POSTGRES_DB'] } else { 'neurographiq_human_brain_v1' }
+    $candDb = if ($envFile['POSTGRES_DB_TEST']) { $envFile['POSTGRES_DB_TEST'] } else { 'neurographiq_human_brain_v1_e2e' }
 
     if ($envFile['DATABASE_URL']) {
         $parsed = Parse-DatabaseUrl $envFile['DATABASE_URL']

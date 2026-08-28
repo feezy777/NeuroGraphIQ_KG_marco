@@ -1,4 +1,4 @@
-"""Macro96 database boundary tests (no live PostgreSQL connection required)."""
+"""Human-brain database boundary tests (no live PostgreSQL connection required)."""
 
 from __future__ import annotations
 
@@ -27,13 +27,13 @@ LEGACY_V3_NAMES = [
 ]
 
 
-def test_config_defaults_freeze_macro96_names():
+def test_config_defaults_freeze_human_brain_names():
     settings = Settings(_env_file=None)
     assert settings.postgres_db == MAIN_DATABASE
     assert MAIN_DATABASE in settings.database_url
 
 
-def test_guard_allows_macro96_names():
+def test_guard_allows_human_brain_names():
     assert is_allowed_main_database(MAIN_DATABASE)
     assert is_allowed_test_database(E2E_DATABASE)
     assert is_allowed_database(MAIN_DATABASE)
@@ -56,7 +56,7 @@ def test_guard_rejects_unknown_names():
 
 def test_guard_test_suffixes_env_extension(monkeypatch):
     monkeypatch.setenv("TEST_DB_SUFFIXES", "_e2e,_test")
-    assert is_allowed_test_database("neurographiq_macro96_v1_test")
+    assert is_allowed_test_database("neurographiq_human_brain_v1_test")
     # Legacy names stay forbidden even when they match an allowed suffix.
     assert not is_allowed_test_database("neurographiq_kg_v3_mvp1_e2e")
 

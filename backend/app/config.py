@@ -47,17 +47,17 @@ class Settings(BaseSettings):
     paper_semantic_max_tokens: int = 1200
 
     # Database components — align with backend/.env.example and docs/dbeaver_postgres_connection.md
-    # Macro96: PostgreSQL is the single knowledge-production & review source of truth.
-    # Official dev database: neurographiq_macro96_v1; E2E/test: neurographiq_macro96_v1_e2e
+    # Human Brain KG: PostgreSQL is the single knowledge-production & review source of truth.
+    # Official dev database: neurographiq_human_brain_v1; E2E/test: neurographiq_human_brain_v1_e2e
     # (see app/database_guard.py for the enforced allowlist).
     postgres_host: str = "127.0.0.1"
     postgres_port: int = 5432
     postgres_user: str = "postgres"
     postgres_password: str = ""  # set in .env; never commit real secrets
-    postgres_db: str = "neurographiq_macro96_v1"
+    postgres_db: str = "neurographiq_human_brain_v1"
 
     # Full URL (override components when set in .env)
-    database_url: str = "postgresql+psycopg_async://postgres@127.0.0.1:5432/neurographiq_macro96_v1"
+    database_url: str = "postgresql+psycopg_async://postgres@127.0.0.1:5432/neurographiq_human_brain_v1"
 
     def build_database_url(self, *, database: str | None = None, async_driver: bool = True) -> str:
         """Build URL from POSTGRES_* (for docs/scripts); password URL-encoded."""

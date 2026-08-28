@@ -22,9 +22,9 @@ def pytest_configure(config):
         "(skips the autouse AsyncMock of function_term_service paths)",
     )
 
-# 数据库写测试硬门禁(S7B 安全门禁 + S8 修订 + Macro96 修订):
-# - 真实连接后执行 SELECT current_database(),只允许 Macro96 隔离测试库
-#   (默认 neurographiq_macro96_v1_e2e,可用 TEST_DB_SUFFIXES 环境变量以逗号分隔扩展后缀,
+# 数据库写测试硬门禁(S7B 安全门禁 + S8 修订 + human-brain 修订):
+# - 真实连接后执行 SELECT current_database(),只允许 human-brain 隔离测试库
+#   (默认 neurographiq_human_brain_v1_e2e,可用 TEST_DB_SUFFIXES 环境变量以逗号分隔扩展后缀,
 #   如 "_e2e,_test");旧 V3 库名(neurographiq_kg_v3* 等)一律拒绝;
 # - 连接成功但库名不满足时立即终止整个测试会话(returncode 非 0),不能仅 warning;
 # - 连接失败(无数据库环境)时仅警告放行:纯单元测试不依赖真实数据库,任何 DB 写测试会自然失败;
@@ -49,11 +49,11 @@ def _guard_e2e_test_database():
                 if name.startswith(FORBIDDEN_DB_PREFIXES):
                     reason = (
                         f"connected database '{name}' is a legacy NeuroGraphIQ V3 database; "
-                        "the Macro96 test guard refuses to touch it"
+                        "the human-brain test guard refuses to touch it"
                     )
                 else:
                     reason = (
-                        f"connected database '{name}' is not an isolated Macro96 test "
+                        f"connected database '{name}' is not an isolated human-brain test "
                         f"database (must be '{E2E_DATABASE}' or end with a TEST_DB_SUFFIXES "
                         "suffix); refusing to run tests"
                     )
