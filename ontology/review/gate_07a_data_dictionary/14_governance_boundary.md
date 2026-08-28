@@ -36,7 +36,7 @@
 ## 4. Evidence 如何挂
 
 - **reified entity**（Connection/Circuit/RegionMapping）：通过 `connection_observations` 或专用 evidence 关联挂载。
-- **ordinary relation assertion**：通过 `assertion_evidence_links` 挂载（evidence_role=supports/contradicts/qualifies）。
+- **ordinary relation assertion**：通过 `evidence_links` 挂载（evidence_role=supports/contradicts/qualifies）。
 
 ## 5. 一致性保障
 

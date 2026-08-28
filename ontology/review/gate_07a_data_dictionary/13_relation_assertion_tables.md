@@ -47,19 +47,28 @@
 
 例：`NGIQ-AST-00000001`，Hippocampus participatesIn Memory，display_name_en=Hippocampus participates in memory，display_name_zh=海马参与记忆功能。
 
-## 3. assertion_evidence_links（解决普通 KG edge 如何挂 Evidence）
+## 3. evidence_links（Evidence Association Layer；原 assertion_evidence_links，HISTORICAL/SUPERSEDED）
+
+统一表达 Evidence 对 KnowledgeAssertion 或 reified scientific entity 的 epistemic 作用。
 
 | 字段 | 说明 |
 |---|---|
 | link_pk | 内部主键 |
-| link_id | NGIQ-AEL-… |
-| assertion_id | 指向 knowledge_assertions |
-| evidence_id | 指向 evidence |
+| link_id | NGIQ-ELK-…（8 位） |
+| evidence_pk | 指向 evidence（必填） |
+| assertion_pk | 指向 knowledge_assertions（XOR，nullable） |
+| entity_pk | 指向 kg_entities（XOR，nullable） |
 | evidence_role | supports / contradicts / qualifies |
-| evidence_strength | 强度 |
-| evidence_directness | 直接性 |
+| evidence_strength | target-specific 强度 |
+| evidence_directness | target-specific 直接性 |
+| claim_scope | entity_overall / direction / connection_type / membership / function / mapping_* / other（entity target 用） |
 | is_primary_evidence | 是否主证据 |
-| created_at | 时间戳 |
+| record_status | active / deprecated / merged / pending |
+| created_at / updated_at | 时间戳 |
 | remark | 备注 |
 
-> 例：APOE increasesRiskOf AlzheimerDisease 也能绑定具体 Evidence。
+> **XOR 约束**：assertion_pk 与 entity_pk 必须且只能填一个（普通 assertion 走 assertion_pk；Connection/Circuit/RegionMapping 走 entity_pk）。未来 Gate 7B 用 CHECK constraint 表达。
+
+> **Entity whitelist（V1）**：entity_pk 仅允许 entity_type ∈ {connection, circuit, region_mapping, circuit_connection_membership}。BrainRegion/Gene/Disease/Function 等普通 domain entity 不得直接作为 entity-level Evidence target。
+>
+> **claim_scope 规则**：entity_pk NOT NULL → claim_scope 必填；assertion_pk NOT NULL → claim_scope 可 NULL。

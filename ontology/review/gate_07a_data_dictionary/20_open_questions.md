@@ -17,7 +17,7 @@
 | 7 | derived count 失效 | evidence_count 等易过时 | DERIVED 字段，物化/定时刷新，不人工维护 |
 | 8 | knowledge_assertions 与 Connection 重复 | 同一事实两处 | reified 事实（Connection/RegionMapping/Membership）专用表，普通 relation 用 assertions，derived 不重复存 |
 | 9 | Evidence 挂 reified entity | 无统一路径 | connection_observations / region_mapping 专用 evidence 字段 |
-| 10 | Evidence 挂 ordinary relation | 无路径 | assertion_evidence_links |
+| 10 | Evidence 挂 ordinary relation | 无路径 | evidence_links |
 | 11 | parent_region_pk 与 partOf 冲突 | 可能绕过 ontology hierarchy | **已解决（Round 2）**：新增 brain_region_hierarchy_relations / function_hierarchy_relations 为 canonical hierarchy truth；parent_region_pk / parent_function_pk 降为 DERIVED cache |
 | 12 | JSON 字段过多 | 结构丢失 | 仅 metadata_json / 来源特异字段用 JSON，高频字段结构化 |
 | 13 | nullable 字段过多 | 数据质量 | 关键身份/分类字段 NN，统计量按方法 nullable |

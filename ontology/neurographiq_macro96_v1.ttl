@@ -1,9 +1,9 @@
 # =============================================================================
-# NeuroGraphIQ Human Brain Ontology — V1.0 Gate 6C
+# NeuroGraphIQ Human Brain Ontology — V1.0 Core Freeze
 #
 #   Ontology IRI : https://neurographiq.org/ontology/human-brain
 #   Namespace    : https://neurographiq.org/ontology/human-brain#   (prefix: ngiq:)
-#   Version      : 0.6.1-gate6c (Status: draft — awaiting Protégé relation review)
+#   Version      : 0.9.0-ontology-core-freeze (Status: draft — awaiting Protégé relation review)
 #
 # Scope of Gate 6B (incremental over Gate 5B):
 #   - 23 core classes (Gate 5B, unchanged).
@@ -44,7 +44,7 @@
     rdfs:label "NeuroGraphIQ 人脑知识本体"@zh ;
     rdfs:comment "NeuroGraphIQ Human Brain Core Classes + Core Object Properties. Scope: Homo sapiens (human brain only); mouse, rat, macaque and other species are not modeled as canonical scientific entities in V1. Macro96 is no longer the ontology scope; it serves as a future high-level BrainRegion mapping / aggregation layer. A Class denotes a knowledge type; canonical concepts (e.g. CA1, APOE, Dopamine, PapezCircuit) will be added as Individuals in a later gate. Connection is a canonical entity; direct BrainRegion-to-BrainRegion relations (structurallyConnectedTo / functionallyConnectedTo / projectsTo / effectivelyConnectedTo) are DERIVED graph projections of a Connection entity, not a second canonical truth. BrainRegion hierarchy instances (partOf / subfieldOf) are restricted in production to Homo sapiens (NCBI Taxonomy 9606); no Allen Mouse hierarchy is imported. Status: draft — awaiting Protégé relation review."@en ;
     rdfs:comment "NeuroGraphIQ 人脑知识本体核心类 + 核心对象属性。范围：仅人脑（Homo sapiens）。Macro96 不再是本体范围，而作为未来高层脑区映射/汇总层。Class 表示知识类型；canonical 概念（如 CA1、APOE、Dopamine、PapezCircuit）将在后续 Gate 作为 Individual 加入。Connection 是 canonical 实体；脑区直连关系（structurallyConnectedTo / functionallyConnectedTo / projectsTo / effectivelyConnectedTo）是由 Connection 实体派生的 DERIVED 图投影，不是第二份 canonical truth。BrainRegion hierarchy 实例（partOf / subfieldOf）在生产中仅限 Homo sapiens（NCBI Taxonomy 9606），不导入 Allen Mouse hierarchy。状态：draft — awaiting Protégé relation review。"@zh ;
-    owl:versionInfo "0.6.1-gate6c" .
+    owl:versionInfo "0.9.0-ontology-core-freeze" .
 
 # ---------------------------------------------------------------------------
 # Core domain classes (direct children of owl:Thing)
@@ -430,3 +430,15 @@ ngiq:subfieldOf a owl:ObjectProperty ;
     rdfs:range ngiq:BrainRegion ;
     rdfs:comment "A BrainRegion is a clearly delineated anatomical subfield of a larger BrainRegion; a more specific form of partOf. Example: CA1 subfieldOf Hippocampus (implies CA1 partOf Hippocampus)."@en ;
     rdfs:comment "一个脑区是另一个较大脑区具有明确解剖学意义的细分亚区；是 partOf 的更具体形式。例：CA1 subfieldOf Hippocampus（可推出 CA1 partOf Hippocampus）。"@zh .
+
+# ---------------------------------------------------------------------------
+# Function hierarchy (Gate 6D)
+# ---------------------------------------------------------------------------
+
+ngiq:subFunctionOf a owl:ObjectProperty ;
+    rdfs:label "subfunction of"@en ;
+    rdfs:label "是……的下位功能"@zh ;
+    rdfs:domain ngiq:Function ;
+    rdfs:range ngiq:Function ;
+    rdfs:comment "Relates a canonical Function concept to a broader Function concept when the former represents a more specific functional category or specialization of the latter. This is ABox semantic hierarchy, NOT rdfs:subClassOf (WorkingMemory / Memory are canonical Function Individuals, not OWL Classes). Representation: CANONICAL. Example: WorkingMemory subFunctionOf Memory; SelectiveAttention subFunctionOf Attention."@en ;
+    rdfs:comment "一个 canonical Function 概念是另一个更宽泛 Function 概念的更具体功能类别或功能特化。这是 ABox semantic hierarchy，不是 rdfs:subClassOf（WorkingMemory / Memory 是 canonical Function Individual，非 OWL Class）。Representation：CANONICAL。例：WorkingMemory subFunctionOf Memory；SelectiveAttention subFunctionOf Attention。"@zh .

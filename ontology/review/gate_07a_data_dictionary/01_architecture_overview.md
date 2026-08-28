@@ -59,7 +59,7 @@ Granularity Integration
 Assertion
 ├─ relation_definitions
 ├─ knowledge_assertions
-└─ assertion_evidence_links
+└─ evidence_links
 
 Governance
 → 独立 schema，后续设计
@@ -95,7 +95,7 @@ Governance
 | Circuit | 3 | circuits、circuit_region_memberships、circuit_connection_memberships |
 | Atlas Mapping | 1 | region_mappings |
 | Granularity Integration | 1 | brain_region_aggregation_mappings |
-| Assertion | 3 | relation_definitions、knowledge_assertions、assertion_evidence_links |
+| Assertion | 3 | relation_definitions、knowledge_assertions、evidence_links |
 | Governance | — | 独立 schema，后续设计 |
 
 > 合计 **32 张科学表**（Governance 不在此 schema）。

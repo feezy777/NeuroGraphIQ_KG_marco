@@ -52,7 +52,7 @@ Atlas Mapping
 Assertion
 ├─ relation_definitions
 ├─ knowledge_assertions
-└─ assertion_evidence_links
+└─ evidence_links
 
 Governance
 → 独立 schema，后续设计
@@ -73,7 +73,7 @@ Governance
 | atlases 1—N external_regions | 图谱—外部区域 |
 | external_regions + brain_regions 1—N region_mappings | 映射 reification |
 | relation_definitions 1—N knowledge_assertions | 谓词 vocabulary |
-| knowledge_assertions 1—N assertion_evidence_links 1—1 evidence | 断言挂证据 |
+| knowledge_assertions 1—N evidence_links 1—1 evidence | 断言挂证据 |
 | publications 1—N evidence | 文献—证据 |
 | research_studies 1—N publications / evidence | 研究—文献/证据 |
 

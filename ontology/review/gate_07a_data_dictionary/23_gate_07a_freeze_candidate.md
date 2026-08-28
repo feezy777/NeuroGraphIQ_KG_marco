@@ -17,7 +17,7 @@ Connection（3）       connections, connection_endpoints, connection_observatio
 Circuit（3）          circuits, circuit_region_memberships, circuit_connection_memberships
 Atlas Mapping（1）    region_mappings
 Granularity Integration（1） brain_region_aggregation_mappings
-Assertion（3）        relation_definitions, knowledge_assertions, assertion_evidence_links
+Assertion（3）        relation_definitions, knowledge_assertions, evidence_links
 Governance            → 独立 schema（后续设计，不计入）
 ```
 
@@ -60,14 +60,14 @@ Governance            → 独立 schema（后续设计，不计入）
 | Source | NGIQ-SRC |
 | Alias | NGIQ-ALS |
 | Xref | NGIQ-XRF |
-| AssertionEvidenceLink | NGIQ-AEL |
+| EvidenceLink | NGIQ-ELK |
 
 ## D. kg_entities Identity Policy（冻结）
 
 - `kg_entities` 是 **唯一 identity truth**：所有 first-class canonical entity 的 identity / public ID / display name / definition / description / lifecycle status 的唯一来源。
 - 字段：entity_pk、entity_id、entity_type、name_en/name_zh、abbreviation、definition_en/definition_zh、description_en/description_zh、source_name_original、source_language、name_en_source/name_zh_source、translation_review_status、record_status、version、created_at/updated_at、created_by_agent/updated_by_agent、metadata_json、remark。
 - **Subtype 表禁止独立维护第二套 name/definition/description truth**（移除或标 DERIVED DISPLAY CACHE；优先移除）。
-- first-class / user-visible 实体进入 kg_entities；技术 link 记录（connection_endpoints、assertion_evidence_links）不要求完整 identity（只需 PK + public ID + FK + 结构字段 + remark）。
+- first-class / user-visible 实体进入 kg_entities；技术 link 记录（connection_endpoints、evidence_links）不要求完整 identity（只需 PK + public ID + FK + 结构字段 + remark）。
 
 ## E. PK / FK Policy（冻结）
 
@@ -148,4 +148,11 @@ Governance            → 独立 schema（后续设计，不计入）
 - Connection/Circuit roll-up 产物 derivation_type=inferred（hierarchical_rollup），去重、self-loop collapse、N→1 不宣称几何 union。
 - brain_region_hierarchy_relations（part_of/subfield_of）保持 anatomical truth，不混 aggregation。
 
-**结论：Gate 7A 冻结候选已就绪，32 表 + 上述 A–O 决策作为 Gate 7B migration 实施依据。**
+## P. Evidence Link Constraints（Gate 6E-A.2）
+
+- **evidence_links**（原 assertion_evidence_links）：XOR target（assertion_pk ⊕ entity_pk）。
+- **Entity whitelist（V1）**：entity_pk 仅 connection / circuit / region_mapping / circuit_connection_membership。
+- **claim_scope**：entity target 必填；assertion target 可 NULL；vocab 已移除 function。
+- **ACTIVE Evidence source completeness**：publication_pk OR scientific_source_pk 必填（study_pk 单独不足；LLM 非 source）。
+
+**结论：Gate 7A 冻结候选已就绪，32 表 + 上述 A–P 决策作为 Gate 7B migration 实施依据。**

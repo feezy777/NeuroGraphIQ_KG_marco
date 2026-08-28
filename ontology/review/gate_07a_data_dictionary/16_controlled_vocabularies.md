@@ -50,6 +50,7 @@
 
 - representation_role：canonical / derived
 - evidence_role：supports / contradicts / qualifies
+- claim_scope：entity_overall / existence / identity / direction / connection_type / topology / membership / mapping_identity / mapping_equivalence / mapping_overlap / other（function 已移除 / DEPRECATED：Circuit hasFunction 走 knowledge_assertions）
 - mapping_method：automatic / manual / hybrid
 - source_type：atlas / database / ontology / publication_database / literature / manual / import_pipeline（llm 移除；LLM 属 Provenance Agent 非 scientific source）
 

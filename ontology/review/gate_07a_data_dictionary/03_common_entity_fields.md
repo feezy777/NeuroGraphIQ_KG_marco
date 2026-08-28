@@ -35,7 +35,7 @@
 - kg_entities 是所有 first-class canonical entity 的 identity / public ID / display name / definition / description / lifecycle status 的**唯一来源**。
 - **Subtype 表禁止独立维护第二套 name/definition/description truth**（从 subtype 表删除，或标 DERIVED DISPLAY CACHE；优先删除）。
 - 推荐 **shared-PK（Class Table Inheritance）**：`kg_entities.entity_pk` 同时作为 subtype 表 PK/FK，subtype 表不另生成 `*_pk`。
-- first-class / user-visible 实体进 kg_entities；技术 link 记录（connection_endpoints、assertion_evidence_links）不要求完整 identity（仅 PK + public ID + FK + 结构字段 + remark）。
+- first-class / user-visible 实体进 kg_entities；技术 link 记录（connection_endpoints、evidence_links）不要求完整 identity（仅 PK + public ID + FK + 结构字段 + remark）。
 
 ## 2. Name Source 必须区分（禁止 AI 翻译伪装官方名）
 

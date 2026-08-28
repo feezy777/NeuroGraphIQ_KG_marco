@@ -26,7 +26,7 @@
 - Circuit（3）：circuits、circuit_region_memberships、circuit_connection_memberships
 - Atlas Mapping（1）：region_mappings
 - Granularity Integration（1）：brain_region_aggregation_mappings
-- Assertion（3）：relation_definitions、knowledge_assertions、assertion_evidence_links
+- Assertion（3）：relation_definitions、knowledge_assertions、evidence_links
 - Governance：独立 schema，后续设计
 
 ## 3. 关键设计决策
@@ -36,7 +36,7 @@
 - remark：所有主要业务表保留 `remark TEXT NULL`。
 - aliases / xrefs 独立建表。
 - reified（Connection/RegionMapping/Membership）专用表 vs 普通 relation（knowledge_assertions）vs derived（不重复存）。
-- assertion_evidence_links 解决普通 KG edge 挂 Evidence。
+- evidence_links 解决普通 KG edge 挂 Evidence。
 - Field Role + Frontend Display 双分类。
 - Governance 类不进入本科学 schema。
 

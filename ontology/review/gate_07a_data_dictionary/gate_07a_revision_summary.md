@@ -30,7 +30,7 @@
 | Connection | 3 | connections、connection_endpoints、connection_observations |
 | Circuit | 3 | circuits、circuit_region_memberships、circuit_connection_memberships |
 | Atlas Mapping | 1 | region_mappings |
-| Assertion | 3 | relation_definitions、knowledge_assertions、assertion_evidence_links |
+| Assertion | 3 | relation_definitions、knowledge_assertions、assertion_evidence_links（Round 2 历史，现 evidence_links） |
 | Governance | — | 独立 schema，后续设计 |
 
 ## 3. 表总数变化

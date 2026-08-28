@@ -9,7 +9,7 @@
 > 2. shared-PK：first-class 实体的 `entity_pk`（kg_entities）即 subtype 表 PK，subtype 表不另生成 `*_pk`、不重复 name/definition/description。
 > 3. public ID 为 8 位（`NGIQ-BR-00000001`）。
 > 4. brain_region_hierarchy_relations relation_type 仅 part_of / subfield_of。
-> 5. evidence_strength / evidence_directness canonical 存储在 assertion_evidence_links。
+> 5. evidence_strength / evidence_directness canonical 存储在 evidence_links。
 > 6. Governance 审核历史不在此 schema（仅 review_status_snapshot）。
 
 ---
@@ -501,19 +501,25 @@
 | review_status / reviewer / reviewed_at | 审核 | VARCHAR/TIMESTAMP | NULL | GV | A | — |
 | created_at / updated_at | 时间戳 | TIMESTAMPTZ | NN | TC | H | — |
 
-## 29. assertion_evidence_links
+## 29. evidence_links
 
 | Column | 中文 | Type | Null | Role | Display | 说明 |
 |---|---|---|---|---|---|---|
 | link_pk | 内部主键 | BIGSERIAL | NN | TC | H | — |
-| link_id | 链接 ID | VARCHAR(32) | NN(UNIQUE) | ID | A | NGIQ-AEL-… |
-| assertion_id | 断言 | VARCHAR(32) | NN(FK) | SC | A | → knowledge_assertions |
-| evidence_id | 证据 | VARCHAR(32) | NN(FK) | SC | A | → evidence |
+| link_id | 链接 ID | VARCHAR(32) | NN(UNIQUE) | ID | A | NGIQ-ELK-… |
+| evidence_pk | 证据 | BIGINT | NN(FK) | SC | A | → evidence |
+| assertion_pk | 断言 | BIGINT | NULL(FK) | SC | A | → knowledge_assertions（XOR） |
+| entity_pk | 实体 | BIGINT | NULL(FK) | SC | A | → kg_entities（XOR） |
 | evidence_role | 证据角色 | VARCHAR(16) | NN | SC | A | supports/contradicts/qualifies |
-| evidence_strength | 强度 | VARCHAR(16) | NULL | SC | A | — |
-| evidence_directness | 直接性 | VARCHAR(16) | NULL | SC | A | — |
+| evidence_strength | 强度 | VARCHAR(16) | NULL | SC | A | target-specific |
+| evidence_directness | 直接性 | VARCHAR(16) | NULL | SC | A | target-specific |
+| claim_scope | claim 范围 | VARCHAR(32) | NULL | SC | A | entity_overall/direction/connection_type/topology/membership/mapping_identity/mapping_equivalence/mapping_overlap/other（function 已移除） |
 | is_primary_evidence | 主证据 | BOOLEAN | NN(def false) | SC | A | — |
-| created_at | 时间戳 | TIMESTAMPTZ | NN | TC | H | — |
+| record_status | 记录状态 | VARCHAR(16) | NN | GV | A | active/deprecated/merged/pending |
+| created_at / updated_at | 时间戳 | TIMESTAMPTZ | NN | TC | H | — |
+| remark | 备注 | TEXT | NULL | GV | A | — |
+
+> XOR：assertion_pk 与 entity_pk 必须且只能填一个。
 
 ---
 

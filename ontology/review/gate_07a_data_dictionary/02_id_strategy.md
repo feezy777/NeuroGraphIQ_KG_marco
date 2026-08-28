@@ -43,7 +43,7 @@
 | Source | NGIQ-SRC | NGIQ-SRC-00000001 |
 | Alias | NGIQ-ALS | NGIQ-ALS-00000001 |
 | Xref | NGIQ-XRF | NGIQ-XRF-00000001 |
-| AssertionEvidenceLink | NGIQ-AEL | NGIQ-AEL-00000001 |
+| EvidenceLink | NGIQ-ELK | NGIQ-ELK-00000001 |
 
 > 禁止重复 prefix。Evidence/Assertion/Observation/Membership 未来可达百万级，故用 8 位；ID 一旦公开不再改格式。
 
