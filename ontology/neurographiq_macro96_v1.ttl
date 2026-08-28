@@ -1,194 +1,200 @@
 # =============================================================================
-# NeuroGraphIQ Macro96 Ontology — V1.0 Gate 3B
+# NeuroGraphIQ Human Brain Ontology — V1.0 Gate 5B
 #
-#   Ontology IRI : https://neurographiq.org/ontology/macro96
-#   Namespace    : https://neurographiq.org/ontology/macro96#   (prefix: ngiq:)
-#   Version      : 0.3.0-gate3b (Status: draft — for human review in Protégé)
+#   Ontology IRI : https://neurographiq.org/ontology/human-brain
+#   Namespace    : https://neurographiq.org/ontology/human-brain#   (prefix: ngiq:)
+#   Version      : 0.5.0-gate5b (Status: draft — human reviewed core class ontology)
 #
-# Scope of Gate 3B (incremental over Gate 2B):
-#   - Gate 1: ontology declaration + namespace/prefix + version metadata
-#             + 24 top-level classes with English/Chinese labels and short comments
-#   - Gate 2B: ConnectionType sub-hierarchy (4 classes, frozen by Gate 2A review)
-#   - Gate 3B: Circuit scientific definition + CircuitType reserved-extension-point
-#             status (no new classes added)
+# Scope of Gate 5B:
+#   - Ontology scope migrated from Macro96-only to Human Brain (Homo sapiens).
+#   - 23 core classes: the complete V1 class skeleton, with concise
+#     English/Chinese definitions and 1–2 examples per class.
+#   - Connection hierarchy restructured: StructuralConnection / Projection /
+#     FunctionalConnectivity / EffectiveConnectivity are now subclasses of
+#     Connection (ConnectionType removed).
+#   - Function -> CognitiveFunction subclass.
 #
-# Explicitly absent (reserved for later gates):
+# Explicitly absent from V1 (reserved for later gates):
 #   - ObjectProperty / DataProperty / custom AnnotationProperty
-#   - EvidenceType sub-hierarchy
-#   - CircuitType sub-hierarchy (V1 keeps CircuitType as a reserved extension point)
-#   - Function hierarchy, BrainRegion hierarchy, SHACL constraints
-#   - Individuals, Macro96 BrainRegion instances, ConnectionAssessment instances
-#   - HBAO / Uberon / NeuroNames mapping
+#   - Individuals (canonical concepts such as CA1, APOE, Dopamine, PapezCircuit
+#     will be added as Individuals in a later gate; V1 defines classes only)
 #   - owl:imports (must remain empty)
+#   - SHACL / Restriction / EquivalentClass / DisjointClass / property chain
+#   - Real BrainRegion / atlas / circuit / connection instance data
+#
+# Removed from core ontology (per Gate 5A / 5A.1 review):
+#   - ConnectionType, CircuitType, EvidenceType, ConnectionAssessment, ConceptDefinition
+#   - Governance classes (ConnectionCandidate, CircuitCandidate, EvidenceCandidate,
+#     SearchRun, ExtractionRun, ModelReview, HumanReview, InferenceRecord, ValidationRecord)
+#     -> these belong to the PostgreSQL governance / application schema, not the core
+#        human brain scientific ontology.
 # =============================================================================
 
-@prefix :     <https://neurographiq.org/ontology/macro96#> .
-@prefix ngiq: <https://neurographiq.org/ontology/macro96#> .
+@prefix :     <https://neurographiq.org/ontology/human-brain#> .
+@prefix ngiq: <https://neurographiq.org/ontology/human-brain#> .
 @prefix owl:  <http://www.w3.org/2002/07/owl#> .
 @prefix rdf:  <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
 @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
 @prefix xsd:  <http://www.w3.org/2001/XMLSchema#> .
 
-<https://neurographiq.org/ontology/macro96> a owl:Ontology ;
-    rdfs:label "NeuroGraphIQ Macro96 Ontology"@en ;
-    rdfs:label "NeuroGraphIQ Macro96 本体"@zh ;
-    rdfs:comment "Concept skeleton of the NeuroGraphIQ Macro96 knowledge-production ontology. Status: draft. Gate 3B scope: ontology metadata, 24 top-level classes, the ConnectionType sub-hierarchy (4 classes), and the Circuit / CircuitType semantic definitions (no new classes)."@en ;
-    owl:versionInfo "0.3.0-gate3b" .
+<https://neurographiq.org/ontology/human-brain> a owl:Ontology ;
+    rdfs:label "NeuroGraphIQ Human Brain Ontology"@en ;
+    rdfs:label "NeuroGraphIQ 人脑知识本体"@zh ;
+    rdfs:comment "Core class ontology of the NeuroGraphIQ knowledge graph. Scope: Homo sapiens (human brain only); mouse, rat, macaque and other species are not modeled as canonical scientific entities in V1. Macro96 is no longer the ontology scope; it serves as a future high-level BrainRegion mapping / aggregation layer. In this ontology a Class denotes a knowledge type; canonical concepts (e.g. CA1, APOE, Dopamine, PapezCircuit) will be added as Individuals in a later gate. Connection subtypes (StructuralConnection / Projection / FunctionalConnectivity / EffectiveConnectivity) carry the Gate 2 scientific semantics; Circuit carries the Gate 3 scientific semantics; Evidence follows the Gate 4A multi-axis model (no single EvidenceType class)."@en ;
+    rdfs:comment "NeuroGraphIQ 知识图谱的核心类本体。范围：仅人脑（Homo sapiens）；V1 不将 mouse、rat、macaque 等物种作为 canonical 科学实体建模。Macro96 不再是本体范围，而作为未来高层脑区映射/汇总层。本本体中 Class 表示知识类型；canonical 概念（如 CA1、APOE、Dopamine、PapezCircuit）将在后续 Gate 作为 Individual 加入。Connection 子类（StructuralConnection / Projection / FunctionalConnectivity / EffectiveConnectivity）承载 Gate 2 科学语义；Circuit 承载 Gate 3 科学语义；Evidence 遵循 Gate 4A 多轴模型（不设单一 EvidenceType 类）。"@zh ;
+    owl:versionInfo "0.5.0-gate5b" .
 
 # ---------------------------------------------------------------------------
-# Gate 1 — 24 top-level classes (direct children of owl:Thing)
+# Core domain classes (direct children of owl:Thing)
 # ---------------------------------------------------------------------------
 
 ngiq:BrainRegion a owl:Class ;
     rdfs:label "BrainRegion"@en ;
     rdfs:label "脑区"@zh ;
-    rdfs:comment "A distinct region of the brain; the core anchor concept of the Macro96 system."@en .
+    rdfs:comment "A distinct region of the human brain with locatable, distinguishable regional identity, defined by macro-anatomy, cytoarchitecture, connectivity, function, or a standard atlas. An activation cluster, network node, or circuit is not itself a BrainRegion. Examples: Hippocampus, CA1."@en ;
+    rdfs:comment "在人脑空间中具有可定位、可区分区域身份的解剖或标准脑图谱区域，可依据宏观解剖、细胞构筑、连接、功能或标准图谱定义。单纯的激活簇、网络节点或回路本身不构成脑区。例：海马（Hippocampus）、CA1。"@zh .
 
-ngiq:Function a owl:Class ;
-    rdfs:label "Function"@en ;
-    rdfs:label "功能"@zh ;
-    rdfs:comment "A biological or cognitive function performed by brain regions or circuits."@en .
+ngiq:CellularNeuralStructure a owl:Class ;
+    rdfs:label "CellularNeuralStructure"@en ;
+    rdfs:label "细胞与亚细胞神经结构"@zh ;
+    rdfs:comment "A structural entity of the nervous system at the cellular or subcellular scale. Distinct from BrainRegion. Examples: Neuron, DendriticSpine."@en ;
+    rdfs:comment "神经系统细胞或亚细胞尺度的结构实体。不同于脑区（BrainRegion）。例：神经元（Neuron）、树突棘（DendriticSpine）。"@zh .
+
+ngiq:NeurobiologicalProcess a owl:Class ;
+    rdfs:label "NeurobiologicalProcess"@en ;
+    rdfs:label "神经生物学过程"@zh ;
+    rdfs:comment "A biological process occurring in the nervous system. Distinct from CellularNeuralStructure. Examples: SynapticPruning, SynapticPlasticity."@en ;
+    rdfs:comment "发生在神经系统中的生物学过程。不同于细胞与亚细胞神经结构。例：突触修剪（SynapticPruning）、突触可塑性（SynapticPlasticity）。"@zh .
 
 ngiq:Connection a owl:Class ;
     rdfs:label "Connection"@en ;
     rdfs:label "连接"@zh ;
-    rdfs:comment "A promoted, canonical connection between two brain regions."@en .
-
-ngiq:ConnectionType a owl:Class ;
-    rdfs:label "ConnectionType"@en ;
-    rdfs:label "连接类型"@zh ;
-    rdfs:comment "Controlled-vocabulary class for connection types (hierarchy defined in Gate 2)."@en .
+    rdfs:comment "An association between two BrainRegions with defined neuroscientific semantics; its specific form may be structural, functional, or effective connectivity. Examples: CA1–mPFC connection, V1–V2 connection."@en ;
+    rdfs:comment "两个脑区之间具有明确神经科学语义的连接或关联实体，具体形式可为结构连接、功能连接或有效连接。例：CA1–mPFC 连接、V1–V2 连接。"@zh .
 
 ngiq:Circuit a owl:Class ;
     rdfs:label "Circuit"@en ;
-    rdfs:label "回路"@zh ;
-    rdfs:comment "Circuit (neural circuit). A unified neural unit composed of multiple BrainRegions and their organized Connections, with biological, structural, or functional meaning. Circuit is a biological / functional concept, not a graph-theoretical concept: a graph cycle (e.g. A->B->C->A) is not by itself a Circuit. A general Circuit does not require a closed loop, and its Connections are not required to all have known direction (direction is recorded only when scientifically meaningful and supported by evidence). A set of Connections alone is not a Circuit; multiple Connections form a Circuit only when organized with circuit-level biological meaning/evidence. A confirmed / canonical Circuit requires reported circuit evidence or human-approved authoritative circuit-level evidence; results from Connection + topology + function reasoning alone are only composed / inferred / hypothesis circuits and are not automatically promoted to confirmed. Macro96 V1 curation policy: by default >=3 Macro96 BrainRegion + >=2 Connection to avoid mistaking an ordinary region pair for a Circuit; literature-reported exceptions (e.g. a two-region reciprocal system reported as a circuit) may enter human review. If circuit-level evidence reports A->B->C->A but the database lacks C->A, the missing edge may only enter as ConnectionCandidate / hypothesis / targeted-search target and must not be directly generated as a confirmed Connection."@en ;
-    rdfs:comment "回路（神经回路）。由多个 BrainRegion 及其有组织关系的 Connection 构成、具有生物学/结构/功能意义的统一神经单元。Circuit 是生物学/功能性概念，不是图论概念：图论 cycle（如 A→B→C→A）本身不是 Circuit。General Circuit 不要求 closed loop；其 Connection 也不要求全部有已知方向（方向只在科学语义需要且证据支持时记录）。Connection 集合本身不等于 Circuit；多条 Connection 只有在具有组织关系和 circuit-level biological meaning/evidence 时才可能形成 Circuit。confirmed / canonical Circuit 必须具有 reported circuit evidence 或人工认可的权威 circuit-level evidence；由 Connection + topology + function reasoning 产生的结果只能先是 composed / inferred / hypothesis，不能自动晋升 confirmed。Macro96 V1 curation policy 默认要求 ≥3 Macro96 BrainRegion + ≥2 Connection（用于避免普通脑区对被误收为 Circuit）；允许 literature-reported exception（权威文献将双区域 reciprocal system 报道为 circuit 时可进入人工审核）。若 circuit-level evidence 表明 A→B→C→A 但数据库缺少 C→A，缺失边只能进入 ConnectionCandidate / hypothesis / targeted-search target，不得直接生成 confirmed Connection。"@zh .
+    rdfs:label "神经回路"@zh ;
+    rdfs:comment "A neural unit formed by multiple BrainRegions and their organized Connections, with biological, structural, or functional meaning. Not a graph cycle; a general Circuit does not require a closed loop. Examples: Papez circuit, mesolimbic dopamine circuit."@en ;
+    rdfs:comment "多个脑区及其有组织的连接形成的、具有生物学、结构或功能意义的神经单元。不是图论环；一般回路不要求闭合环路。例：Papez 回路、中脑边缘多巴胺回路。"@zh .
 
-ngiq:CircuitType a owl:Class ;
-    rdfs:label "CircuitType"@en ;
-    rdfs:label "回路类型"@zh ;
-    rdfs:comment "CircuitType. Reserved as an extension point in NeuroGraphIQ Macro96 V1: no subclasses, no individuals, and not currently used for circuit classification. It is NOT owl:Nothing and is not defined as an empty class through any logical axiom. Pathway / Loop / Feedforward / Feedback / Recurrent are not CircuitTypes in V1 (they are topology features reserved for a future Property Gate). Whether to retain CircuitType long-term will be decided at Ontology Freeze."@en ;
-    rdfs:comment "回路类型。在 NeuroGraphIQ Macro96 V1 中作为 reserved extension point（保留扩展点）：无子类、无 individual、当前不用于回路分类。它不是 owl:Nothing，也不通过任何逻辑公理被定义为空类。Pathway / Loop / Feedforward / Feedback / Recurrent 在 V1 中不作为 CircuitType（它们属于未来 Property Gate 的 topology 特征）。是否长期保留 CircuitType，留待 Ontology Freeze 阶段决定。"@zh .
+ngiq:Function a owl:Class ;
+    rdfs:label "Function"@en ;
+    rdfs:label "功能"@zh ;
+    rdfs:comment "A neurobiological function performed by brain regions or circuits; broader than CognitiveFunction. Examples: visual processing, motor control."@en ;
+    rdfs:comment "脑区或神经回路参与或承担的神经生物学功能；范围比认知功能更广。例：视觉加工、运动控制。"@zh .
 
-ngiq:CircuitConnectionMembership a owl:Class ;
-    rdfs:label "CircuitConnectionMembership"@en ;
-    rdfs:label "回路连接成员关系"@zh ;
-    rdfs:comment "Membership of a Connection within a Circuit."@en .
+ngiq:Neurotransmitter a owl:Class ;
+    rdfs:label "Neurotransmitter"@en ;
+    rdfs:label "神经递质"@zh ;
+    rdfs:comment "A chemical signaling molecule involved in chemical signal transmission between neural cells. Examples: Dopamine, Glutamate."@en ;
+    rdfs:comment "参与神经细胞间化学信号传递的化学信号分子。例：多巴胺（Dopamine）、谷氨酸（Glutamate）。"@zh .
+
+ngiq:Receptor a owl:Class ;
+    rdfs:label "Receptor"@en ;
+    rdfs:label "受体"@zh ;
+    rdfs:comment "A receptor entity that recognizes and responds to neurotransmitters or other signaling molecules; not a Neurotransmitter. Examples: D2 receptor, NMDA receptor."@en ;
+    rdfs:comment "能够识别并响应神经递质或其他信号分子的受体实体；受体不是神经递质。例：D2 受体、NMDA 受体。"@zh .
+
+ngiq:Gene a owl:Class ;
+    rdfs:label "Gene"@en ;
+    rdfs:label "基因"@zh ;
+    rdfs:comment "A human gene related to brain structure, function, neurological disease, or other neurobiological processes. Examples: APOE, DISC1."@en ;
+    rdfs:comment "与人脑结构、功能、神经系统疾病或其他神经生物学过程相关的人类基因。例：APOE、DISC1。"@zh .
+
+ngiq:Disease a owl:Class ;
+    rdfs:label "Disease"@en ;
+    rdfs:label "疾病"@zh ;
+    rdfs:comment "A neurological disease or psychiatric disorder affecting nervous-system structure, function, or behavior. Distinct from Symptom. Examples: Alzheimer disease, Parkinson disease."@en ;
+    rdfs:comment "影响神经系统结构、功能或行为表现的神经系统疾病或精神障碍。不同于症状。例：阿尔茨海默病、帕金森病。"@zh .
+
+ngiq:Symptom a owl:Class ;
+    rdfs:label "Symptom"@en ;
+    rdfs:label "症状"@zh ;
+    rdfs:comment "A clinical manifestation produced by a disease or abnormal state; not a Disease. Examples: Memory impairment, Hallucination."@en ;
+    rdfs:comment "疾病或异常状态产生的临床表现；症状不是疾病。例：记忆障碍（Memory impairment）、幻觉（Hallucination）。"@zh .
+
+ngiq:ResearchStudy a owl:Class ;
+    rdfs:label "ResearchStudy"@en ;
+    rdfs:label "研究"@zh ;
+    rdfs:comment "A scientific research, experiment, observation, intervention, or data-analysis activity; distinct from Publication. Examples: an fMRI study, a clinical cohort study."@en ;
+    rdfs:comment "一个科学研究、实验、观察、干预或数据分析活动；不同于文献。例：一项 fMRI 研究、一项临床队列研究。"@zh .
 
 ngiq:Publication a owl:Class ;
     rdfs:label "Publication"@en ;
     rdfs:label "文献"@zh ;
-    rdfs:comment "A scientific paper or other literature source used in knowledge production."@en .
+    rdfs:comment "A paper or other formal scientific document reporting research results; distinct from Evidence. Examples: a PubMed paper, a journal article."@en ;
+    rdfs:comment "报道科学研究结果的论文或其他正式科学文献；不同于证据。例：一篇 PubMed 论文、一篇期刊文章。"@zh .
 
 ngiq:Evidence a owl:Class ;
     rdfs:label "Evidence"@en ;
     rdfs:label "证据"@zh ;
-    rdfs:comment "A promoted piece of evidence supporting a connection or circuit claim."@en .
-
-ngiq:EvidenceType a owl:Class ;
-    rdfs:label "EvidenceType"@en ;
-    rdfs:label "证据类型"@zh ;
-    rdfs:comment "Controlled-vocabulary class for evidence types (hierarchy defined in a later gate)."@en .
+    rdfs:comment "A concrete scientific evidence unit in a source that supports, refutes, or qualifies a knowledge assertion. Examples: an experiment reporting A projects to B; an fMRI analysis supporting A–B functional connectivity."@en ;
+    rdfs:comment "来源中能够支持、反驳或限定某个知识断言的具体科学证据单元。例：论文报道 A 投射到 B 的实验结果；支持 A–B 功能连接的 fMRI 分析。"@zh .
 
 ngiq:Atlas a owl:Class ;
     rdfs:label "Atlas"@en ;
     rdfs:label "脑图谱"@zh ;
-    rdfs:comment "A brain atlas providing parcellation and/or spatial coordinates."@en .
+    rdfs:comment "A standard brain atlas resource providing spatial parcellation, region definitions, or coordinate reference for the human brain. Examples: Julich-Brain, Brainnetome Atlas."@en ;
+    rdfs:comment "提供人脑空间划分、区域定义或坐标参考的标准脑图谱资源。例：Julich-Brain、Brainnetome Atlas。"@zh .
 
 ngiq:ExternalRegion a owl:Class ;
     rdfs:label "ExternalRegion"@en ;
     rdfs:label "外部脑区"@zh ;
-    rdfs:comment "A brain region defined by an external source (atlas or terminology), prior to canonical mapping."@en .
+    rdfs:comment "A brain region defined by an external atlas, ontology, or terminology, not yet canonicalized in NeuroGraphIQ; distinct from canonical BrainRegion. Examples: a Julich-Brain parcel, a Brainnetome parcel."@en ;
+    rdfs:comment "由外部图谱、本体或术语定义、尚未完成 NeuroGraphIQ canonicalization 的脑区概念；不同于 canonical 脑区。例：某 Julich-Brain parcel、某 Brainnetome parcel。"@zh .
 
 ngiq:RegionMapping a owl:Class ;
     rdfs:label "RegionMapping"@en ;
     rdfs:label "脑区映射"@zh ;
-    rdfs:comment "A mapping between an ExternalRegion and a canonical BrainRegion."@en .
+    rdfs:comment "A mapping entity recording the correspondence between an ExternalRegion and a canonical BrainRegion. Example: Brainnetome region X → canonical mPFC."@en ;
+    rdfs:comment "记录外部脑区与 NeuroGraphIQ canonical 脑区之间对应关系的映射实体。例：Brainnetome region X → canonical mPFC。"@zh .
 
-ngiq:ConnectionAssessment a owl:Class ;
-    rdfs:label "ConnectionAssessment"@en ;
-    rdfs:label "连接评估"@zh ;
-    rdfs:comment "An assessment run over a pair of brain regions for a possible connection."@en .
-
-ngiq:ConnectionCandidate a owl:Class ;
-    rdfs:label "ConnectionCandidate"@en ;
-    rdfs:label "连接候选"@zh ;
-    rdfs:comment "A proposed connection awaiting validation, review and promotion."@en .
-
-ngiq:CircuitCandidate a owl:Class ;
-    rdfs:label "CircuitCandidate"@en ;
-    rdfs:label "回路候选"@zh ;
-    rdfs:comment "A proposed circuit awaiting validation, review and promotion."@en .
-
-ngiq:EvidenceCandidate a owl:Class ;
-    rdfs:label "EvidenceCandidate"@en ;
-    rdfs:label "证据候选"@zh ;
-    rdfs:comment "A candidate piece of evidence awaiting model and human review."@en .
-
-ngiq:SearchRun a owl:Class ;
-    rdfs:label "SearchRun"@en ;
-    rdfs:label "检索运行"@zh ;
-    rdfs:comment "A literature search run over publication sources."@en .
-
-ngiq:ExtractionRun a owl:Class ;
-    rdfs:label "ExtractionRun"@en ;
-    rdfs:label "抽取运行"@zh ;
-    rdfs:comment "An LLM extraction run over publications."@en .
-
-ngiq:ModelReview a owl:Class ;
-    rdfs:label "ModelReview"@en ;
-    rdfs:label "模型审核"@zh ;
-    rdfs:comment "An automated model review of a candidate."@en .
-
-ngiq:HumanReview a owl:Class ;
-    rdfs:label "HumanReview"@en ;
-    rdfs:label "人工审核"@zh ;
-    rdfs:comment "A human review of a candidate."@en .
-
-ngiq:InferenceRecord a owl:Class ;
-    rdfs:label "InferenceRecord"@en ;
-    rdfs:label "推断记录"@zh ;
-    rdfs:comment "A record of an inference made during knowledge production."@en .
-
-ngiq:ValidationRecord a owl:Class ;
-    rdfs:label "ValidationRecord"@en ;
-    rdfs:label "验证记录"@zh ;
-    rdfs:comment "A record of a validation decision or rule check."@en .
-
-ngiq:ConceptDefinition a owl:Class ;
-    rdfs:label "ConceptDefinition"@en ;
-    rdfs:label "概念定义"@zh ;
-    rdfs:comment "A definition of a concept used by the ontology."@en .
+ngiq:CircuitConnectionMembership a owl:Class ;
+    rdfs:label "CircuitConnectionMembership"@en ;
+    rdfs:label "回路连接成员关系"@zh ;
+    rdfs:comment "An association entity representing the membership and context of a Connection within a Circuit; may later carry step_order, role, membership evidence. Example: Connection C001 is step 2 in Circuit A and step 5 in Circuit B."@en ;
+    rdfs:comment "表示某一连接在某一回路中的成员身份与上下文的关联实体；未来可承载 step_order、role、membership evidence。例：Connection C001 在 Circuit A 中是第 2 步、在 Circuit B 中是第 5 步。"@zh .
 
 # ---------------------------------------------------------------------------
-# Gate 2B — ConnectionType sub-hierarchy (4 classes, frozen by Gate 2A review)
+# Connection hierarchy (Gate 2 scientific semantics preserved; subtype model)
 # ---------------------------------------------------------------------------
 
 ngiq:StructuralConnection a owl:Class ;
-    rdfs:subClassOf ngiq:ConnectionType ;
-    rdfs:label "Structural Connection"@en ;
+    rdfs:subClassOf ngiq:Connection ;
+    rdfs:label "StructuralConnection"@en ;
     rdfs:label "结构连接"@zh ;
-    rdfs:comment "Structural Connection (alternative term: anatomical connection). A structural, physical neuroanatomical pathway between two brain regions. It asserts only the existence of a physical pathway; it is NOT equivalent to functional statistical correlation, nor to model-inferred directed influence. Direction may be directed, reciprocal, or direction_unknown. Current evidence may be insufficient to confirm synaptic-level directness; a polysynaptic / indirect pathway mediated by intermediate regions must not be collapsed into a single StructuralConnection and should be expressed via Path / Circuit / Inference."@en ;
-    rdfs:comment "结构连接（替代术语：解剖连接 anatomical connection）。两个脑区之间存在结构性、物理性的神经解剖通路。它仅断言物理通路的存在；不等于功能统计相关，也不等于模型推断的有向影响。方向可以是 directed / reciprocal / direction_unknown。当前证据可能不足以确认突触级 directness；由多个中间脑区介导的 polysynaptic / indirect pathway 不能压缩为单条 StructuralConnection，应由 Path / Circuit / Inference 表达。"@zh .
+    rdfs:comment "A Connection asserting a physical / neuroanatomical pathway between two BrainRegions. Examples: corticocortical anatomical connection, thalamocortical structural connection."@en ;
+    rdfs:comment "两个脑区之间存在物理/神经解剖结构通路的连接。例：皮层-皮层解剖连接、丘脑-皮层结构连接。"@zh .
 
 ngiq:Projection a owl:Class ;
     rdfs:subClassOf ngiq:StructuralConnection ;
     rdfs:label "Projection"@en ;
     rdfs:label "投射"@zh ;
-    rdfs:comment "Projection. A StructuralConnection with a definite source->target and axonal projection semantics/evidence (e.g., axons from A terminate in B; afferents to B originate from A). Being directed is necessary but not sufficient: direction_known alone does not imply Projection; axonal projection semantics/evidence is also required. DTI tractography alone cannot determine the A->B projection direction."@en ;
-    rdfs:comment "投射。具有明确 source→target 且具有 axonal projection 语义/证据的 StructuralConnection 子类（如：A 的轴突终止于 B；B 的传入源自 A）。direction_known 是必要条件但不是充分条件，仍需 axonal projection semantics/evidence。DTI tractography 不能单独确定 A→B 投射方向。"@zh .
+    rdfs:comment "A StructuralConnection with definite source→target and axonal projection semantics. DTI tractography alone cannot determine projection direction. Examples: CA1 projects to mPFC, thalamus projects to cortex."@en ;
+    rdfs:comment "具有明确 source→target 和轴突投射语义的结构连接。仅凭 DTI 纤维追踪不能确定投射方向。例：CA1 投射到 mPFC、丘脑投射到皮层。"@zh .
 
 ngiq:FunctionalConnectivity a owl:Class ;
-    rdfs:subClassOf ngiq:ConnectionType ;
-    rdfs:label "Functional Connectivity"@en ;
+    rdfs:subClassOf ngiq:Connection ;
+    rdfs:label "FunctionalConnectivity"@en ;
     rdfs:label "功能连接"@zh ;
-    rdfs:comment "Functional Connectivity. A statistical dependence or temporal correlation between the neural activities of two brain regions. In V1 it is modelled as non-directional by default. It does NOT imply a StructuralConnection. fMRI / EEG / MEG are evidence/measurement modalities, not connection types. Coactivation cannot by itself be promoted automatically to FunctionalConnectivity."@en ;
-    rdfs:comment "功能连接。两个脑区神经活动之间存在统计依赖或时间相关关系。V1 默认建模为 non-directional。不隐含 StructuralConnection。fMRI / EEG / MEG 是证据/测量模态，不是 ConnectionType。Coactivation 不能仅凭自身自动晋升为 FunctionalConnectivity。"@zh .
+    rdfs:comment "A Connection expressing statistical dependence, correlation, or temporal synchrony between the neural activity of two BrainRegions; it does not imply a StructuralConnection. Example: resting-state fMRI correlation between PCC and mPFC."@en ;
+    rdfs:comment "两个脑区神经活动之间的统计依赖、相关或时间同步关系；不自动意味着结构连接。例：PCC 与 mPFC 的静息态 fMRI 相关。"@zh .
 
 ngiq:EffectiveConnectivity a owl:Class ;
-    rdfs:subClassOf ngiq:ConnectionType ;
-    rdfs:label "Effective Connectivity"@en ;
+    rdfs:subClassOf ngiq:Connection ;
+    rdfs:label "EffectiveConnectivity"@en ;
     rdfs:label "有效连接"@zh ;
-    rdfs:comment "Effective Connectivity. A model-dependent directed influence / directed coupling of one neural system on another, within a model or experimental framework. The causal interpretation depends on the specific method, model assumptions and experimental design. EffectiveConnectivity is NOT equivalent to Projection, nor to StructuralConnection, unless independent structural evidence exists."@en ;
-    rdfs:comment "有效连接。在模型或实验框架下，一个神经系统对另一个神经系统的 model-dependent directed influence / directed coupling。causal interpretation 取决于具体方法、模型假设和实验设计。EffectiveConnectivity ≠ Projection，也 ≠ StructuralConnection，除非另有独立结构证据。"@zh .
+    rdfs:comment "A Connection expressing directed influence or causal coupling between BrainRegions inferred within a model or experiment; causal interpretation depends on method, model, and design. Example: DCM-estimated A→B influence."@en ;
+    rdfs:comment "基于模型或实验推断的脑区之间有向影响或作用关系；因果解释依赖方法、模型和实验设计。例：DCM 估计的 A→B 影响。"@zh .
+
+# ---------------------------------------------------------------------------
+# Function hierarchy
+# ---------------------------------------------------------------------------
+
+ngiq:CognitiveFunction a owl:Class ;
+    rdfs:subClassOf ngiq:Function ;
+    rdfs:label "CognitiveFunction"@en ;
+    rdfs:label "认知功能"@zh ;
+    rdfs:comment "A Function related to cognition. Examples: WorkingMemory, Language."@en ;
+    rdfs:comment "与认知活动相关的功能。例：工作记忆（WorkingMemory）、语言（Language）。"@zh .
