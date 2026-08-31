@@ -29,7 +29,6 @@ EXPECTED_TABLES = sorted(
 )
 
 PHASE3B_TABLES = [
-    "connections", "connection_endpoints", "connection_observations",
     "circuits", "circuit_region_memberships", "circuit_connection_memberships",
     "region_mappings", "relation_definitions", "knowledge_assertions", "evidence_links",
 ]
@@ -104,14 +103,15 @@ def _public_tables(conn) -> list[str]:
     return [r[0] for r in cur.fetchall()]
 
 
-def test_table_count_is_twenty_two():
+def test_phase3a_twenty_two_tables_present():
     conn = _conn(E2E)
     try:
-        tables = _public_tables(conn)
+        tables = set(_public_tables(conn))
     finally:
         conn.close()
-    assert tables == EXPECTED_TABLES
-    assert len(tables) == 22
+    # Phase 3A delivered these 22; later phases legitimately add more tables.
+    missing = [t for t in EXPECTED_TABLES if t not in tables]
+    assert missing == [], f"missing Phase 3A tables: {missing}"
 
 
 def test_four_new_tables_exist():

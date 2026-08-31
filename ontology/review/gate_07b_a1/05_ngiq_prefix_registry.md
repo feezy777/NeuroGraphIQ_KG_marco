@@ -34,9 +34,11 @@
 | alias | NGIQ-ALS | NGIQ-ALS-00000001 | link | — |
 | xref | NGIQ-XRF | NGIQ-XRF-00000001 | link | — |
 | brain_region_spatial_representation | NGIQ-SPAT | NGIQ-SPAT-00000001 | link | 非 kg_entities subtype（dict 18 §6 明确要求 stable public ID） |
+| connection_endpoint | NGIQ-EP | NGIQ-EP-00000001 | link | 非 kg_entities subtype（dict 18 §8 明确要求 stable public ID） |
 
 ## 结论
 
-- **prefix 项数：30**，无重复/collision。
+- **prefix 项数：31**，无重复/collision。
 - kg_entities 不单独发号（见 12 的 shared-PK 规则）；纯 join link（endpoints 等）可选 public ID，不强制造。
 - **Amendment（Gate 7B-B Phase 3A closeout）**：新增 `brain_region_spatial_representation` → `NGIQ-SPAT`（29 → 30）。依据：CURRENT dict 18 §6 定义 `spatial_id ... NGIQ-SPAT-…` NN UNIQUE。spatial_representation 为 link 记录，**不**进入 kg_entities subtype。
+- **Amendment（Gate 7B-B Phase 3B）**：新增 `connection_endpoint` → `NGIQ-EP`（30 → 31）。依据：CURRENT dict 18 §8 定义 `endpoint_id ... NGIQ-EP-…` NN UNIQUE。connection_endpoint 为 link 记录，**不**进入 kg_entities subtype。

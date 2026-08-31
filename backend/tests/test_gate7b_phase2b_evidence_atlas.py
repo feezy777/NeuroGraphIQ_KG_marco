@@ -39,7 +39,6 @@ EXPECTED_TABLES = sorted(
 )
 
 PHASE3B_TABLES = [
-    "connections", "connection_endpoints", "connection_observations",
     "circuits", "circuit_region_memberships", "circuit_connection_memberships",
     "region_mappings", "relation_definitions", "knowledge_assertions", "evidence_links",
 ]
