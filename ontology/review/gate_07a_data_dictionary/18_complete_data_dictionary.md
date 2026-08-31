@@ -21,7 +21,7 @@
 | pk | 内部主键 | BIGSERIAL | NN | TC | H | 内部 PK，不对外 |
 | entity_id | 实体 ID | VARCHAR(32) | NN(UNIQUE) | ID | P | NGIQ-… |
 | entity_type | 实体类型 | VARCHAR(48) | NN | ID | A | 受控词表 |
-| name_en | 英文名 | TEXT | NN | DP | P | — |
+| name_en | 英文名 | TEXT | NULL | DP | P | — |
 | name_zh | 中文名 | TEXT | NULL | DP | P | — |
 | abbreviation | 缩写 | VARCHAR(64) | NULL | DP | P | — |
 | definition_en | 英文定义 | TEXT | NULL | DP | D | — |
@@ -33,7 +33,7 @@
 | name_en_source | 英文名来源 | VARCHAR(24) | NULL | PR | A | source/human_curated/translated_human/translated_ai/normalized/unknown |
 | name_zh_source | 中文名来源 | VARCHAR(24) | NULL | PR | A | 同上 |
 | translation_review_status | 翻译审核 | VARCHAR(24) | NULL | GV | A | — |
-| record_status | 记录状态 | VARCHAR(16) | NN | GV | A | active/deprecated/merged/pending |
+| record_status | 记录状态 | VARCHAR(16) | NN | GV | A | proposed/active/deprecated/merged |
 | review_status | 审核状态 | VARCHAR(24) | NULL | GV | A | — |
 | version | 版本 | INT | NULL | TC | H | — |
 | created_at / updated_at | 时间戳 | TIMESTAMPTZ | NN | TC | H | — |
@@ -515,7 +515,7 @@
 | evidence_directness | 直接性 | VARCHAR(16) | NULL | SC | A | target-specific |
 | claim_scope | claim 范围 | VARCHAR(32) | NULL | SC | A | entity_overall/direction/connection_type/topology/membership/mapping_identity/mapping_equivalence/mapping_overlap/other（function 已移除） |
 | is_primary_evidence | 主证据 | BOOLEAN | NN(def false) | SC | A | — |
-| record_status | 记录状态 | VARCHAR(16) | NN | GV | A | active/deprecated/merged/pending |
+| record_status | 记录状态 | VARCHAR(16) | NN | GV | A | proposed/active/deprecated/merged |
 | created_at / updated_at | 时间戳 | TIMESTAMPTZ | NN | TC | H | — |
 | remark | 备注 | TEXT | NULL | GV | A | — |
 

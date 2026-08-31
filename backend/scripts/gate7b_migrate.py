@@ -72,8 +72,18 @@ def _discover() -> list[tuple[int, Path]]:
     return [(nnn, found[nnn]) for nnn in sorted(found)]
 
 
+def _read_normalized(path: Path) -> bytes:
+    """Read file bytes with CRLF normalized to LF.
+
+    Git ``core.autocrlf`` (or a platform checkout) may convert line endings in
+    the working tree; the checksum must reflect SQL *content*, not line-ending
+    style, so it stays stable across checkouts.
+    """
+    return path.read_bytes().replace(b"\r\n", b"\n")
+
+
 def _sha256(path: Path) -> str:
-    return hashlib.sha256(path.read_bytes()).hexdigest()
+    return hashlib.sha256(_read_normalized(path)).hexdigest()
 
 
 def _connect(args: argparse.Namespace) -> psycopg.Connection:
@@ -123,7 +133,7 @@ def _apply(conn: psycopg.Connection, nnn: int, path: Path, checksum: str) -> str
     migration_id = f"gate7b_{nnn:03d}"
     started = time.perf_counter()
     with conn.cursor() as cur:
-        cur.execute(path.read_text(encoding="utf-8"))
+        cur.execute(_read_normalized(path).decode("utf-8"))
     elapsed_ms = int((time.perf_counter() - started) * 1000)
     with conn.cursor() as cur:
         cur.execute(

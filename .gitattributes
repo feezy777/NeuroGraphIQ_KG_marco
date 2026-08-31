@@ -1,0 +1,3 @@
+# Normalize SQL line endings to LF on checkout — prevents CRLF/LF drift
+# from changing migration-file checksums (see backend/scripts/gate7b_migrate.py).
+*.sql text eol=lf

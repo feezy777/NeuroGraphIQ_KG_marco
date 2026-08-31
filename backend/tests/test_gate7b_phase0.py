@@ -77,10 +77,11 @@ def test_discover_empty_dir_returns_empty(tmp_path, monkeypatch):
 # --- checksum ---------------------------------------------------------------
 
 
-def test_sha256_matches_stdlib(tmp_path):
+def test_sha256_normalizes_line_endings(tmp_path):
     f = tmp_path / "x.sql"
-    f.write_text("SELECT 1;\n", encoding="utf-8")
-    assert gate7b._sha256(f) == hashlib.sha256(f.read_bytes()).hexdigest()
+    f.write_bytes(b"SELECT 1;\r\n")
+    # Checksum reflects SQL content, not platform line-ending style.
+    assert gate7b._sha256(f) == hashlib.sha256(b"SELECT 1;\n").hexdigest()
 
 
 # --- bootstrap constants + redaction ---------------------------------------

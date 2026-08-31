@@ -22,7 +22,7 @@
 | name_en_source | 英文名来源 |
 | name_zh_source | 中文名来源 |
 | translation_review_status | 翻译审核状态 |
-| record_status | 记录状态（active/deprecated/merged…） |
+| record_status | 记录状态（proposed/active/deprecated/merged） |
 | review_status | 审核状态 |
 | version | 版本 |
 | created_at / updated_at | 时间戳 |

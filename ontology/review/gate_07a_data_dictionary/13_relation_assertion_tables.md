@@ -63,7 +63,7 @@
 | evidence_directness | target-specific 直接性 |
 | claim_scope | entity_overall / direction / connection_type / membership / function / mapping_* / other（entity target 用） |
 | is_primary_evidence | 是否主证据 |
-| record_status | active / deprecated / merged / pending |
+| record_status | proposed / active / deprecated / merged |
 | created_at / updated_at | 时间戳 |
 | remark | 备注 |
 

@@ -9,7 +9,7 @@
 | 词表 | 值 |
 |---|---|
 | entity_type | brain_region / cellular_neural_structure / neurobiological_process / connection / circuit / function / neurotransmitter / receptor / gene / disease / symptom / research_study / publication / evidence / atlas / external_region / region_mapping / circuit_connection_membership |
-| record_status | active / deprecated / merged / pending |
+| record_status | proposed / active / deprecated / merged |
 | review_status | pending / approved / rejected / uncertain / needs_revision |
 | name source | source / human_curated / translated_human / translated_ai / normalized / unknown |
 | derivation_type | reported / inferred |

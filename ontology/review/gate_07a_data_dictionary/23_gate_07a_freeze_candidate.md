@@ -79,8 +79,8 @@ Governance            → 独立 schema（后续设计，不计入）
 
 ## F. Bilingual Display Policy（冻结）
 
-- **ACTIVE** first-class 实体必须具备 name_en + name_zh，并记录 name_en_source / name_zh_source。
-- **PROPOSED** 允许 name_en/name_zh 其一暂空，但 source_name_original 必须保留。
+- **ACTIVE** first-class 实体必须具备 name_en + name_zh（均非空），并记录 name_en_source / name_zh_source（均非空且不得为 unknown）。
+- **PROPOSED** 允许 name_en/name_zh 其一暂空（至少其一非空），但 source_name_original 必须保留。
 - name source 取值：source / human_curated / translated_human / translated_ai / normalized / unknown。
 - 技术 link 记录不要求双语名称。
 
