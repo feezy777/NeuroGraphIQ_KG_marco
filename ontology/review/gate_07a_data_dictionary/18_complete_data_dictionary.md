@@ -452,7 +452,7 @@
 | name_en / name_zh | 名称 | TEXT | NULL | DP | A | — |
 | external_region_id | 外部脑区 | VARCHAR(32) | NN(FK) | SC | A | → external_regions |
 | brain_region_id | canonical 脑区 | VARCHAR(32) | NN(FK) | SC | A | → brain_regions |
-| mapping_type | 映射类型 | VARCHAR(16) | NN | SC | A | exact/close/broader/narrower/overlapping/unresolved |
+| mapping_type | 映射类型 | VARCHAR(16) | NN | SC | A | exact/close/broader/narrower/related/overlapping/unresolved |
 | mapping_method | 方法 | VARCHAR(24) | NULL | PR | A | — |
 | spatial_overlap | 空间重叠 | DOUBLE PRECISION | NULL | SC | A | — |
 | name_similarity / semantic_similarity / hierarchy_similarity | 相似度 | DOUBLE PRECISION | NULL | SC | A | — |

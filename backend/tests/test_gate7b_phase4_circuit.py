@@ -27,7 +27,8 @@ EXPECTED_TABLES = sorted(
 )
 
 MAPPING_ASSERTION_TABLES = [
-    "region_mappings", "relation_definitions", "knowledge_assertions", "evidence_links",
+    "assertion_evidence_links", "brain_region_spatial_relations",
+    "connection_types", "circuit_types", "evidence_types",
 ]
 
 
@@ -107,14 +108,15 @@ def _public_tables(conn) -> list[str]:
     return [r[0] for r in cur.fetchall()]
 
 
-def test_table_count_is_twenty_eight():
+def test_phase4_twenty_eight_tables_present():
     conn = _conn(E2E)
     try:
-        tables = _public_tables(conn)
+        tables = set(_public_tables(conn))
     finally:
         conn.close()
-    assert tables == EXPECTED_TABLES
-    assert len(tables) == 28
+    # Phase 4 delivered these 28; Phase 5 adds the final 4.
+    missing = [t for t in EXPECTED_TABLES if t not in tables]
+    assert missing == [], f"missing Phase 4 tables: {missing}"
 
 
 def test_three_new_tables_exist():

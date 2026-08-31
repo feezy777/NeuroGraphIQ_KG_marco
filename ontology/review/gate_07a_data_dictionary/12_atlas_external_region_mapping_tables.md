@@ -61,7 +61,7 @@
 | name_en / name_zh | 名称 |
 | external_region_id | 外部脑区 |
 | brain_region_id | canonical 脑区 |
-| mapping_type | exact / close / broader / narrower / overlapping / unresolved |
+| mapping_type | exact / close / broader / narrower / related / overlapping / unresolved |
 | mapping_method | 方法 |
 | spatial_overlap | 空间重叠 |
 | name_similarity | 名称相似度 |
