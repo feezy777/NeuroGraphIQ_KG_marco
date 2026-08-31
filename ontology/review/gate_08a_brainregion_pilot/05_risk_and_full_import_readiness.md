@@ -10,7 +10,7 @@
 |---|---|---|---|
 | M1 | source provenance / atlases 无 `scientific_source_pk` 列 | **RESOLVED** | sources.provider / citation_text / last_checked_at 已补（Gate 8A closeout）。Atlas→Source 关联记录在 atlas 的 `kg_entities.metadata_json`（`{"scientific_source":"<NGIQ-SRC>"}`）；atlases 无 source FK 列为 schema 既定（未改）。license=NULL（无正式 mapping 规则不自行填）；description 保持 NULL（不为填满生成低价值描述）。 |
 | M2 | 全部 mapping_type='exact' | **ACCEPTED** | deterministic direct canonicalization：ExternalRegion → 同一 BNA parcel 的 proposed canonical BrainRegion，身份一致；mapping_method='automatic'、overall_confidence=NULL（非 probabilistic model）。全量导入时对已存在 canonical 的 parcel 需按实际关系细分。 |
-| M3 | name_en/name_zh 由仓库内既有 BNA 缩写映射确定性构造 | **ACCEPTED** | `_GYRUS_NAMES` 取自 `brainnetome_importer.py`（既有 curated 映射），非 LLM、非逐条人工翻译；`name_en_source='normalized'`、`name_zh_source='normalized'`（未新增 vocabulary）。 |
+| M3 | name_en/name_zh 由仓库内既有 BNA 缩写映射确定性构造 | **ACCEPTED** | `_BNA_ANATOMICAL_NAMES` 取自 `brainnetome_importer.py`（既有 curated 映射），非 LLM、非逐条人工翻译；`name_en_source='normalized'`、`name_zh_source='normalized'`（未新增 vocabulary）。 |
 
 > **Final Semantic Cleanup（本轮）**：`overall_confidence` 0.9 → **NULL**（无计算依据的固定值，exact 为 deterministic rule）；`name_zh_source` `translated_human` → **normalized**（确定性构造，非真实人工翻译）。详见 `07_canonical_identity_repair.md` §9。
 

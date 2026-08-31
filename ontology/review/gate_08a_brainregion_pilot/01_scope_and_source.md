@@ -29,7 +29,7 @@ Scientific Source → Atlas → ExternalRegion → proposed canonical BrainRegio
 
 ## 3. 命名来源说明（非伪造）
 
-- `name_en` = 官方 gyrus 全名 + BNA 编号（如 "Superior frontal gyrus BNA 7_1"），gyrus 全名来自仓库内既有 BNA 缩写映射（`brainnetome_importer.py` GYRUS_PARENT / 本 importer _GYRUS_NAMES），非 LLM 生成。
+- `name_en` = 官方 gyrus 全名 + BNA 编号（如 "Superior frontal gyrus BNA 7_1"），gyrus 全名来自仓库内既有 BNA 缩写映射（`brainnetome_importer.py` GYRUS_PARENT / 本 importer _BNA_ANATOMICAL_NAMES），非 LLM 生成。
 - `name_zh` = 同一映射的既有中文 gyrus 名（translated_human，可追溯）。
 - `source_name_original` = circos `native_name`（源文件原文）。
 

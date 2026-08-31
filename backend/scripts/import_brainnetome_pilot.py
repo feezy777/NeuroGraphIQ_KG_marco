@@ -71,17 +71,34 @@ _LOBE_NAMES = {
     "lobe11": "temporal", "lobe12": "limbic", "lobe13": "insular", "lobe14": "frontal",
 }
 
-# gyrus abbr -> (full EN name, full CN name) — curated in-repo BNA abbreviation map
-# (also present in legacy scripts/brainnetome_importer.py GYRUS_PARENT).
-_GYRUS_NAMES = {
+# BNA category abbreviation -> (anatomical name EN, CN) — curated in-repo BNA map
+# (full 25-category set from scripts/brainnetome_importer.py GYRUS_PARENT; no LLM generation).
+# The 25 items are anatomical categories (some are gyri; others are cortex / hippocampus /
+# striatum / thalamus etc.) — not all "gyri".
+# Any abbreviation NOT present here fails closed (no fallback names).
+_BNA_ANATOMICAL_NAMES = {
     "SFG": ("Superior frontal gyrus", "额上回"),
+    "MFG": ("Middle frontal gyrus", "额中回"),
     "IFG": ("Inferior frontal gyrus", "额下回"),
+    "OrG": ("Orbital gyrus", "眶回"),
+    "PrG": ("Precentral gyrus", "中央前回"),
+    "PCL": ("Paracentral lobule", "中央旁小叶"),
     "STG": ("Superior temporal gyrus", "颞上回"),
     "MTG": ("Middle temporal gyrus", "颞中回"),
+    "ITG": ("Inferior temporal gyrus", "颞下回"),
+    "FuG": ("Fusiform gyrus", "梭状回"),
+    "pSTS": ("Posterior superior temporal sulcus", "颞上沟后部"),
     "SPL": ("Superior parietal lobule", "顶上小叶"),
     "IPL": ("Inferior parietal lobule", "顶下小叶"),
-    "Cun": ("Medioventral occipital cortex", "腹内侧枕叶皮层"),
+    "PCun": ("Precuneus", "楔前叶"),
+    "PoG": ("Postcentral gyrus", "中央后回"),
     "Ins": ("Insular gyrus", "岛回"),
+    "CG": ("Cingulate gyrus", "扣带回"),
+    "Cun": ("Medioventral occipital cortex", "腹内侧枕叶皮层"),
+    "Ent": ("Parahippocampal gyrus", "海马旁回"),
+    "OcG": ("Lateral occipital cortex", "外侧枕叶皮层"),
+    "sOcG": ("Superior lateral occipital cortex", "上外侧枕叶皮层"),
+    "Amg": ("Amygdala", "杏仁核"),
     "Hipp": ("Hippocampus", "海马"),
     "Str": ("Striatum (basal ganglia)", "纹状体"),
     "Th": ("Thalamus", "丘脑"),
@@ -106,9 +123,9 @@ def _canonical_names(b: dict) -> tuple[str, str]:
     """
     hemi_en = "Left" if b["hemi"] == "L" else "Right"
     hemi_zh = "左侧" if b["hemi"] == "L" else "右侧"
-    gyrus_en, gyrus_cn = _GYRUS_NAMES[b["gyrus"]]
-    name_en = f"{hemi_en} {gyrus_en}, Brainnetome {b['n']}_{b['idx']}"
-    name_zh = f"{hemi_zh}{gyrus_cn}（Brainnetome {b['n']}-{b['idx']}）"
+    cat_en, cat_cn = _BNA_ANATOMICAL_NAMES[b["gyrus"]]
+    name_en = f"{hemi_en} {cat_en}, Brainnetome {b['n']}_{b['idx']}"
+    name_zh = f"{hemi_zh}{cat_cn}（Brainnetome {b['n']}-{b['idx']}）"
     return name_en, name_zh
 
 
@@ -169,6 +186,41 @@ def _select_pilot(bands: list[dict]) -> list[dict]:
     # deterministic order: by band_id
     selected.sort(key=lambda b: b["band_id"])
     return selected
+
+
+def _validate_source(bands: list[dict]) -> dict:
+    """Preflight source validation — fails closed (FULL_IMPORT_BLOCKED) on any issue.
+
+    Returns {left, right, by_gyrus} for reporting. Never uses fallback names.
+    """
+    errors: list[str] = []
+    if len(bands) != 246:
+        errors.append(f"band count {len(bands)} != 246")
+    codes = [b["native_name"] for b in bands]
+    if len(set(codes)) != len(codes):
+        errors.append("duplicate native parcel codes")
+    if any(not b["native_name"] for b in bands):
+        errors.append("empty native code present")
+    for b in bands:
+        if b["hemi"] not in ("L", "R"):
+            errors.append(f"unparseable hemisphere: {b['native_name']}")
+        if b["gyrus"] not in _BNA_ANATOMICAL_NAMES:
+            errors.append(f"unknown anatomical abbreviation: {b['gyrus']} ({b['native_name']})")
+    if errors:
+        raise SystemExit("FULL_IMPORT_BLOCKED\n" + "\n".join("  - " + e for e in errors))
+    left = sum(1 for b in bands if b["hemi"] == "L")
+    right = sum(1 for b in bands if b["hemi"] == "R")
+    by_gyrus: dict[str, int] = {}
+    for b in bands:
+        by_gyrus[b["gyrus"]] = by_gyrus.get(b["gyrus"], 0) + 1
+    return {"left": left, "right": right, "by_gyrus": by_gyrus}
+
+
+def _select(bands: list[dict], mode: str) -> list[dict]:
+    """Pilot mode = Gate 8A deterministic 20; full mode = all 246."""
+    if mode == "full":
+        return sorted(bands, key=lambda b: b["band_id"])
+    return _select_pilot(bands)
 
 
 def _connect(args):
@@ -252,50 +304,75 @@ def _xref_exists(cur, entity_pk: int, external_id: str) -> bool:
 
 def _plan(args) -> int:
     bands = _parse_bands()
-    pilot = _select_pilot(bands)
+    info = _validate_source(bands)
+    sel = _select(bands, args.mode)
     conn = _connect(args)
     try:
         cur = conn.cursor()
         src_pk, src_id = _src_exists(cur)
         atlas_pk, atlas_id = _atlas_exists(cur)
 
-        print("=== Gate 8A Brainnetome Pilot PLAN ===")
+        cur.execute("SELECT count(*) FROM external_regions"); n_ext_exist = cur.fetchone()[0]
+        cur.execute("SELECT count(*) FROM brain_regions"); n_br_exist = cur.fetchone()[0]
+        cur.execute("SELECT count(*) FROM region_mappings"); n_map_exist = cur.fetchone()[0]
+        cur.execute("SELECT count(*) FROM entity_aliases"); n_alias_exist = cur.fetchone()[0]
+        cur.execute("SELECT count(*) FROM entity_xrefs"); n_xref_exist = cur.fetchone()[0]
+        cur.execute("SELECT count(*) FROM brain_region_aggregation_mappings"); n_agg = cur.fetchone()[0]
+
+        mode_label = ("PILOT (Gate 8A deterministic 20)" if args.mode == "pilot"
+                      else "FULL (all 246)")
+        print(f"=== Gate 8B Brainnetome {args.mode.upper()} PLAN ===")
+        print(f"  mode: {mode_label}")
         print(f"  source: {ATLAS_NAME_EN} / {ATLAS_VERSION} ({SPECIES_HUMAN})")
-        print(f"  source file: {TSV}  (246 bands)")
-        print(f"  pilot size: {len(pilot)} (rule: min-idx per hemisphere for {PILOT_GYRI} + left {PILOT_SUBCORTICAL_EXTRA})")
+        print(f"  source file: {TSV}")
+        print(f"  source parcels: {len(bands)}  left={info['left']} right={info['right']}  "
+              f"anatomical categories={len(info['by_gyrus'])}")
         print(f"  scientific source present: {src_id or 'NO (will create)'}")
         print(f"  atlas present: {atlas_id or 'NO (will create)'}")
+        print(f"  existing: external={n_ext_exist} brain={n_br_exist} mapping={n_map_exist} "
+              f"alias={n_alias_exist} xref={n_xref_exist} aggregation={n_agg}")
         print()
-        n_ext = n_br = n_map = 0
+
+        n_ext_new = n_br_new = n_map_new = n_alias_new = n_xref_new = 0
         n_br_update = n_map_update = 0
-        for b in pilot:
-            name_en, _name_zh = _canonical_names(b)
+        for b in sel:
+            name_en, _zh = _canonical_names(b)
             xpk = _external_region_exists(cur, atlas_pk, b["native_name"]) if atlas_pk else None
             bpk = _brain_region_exists(cur, b["native_name"])
             mpk = _mapping_exists(cur, xpk, bpk) if (xpk and bpk) else None
             if not xpk:
-                n_ext += 1
+                n_ext_new += 1
             if not bpk:
-                n_br += 1
+                n_br_new += 1
+                n_alias_new += 1
+                n_xref_new += 1
             else:
                 cur.execute("SELECT name_en, name_zh_source FROM kg_entities WHERE entity_pk=%s", (bpk,))
                 r = cur.fetchone()
                 if r[0] != name_en or r[1] != "normalized":
                     n_br_update += 1
             if not mpk:
-                n_map += 1  # mapping will be created after xpk+bpk are ensured
+                n_map_new += 1
             else:
                 cur.execute("SELECT mapping_source, overall_confidence FROM region_mappings WHERE entity_pk=%s", (mpk,))
                 r = cur.fetchone()
                 if r[0] != MAPPING_SOURCE or r[1] is not None:
                     n_map_update += 1
-            print(f"  {b['band_id']:>3}  {b['native_name']:<12} gyrus={b['gyrus']:<4} "
-                  f"{b['hemi']} lobe={b['lobe']:<10} ext={'exists' if xpk else 'CREATE'} "
-                  f"br={'exists' if bpk else 'CREATE'} map={'exists' if mpk else 'CREATE'}")
+        if args.mode == "pilot":
+            for b in sel:
+                print(f"  {b['band_id']:>3}  {b['native_name']:<12} gyrus={b['gyrus']:<4} "
+                      f"{b['hemi']} lobe={b['lobe']:<10}")
         print()
-        print(f"  would CREATE: external_regions={n_ext} brain_regions={n_br} region_mappings={n_map}")
-        print(f"  would UPDATE: canonical names={n_br_update} mapping provenance={n_map_update} "
-              f"+ source/atlas/aliases/xrefs as needed")
+        print(f"  expected NEW: external={n_ext_new} brain={n_br_new} mapping={n_map_new} "
+              f"alias={n_alias_new} xref={n_xref_new}")
+        print(f"  expected UPDATE: canonical names={n_br_update} mapping provenance={n_map_update}")
+        print(f"  aggregation expected: 0 (current {n_agg})")
+        ens = [f"{'Left' if b['hemi']=='L' else 'Right'} {_BNA_ANATOMICAL_NAMES[b['gyrus']][0]}, "
+               f"Brainnetome {b['n']}_{b['idx']}" for b in sel]
+        zhs = [f"{'左侧' if b['hemi']=='L' else '右侧'}{_BNA_ANATOMICAL_NAMES[b['gyrus']][1]}"
+               f"（Brainnetome {b['n']}-{b['idx']}）" for b in sel]
+        print(f"  predicted canonical EN duplicate={len(ens)-len(set(ens))} "
+              f"ZH duplicate={len(zhs)-len(set(zhs))} hemisphere mismatch=0 unknown labels=0")
         print("  (plan mode — nothing written, no NGIQ IDs burned)")
         return 0
     finally:
@@ -305,7 +382,8 @@ def _plan(args) -> int:
 
 def _apply(args) -> int:
     bands = _parse_bands()
-    pilot = _select_pilot(bands)
+    _validate_source(bands)
+    sel = _select(bands, args.mode)
     conn = _connect(args)
     try:
         cur = conn.cursor()
@@ -363,11 +441,11 @@ def _apply(args) -> int:
             stats["atlas"] = 1
         print(f"  atlas: {atlas_id}")
 
-        # 3-7. Per parcel
-        for b in pilot:
+        # 3-7. Per parcel (same core for pilot and full)
+        for b in sel:
             native = b["native_name"]
             name_en, name_zh = _canonical_names(b)
-            gyrus_en, gyrus_cn = _GYRUS_NAMES[b["gyrus"]]
+            cat_en, cat_cn = _BNA_ANATOMICAL_NAMES[b["gyrus"]]
             hemi = _HEMI[b["hemi"]]
             map_entity_en = f"{ATLAS_NAME_EN} {native} → {name_en}"
             map_entity_zh = f"{native} → {name_zh}"
@@ -380,7 +458,7 @@ def _apply(args) -> int:
                     "INSERT INTO kg_entities (entity_id, entity_type, name_en, name_zh,"
                     " source_name_original, name_en_source, name_zh_source, record_status)"
                     " VALUES (%s,'external_region',%s,%s,%s,'source','translated_human','active')",
-                    (xid, native, f"{gyrus_cn} {b['n']}-{b['idx']}（{_LATERALITY_CN[b['hemi']]}）",
+                    (xid, native, f"{cat_cn} {b['n']}-{b['idx']}（{_LATERALITY_CN[b['hemi']]}）",
                      native),
                 )
                 cur.execute("SELECT entity_pk FROM kg_entities WHERE entity_id=%s", (xid,))
@@ -510,9 +588,11 @@ def _apply(args) -> int:
 
 
 def _parse_args() -> argparse.Namespace:
-    p = argparse.ArgumentParser(description="Gate 8A Brainnetome BNA246 pilot importer")
+    p = argparse.ArgumentParser(description="Gate 8A/8B Brainnetome BNA246 importer")
     p.add_argument("--plan", action="store_true", help="dry-run (default)")
     p.add_argument("--apply", action="store_true", help="write to DB in a transaction")
+    p.add_argument("--mode", choices=("pilot", "full"), default="pilot",
+                   help="pilot = Gate 8A deterministic 20; full = all 246 (default pilot)")
     p.add_argument("--db", default=os.environ.get("PGDATABASE", DB_DEFAULT))
     p.add_argument("--host", default=os.environ.get("PGHOST", "127.0.0.1"))
     p.add_argument("--port", default=os.environ.get("PGPORT", "5432"))

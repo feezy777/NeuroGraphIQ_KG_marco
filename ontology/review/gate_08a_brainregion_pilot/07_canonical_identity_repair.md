@@ -4,7 +4,7 @@
 
 BrainRegion canonical `name_en` 左右碰撞：`SFG_L_7_1` 与 `SFG_R_7_1` 均得 `Superior frontal gyrus BNA 7_1`。
 
-**canonical name 原始来源**：importer / repository 构造的 display name（B，非官方 subdivision name）。circos 源文件仅含 native code（`SFG_L_7_1`）+ gyrus 缩写 + lobe，无官方英文 parcel subdivision 名称；`_GYRUS_NAMES`（来自既有 `brainnetome_importer.py` BNA 缩写映射）提供 gyrus 级解剖名。
+**canonical name 原始来源**：importer / repository 构造的 display name（B，非官方 subdivision name）。circos 源文件仅含 native code（`SFG_L_7_1`）+ gyrus 缩写 + lobe，无官方英文 parcel subdivision 名称；`_BNA_ANATOMICAL_NAMES`（来自既有 `brainnetome_importer.py` BNA 缩写映射）提供 gyrus 级解剖名。
 
 ## 2. 修复前
 
@@ -78,7 +78,7 @@ Left <anatomical region>, Brainnetome <n>_<idx>      / Right <anatomical region>
 
 ### 9.2 name_zh_source：translated_human → normalized
 
-- **诊断**：中文 canonical name（"左侧额上回（Brainnetome 7-1）"）= 仓库 BNA 中文 gyrus 字典（`_GYRUS_NAMES`）+ deterministic 构造（hemisphere 前缀 + 字典词 + parcel code），**非真实人工逐条翻译/确认**。
+- **诊断**：中文 canonical name（"左侧额上回（Brainnetome 7-1）"）= 仓库 BNA 中文 gyrus 字典（`_BNA_ANATOMICAL_NAMES`）+ deterministic 构造（hemisphere 前缀 + 字典词 + parcel code），**非真实人工逐条翻译/确认**。
 - CURRENT `name_zh_source` 词表：source / human_curated / translated_human / translated_ai / normalized / unknown。
 - **最终采用 'normalized'**（deterministic normalized/constructed name 的 CURRENT 等价值；与 name_en_source='normalized' 一致）。
 - **未新增 vocabulary**（无 gap，无需 blocker 报告）。
