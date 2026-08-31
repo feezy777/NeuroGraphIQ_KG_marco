@@ -391,8 +391,6 @@
 | acquisition_modality | 采集模态 | VARCHAR(24) | NULL | SC | D | 受控词表 |
 | analysis_method | 分析方式 | VARCHAR(24) | NULL | SC | D | 受控词表 |
 | intervention_method | 干预方式 | VARCHAR(24) | NULL | SC | D | 受控词表 |
-| evidence_directness | 直接性 | VARCHAR(16) | NULL | SC | D | direct/indirect |
-| evidence_strength | 强度 | VARCHAR(16) | NULL | SC | D | strong/moderate/weak/unknown |
 | sample_size | 样本量 | INT | NULL | SC | A | — |
 | effect_size / effect_size_type / p_value / ci_lower / ci_upper | 统计量 | DOUBLE/VARCHAR | NULL | SC | A | — |
 | model_confidence | 模型置信度 | DOUBLE PRECISION | NULL | SC | A | — |

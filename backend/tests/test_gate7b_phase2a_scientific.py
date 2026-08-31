@@ -30,10 +30,12 @@ EXPECTED_TABLES = sorted(
     ["kg_entities", "entity_aliases", "entity_xrefs", "sources"] + list(SUBTYPES)
 )
 
-PHASE2B_TABLES = [
-    "atlases", "external_regions", "region_mappings", "evidence", "publications",
-    "research_studies", "connections", "circuits", "knowledge_assertions",
-    "evidence_links", "brain_region_hierarchy_relations", "function_hierarchy_relations",
+PHASE3_TABLES = [
+    "region_mappings", "connections", "connection_endpoints", "connection_observations",
+    "circuits", "circuit_region_memberships", "circuit_connection_memberships",
+    "knowledge_assertions", "relation_definitions", "evidence_links",
+    "brain_region_hierarchy_relations", "function_hierarchy_relations",
+    "brain_region_spatial_representations", "brain_region_aggregation_mappings",
 ]
 
 
@@ -88,24 +90,25 @@ def _public_tables(conn) -> list[str]:
     return [r[0] for r in cur.fetchall()]
 
 
-def test_table_count_is_thirteen():
-    conn = _conn(E2E)
-    try:
-        tables = _public_tables(conn)
-    finally:
-        conn.close()
-    assert tables == EXPECTED_TABLES
-    assert len(tables) == 13
-
-
-def test_no_phase2b_table_leak():
+def test_phase2a_thirteen_tables_present():
     conn = _conn(E2E)
     try:
         tables = set(_public_tables(conn))
     finally:
         conn.close()
-    leaked = [t for t in PHASE2B_TABLES if t in tables]
-    assert leaked == [], f"Phase 2B/3+ tables must not exist: {leaked}"
+    # Phase 2A delivered these 13; later phases legitimately add more tables.
+    missing = [t for t in EXPECTED_TABLES if t not in tables]
+    assert missing == [], f"missing Phase 2A tables: {missing}"
+
+
+def test_no_phase3_table_leak():
+    conn = _conn(E2E)
+    try:
+        tables = set(_public_tables(conn))
+    finally:
+        conn.close()
+    leaked = [t for t in PHASE3_TABLES if t in tables]
+    assert leaked == [], f"Phase 3+ tables must not exist: {leaked}"
 
 
 def test_all_nine_subtype_tables_exist():

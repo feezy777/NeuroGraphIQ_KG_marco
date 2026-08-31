@@ -35,8 +35,8 @@
 - acquisition_modality：tracer / histology / diffusion_mri / functional_mri / electrophysiology
 - analysis_method：tractography / correlation / coherence / DCM / SEM / Granger
 - intervention_method：lesion / TMS / DBS / optogenetics
-- evidence_directness：direct / indirect
-- evidence_strength：strong / moderate / weak / unknown
+- evidence_directness：direct / indirect（evidence_links target-specific context；非 evidence 全局属性）
+- evidence_strength：strong / moderate / weak / unknown（evidence_links target-specific context；非 evidence 全局属性）
 
 ## 4. Function / Disease / Symptom / Molecular
 
