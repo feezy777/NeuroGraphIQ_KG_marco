@@ -125,16 +125,17 @@ def test_production_e2e_schema_parity():
     assert sp == se
 
 
-def test_table_count_is_exactly_four():
+def test_identity_four_tables_present():
     conn = _conn(E2E)
     try:
         cur = conn.cursor()
-        cur.execute("SELECT tablename FROM pg_tables WHERE schemaname='public' ORDER BY tablename")
+        cur.execute("SELECT tablename FROM pg_tables WHERE schemaname='public'")
         names = [r[0] for r in cur.fetchall()]
     finally:
         conn.close()
-    assert names == FOUR_TABLES
-    assert set(names) == {"kg_entities", "entity_aliases", "entity_xrefs", "sources"}
+    # The 4 Identity Foundation tables must always be present; later phases
+    # legitimately add more scientific tables (Phase 2A => 13/32).
+    assert set(FOUR_TABLES) <= set(names)
 
 
 # ---------------------------------------------------------------------------

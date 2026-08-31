@@ -98,7 +98,7 @@
 | entity_id | 实体 ID | VARCHAR(32) | NN(UNIQUE,FK) | ID | P | NGIQ-BR-… → kg_entities |
 | region_category | 区域类别 | VARCHAR(32) | NULL | SC | D | 受控词表 |
 | hemisphere | 半球 | VARCHAR(16) | NULL | SC | D | left/right/bilateral/midline/unspecified |
-| granularity | 粒度 | VARCHAR(16) | NULL | SC | D | macro/meso/fine/unknown |
+| granularity_level | 粒度 | VARCHAR(32) | NULL | SC | D | G1_MACRO / G2_MESO_ANATOMICAL / G3_MESO_FINE / G4_MICROSTRUCTURAL_FINE |
 | anatomical_level | 解剖层级 | VARCHAR(32) | NULL | SC | D | — |
 | canonical_source_id | 来源 | VARCHAR(32) | NULL(FK) | PR | A | → sources |
 | species_taxon_id | 物种 | VARCHAR(32) | NULL | SC | A | V1=Homo sapiens |

@@ -19,7 +19,7 @@
 ## 2. BrainRegion
 
 - hemisphere：left / right / bilateral / midline / unspecified
-- granularity：macro / meso / fine / unknown
+- granularity_level：G1_MACRO / G2_MESO_ANATOMICAL / G3_MESO_FINE / G4_MICROSTRUCTURAL_FINE（旧 granularity：macro/meso/fine/unknown 为历史漂移，已废弃）
 - region_category：cortical_region / cortical_parcel / gyrus / sulcus_region / subcortical_region / nucleus / hippocampal_subfield / amygdalar_nucleus / thalamic_nucleus / cerebellar_region / brainstem_region / other
 - hierarchy relation_type：part_of / subfield_of（overlaps / located_in → DEFER，未来 spatial relations）
 

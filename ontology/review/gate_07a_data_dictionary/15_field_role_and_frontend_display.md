@@ -27,7 +27,7 @@
 
 例（BrainRegion）：
 - PRIMARY：entity_id、name_en、name_zh、abbreviation
-- DETAIL：hemisphere、granularity、region_category、definition、description
+- DETAIL：hemisphere、granularity_level、region_category、definition、description
 - ADVANCED：source、mapping、hierarchy、metadata
 - HIDDEN：internal PK、created_by、technical 字段
 

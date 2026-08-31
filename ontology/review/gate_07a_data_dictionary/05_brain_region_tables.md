@@ -12,7 +12,7 @@
 | entity_id | NGIQ-BR-… |
 | region_category | cortical_region / cortical_parcel / gyrus / sulcus_region / subcortical_region / nucleus / hippocampal_subfield / amygdalar_nucleus / thalamic_nucleus / cerebellar_region / brainstem_region / other |
 | hemisphere | left / right / bilateral / midline / unspecified |
-| granularity | macro / meso / fine / unknown |
+| granularity_level | G1_MACRO / G2_MESO_ANATOMICAL / G3_MESO_FINE / G4_MICROSTRUCTURAL_FINE |
 | anatomical_level | 解剖层级（如 lobe / gyrus / nucleus / subfield） |
 | canonical_source_id | 来源 |
 | species_taxon_id | 物种（V1 = Homo sapiens） |
