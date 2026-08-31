@@ -51,7 +51,7 @@
 | alias_text | 别名文本 | TEXT | NN | SC | D | — |
 | language | 语言 | VARCHAR(8) | NULL | SC | A | — |
 | alias_type | 别名类型 | VARCHAR(24) | NN | SC | A | exact/abbreviation/historical/atlas_label/previous_name/narrow/broad/related |
-| source_id | 来源 | VARCHAR(32) | NULL(FK) | PR | A | → sources |
+| source_pk | 来源 | VARCHAR(32) | NULL(FK) | PR | A | → sources |
 | source_record_id | 来源记录 | VARCHAR(64) | NULL | PR | A | — |
 | is_preferred | 首选 | BOOLEAN | NN(def false) | SC | A | — |
 | created_at | 时间戳 | TIMESTAMPTZ | NN | TC | H | — |
@@ -128,7 +128,7 @@
 | resolution_json | 分辨率 | JSONB | NULL | SC | A | — |
 | mask_uri / mesh_uri | 掩膜/网格 | TEXT | NULL | SC | A | — |
 | color_hex | 颜色 | VARCHAR(9) | NULL | DP | A | — |
-| source_id | 来源 | VARCHAR(32) | NULL(FK) | PR | A | → sources |
+| source_pk | 来源 | VARCHAR(32) | NULL(FK) | PR | A | → sources |
 | metadata_json | 元数据 | JSONB | NULL | TC | A | — |
 
 ## 7. connections
@@ -528,12 +528,12 @@
 | hierarchy_pk | 内部主键 | BIGSERIAL | NN | TC | H | — |
 | hierarchy_relation_id | 层级关系 ID | VARCHAR(32) | NN(UNIQUE) | ID | A | NGIQ-BRH-… |
 | parent_region_pk | 上位脑区 | VARCHAR(32) | NN(FK) | SC | A | → brain_regions |
-| child_region_id | 下位脑区 | VARCHAR(32) | NN(FK) | SC | A | → brain_regions |
+| child_region_pk | 下位脑区 | VARCHAR(32) | NN(FK) | SC | A | → brain_regions |
 | relation_type | 关系类型 | VARCHAR(32) | NN | SC | A | part_of/subfield_of |
 | hierarchy_source | 层级来源 | VARCHAR(24) | NULL | PR | A | ontology/atlas/curated |
 | is_canonical | 是否 canonical | BOOLEAN | NN(def true) | GV | A | — |
 | confidence | 置信度 | DOUBLE PRECISION | NULL | SC | A | — |
-| source_id | 来源 | VARCHAR(32) | NULL(FK) | PR | A | → sources |
+| source_pk | 来源 | VARCHAR(32) | NULL(FK) | PR | A | → sources |
 | remark | 备注 | TEXT | NULL | GV | A | — |
 
 ## 31. function_hierarchy_relations（Round 2 新增）
@@ -543,12 +543,12 @@
 | hierarchy_pk | 内部主键 | BIGSERIAL | NN | TC | H | — |
 | hierarchy_relation_id | 层级关系 ID | VARCHAR(32) | NN(UNIQUE) | ID | A | NGIQ-FHR-… |
 | parent_function_pk | 上位功能 | VARCHAR(32) | NN(FK) | SC | A | → functions |
-| child_function_id | 下位功能 | VARCHAR(32) | NN(FK) | SC | A | → functions |
+| child_function_pk | 下位功能 | VARCHAR(32) | NN(FK) | SC | A | → functions |
 | relation_type | 关系类型 | VARCHAR(24) | NN | SC | A | subclass_of/part_of |
 | hierarchy_source | 层级来源 | VARCHAR(24) | NULL | PR | A | ontology/curated |
 | is_canonical | 是否 canonical | BOOLEAN | NN(def true) | GV | A | — |
 | confidence | 置信度 | DOUBLE PRECISION | NULL | SC | A | — |
-| source_id | 来源 | VARCHAR(32) | NULL(FK) | PR | A | → sources |
+| source_pk | 来源 | VARCHAR(32) | NULL(FK) | PR | A | → sources |
 | remark | 备注 | TEXT | NULL | GV | A | — |
 
 ---

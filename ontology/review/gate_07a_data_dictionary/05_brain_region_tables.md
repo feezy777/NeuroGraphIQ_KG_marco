@@ -63,7 +63,7 @@
 | hierarchy_source | ontology / atlas / curated |
 | is_canonical | 是否 canonical |
 | confidence | 置信度 |
-| source_id | 来源（→ sources） |
+| source_pk | 来源（→ sources） |
 | remark | 备注 |
 
 ## 4. parent_region_pk：cache 还是 canonical truth？

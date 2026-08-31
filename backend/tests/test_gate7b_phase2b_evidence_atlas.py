@@ -38,9 +38,7 @@ EXPECTED_TABLES = sorted(
     + list(NEW_SUBTYPES)
 )
 
-PHASE3_TABLES = [
-    "brain_region_hierarchy_relations", "function_hierarchy_relations",
-    "brain_region_spatial_representations", "brain_region_aggregation_mappings",
+PHASE3B_TABLES = [
     "connections", "connection_endpoints", "connection_observations",
     "circuits", "circuit_region_memberships", "circuit_connection_memberships",
     "region_mappings", "relation_definitions", "knowledge_assertions", "evidence_links",
@@ -109,14 +107,15 @@ def _public_tables(conn) -> list[str]:
     return [r[0] for r in cur.fetchall()]
 
 
-def test_table_count_is_eighteen():
+def test_phase2b_eighteen_tables_present():
     conn = _conn(E2E)
     try:
-        tables = _public_tables(conn)
+        tables = set(_public_tables(conn))
     finally:
         conn.close()
-    assert tables == EXPECTED_TABLES
-    assert len(tables) == 18
+    # Phase 2B delivered these 18; later phases legitimately add more tables.
+    missing = [t for t in EXPECTED_TABLES if t not in tables]
+    assert missing == [], f"missing Phase 2B tables: {missing}"
 
 
 def test_five_new_tables_exist():
@@ -135,8 +134,8 @@ def test_no_phase3_table_leak():
         tables = set(_public_tables(conn))
     finally:
         conn.close()
-    leaked = [t for t in PHASE3_TABLES if t in tables]
-    assert leaked == [], f"Phase 3+ tables must not exist: {leaked}"
+    leaked = [t for t in PHASE3B_TABLES if t in tables]
+    assert leaked == [], f"Phase 3B+ tables must not exist: {leaked}"
 
 
 # ---------------------------------------------------------------------------

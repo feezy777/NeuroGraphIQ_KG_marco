@@ -29,12 +29,12 @@
 | hierarchy_pk | 内部主键 |
 | hierarchy_relation_id | NGIQ-FHR-… |
 | parent_function_pk | 上位功能（→ functions） |
-| child_function_id | 下位功能（→ functions） |
+| child_function_pk | 下位功能（→ functions） |
 | relation_type | subclass_of / part_of |
 | hierarchy_source | ontology / curated |
 | is_canonical | 是否 canonical |
 | confidence | 置信度 |
-| source_id | 来源（→ sources） |
+| source_pk | 来源（→ sources） |
 | remark | 备注 |
 
 > `parent_function_pk`（functions 表内）降为 DERIVED cache；canonical hierarchy 走本表。
