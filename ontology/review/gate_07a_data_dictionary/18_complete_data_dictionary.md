@@ -224,10 +224,9 @@
 
 | Column | 中文 | Type | Null | Role | Display | 说明 |
 |---|---|---|---|---|---|---|
-| membership_pk | 内部主键 | BIGSERIAL | NN | TC | H | — |
-| membership_id | 成员 ID | VARCHAR(32) | NN(UNIQUE) | ID | A | NGIQ-CCM-… |
-| circuit_id | 回路 | VARCHAR(32) | NN(FK) | SC | A | → circuits |
-| connection_id | 连接 | VARCHAR(32) | NN(FK) | SC | A | → connections |
+| entity_pk | 内部主键（shared-PK） | BIGINT | NN | TC | H | → kg_entities.entity_pk（entity_type=circuit_connection_membership；public ID=kg_entities.entity_id，NGIQ-CCM） |
+| circuit_pk | 回路 | BIGINT | NN(FK) | SC | A | → circuits |
+| connection_pk | 连接 | BIGINT | NN(FK) | SC | A | → connections |
 | step_order | 步骤顺序 | INT | NULL | SC | A | — |
 | branch_group | 分支组 | VARCHAR(32) | NULL | SC | A | — |
 | role_en / role_zh | 角色 | TEXT | NULL | SC | A | — |

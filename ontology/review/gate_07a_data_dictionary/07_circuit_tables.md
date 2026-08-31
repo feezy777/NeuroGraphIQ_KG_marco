@@ -46,10 +46,9 @@
 
 | 字段 | 说明 |
 |---|---|
-| membership_pk | 内部主键 |
-| membership_id | NGIQ-CCM-… |
-| circuit_id | 指向 circuits |
-| connection_id | 指向 connections |
+| entity_pk | 内部主键（shared-PK，→ kg_entities.entity_pk；entity_type=circuit_connection_membership） |
+| circuit_pk | 指向 circuits |
+| connection_pk | 指向 connections |
 | step_order | 步骤顺序 |
 | branch_group | 分支组 |
 | role_en / role_zh | 角色 |
@@ -59,3 +58,4 @@
 | remark | 备注 |
 
 > 同一 Connection 可属于多个 Circuit，且 step_order / role 不同，故用 reified membership 表，不把顺序塞进 Connection 主表。
+> **Amendment**：circuit_connection_memberships 采用 **shared-PK**（entity_pk → kg_entities，entity_type=circuit_connection_membership），public ID 来自 kg_entities.entity_id（NGIQ-CCM）；不再有独立 membership_pk / membership_id。
