@@ -1,0 +1,110 @@
+﻿descriptor_en,descriptor_zh,translation_status,usage_count,translation_note
+Thalamus,丘脑,resolved,30,
+Amygdala,杏仁核,resolved,17,
+Insula,岛叶,resolved,16,
+Hippocampus,海马,resolved,10,
+PreCG,中央前回,resolved,8,
+IPS,顶内沟,resolved,8,
+SPL,顶上小叶,resolved,7,
+IPL,顶下小叶,resolved,7,
+OFC,眶额皮质,resolved,7,
+MFG,额中回,resolved,6,
+STG,颞上回,resolved,6,
+pACC,膝前部前扣带皮质,resolved,6,pregenual anterior cingulate — standard 中文待定 | human_reviewed_g4_nomenclature
+IFS,额下沟,resolved,6,inferior frontal sulcus — 待定 | human_reviewed_g4_nomenclature
+Frontal Operculum,额叶岛盖,resolved,6,额盖/额岛盖 — 待定 | human_reviewed_g4_nomenclature
+Basal Forebrain,基底前脑,resolved,5,
+SFG,额上回,resolved,5,
+FusG,梭状回,resolved,5,
+sACC,膝下前扣带皮质,resolved,5,subgenual anterior cingulate — 待定 | human_reviewed_g4_nomenclature
+Ventral Striatum,腹侧纹状体,resolved,4,
+Midbrain,中脑,resolved,4,
+Cerebellum,小脑,resolved,4,
+POperc,顶叶岛盖,resolved,4,pars opercularis — 待定 | human_reviewed_g4_nomenclature
+PiriformCortexMesial,梨状皮质内侧部,resolved,4,梨状皮质内侧部 — 待定 | human_reviewed_g4_nomenclature
+PostCG,中央后回,resolved,3,
+IFG,额下回,resolved,3,
+PhG,海马旁回,resolved,3,
+SFS,额上沟,resolved,3,superior frontal sulcus — 待定 | human_reviewed_g4_nomenclature
+HESCHL,颞横回,resolved,3,Heschl 回 — 待定 | human_reviewed_g4_nomenclature
+LOC,外侧枕叶皮质,resolved,3,lateral occipital cortex — 待定 | human_reviewed_g4_nomenclature
+FPole,额极,resolved,2,
+PreCS,中央前沟,resolved,2,
+Cuneus,楔叶,resolved,2,
+LingG,舌回,resolved,2,
+Nucleus Ruber,红核,resolved,2,
+parvocellular part,小细胞部,resolved,2,
+magnocellular part,大细胞部,resolved,2,
+Metathalamus,后丘脑,resolved,2,
+POS,顶枕沟,resolved,2,
+STS,颞上沟,resolved,2,
+mesial SFG,内侧额上回,resolved,2,
+ventral posterior medial Nucleus,腹后内侧核,resolved,2,
+Piriform temporal Area,梨状皮质颞区,resolved,2,梨状颞区 — 待定 | human_reviewed_g4_nomenclature
+Piriform temporobasal Area,梨状皮质颞底区,resolved,2,梨状颞底区 — 待定 | human_reviewed_g4_nomenclature
+Ventral Pallidum,腹侧苍白球,resolved,1,
+Fundus of Caudate Nucleus,尾状核底部,resolved,1,
+Medial Accumbens,内侧伏隔核,resolved,1,
+Lateral Accumbens,外侧伏隔核,resolved,1,
+Fundus of Putamen,壳核底部,resolved,1,
+preSMA,前辅助运动区,resolved,1,
+SMA,辅助运动区,resolved,1,
+SMG,缘上回,resolved,1,
+OTS,枕颞沟,resolved,1,
+CoS,侧副沟,resolved,1,
+ACC,前扣带皮质,resolved,1,
+Incisura temporalis,颞切迹,resolved,1,
+Uncus,钩回,resolved,1,
+dorsal part,背侧部,resolved,1,
+ventral part,腹侧部,resolved,1,
+Parasubiculum,旁下托,resolved,1,
+Presubiculum,前下托,resolved,1,
+Prosubiculum,原下托,resolved,1,
+Subiculum,下托,resolved,1,
+Hippocampal Region,海马区,resolved,1,
+Entorhinal Cortex,内嗅皮质,resolved,1,
+Substantia Nigra pars compacta,黑质致密部,resolved,1,
+Substantia Nigra pars reticulata,黑质网状部,resolved,1,
+Interposed Nucleus,中间核,resolved,1,
+Ventral Dentate Nucleus,齿状核腹侧部,resolved,1,
+Dorsal Dentate Nucleus,齿状核背侧部,resolved,1,
+Fastigial Nucleus,顶核,resolved,1,
+Subthalamus,底丘脑,resolved,1,
+reticular Nucleus,网状核,resolved,1,
+zona incerta,未定带,resolved,1,
+CalcS,距状沟,resolved,1,
+PostCS,中央后沟,resolved,1,
+mediodorsal Nucleus,背内侧核,resolved,1,
+paraventricular Nucleus,室旁核,resolved,1,
+medial pulvinar,内侧枕核,resolved,1,
+lateral pulvinar,外侧枕核,resolved,1,
+lateral posterior Nucleus,外侧后核,resolved,1,
+inferior pulvinar,下枕核,resolved,1,
+anterior pulvinar,前枕核,resolved,1,
+lateral dorsal Nucleus,外侧背核,resolved,1,
+anteroventral Nucleus,前腹侧核,resolved,1,human_reviewed_g4_nomenclature: anteroventral->前腹侧核
+anteromedial Nucleus,前内侧核,resolved,1,
+ventroposterior inferior Nucleus,腹后下核,resolved,1,
+ventral posterior lateral Nucleus,腹后外侧核,resolved,1,
+ventral intermediate Nucleus,腹中间核,resolved,1,
+ventral medial Nucleus,腹内侧核,resolved,1,
+ventral anterior Nucleus,腹前核,resolved,1,
+parafascicular Nucleus,束旁核,resolved,1,
+centromedian Nucleus,中央中核,resolved,1,
+V1,V1,keep_code,1,Brodmann/visual-area code — kept in English
+V2,V2,keep_code,1,Brodmann/visual-area code — kept in English
+17,17,keep_code,1,Brodmann/visual-area code — kept in English
+18,18,keep_code,1,Brodmann/visual-area code — kept in English
+Terminal islands,终末岛群,resolved,1,终岛 — 待定 | human_reviewed_g4_nomenclature
+Tuberculum,嗅结节,resolved,1,结节(具体结构待定) | human_reviewed_g4_nomenclature
+Transsubiculum,下托过渡区,resolved,1,下托过渡区 — 待定 | human_reviewed_g4_nomenclature
+Bed Nucleus,终纹床核,resolved,1,床核(终纹床核?待定) | human_reviewed_g4_nomenclature
+medioventral Nucleus,内侧腹核,resolved,1,内侧腹侧核 — 待定 | human_reviewed_g4_nomenclature
+limitans Nucleus,界核,resolved,1,界核 — 待定 | human_reviewed_g4_nomenclature
+suprageniculate Nucleus,膝上核,resolved,1,膝状体上核 — 待定 | human_reviewed_g4_nomenclature
+posterior Nucleus,后核,resolved,1,后核 — 待定 | human_reviewed_g4_nomenclature
+ventral lateral posterior Nucleus,腹外侧后核,resolved,1,腹外侧后核 — 待定 | human_reviewed_g4_nomenclature
+ventral lateral anterior Nucleus,腹外侧前核,resolved,1,腹外侧前核 — 待定 | human_reviewed_g4_nomenclature
+ventral anterior Nucleus (ventral),腹前核（腹侧部）,resolved,1,腹前核(腹侧) — 待定 | human_reviewed_g4_nomenclature
+subparafascicular Nucleus,束旁下核,resolved,1,束旁下核 — 待定 | human_reviewed_g4_nomenclature
+anterior intralaminar nuclei,前部板内核群,resolved,1,前板内核群 — 待定 | human_reviewed_g4_nomenclature

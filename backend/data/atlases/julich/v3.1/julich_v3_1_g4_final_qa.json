@@ -1,0 +1,30 @@
+{
+  "atlas_version": "3.1.0",
+  "qa_timestamp": "2026-08-31T14:42:59Z",
+  "g4_total": 440,
+  "pair_total": 220,
+  "identity_exact": true,
+  "en_exact": true,
+  "zh_exact": true,
+  "left_count": 220,
+  "right_count": 220,
+  "gapmap_count": 0,
+  "duplicate_identity_count": 0,
+  "duplicate_en_count": 0,
+  "duplicate_zh_count": 0,
+  "mapping_1to1_count": 440,
+  "semantic_rule_failures": [],
+  "extraction_ready": true,
+  "corrected_items": [
+    {
+      "source_region_id": "JULICH_BRAIN_CYTOARCHITECTONIC_ATLAS_V3_1_AV_THALAMUS_ANTEROVENTRAL_NUCLEUS_LEFT",
+      "name_zh_before": "左侧AV（丘脑，前腹核）",
+      "name_zh_after": "左侧AV（丘脑，前腹侧核）"
+    },
+    {
+      "source_region_id": "JULICH_BRAIN_CYTOARCHITECTONIC_ATLAS_V3_1_AV_THALAMUS_ANTEROVENTRAL_NUCLEUS_RIGHT",
+      "name_zh_before": "右侧AV（丘脑，前腹核）",
+      "name_zh_after": "右侧AV（丘脑，前腹侧核）"
+    }
+  ]
+}

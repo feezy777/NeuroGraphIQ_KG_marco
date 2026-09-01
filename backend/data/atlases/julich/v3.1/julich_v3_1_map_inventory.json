@@ -1,0 +1,251 @@
+{
+  "acquisition": {
+    "siibra_version": "1.0.1-alpha.21",
+    "acquired_at": "2026-08-31T13:02:46Z",
+    "parcellation_metadata": {
+      "id": "minds/core/parcellationatlas/v1.0.0/94c1125b-b87e-45e4-901c-00daee7f2579-310",
+      "key": "JULICH_BRAIN_CYTOARCHITECTONIC_ATLAS_V3_1",
+      "name": "Julich-Brain Cytoarchitectonic Atlas (v3.1)",
+      "version": "3.1.0",
+      "description": "The Julich-Brain Atlas (RRID:SCR_023277) presents in this dataset cytoarchitectonicmaps in several coordinate spaces, such as MNI Colin 27, MNI ICBM 152, andFreeSurfer. These maps originate from peer-reviewed probability maps (PMs) that defineboth cortical and subcortical brain regions. Notably, these probability maps account forthe brain's inter-individual variability by analyzing data from ten post- mortem samples.For a whole-brain parcellation, the available probability maps are combined into amaximum probability map (MPM) by considering for each voxel the probability of allcytoarchitectonic brain regions, and determining the most probable assignment.Continuously evolving, the atlas is regularly updated with new areas. Furthermore, itstands as a reference atlas for the Human Brain Project and is deeply embedded withinthe European research infrastructure platform, EBRAINS. The siibra toolsuite providesan automated access to the Atlas, to speed up your work.",
+      "species": "Homo sapiens",
+      "modality": "cytoarchitecture",
+      "urls": [
+        "https://doi.org/10.25493/KNSN-XB4"
+      ],
+      "publications": [
+        {
+          "citation": null,
+          "doi": null,
+          "authors": null,
+          "year": null
+        },
+        {
+          "citation": null,
+          "doi": null,
+          "authors": null,
+          "year": null
+        },
+        {
+          "citation": null,
+          "doi": null,
+          "authors": null,
+          "year": null
+        },
+        {
+          "citation": null,
+          "doi": null,
+          "authors": null,
+          "year": null
+        }
+      ],
+      "shortname": "Julich-Brain v3.1",
+      "authors": [
+        "Lindsay B. Lewis",
+        "Hartmut Mohlberg",
+        "Sebastian Bludau",
+        "Svenja Caspers",
+        "Simon B. Eickhoff",
+        "Katrin Amunts",
+        "Peter Pieperhoff",
+        "Svenja Caspers",
+        "Peter Pieperhoff",
+        "Katrin Amunts",
+        "Simon B. Eickhoff",
+        "Sebastian Bludau",
+        "Hartmut Mohlberg",
+        "Lindsay B. Lewis"
+      ],
+      "is_newest_version": true,
+      "path": [
+        "Julich-Brain Cytoarchitectonic Atlas (v3.1)"
+      ]
+    },
+    "reference_spaces": [
+      "MNI 152 ICBM 2009c Nonlinear Asymmetric",
+      "MNI Colin 27"
+    ],
+    "map_datasets": [
+      {
+        "name": "Julich-Brain Atlas, cytoarchitectonic maps (v3.1)",
+        "id": "f1fe19e8-99bd-44bc-9616-a52850680777",
+        "modality": null,
+        "atlasId": null,
+        "doi": null,
+        "type": null,
+        "volume": null,
+        "surface": null,
+        "datasetVersion": null,
+        "datasetName": null,
+        "space": null,
+        "shortName": null,
+        "description": "The Julich-Brain Atlas (RRID:SCR_023277) presents in this dataset cytoarchitectonic maps in several coordinate spaces, such as MNI Colin 27, MNI ICBM 152, and Free Surfer FsAverage-7. These maps originate from peer-reviewed probability maps (PMs) that define both cortical and subcortical brain regions. Notably, these probability maps account for the brain's inter-individual variability by analyzing data from ten post-mortem samples. For a whole-brain parcellation, the available probability maps are combined into a maximum probability map (MPM) by considering for each voxel the probability of all cytoarchitectonic brain regions, and determining the most probable assignment. The atlas was used as a reference atlas for the Human Brain Project and is deeply embedded within the European research infrastructure platform, EBRAINS. Furthermore, the atlas is continuously evolving and regularly updated with new areas. The [siibra toolsuite](https://siibra-python.readthedocs.io) provides an automated access to the Atlas, to speed up your work."
+      },
+      {
+        "name": "Julich-Brain Atlas, cytoarchitectonic maps",
+        "id": "5a16d948-8d1c-400c-b797-8a7ad29944b2",
+        "modality": null,
+        "atlasId": null,
+        "doi": null,
+        "type": null,
+        "volume": null,
+        "surface": null,
+        "datasetVersion": null,
+        "datasetName": null,
+        "space": null,
+        "shortName": null,
+        "description": "The Julich-Brain Atlas (RRID:SCR_023277) presents in this dataset cytoarchitectonic maps in several coordinate spaces, such as MNI Colin 27, MNI ICBM 152, and FreeSurfer. These maps originate from peer-reviewed probability maps that define both cortical and subcortical brain regions. Notably, these probability maps account for the brain's inter-individual variability by analyzing data from ten post-mortem samples. For a whole-brain parcellation, the available probability maps are combined into a maximum probability map by considering for each voxel the probability of all cytoarchitectonic brain regions, and determining the most probable assignment. Continuously evolving, the atlas is regularly updated with new areas. Furthermore, it stands as a reference atlas for the Human Brain Project and is deeply embedded within the European research infrastructure platform, EBRAINS. The [siibra toolsuite](https://siibra-python.readthedocs.io) provides an automated access to the Atlas, to speed up your work."
+      }
+    ]
+  },
+  "spaces": [
+    "MNI 152 ICBM 2009c Nonlinear Asymmetric",
+    "MNI Colin 27"
+  ],
+  "datasets": [
+    {
+      "name": "Julich-Brain Atlas, cytoarchitectonic maps (v3.1)",
+      "id": "f1fe19e8-99bd-44bc-9616-a52850680777",
+      "description": "The Julich-Brain Atlas (RRID:SCR_023277) presents in this dataset cytoarchitectonic maps in several coordinate spaces, such as MNI Colin 27, MNI ICBM 152, and Free Surfer FsAverage-7. These maps originate from peer-reviewed probability maps (PMs) that define both cortical and subcortical brain regions. Notably, these probability maps account for the brain's inter-individual variability by analyzing data from ten post-mortem samples. For a whole-brain parcellation, the available probability maps are combined into a maximum probability map (MPM) by considering for each voxel the probability of all cytoarchitectonic brain regions, and determining the most probable assignment. The atlas was used as a reference atlas for the Human Brain Project and is deeply embedded within the European research infrastructure platform, EBRAINS. Furthermore, the atlas is continuously evolving and regularly updated with new areas. The [siibra toolsuite](https://siibra-python.readthedocs.io) provides an automated access to the Atlas, to speed up your work.",
+      "urls": [
+        {
+          "url": "https://doi.org/10.25493/KNSN-XB4"
+        }
+      ],
+      "ebrains_page": "https://doi.org/10.25493/KNSN-XB4",
+      "version_identifier": "v3.1",
+      "is_version_of": [
+        "<siibra.retrieval.datasets.EbrainsV3Dataset object at 0x000001FC9602BA70>"
+      ],
+      "contributors": [
+        {
+          "@id": "https://kg.ebrains.eu/api/instances/2b042a0f-5303-4987-adaa-af7cfd3bd5f3",
+          "schema.org/shortName": "Lindsay B. Lewis",
+          "identifier": "https://kg.ebrains.eu/api/instances/2b042a0f-5303-4987-adaa-af7cfd3bd5f3",
+          "shortName": "Lindsay B. Lewis",
+          "name": "Lindsay B. Lewis"
+        },
+        {
+          "@id": "https://kg.ebrains.eu/api/instances/d2be3785-5b4b-4451-87be-62b30442ed30",
+          "schema.org/shortName": "Hartmut Mohlberg",
+          "identifier": "https://kg.ebrains.eu/api/instances/d2be3785-5b4b-4451-87be-62b30442ed30",
+          "shortName": "Hartmut Mohlberg",
+          "name": "Hartmut Mohlberg"
+        },
+        {
+          "@id": "https://kg.ebrains.eu/api/instances/8e05318b-4e11-454c-a49b-f81e3589dc98",
+          "schema.org/shortName": "Sebastian Bludau",
+          "identifier": "https://kg.ebrains.eu/api/instances/8e05318b-4e11-454c-a49b-f81e3589dc98",
+          "shortName": "Sebastian Bludau",
+          "name": "Sebastian Bludau"
+        },
+        {
+          "@id": "https://kg.ebrains.eu/api/instances/53042082-4177-4256-84a5-0d4a693c48c9",
+          "schema.org/shortName": "Svenja Caspers",
+          "identifier": "https://kg.ebrains.eu/api/instances/53042082-4177-4256-84a5-0d4a693c48c9",
+          "shortName": "Svenja Caspers",
+          "name": "Svenja Caspers"
+        },
+        {
+          "@id": "https://kg.ebrains.eu/api/instances/99a95057-bd4d-43ab-ad70-b7920ceedc48",
+          "schema.org/shortName": "Simon B. Eickhoff",
+          "identifier": "https://kg.ebrains.eu/api/instances/99a95057-bd4d-43ab-ad70-b7920ceedc48",
+          "shortName": "Simon B. Eickhoff",
+          "name": "Simon B. Eickhoff"
+        },
+        {
+          "@id": "https://kg.ebrains.eu/api/instances/01784c79-9a7b-4b47-83b6-0f50c075af81",
+          "schema.org/shortName": "Katrin Amunts",
+          "identifier": "https://kg.ebrains.eu/api/instances/01784c79-9a7b-4b47-83b6-0f50c075af81",
+          "shortName": "Katrin Amunts",
+          "name": "Katrin Amunts"
+        },
+        {
+          "@id": "https://kg.ebrains.eu/api/instances/5d838c31-6dcf-44a6-b16b-4d19d770c36b",
+          "schema.org/shortName": "Peter Pieperhoff",
+          "identifier": "https://kg.ebrains.eu/api/instances/5d838c31-6dcf-44a6-b16b-4d19d770c36b",
+          "shortName": "Peter Pieperhoff",
+          "name": "Peter Pieperhoff"
+        }
+      ],
+      "custodians": [
+        {
+          "@id": "https://kg.ebrains.eu/api/instances/01784c79-9a7b-4b47-83b6-0f50c075af81",
+          "schema.org/shortName": "Katrin Amunts",
+          "identifier": "https://kg.ebrains.eu/api/instances/01784c79-9a7b-4b47-83b6-0f50c075af81",
+          "shortName": "Katrin Amunts",
+          "name": "Katrin Amunts"
+        }
+      ]
+    },
+    {
+      "name": "Julich-Brain Atlas, cytoarchitectonic maps",
+      "id": "5a16d948-8d1c-400c-b797-8a7ad29944b2",
+      "description": "The Julich-Brain Atlas (RRID:SCR_023277) presents in this dataset cytoarchitectonic maps in several coordinate spaces, such as MNI Colin 27, MNI ICBM 152, and FreeSurfer. These maps originate from peer-reviewed probability maps that define both cortical and subcortical brain regions. Notably, these probability maps account for the brain's inter-individual variability by analyzing data from ten post-mortem samples. For a whole-brain parcellation, the available probability maps are combined into a maximum probability map by considering for each voxel the probability of all cytoarchitectonic brain regions, and determining the most probable assignment. Continuously evolving, the atlas is regularly updated with new areas. Furthermore, it stands as a reference atlas for the Human Brain Project and is deeply embedded within the European research infrastructure platform, EBRAINS. The [siibra toolsuite](https://siibra-python.readthedocs.io) provides an automated access to the Atlas, to speed up your work.",
+      "urls": [],
+      "ebrains_page": null,
+      "version_identifier": null,
+      "is_version_of": null,
+      "contributors": [
+        {
+          "@id": "https://kg.ebrains.eu/api/instances/53042082-4177-4256-84a5-0d4a693c48c9",
+          "schema.org/shortName": "Svenja Caspers",
+          "identifier": "https://kg.ebrains.eu/api/instances/53042082-4177-4256-84a5-0d4a693c48c9",
+          "shortName": "Svenja Caspers",
+          "name": "Svenja Caspers"
+        },
+        {
+          "@id": "https://kg.ebrains.eu/api/instances/5d838c31-6dcf-44a6-b16b-4d19d770c36b",
+          "schema.org/shortName": "Peter Pieperhoff",
+          "identifier": "https://kg.ebrains.eu/api/instances/5d838c31-6dcf-44a6-b16b-4d19d770c36b",
+          "shortName": "Peter Pieperhoff",
+          "name": "Peter Pieperhoff"
+        },
+        {
+          "@id": "https://kg.ebrains.eu/api/instances/01784c79-9a7b-4b47-83b6-0f50c075af81",
+          "schema.org/shortName": "Katrin Amunts",
+          "identifier": "https://kg.ebrains.eu/api/instances/01784c79-9a7b-4b47-83b6-0f50c075af81",
+          "shortName": "Katrin Amunts",
+          "name": "Katrin Amunts"
+        },
+        {
+          "@id": "https://kg.ebrains.eu/api/instances/99a95057-bd4d-43ab-ad70-b7920ceedc48",
+          "schema.org/shortName": "Simon B. Eickhoff",
+          "identifier": "https://kg.ebrains.eu/api/instances/99a95057-bd4d-43ab-ad70-b7920ceedc48",
+          "shortName": "Simon B. Eickhoff",
+          "name": "Simon B. Eickhoff"
+        },
+        {
+          "@id": "https://kg.ebrains.eu/api/instances/8e05318b-4e11-454c-a49b-f81e3589dc98",
+          "schema.org/shortName": "Sebastian Bludau",
+          "identifier": "https://kg.ebrains.eu/api/instances/8e05318b-4e11-454c-a49b-f81e3589dc98",
+          "shortName": "Sebastian Bludau",
+          "name": "Sebastian Bludau"
+        },
+        {
+          "@id": "https://kg.ebrains.eu/api/instances/d2be3785-5b4b-4451-87be-62b30442ed30",
+          "schema.org/shortName": "Hartmut Mohlberg",
+          "identifier": "https://kg.ebrains.eu/api/instances/d2be3785-5b4b-4451-87be-62b30442ed30",
+          "shortName": "Hartmut Mohlberg",
+          "name": "Hartmut Mohlberg"
+        },
+        {
+          "@id": "https://kg.ebrains.eu/api/instances/2b042a0f-5303-4987-adaa-af7cfd3bd5f3",
+          "schema.org/shortName": "Lindsay B. Lewis",
+          "identifier": "https://kg.ebrains.eu/api/instances/2b042a0f-5303-4987-adaa-af7cfd3bd5f3",
+          "shortName": "Lindsay B. Lewis",
+          "name": "Lindsay B. Lewis"
+        }
+      ],
+      "custodians": [
+        {
+          "@id": "https://kg.ebrains.eu/api/instances/01784c79-9a7b-4b47-83b6-0f50c075af81",
+          "schema.org/shortName": "Katrin Amunts",
+          "identifier": "https://kg.ebrains.eu/api/instances/01784c79-9a7b-4b47-83b6-0f50c075af81",
+          "shortName": "Katrin Amunts",
+          "name": "Katrin Amunts"
+        }
+      ]
+    }
+  ]
+}

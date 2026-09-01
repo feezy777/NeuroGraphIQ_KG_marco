@@ -150,20 +150,30 @@ def test_e2e_applied_state_full():
     conn = _conn()
     try:
         cur = conn.cursor()
-        cur.execute("SELECT count(*) FROM kg_entities WHERE entity_type='brain_region'")
+        # Macro96 G1 scope only. E2E now legitimately also carries G4 Julich (440
+        # brain_regions + its atlas/external/mapping), so never assert global totals.
+        cur.execute("SELECT count(*) FROM kg_entities ke JOIN brain_regions br"
+                    " ON br.entity_pk=ke.entity_pk WHERE br.granularity_level='G1_MACRO'")
         assert cur.fetchone()[0] == 84
-        cur.execute("SELECT count(*) FROM brain_regions")
+        cur.execute("SELECT count(*) FROM brain_regions WHERE granularity_level='G1_MACRO'")
         assert cur.fetchone()[0] == 84
-        cur.execute("SELECT count(*) FROM sources")
+        # the Macro96 source exists exactly once (never assume sources total == 1)
+        cur.execute("SELECT count(*) FROM sources WHERE name_en=%s AND version=%s",
+                    (imp.SOURCE_NAME_EN, imp.SOURCE_VERSION))
         assert cur.fetchone()[0] == 1
         for sql, expected in [
             ("SELECT count(*) FROM brain_regions WHERE granularity_level='G1_MACRO'", 84),
-            ("SELECT count(*) FROM brain_regions WHERE species_taxon_id='9606'", 84),
+            ("SELECT count(*) FROM brain_regions WHERE granularity_level='G1_MACRO'"
+             " AND species_taxon_id='9606'", 84),
             # G1 Registry is frozen as ACTIVE + APPROVED (imported then promoted).
-            ("SELECT count(*) FROM kg_entities WHERE record_status='active'", 84),
-            ("SELECT count(*) FROM kg_entities WHERE review_status='approved'", 84),
-            ("SELECT count(*) FROM kg_entities WHERE name_en IS NULL OR name_en=''", 0),
-            ("SELECT count(*) FROM kg_entities WHERE name_zh IS NULL OR name_zh=''", 0),
+            ("SELECT count(*) FROM kg_entities ke JOIN brain_regions br ON br.entity_pk=ke.entity_pk"
+             " WHERE br.granularity_level='G1_MACRO' AND ke.record_status='active'", 84),
+            ("SELECT count(*) FROM kg_entities ke JOIN brain_regions br ON br.entity_pk=ke.entity_pk"
+             " WHERE br.granularity_level='G1_MACRO' AND ke.review_status='approved'", 84),
+            ("SELECT count(*) FROM kg_entities ke JOIN brain_regions br ON br.entity_pk=ke.entity_pk"
+             " WHERE br.granularity_level='G1_MACRO' AND (ke.name_en IS NULL OR ke.name_en='')", 0),
+            ("SELECT count(*) FROM kg_entities ke JOIN brain_regions br ON br.entity_pk=ke.entity_pk"
+             " WHERE br.granularity_level='G1_MACRO' AND (ke.name_zh IS NULL OR ke.name_zh='')", 0),
             ("SELECT count(*) FROM kg_entities WHERE entity_type='brain_region'"
              " AND metadata_json->>'macro96_registry'='true'", 84),
         ]:
@@ -201,18 +211,54 @@ def test_e2e_source_scoped_idempotency_recognizes_existing():
         conn.close()
 
 
-def test_e2e_no_forbidden_tables_and_no_excluded_entries():
+def test_e2e_macro96_creates_no_atlas_external_mapping():
+    # Macro96 is a project-curated Source, NOT an external atlas. It must own zero
+    # Atlas / ExternalRegion / RegionMapping — scoped to Macro96 so Julich's 440
+    # external + mapping rows do NOT count against G1.
     conn = _conn()
     try:
         cur = conn.cursor()
-        for t in ("atlases", "external_regions", "region_mappings",
-                  "brain_region_aggregation_mappings", "evidence", "evidence_links"):
-            cur.execute(f"SELECT count(*) FROM {t}")
-            assert cur.fetchone()[0] == 0, f"{t} should be empty"
+        # no atlas in the Macro96 family (the Macro96 importer never writes atlases)
+        cur.execute("SELECT count(*) FROM atlases WHERE atlas_family='Macro96'")
+        assert cur.fetchone()[0] == 0
+        # no ExternalRegion belongs to a Macro96 atlas (Macro96 has no atlas at all)
+        cur.execute("SELECT count(*) FROM external_regions x JOIN atlases a"
+                    " ON a.entity_pk=x.atlas_pk WHERE a.atlas_family='Macro96'")
+        assert cur.fetchone()[0] == 0
+        # no RegionMapping links a Macro96 canonical BrainRegion to an external atlas
+        cur.execute("SELECT count(*) FROM region_mappings rm"
+                    " JOIN brain_regions br ON br.entity_pk=rm.brain_region_pk"
+                    " JOIN sources s ON s.source_pk=br.canonical_source_pk"
+                    " WHERE s.name_en=%s AND s.version=%s",
+                    (imp.SOURCE_NAME_EN, imp.SOURCE_VERSION))
+        assert cur.fetchone()[0] == 0
+    finally:
+        conn.close()
+
+
+def test_e2e_no_excluded_entries_and_no_macro96_evidence_or_aggregation():
+    conn = _conn()
+    try:
+        cur = conn.cursor()
+        # excluded manifest rows must never enter as canonical BrainRegions
         ph = ",".join(["%s"] * len(EXCLUDED_SOURCE_NAMES))
         cur.execute(
             f"SELECT count(*) FROM kg_entities WHERE entity_type='brain_region'"
             f" AND source_name_original IN ({ph})", tuple(sorted(EXCLUDED_SOURCE_NAMES)))
+        assert cur.fetchone()[0] == 0
+        # no aggregation mapping rolls up from/to a Macro96 G1 region
+        cur.execute("SELECT count(*) FROM brain_region_aggregation_mappings"
+                    " WHERE source_granularity_level='G1_MACRO'"
+                    " OR target_granularity_level='G1_MACRO'")
+        assert cur.fetchone()[0] == 0
+        # no evidence cites the Macro96 source; no evidence_link targets a Macro96 region
+        cur.execute("SELECT count(*) FROM evidence WHERE scientific_source_pk IN"
+                    " (SELECT source_pk FROM sources WHERE name_en=%s AND version=%s)",
+                    (imp.SOURCE_NAME_EN, imp.SOURCE_VERSION))
+        assert cur.fetchone()[0] == 0
+        cur.execute("SELECT count(*) FROM evidence_links el"
+                    " JOIN brain_regions br ON br.entity_pk=el.entity_pk"
+                    " WHERE br.granularity_level='G1_MACRO'")
         assert cur.fetchone()[0] == 0
     finally:
         conn.close()
@@ -222,10 +268,11 @@ def test_e2e_no_bna246_present():
     conn = _conn()
     try:
         cur = conn.cursor()
-        cur.execute("SELECT count(*) FROM kg_entities WHERE entity_type='brain_region'"
-                    " AND source_name_original LIKE '%_L_%'")
+        # no Brainnetome canonical BrainRegions in E2E (Brainnetome = G3, production only)
+        cur.execute("SELECT count(*) FROM brain_regions WHERE granularity_level='G3_MESO_FINE'")
         assert cur.fetchone()[0] == 0
-        cur.execute("SELECT count(*) FROM atlases")
+        # no Brainnetome atlas in E2E (scope to family, not "atlases table empty")
+        cur.execute("SELECT count(*) FROM atlases WHERE atlas_family='Brainnetome'")
         assert cur.fetchone()[0] == 0
     finally:
         conn.close()

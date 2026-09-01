@@ -1,0 +1,57 @@
+{
+  "acquisition": {
+    "siibra_version": "1.0.1-alpha.21",
+    "acquired_at": "2026-08-31T13:02:46Z"
+  },
+  "parcellation": {
+    "id": "minds/core/parcellationatlas/v1.0.0/94c1125b-b87e-45e4-901c-00daee7f2579-310",
+    "key": "JULICH_BRAIN_CYTOARCHITECTONIC_ATLAS_V3_1",
+    "name": "Julich-Brain Cytoarchitectonic Atlas (v3.1)",
+    "version": "3.1.0",
+    "description": "The Julich-Brain Atlas (RRID:SCR_023277) presents in this dataset cytoarchitectonicmaps in several coordinate spaces, such as MNI Colin 27, MNI ICBM 152, andFreeSurfer. These maps originate from peer-reviewed probability maps (PMs) that defineboth cortical and subcortical brain regions. Notably, these probability maps account forthe brain's inter-individual variability by analyzing data from ten post- mortem samples.For a whole-brain parcellation, the available probability maps are combined into amaximum probability map (MPM) by considering for each voxel the probability of allcytoarchitectonic brain regions, and determining the most probable assignment.Continuously evolving, the atlas is regularly updated with new areas. Furthermore, itstands as a reference atlas for the Human Brain Project and is deeply embedded withinthe European research infrastructure platform, EBRAINS. The siibra toolsuite providesan automated access to the Atlas, to speed up your work.",
+    "species": "Homo sapiens",
+    "modality": "cytoarchitecture",
+    "urls": [
+      "https://doi.org/10.25493/KNSN-XB4"
+    ],
+    "publications": [
+      {
+        "citation": "Amunts, K., Mohlberg, H., Bludau, S., Zilles, K. (2020). Julich-Brain – A 3D probabilistic atlas of human brain’s cytoarchitecture. Science 369, 988-992",
+        "url": "https://www.science.org/doi/10.1126/science.abb4588"
+      },
+      {
+        "citation": "Alan C. Evans, Andrew L. Janke, D. Louis Collins, Sylvain Baillet, Brain templates and atlases, NeuroImage, Volume 62, Issue 2, 2012, Pages 911-922, ISSN 1053-8119, https://doi.org/10.1016/j.neuroimage.2012.01.024.",
+        "url": "https://doi.org/10.1016/j.neuroimage.2012.01.024"
+      },
+      {
+        "citation": "Simon B. Eickhoff, Klaas E. Stephan, Hartmut Mohlberg, Christian Grefkes, Gereon R. Fink, Katrin Amunts, Karl Zilles, A new SPM toolbox for combining probabilistic cytoarchitectonic maps and functional imaging data, NeuroImage, Volume 25, Issue 4, 2005, Pages 1325-1335, ISSN 1053-8119, https://doi.org/10.1016/j.neuroimage.2004.12.034.",
+        "url": "https://doi.org/10.1016/j.neuroimage.2004.12.034"
+      },
+      {
+        "citation": "Dataset name: Julich-Brain Atlas, cytoarchitectonic maps (v3.1)",
+        "url": "https://doi.org/10.25493/KNSN-XB4"
+      }
+    ],
+    "shortname": "Julich-Brain v3.1",
+    "authors": [
+      "Lindsay B. Lewis",
+      "Hartmut Mohlberg",
+      "Sebastian Bludau",
+      "Svenja Caspers",
+      "Simon B. Eickhoff",
+      "Katrin Amunts",
+      "Peter Pieperhoff",
+      "Svenja Caspers",
+      "Peter Pieperhoff",
+      "Katrin Amunts",
+      "Simon B. Eickhoff",
+      "Sebastian Bludau",
+      "Hartmut Mohlberg",
+      "Lindsay B. Lewis"
+    ],
+    "is_newest_version": true,
+    "path": [
+      "Julich-Brain Cytoarchitectonic Atlas (v3.1)"
+    ]
+  }
+}
