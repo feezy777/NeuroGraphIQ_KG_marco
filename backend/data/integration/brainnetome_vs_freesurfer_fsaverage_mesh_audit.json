@@ -1,0 +1,26 @@
+{
+  "phase": "1E-D",
+  "evaluated_at": "2026-09-01T08:11:34.315102+00:00",
+  "hemispheres": {
+    "lh": {
+      "vertex_count_equal": true,
+      "face_count_equal": true,
+      "max_abs_coord_diff": 0.0,
+      "mean_abs_coord_diff": 0.0,
+      "faces_exactly_equal": true,
+      "coords_allclose": true,
+      "vertex_order_directly_verified": true
+    },
+    "rh": {
+      "vertex_count_equal": true,
+      "face_count_equal": true,
+      "max_abs_coord_diff": 0.0,
+      "mean_abs_coord_diff": 0.0,
+      "faces_exactly_equal": true,
+      "coords_allclose": true,
+      "vertex_order_directly_verified": true
+    }
+  },
+  "verdict": "FSAVERAGE_VERTEX_INDEXING_DIRECTLY_VERIFIED",
+  "sphere_note": "SPHERE_ANOMALY_NOT_RELEVANT_FOR_DIRECT_OVERLAP (direct overlap uses identical white mesh; no sphere.reg resampling needed)"
+}

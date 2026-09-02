@@ -10,6 +10,8 @@ from __future__ import annotations
 import psycopg
 import pytest
 
+from _agg_review_divergence import strip_agg_review_divergence
+
 PROD = "neurographiq_human_brain_v1"
 E2E = "neurographiq_human_brain_v1_e2e"
 
@@ -173,7 +175,8 @@ def test_production_e2e_schema_parity():
     finally:
         prod.close()
         e2e.close()
-    assert sp == se
+    # Phase 1F-B: e2e-only aggregation review-lifecycle divergence (documented).
+    assert strip_agg_review_divergence(se) == sp
 
 
 # ---------------------------------------------------------------------------
@@ -395,24 +398,44 @@ def test_agg_not_forced_tree_and_n_to_one(db):
         "INSERT INTO brain_region_aggregation_mappings (source_region_pk, target_region_pk,"
         " mapping_relation, record_status) VALUES (%s, %s, 'contained_in', 'active')", (f2, coarse),
     )
-    # no UNIQUE on source/target columns
+    # no FULL unique constraint on source/target columns — N:1 / 1:N allowed.
+    # The only unique index touching source_region_pk is the predicate-guarded
+    # primary-rollup index (active+approved+primary), which does NOT force a tree.
     cur.execute(
-        "SELECT a.attname FROM pg_index i"
-        " JOIN pg_attribute a ON a.attrelid=i.indrelid AND a.attnum=ANY(i.indkey)"
-        " WHERE i.indrelid='brain_region_aggregation_mappings'::regclass AND i.indisunique"
+        "SELECT indexname, indexdef FROM pg_indexes"
+        " WHERE schemaname='public' AND tablename='brain_region_aggregation_mappings'"
+        " AND indexdef LIKE '%UNIQUE INDEX%' AND indexdef LIKE '%source_region_pk%'"
     )
-    uniq_cols = {r[0] for r in cur.fetchall()}
-    assert not ({"source_region_pk", "target_region_pk"} & uniq_cols)
+    uniq_idx = dict(cur.fetchall())
+    assert not any("WHERE" not in d for d in uniq_idx.values()), (
+        "full (non-predicate) unique index on source_region_pk would force a tree"
+    )
+    # the partial primary-rollup index must carry the active+approved+primary guard
+    for name, d in uniq_idx.items():
+        if name != "uq_agg_primary_rollup_active_approved":
+            continue
+        assert "record_status" in d and "review_status" in d and "is_primary_rollup" in d, d
 
 
 def test_agg_rollup_eligible_and_primary(db):
     cur = db.cursor()
     fine = _mk_region(cur, "G4_MICROSTRUCTURAL_FINE")
     coarse = _mk_region(cur, "G1_MACRO")
+    # Gate 7B Phase 1F-B rollup-safety: only contained_in may carry rollup flags.
+    # dominant_overlap with rollup_eligible/is_primary_rollup=true is REJECTED.
+    cur.execute("SAVEPOINT sp_before_dominant")
+    with pytest.raises(psycopg.errors.CheckViolation):
+        cur.execute(
+            "INSERT INTO brain_region_aggregation_mappings (source_region_pk, target_region_pk,"
+            " mapping_relation, rollup_eligible, is_primary_rollup, record_status)"
+            " VALUES (%s, %s, 'dominant_overlap', true, true, 'active')", (fine, coarse),
+        )
+    cur.execute("ROLLBACK TO SAVEPOINT sp_before_dominant")
+    # contained_in may roll up
     cur.execute(
         "INSERT INTO brain_region_aggregation_mappings (source_region_pk, target_region_pk,"
         " mapping_relation, rollup_eligible, is_primary_rollup, record_status)"
-        " VALUES (%s, %s, 'dominant_overlap', true, true, 'active')", (fine, coarse),
+        " VALUES (%s, %s, 'contained_in', true, true, 'active')", (fine, coarse),
     )
     # default rollup_eligible=false when omitted
     f2 = _mk_region(cur, "G4_MICROSTRUCTURAL_FINE")

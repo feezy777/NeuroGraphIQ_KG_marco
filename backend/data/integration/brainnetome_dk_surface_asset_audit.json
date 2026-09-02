@@ -1,0 +1,47 @@
+{
+  "gate_name": "Brainnetome <-> DK/G1 surface spatial crosswalk feasibility",
+  "phase": "1E-A",
+  "audited_at": "2026-09-01T07:38:23.502238+00:00",
+  "common_surface_gate": "FAIL",
+  "common_surface_gate_reason": "Both required surface assets are unobtainable in this environment; the gate cannot be evaluated (PASS/RESAMPLING_REQUIRED both require at least the two annotation files in hand).",
+  "brainnetome_surface_asset": {
+    "name": "BN_Atlas_freesurfer.zip / lh.BN_Atlas.gcs / rh.BN_Atlas.gcs (FreeSurfer surface parcellation)",
+    "status": "NOT_OBTAINABLE",
+    "evidence": [
+      "Official GitHub repo BrainnetomeAtlas/HUMAN-BRAINNETOME-ATLAS tree contains ONLY README.md (confirmed via contents + recursive tree API); lh/rh.BN_Atlas.gcs and BN_Atlas_freesurfer.zip all return HTTP 404 on raw.githubusercontent.com.",
+      "Official download page (atlas.brainnetome.org/download.html) returns 'connection reset' (http+https); site is down.",
+      "Official resource page (www.brainnetome.org/resource/) lists BN_Atlas_freesurfer.zip at pan.cstcloud.cn/s/DQov5gaAR4s, but CSTCloud is a login-gated JS SPA: the share page and all api/share/* endpoints redirect to a login page; the download endpoint is not programmatically reachable without an authenticated session.",
+      "Additional resource links are Baidu Pan (pan.baidu.com) shares, which require the interactive Baidu client/login; not scriptable.",
+      "escience.cn download endpoint timed out."
+    ],
+    "authority": "Brainnetome Center, CASIA (official download service); NOT a third-party remap."
+  },
+  "dk_surface_asset": {
+    "name": "FreeSurfer Desikan-Killiany aparc (lh.aparc.annot / rh.aparc.annot on fsaverage)",
+    "status": "NOT_AVAILABLE_LOCALLY / NOT_OBTAINABLE",
+    "evidence": [
+      "FREESURFER_HOME / SUBJECTS_DIR env vars absent; no FreeSurfer install found in common locations; mris_convert/freeview not on PATH.",
+      "Project contains no *.annot / *.label / *.gcs / *.pial / *.white / *.sphere surface assets (only AAL3 volumetric nii).",
+      "freesurfer/freesurfer GitHub repo is the source-code tree (no subjects/fsaverage/label); the fsaverage subject data ships only inside the FreeSurfer installer (multi-GB), not feasible to acquire in this environment."
+    ],
+    "authority": "FreeSurfer / Desikan-Killiany aparc (freesurfer.nmr.mgh.harvard.edu)."
+  },
+  "reference_space_contract": "NOT_EVALUABLE",
+  "reference_space_reason": "No surface asset acquired, so vertex count / hemisphere / topology / vertex-indexing compatibility could not be measured. Per gate rules, absent both annotations in hand, common_surface_gate = FAIL (cannot assume same indexing from vertex-count equality).",
+  "overlap_smoke": "NOT_RUN",
+  "overlap_smoke_reason": "common_surface_gate != PASS -> no overlap smoke computed (per Phase 1E-A rules; no fabricated/resampled overlap).",
+  "prohibited_actions_avoided": [
+    "no third-party remapped surface atlas used",
+    "no MNI volumetric -> surface projection to fabricate an 'equivalent' surface atlas",
+    "no centroid/nearest-vertex/volumetric overlap fallback",
+    "no surface resampling",
+    "no DB writes; no aggregation mappings; no G1/G3/alias/xref changes; no commit/push"
+  ],
+  "unblock_paths": [
+    "Provide the official Brainnetome FreeSurfer surface annotation (lh/rh.BN_Atlas.gcs or the decoded lh/rh.BN_Atlas.annot) into a repo path (e.g. backend/data/atlases/brainnetome/bna246/), OR provide the raw BN_Atlas_freesurfer.zip bytes.",
+    "Provide the FreeSurfer fsaverage aparc annotation (lh.aparc.annot / rh.aparc.annot) and its reference-surface vertex count, OR install FreeSurfer / provide the fsaverage label+surf files.",
+    "Once both are present in the same reference surface with matching vertex indexing, the gate can be re-evaluated (PASS or RESAMPLING_REQUIRED) and overlap smoke run."
+  ],
+  "next_gate_readiness": "G3_TO_G1_SURFACE_CROSSWALK_FIX_REQUIRED",
+  "unaffected_frozen_state": "Phase 1D-R seed-mask authority, 246/246 xref alignment, 10 approved candidates, 4 NO_ROLLUP, composite review CSV all unchanged; production untouched (brain_regions=770, aggregation=0)."
+}

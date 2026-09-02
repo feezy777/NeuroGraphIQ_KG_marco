@@ -1,0 +1,26 @@
+{
+  "phase": "1E-D",
+  "evaluated_at": "2026-09-01T08:11:34.169003+00:00",
+  "lh": {
+    "vertex_count": 163842,
+    "annot_vs_gii_stored_value_equal": 163842,
+    "annot_vs_gii_total": 163842,
+    "same_label_ratio": 1.0,
+    "cortex_vertex_count": 149955,
+    "genuine_cross_hemisphere_cortex_assignments": 0,
+    "medial_wall_minus1_vertices": 13887,
+    "hemisphere_purity": "CLEAN"
+  },
+  "rh": {
+    "vertex_count": 163842,
+    "annot_vs_gii_stored_value_equal": 163842,
+    "annot_vs_gii_total": 163842,
+    "same_label_ratio": 1.0,
+    "cortex_vertex_count": 149926,
+    "genuine_cross_hemisphere_cortex_assignments": 0,
+    "medial_wall_minus1_vertices": 13916,
+    "hemisphere_purity": "CLEAN"
+  },
+  "anomaly_root_cause": "FALSE_ALARM. The previously reported 13,887 'right-hemisphere _R' vertices in lh.BN_Atlas.annot carry stored label value -1 (0xFFFFFFFF = FreeSurfer medial-wall / unassigned). A Python lookup names[lab] with lab=-1 wraps to the LAST color-table entry 'lsOccG_R', producing the misleading name. All 13,887 (lh) / 13,916 (rh) such vertices lie OUTSIDE the cortex mask (medial wall). The 164k label.gii stores the identical value (-1) at these vertices, so annot and GIFTI are fully consistent. No genuine cross-hemisphere parcel assignment exists.",
+  "representation_choice": "USE_164K_GIFTI_AS_PRIMARY (Workbench-official; values map cleanly to the BN_Atlas_210_LUT). annot and GIFTI are stored-value identical, so the FreeSurfer annot is an equally valid equivalent; overlap must treat value -1 (medial wall) and value 0 (Unknown) as no-label per the medial-wall rule."
+}

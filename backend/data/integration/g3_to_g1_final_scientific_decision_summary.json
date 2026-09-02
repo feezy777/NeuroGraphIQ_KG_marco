@@ -1,0 +1,58 @@
+{
+  "review_phase": "G3_G1_SCIENTIFIC_FREEZE_V1",
+  "decision_source": "ChatGPT human scientific review",
+  "composite_pair_count": 49,
+  "composite_parcel_count": 98,
+  "pair_distribution": {
+    "APPROVE_DOMINANT_OVERLAP": 17,
+    "APPROVE_CONTAINED_IN": 16,
+    "PARTIAL_OVERLAP": 10,
+    "NO_G1_ROLLUP": 3,
+    "CONFLICT_REVIEW": 3
+  },
+  "distribution_matches_target": true,
+  "pending_after": 0,
+  "contained_pairs": [
+    "MFG_7_3",
+    "MFG_7_4",
+    "MFG_7_6",
+    "MFG_7_7",
+    "IFG_6_4",
+    "OrG_6_3",
+    "STG_6_4",
+    "STG_6_5",
+    "STG_6_6",
+    "PhG_6_1",
+    "PhG_6_2",
+    "IPL_6_1",
+    "IPL_6_5",
+    "IPL_6_6",
+    "CG_7_7",
+    "MVOcC_5_4"
+  ],
+  "contained_parcel_rollup_count": 32,
+  "no_rollup_pairs": [
+    "IFG_6_2",
+    "MVOcC_5_5",
+    "STG_6_1"
+  ],
+  "conflict_pairs": [
+    "CG_7_3",
+    "MVOcC_5_2",
+    "MVOcC_5_3"
+  ],
+  "partial_pairs_no_fake_primary": [
+    "CG_7_1",
+    "CG_7_2",
+    "CG_7_5",
+    "IFG_6_3",
+    "IFG_6_5",
+    "MFG_7_5",
+    "OrG_6_2",
+    "OrG_6_4",
+    "OrG_6_6",
+    "STG_6_3"
+  ],
+  "socg_effective": "CONFLICT_REVIEW",
+  "psts_effective": "NO_G1_ROLLUP"
+}

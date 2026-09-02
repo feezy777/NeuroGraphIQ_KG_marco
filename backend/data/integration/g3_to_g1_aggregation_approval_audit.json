@@ -1,0 +1,42 @@
+{
+  "approval_phase": "G3_G1_AGGREGATION_APPROVAL_V1",
+  "source_review_phase": "G3_G1_PRODUCTION_AGGREGATION_REVIEW_V1",
+  "reviewer_identifier": "gate1fh_g3_g1_aggregation_approval",
+  "approval_timestamp": "2026-09-02T12:01:42.989747+08:00",
+  "eligible_count": 246,
+  "updated_count": 246,
+  "rows_before": 246,
+  "rows_after": 246,
+  "pending_before": 246,
+  "pending_after": 0,
+  "approved_before": 0,
+  "approved_after": 246,
+  "proposed_before": 246,
+  "proposed_after": 246,
+  "active_before": 0,
+  "active_after": 0,
+  "rollup_true_before": 0,
+  "rollup_true_after": 0,
+  "primary_true_before": 0,
+  "primary_true_after": 0,
+  "contained_count": 172,
+  "dominant_count": 34,
+  "partial_count": 40,
+  "excluded_leak_count": 0,
+  "scientific_payload_hash_before": null,
+  "scientific_payload_hash_after": "d1f6d9e4963405a0ee7986da01f47e45689bbec1f6bb60875f6b302c701d0172",
+  "scientific_payload_unchanged": true,
+  "transaction_status": "COMMITTED",
+  "rerun_observations": [
+    {
+      "observed_at": "2026-09-02T04:03:08.855784+00:00",
+      "updated_count": 0,
+      "note": "RERUN NO-OP: all 246 already approved; committed audit preserved unchanged"
+    },
+    {
+      "observed_at": "2026-09-02T04:17:34.473929+00:00",
+      "updated_count": 0,
+      "note": "RERUN NO-OP: all 246 already approved; committed audit preserved unchanged"
+    }
+  ]
+}

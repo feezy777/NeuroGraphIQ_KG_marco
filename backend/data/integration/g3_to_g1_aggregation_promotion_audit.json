@@ -1,0 +1,45 @@
+{
+  "promotion_phase": "G3_G1_AGGREGATION_PROMOTION_V1",
+  "source_approval_phase": "G3_G1_AGGREGATION_APPROVAL_V1",
+  "rows_before": 246,
+  "rows_after": 246,
+  "promoted_count": 246,
+  "proposed_before": 246,
+  "proposed_after": 0,
+  "active_before": 0,
+  "active_after": 246,
+  "approved_before": 246,
+  "approved_after": 246,
+  "contained_count": 172,
+  "dominant_count": 34,
+  "partial_count": 40,
+  "rollup_true_before": 0,
+  "rollup_true_after": 172,
+  "primary_true_before": 0,
+  "primary_true_after": 172,
+  "primary_source_count": 172,
+  "duplicate_primary_count": 0,
+  "dominant_rollup_leak": 0,
+  "partial_rollup_leak": 0,
+  "excluded_source_leak": 0,
+  "scientific_payload_hash_before": "03955c4f6063c8f17a0b6a412609b52ac10061821309fe2f60122423ad6e0094",
+  "scientific_payload_hash_after": "03955c4f6063c8f17a0b6a412609b52ac10061821309fe2f60122423ad6e0094",
+  "scientific_payload_unchanged": true,
+  "formal_primary_query_count": 172,
+  "formal_all_mapping_query_count": 246,
+  "formal_overlap_query_count": 74,
+  "rerun_promoted_count": 0,
+  "transaction_status": "COMMITTED",
+  "rerun_observations": [
+    {
+      "observed_at": "2026-09-02T04:09:29.307683+00:00",
+      "promoted_count": 0,
+      "note": "RERUN NO-OP: all 246 already active with correct rollup; committed audit preserved"
+    },
+    {
+      "observed_at": "2026-09-02T04:17:34.637042+00:00",
+      "promoted_count": 0,
+      "note": "RERUN NO-OP: all 246 already active with correct rollup; committed audit preserved"
+    }
+  ]
+}

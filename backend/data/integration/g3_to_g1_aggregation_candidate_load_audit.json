@@ -1,0 +1,40 @@
+{
+  "load_phase": "G3_G1_AGGREGATION_CANDIDATE_LOAD_V1",
+  "source_staging_sha256": "e00dc09ede58e15986cba1ac1ad565f9134d685ef3366d4470a128efec378186",
+  "source_review_sha256": "4b6b9ef8b88d88c7715057362d3e8526fbbb8758d352fe2883846e0459e465c2",
+  "candidate_count": 246,
+  "inserted_count": 246,
+  "contained_count": 172,
+  "dominant_count": 34,
+  "partial_count": 40,
+  "source_count": 226,
+  "excluded_count": 20,
+  "proposed_count": 246,
+  "pending_count": 246,
+  "active_count": 0,
+  "approved_count": 0,
+  "rollup_true_count": 0,
+  "primary_true_count": 0,
+  "mapping_id_min": "NGIQ-BRAM-00000248",
+  "mapping_id_max": "NGIQ-BRAM-00000493",
+  "mapping_id_duplicate_count": 0,
+  "fidelity_mismatch_count": 0,
+  "excluded_source_leak_count": 0,
+  "hemisphere_mismatch_count": 0,
+  "granularity_mismatch_count": 0,
+  "transaction_status": "COMMITTED",
+  "production_row_count_before": 0,
+  "production_row_count_after": 246,
+  "rerun_observations": [
+    {
+      "inserted_count": 0,
+      "note": "RERUN NO-OP: candidates already loaded; committed audit preserved",
+      "production_row_count": 246
+    },
+    {
+      "inserted_count": 0,
+      "note": "RERUN NO-OP: candidates already loaded; committed audit preserved",
+      "production_row_count": 246
+    }
+  ]
+}

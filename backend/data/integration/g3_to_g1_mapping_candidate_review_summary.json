@@ -1,0 +1,42 @@
+{
+  "candidate_relation_row_count": 246,
+  "pass_count": 246,
+  "fail_count": 0,
+  "exception_count": 0,
+  "candidate_source_count": 226,
+  "excluded_source_count": 20,
+  "contained_relation_rows": 172,
+  "dominant_relation_rows": 34,
+  "partial_relation_rows": 40,
+  "method_distribution": {
+    "authoritative_anatomical_mapping": 140,
+    "hybrid": 106
+  },
+  "partial_source_count": 20,
+  "partial_relation_row_count": 40,
+  "partial_issues": 0,
+  "coverage_anomaly_count": 0,
+  "lifecycle_anomaly_count": 0,
+  "provenance_anomaly_count": 0,
+  "target_identity_anomaly_count": 0,
+  "hemisphere_mismatch_count": 0,
+  "candidate_id_collision_count": 0,
+  "subcortical_canonical": {
+    "count": 24,
+    "families": {
+      "Amyg": 4,
+      "Hipp": 4,
+      "Tha": 16
+    }
+  },
+  "exclusions": {
+    "excluded_source_count": 20,
+    "exclusions_with_candidate": [],
+    "exclusion_decision_distribution": {
+      "NO_G1_ROLLUP": 10,
+      "CONFLICT_REVIEW": 10
+    }
+  },
+  "production_write_count": 0,
+  "e2e_write_count": 0
+}

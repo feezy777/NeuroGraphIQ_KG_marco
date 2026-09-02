@@ -1,0 +1,92 @@
+{
+  "gate": "DIRECT_FSAVERAGE_COMPATIBLE",
+  "evaluated_at": "2026-09-01T08:04:36.092527+00:00",
+  "brainnetome_surface_package": {
+    "zip_path": "backend/docs/pdf/BN_Atlas_freesurfer.zip",
+    "zip_sha256": "f878a78784678d2a65e49670ab90920f03176e807135ea63bf94854dd4f90af1",
+    "zip_size_bytes": 175200933,
+    "extracted_dir": "backend/data/atlases/brainnetome/bna246/surface_raw/extracted/BN_Atlas_freesurfer/",
+    "key_assets": {
+      "fsaverage_annot": [
+        "fsaverage/label/lh.BN_Atlas.annot",
+        "fsaverage/label/rh.BN_Atlas.annot"
+      ],
+      "fsaverage_164k_label_gii": [
+        "fsaverage/164k/fsaverage.L.BN_Atlas.164k.label.gii",
+        "fsaverage/164k/fsaverage.R.BN_Atlas.164k.label.gii"
+      ],
+      "fsaverage_32k_fsLR": [
+        "fsaverage/32k/fsaverage.L.BN_Atlas.32k_fs_LR.label.gii",
+        "fsaverage/32k/fsaverage.R.BN_Atlas.32k_fs_LR.label.gii"
+      ],
+      "classifier_gcs": [
+        "lh.BN_Atlas.gcs",
+        "rh.BN_Atlas.gcs"
+      ],
+      "lut": "BN_Atlas_210_LUT.txt",
+      "fsaverage_surfaces_in_pkg": [
+        "fsaverage/surf/lh.white",
+        "fsaverage/surf/rh.white",
+        "fsaverage/surf/lh.sphere.reg",
+        "fsaverage/surf/rh.sphere.reg"
+      ]
+    }
+  },
+  "usage_pdf_key_facts": [
+    "primary files are lh.BN_Atlas.gcs / rh.BN_Atlas.gcs classifiers + BN_Atlas_210_LUT.txt color table",
+    "workflow: mris_ca_label -l <subject>/label/<hemi>.cortex.label <subject> <hemi> <subject>/surf/<hemi>.sphere.reg <gcs> <output>.annot  (maps classifier to a subject's sphere.reg)",
+    "'We have also mapped the BN_Atlas on fsaverage space, the resulting files are listed in directory fsaverage'",
+    "CIFTI conversion via mris_convert --annot -> *.native.label.gii; wb_command -set-structure CORTEX_LEFT/RIGHT",
+    "fsaverage + 32k fs_LR meshes both shipped (164k label.gii + 32k_fs_LR label.gii + native subject 001)"
+  ],
+  "brainnetome_label_assets": {
+    "lh.BN_Atlas.annot": {
+      "vertex_count": 163842,
+      "own_hemisphere_cortical_labels": 105,
+      "color_table_entries": 211
+    },
+    "rh.BN_Atlas.annot": {
+      "vertex_count": 163842,
+      "own_hemisphere_cortical_labels": 105,
+      "color_table_entries": 211
+    },
+    "fsaverage.L.BN_Atlas.164k.label.gii": {
+      "vertex_count": 163842
+    }
+  },
+  "dk_fsaverage": {
+    "vertex_count": 163842,
+    "faces": 327680,
+    "annot_sha": {
+      "lh.aparc.annot": "39b1acde9a32b422...",
+      "rh.aparc.annot": "6a326aed325d313e..."
+    }
+  },
+  "gate_reason": "Official package ships BN_Atlas annotations already materialized on the standard FreeSurfer fsaverage mesh (fsaverage/label/lh|rh.BN_Atlas.annot = 163842 vertices; fsaverage/164k/*.label.gii = 163842). The package also includes fsaverage/surf/* (white/sphere.reg parse to 163842/327680), matching the DK fsaverage mesh (163842/327680). Per-vertex indexing is the canonical fsaverage indexing; no resampling required for a direct lh->lh / rh->rh vertex overlap with the DK aparc.",
+  "vertex_indexing_provenance": "SUFFICIENT",
+  "vertex_indexing_reason": "Both the Brainnetome annotation (fsaverage/label/*.BN_Atlas.annot) and DK annotation (fsaverage/label/*.aparc.annot) are FreeSurfer annotation files on the same canonical fsaverage mesh; the official package provides the fsaverage surfaces themselves (163842/327680) confirming the reference template. 164k label.gii provides an independent 163842-vertex materialization. Direct per-vertex comparison is structurally sound.",
+  "topology_evidence": "TOPOLOGY_INFERRED_FROM_OFFICIAL_REFERENCE",
+  "topology_reason": "BN package fsaverage/surf/lh.white+rh.white parse to 163842 vertices / 327680 faces == DK fsaverage. No face-count mismatch.",
+  "sphere_identical_issue": "SPHERE_ANOMALY_NOT_REQUIRED_FOR_DIRECT_OVERLAP",
+  "sphere_reason": "Direct overlap uses the two fsaverage 164k annotations on the same canonical mesh; no sphere.reg resampling is needed, so the lh==rh sphere anomaly is not a blocker for direct overlap. It only matters if 32k/fs_LR resampling were required.",
+  "cross_hemisphere_annot_quirk": {
+    "lh_annot_R_named_vertices": 13887,
+    "rh_annot_L_named_vertices": 0,
+    "note": "lh.BN_Atlas.annot contains 13,887 vertices carrying right-hemisphere (suffix _R) parcel names (~8.5%); rh annot has none. Overlap stage must handle these vertices explicitly (exclude or map after hemisphere check). Not a gate blocker for common-surface contract."
+  },
+  "common_surface_gate_checks": {
+    "bn_reference_surface_identified": true,
+    "bn_vertex_count": 163842,
+    "dk_vertex_count": 163842,
+    "hemisphere_consistent": true,
+    "bn_highres_explicit_fsaverage": true,
+    "vertex_indexing_provenance": "official package + fsaverage surfaces + 164k gii",
+    "resampling_required": false
+  },
+  "artifacts": {
+    "package_manifest": "data/atlases/brainnetome/bna246/surface_raw/brainnetome_surface_package_manifest.json",
+    "reference_audit": "data/integration/brainnetome_surface_reference_audit.json",
+    "parcel_to_g3_alignment": "data/integration/brainnetome_surface_parcel_to_g3_alignment.csv"
+  },
+  "unaffected_frozen_state": "Phase 1C/1D-R authority snapshots, 246/246 xref alignment, composite review CSV, 10 approved, 4 NO_ROLLUP all unchanged."
+}

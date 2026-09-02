@@ -1,0 +1,24 @@
+{
+  "full_g3_source_count": 246,
+  "contained_source_count": 172,
+  "dominant_source_count": 34,
+  "partial_source_count": 20,
+  "no_rollup_source_count": 10,
+  "conflict_source_count": 10,
+  "mapping_candidate_source_count": 226,
+  "mapping_candidate_relation_row_count": 246,
+  "partial_relation_row_count": 40,
+  "excluded_source_count": 20,
+  "unresolved_source_count": 0,
+  "unresolved_target_count": 0,
+  "duplicate_candidate_count": 0,
+  "hemisphere_mismatch_count": 0,
+  "production_write_count": 0,
+  "expected_distribution": {
+    "APPROVE_CONTAINED_IN": 172,
+    "APPROVE_DOMINANT_OVERLAP": 34,
+    "PARTIAL_OVERLAP": 20,
+    "NO_G1_ROLLUP": 10,
+    "CONFLICT_REVIEW": 10
+  }
+}

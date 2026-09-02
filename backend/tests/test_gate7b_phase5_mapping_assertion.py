@@ -10,6 +10,8 @@ from __future__ import annotations
 import psycopg
 import pytest
 
+from _agg_review_divergence import strip_agg_review_divergence
+
 PROD = "neurographiq_human_brain_v1"
 E2E = "neurographiq_human_brain_v1_e2e"
 
@@ -239,7 +241,8 @@ def test_production_e2e_schema_parity():
     finally:
         prod.close()
         e2e.close()
-    assert sp == se
+    # Phase 1F-B: e2e-only aggregation review-lifecycle divergence (documented).
+    assert strip_agg_review_divergence(se) == sp
 
 
 # ---------------------------------------------------------------------------

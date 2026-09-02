@@ -1,0 +1,21 @@
+{
+  "review_phase": "G3_G1_PRODUCTION_AGGREGATION_REVIEW_V1",
+  "production_row_count": 246,
+  "eligible_count": 246,
+  "not_eligible_count": 0,
+  "contained_eligible_count": 172,
+  "dominant_eligible_count": 34,
+  "partial_eligible_count": 40,
+  "excluded_leak_count": 0,
+  "fidelity_mismatch_count": 0,
+  "identity_failure_count": 0,
+  "hemisphere_failure_count": 0,
+  "relation_failure_count": 0,
+  "coverage_failure_count": 0,
+  "provenance_failure_count": 0,
+  "lifecycle_failure_count": 0,
+  "linkage_mismatch_count": 0,
+  "sequence_gap_status": "SEQUENCE_GAP_ACCEPTED",
+  "loader_reproducibility_status": "REPOSITORY_SCRIPT_REQUIRED",
+  "loader_reproducibility_reason": "Temp\\gen_phase1ff_load.py contains genuine reusable logic: official infra.next_ngiq_id('brain_region_aggregation_mapping') allocator, single-transaction load, pre-commit fidelity verification, and rerun no-op safety. The current load is fully reproducible via the load audit (staging/review sha256 + COMMITTED), so the one-time artifact suffices for THIS batch's provenance. However, any future candidate batch would need this loader again; recommend promoting it to backend/scripts/ before the next load. Not a blocker for approval."
+}

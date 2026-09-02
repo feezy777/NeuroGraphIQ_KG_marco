@@ -1,0 +1,106 @@
+﻿pair_id,left_g3_entity_id,right_g3_entity_id,seed_mask_code,cohort,left_top1_g1,right_top1_g1,left_top1_cov,right_top1_cov,left_top1_dk,right_top1_dk,consistency_status
+SFG_7_1,NGIQ-BR-00000001,NGIQ-BR-00000002,SFG,SINGLE_SEED_CONTROL,Superior Frontal Gyrus,Superior Frontal Gyrus,1.0,1.0,superiorfrontal,superiorfrontal,SAME_TOP1_TARGET
+SFG_7_2,NGIQ-BR-00000021,NGIQ-BR-00000022,SFG,SINGLE_SEED_CONTROL,Superior Frontal Gyrus,Superior Frontal Gyrus,0.972441,0.983711,superiorfrontal,superiorfrontal,SAME_TOP1_TARGET
+SFG_7_3,NGIQ-BR-00000023,NGIQ-BR-00000024,SFG,SINGLE_SEED_CONTROL,Superior Frontal Gyrus,Superior Frontal Gyrus,0.975456,0.970336,superiorfrontal,superiorfrontal,SAME_TOP1_TARGET
+SFG_7_4,NGIQ-BR-00000025,NGIQ-BR-00000026,SFG,SINGLE_SEED_CONTROL,Superior Frontal Gyrus,Superior Frontal Gyrus,0.998672,0.995425,superiorfrontal,superiorfrontal,SAME_TOP1_TARGET
+SFG_7_5,NGIQ-BR-00000027,NGIQ-BR-00000028,SFG,SINGLE_SEED_CONTROL,Superior Frontal Gyrus,Superior Frontal Gyrus,0.95671,0.937118,superiorfrontal,superiorfrontal,SAME_TOP1_TARGET
+SFG_7_6,NGIQ-BR-00000029,NGIQ-BR-00000030,SFG,SINGLE_SEED_CONTROL,Superior Frontal Gyrus,Superior Frontal Gyrus,1.0,1.0,superiorfrontal,superiorfrontal,SAME_TOP1_TARGET
+SFG_7_7,NGIQ-BR-00000031,NGIQ-BR-00000032,SFG,SINGLE_SEED_CONTROL,Superior Frontal Gyrus,Superior Frontal Gyrus,1.0,0.996016,superiorfrontal,superiorfrontal,SAME_TOP1_TARGET
+MFG_7_1,NGIQ-BR-00000033,NGIQ-BR-00000034,MFG,COMPOSITE_SEED_PENDING,Rostral Middle Frontal Cortex,Rostral Middle Frontal Cortex,0.953149,0.820144,rostralmiddlefrontal,rostralmiddlefrontal,ASYMMETRIC_COVERAGE
+MFG_7_2,NGIQ-BR-00000035,NGIQ-BR-00000036,MFG,COMPOSITE_SEED_PENDING,Caudal Middle Frontal Gyrus,Caudal Middle Frontal Gyrus,0.767627,0.942857,caudalmiddlefrontal,caudalmiddlefrontal,ASYMMETRIC_COVERAGE
+MFG_7_3,NGIQ-BR-00000037,NGIQ-BR-00000038,MFG,COMPOSITE_SEED_PENDING,Rostral Middle Frontal Cortex,Rostral Middle Frontal Cortex,0.993798,1.0,rostralmiddlefrontal,rostralmiddlefrontal,SAME_TOP1_TARGET
+MFG_7_4,NGIQ-BR-00000039,NGIQ-BR-00000040,MFG,COMPOSITE_SEED_PENDING,Rostral Middle Frontal Cortex,Rostral Middle Frontal Cortex,1.0,0.975517,rostralmiddlefrontal,rostralmiddlefrontal,SAME_TOP1_TARGET
+MFG_7_5,NGIQ-BR-00000041,NGIQ-BR-00000042,MFG,COMPOSITE_SEED_PENDING,Caudal Middle Frontal Gyrus,Rostral Middle Frontal Cortex,0.642631,0.637713,caudalmiddlefrontal,rostralmiddlefrontal,DIFFERENT_TOP1_TARGET
+MFG_7_6,NGIQ-BR-00000043,NGIQ-BR-00000044,MFG,COMPOSITE_SEED_PENDING,Caudal Middle Frontal Gyrus,Caudal Middle Frontal Gyrus,0.964172,0.958541,caudalmiddlefrontal,caudalmiddlefrontal,SAME_TOP1_TARGET
+MFG_7_7,NGIQ-BR-00000045,NGIQ-BR-00000046,MFG,COMPOSITE_SEED_PENDING,Rostral Middle Frontal Cortex,Rostral Middle Frontal Cortex,0.932464,0.93571,rostralmiddlefrontal,rostralmiddlefrontal,SAME_TOP1_TARGET
+IFG_6_1,NGIQ-BR-00000003,NGIQ-BR-00000004,IFG,COMPOSITE_SEED_PENDING,"Inferior Frontal Gyrus, Pars Opercularis","Inferior Frontal Gyrus, Pars Opercularis",0.96732,0.72323,parsopercularis,parsopercularis,ASYMMETRIC_COVERAGE
+IFG_6_2,NGIQ-BR-00000047,NGIQ-BR-00000048,IFG,COMPOSITE_SEED_PENDING,"Inferior Frontal Gyrus, Pars Opercularis","Inferior Frontal Gyrus, Pars Triangularis",0.459574,0.726351,parsopercularis,parstriangularis,DIFFERENT_TOP1_TARGET
+IFG_6_3,NGIQ-BR-00000049,NGIQ-BR-00000050,IFG,COMPOSITE_SEED_PENDING,"Inferior Frontal Gyrus, Pars Opercularis","Inferior Frontal Gyrus, Pars Opercularis",0.68541,0.516605,parsopercularis,parsopercularis,ASYMMETRIC_COVERAGE
+IFG_6_4,NGIQ-BR-00000051,NGIQ-BR-00000052,IFG,COMPOSITE_SEED_PENDING,"Inferior Frontal Gyrus, Pars Triangularis","Inferior Frontal Gyrus, Pars Triangularis",0.92587,1.0,parstriangularis,parstriangularis,SAME_TOP1_TARGET
+IFG_6_5,NGIQ-BR-00000053,NGIQ-BR-00000054,IFG,COMPOSITE_SEED_PENDING,"Inferior Frontal Gyrus, Pars Triangularis","Inferior Frontal Gyrus, Pars Triangularis",0.583855,0.530909,parstriangularis,parstriangularis,SAME_TOP1_TARGET
+IFG_6_6,NGIQ-BR-00000055,NGIQ-BR-00000056,IFG,COMPOSITE_SEED_PENDING,"Inferior Frontal Gyrus, Pars Opercularis","Inferior Frontal Gyrus, Pars Opercularis",0.992296,0.886726,parsopercularis,parsopercularis,ASYMMETRIC_COVERAGE
+OrG_6_1,NGIQ-BR-00000057,NGIQ-BR-00000058,OrG,COMPOSITE_SEED_PENDING,Medial Orbitofrontal Cortex,Medial Orbitofrontal Cortex,0.808187,0.895669,medialorbitofrontal,medialorbitofrontal,SAME_TOP1_TARGET
+OrG_6_2,NGIQ-BR-00000059,NGIQ-BR-00000060,OrG,COMPOSITE_SEED_PENDING,Lateral Orbitofrontal Cortex,"Inferior Frontal Gyrus, Pars Orbitalis",0.581366,0.620155,lateralorbitofrontal,parsorbitalis,DIFFERENT_TOP1_TARGET
+OrG_6_3,NGIQ-BR-00000061,NGIQ-BR-00000062,OrG,COMPOSITE_SEED_PENDING,Lateral Orbitofrontal Cortex,Lateral Orbitofrontal Cortex,0.99013,0.956455,lateralorbitofrontal,lateralorbitofrontal,SAME_TOP1_TARGET
+OrG_6_4,NGIQ-BR-00000063,NGIQ-BR-00000064,OrG,COMPOSITE_SEED_PENDING,Medial Orbitofrontal Cortex,Medial Orbitofrontal Cortex,0.569787,0.563107,medialorbitofrontal,medialorbitofrontal,SAME_TOP1_TARGET
+OrG_6_5,NGIQ-BR-00000065,NGIQ-BR-00000066,OrG,COMPOSITE_SEED_PENDING,Medial Orbitofrontal Cortex,Medial Orbitofrontal Cortex,0.60663,0.569756,medialorbitofrontal,medialorbitofrontal,SAME_TOP1_TARGET
+OrG_6_6,NGIQ-BR-00000067,NGIQ-BR-00000068,OrG,COMPOSITE_SEED_PENDING,Lateral Orbitofrontal Cortex,Lateral Orbitofrontal Cortex,0.506073,0.495957,lateralorbitofrontal,lateralorbitofrontal,SAME_TOP1_TARGET
+PrG_6_1,NGIQ-BR-00000069,NGIQ-BR-00000070,PrG,SINGLE_SEED_CONTROL,Precentral Gyrus,Precentral Gyrus,0.996333,0.971129,precentral,precentral,SAME_TOP1_TARGET
+PrG_6_2,NGIQ-BR-00000071,NGIQ-BR-00000072,PrG,SINGLE_SEED_CONTROL,Precentral Gyrus,Precentral Gyrus,0.9179,0.844646,precentral,precentral,SAME_TOP1_TARGET
+PrG_6_3,NGIQ-BR-00000073,NGIQ-BR-00000074,PrG,SINGLE_SEED_CONTROL,Precentral Gyrus,Precentral Gyrus,0.906458,0.964951,precentral,precentral,SAME_TOP1_TARGET
+PrG_6_4,NGIQ-BR-00000075,NGIQ-BR-00000076,PrG,SINGLE_SEED_CONTROL,Precentral Gyrus,Precentral Gyrus,0.850059,0.899503,precentral,precentral,SAME_TOP1_TARGET
+PrG_6_5,NGIQ-BR-00000077,NGIQ-BR-00000078,PrG,SINGLE_SEED_CONTROL,Precentral Gyrus,Precentral Gyrus,0.912011,0.954662,precentral,precentral,SAME_TOP1_TARGET
+PrG_6_6,NGIQ-BR-00000079,NGIQ-BR-00000080,PrG,SINGLE_SEED_CONTROL,Precentral Gyrus,Precentral Gyrus,0.925864,0.965254,precentral,precentral,SAME_TOP1_TARGET
+PCL_2_1,NGIQ-BR-00000081,NGIQ-BR-00000082,PCL,SINGLE_SEED_CONTROL,Paracentral Lobule,Paracentral Lobule,0.924893,0.928874,paracentral,paracentral,SAME_TOP1_TARGET
+PCL_2_2,NGIQ-BR-00000083,NGIQ-BR-00000084,PCL,SINGLE_SEED_CONTROL,Paracentral Lobule,Paracentral Lobule,0.972814,0.93906,paracentral,paracentral,SAME_TOP1_TARGET
+STG_6_1,NGIQ-BR-00000005,NGIQ-BR-00000006,STG,COMPOSITE_SEED_PENDING,Superior Temporal Gyrus,Superior Temporal Gyrus,0.154762,0.147059,temporalpole,temporalpole,SAME_TOP1_TARGET
+STG_6_2,NGIQ-BR-00000085,NGIQ-BR-00000086,STG,COMPOSITE_SEED_PENDING,Superior Temporal Gyrus,Superior Temporal Gyrus,0.961657,0.865783,superiortemporal,superiortemporal,SAME_TOP1_TARGET
+STG_6_3,NGIQ-BR-00000087,NGIQ-BR-00000088,STG,COMPOSITE_SEED_PENDING,Superior Temporal Gyrus,Superior Temporal Gyrus,0.570241,0.675108,superiortemporal,superiortemporal,ASYMMETRIC_COVERAGE
+STG_6_4,NGIQ-BR-00000089,NGIQ-BR-00000090,STG,COMPOSITE_SEED_PENDING,Superior Temporal Gyrus,Superior Temporal Gyrus,0.954993,0.958685,superiortemporal,superiortemporal,SAME_TOP1_TARGET
+STG_6_5,NGIQ-BR-00000091,NGIQ-BR-00000092,STG,COMPOSITE_SEED_PENDING,Superior Temporal Gyrus,Superior Temporal Gyrus,0.957774,0.965749,superiortemporal,superiortemporal,SAME_TOP1_TARGET
+STG_6_6,NGIQ-BR-00000093,NGIQ-BR-00000094,STG,COMPOSITE_SEED_PENDING,Superior Temporal Gyrus,Superior Temporal Gyrus,0.994943,0.970827,superiortemporal,superiortemporal,SAME_TOP1_TARGET
+MTG_4_1,NGIQ-BR-00000007,NGIQ-BR-00000008,MTG,SINGLE_SEED_CONTROL,Middle Temporal Gyrus,Middle Temporal Gyrus,0.984639,0.97619,middletemporal,middletemporal,SAME_TOP1_TARGET
+MTG_4_2,NGIQ-BR-00000095,NGIQ-BR-00000096,MTG,SINGLE_SEED_CONTROL,Middle Temporal Gyrus,Middle Temporal Gyrus,0.935897,0.895701,middletemporal,middletemporal,SAME_TOP1_TARGET
+MTG_4_3,NGIQ-BR-00000097,NGIQ-BR-00000098,MTG,SINGLE_SEED_CONTROL,Middle Temporal Gyrus,Middle Temporal Gyrus,0.952486,0.873643,middletemporal,middletemporal,SAME_TOP1_TARGET
+MTG_4_4,NGIQ-BR-00000099,NGIQ-BR-00000100,MTG,SINGLE_SEED_CONTROL,Middle Temporal Gyrus,Middle Temporal Gyrus,0.965917,0.594683,middletemporal,middletemporal,ASYMMETRIC_COVERAGE
+ITG_7_1,NGIQ-BR-00000101,NGIQ-BR-00000102,ITG,SINGLE_SEED_CONTROL,Inferior Temporal Gyrus,Inferior Temporal Gyrus,0.974138,1.0,inferiortemporal,inferiortemporal,SAME_TOP1_TARGET
+ITG_7_2,NGIQ-BR-00000103,NGIQ-BR-00000104,ITG,SINGLE_SEED_CONTROL,Inferior Temporal Gyrus,Inferior Temporal Gyrus,1.0,1.0,inferiortemporal,inferiortemporal,SAME_TOP1_TARGET
+ITG_7_3,NGIQ-BR-00000105,NGIQ-BR-00000106,ITG,SINGLE_SEED_CONTROL,Inferior Temporal Gyrus,Inferior Temporal Gyrus,0.909091,0.954545,inferiortemporal,inferiortemporal,SAME_TOP1_TARGET
+ITG_7_4,NGIQ-BR-00000107,NGIQ-BR-00000108,ITG,SINGLE_SEED_CONTROL,Inferior Temporal Gyrus,Inferior Temporal Gyrus,0.796522,0.934189,inferiortemporal,inferiortemporal,ASYMMETRIC_COVERAGE
+ITG_7_5,NGIQ-BR-00000109,NGIQ-BR-00000110,ITG,SINGLE_SEED_CONTROL,Inferior Temporal Gyrus,Inferior Temporal Gyrus,0.78866,0.888889,inferiortemporal,inferiortemporal,ASYMMETRIC_COVERAGE
+ITG_7_6,NGIQ-BR-00000111,NGIQ-BR-00000112,ITG,SINGLE_SEED_CONTROL,Inferior Temporal Gyrus,Inferior Temporal Gyrus,0.754358,0.89755,inferiortemporal,inferiortemporal,ASYMMETRIC_COVERAGE
+ITG_7_7,NGIQ-BR-00000113,NGIQ-BR-00000114,ITG,SINGLE_SEED_CONTROL,Inferior Temporal Gyrus,Inferior Temporal Gyrus,1.0,1.0,inferiortemporal,inferiortemporal,SAME_TOP1_TARGET
+FuG_3_1,NGIQ-BR-00000115,NGIQ-BR-00000116,FuG,SINGLE_SEED_CONTROL,Fusiform Gyrus,Fusiform Gyrus,0.919677,0.870089,fusiform,fusiform,SAME_TOP1_TARGET
+FuG_3_2,NGIQ-BR-00000117,NGIQ-BR-00000118,FuG,SINGLE_SEED_CONTROL,Fusiform Gyrus,Fusiform Gyrus,0.948454,0.9867,fusiform,fusiform,SAME_TOP1_TARGET
+FuG_3_3,NGIQ-BR-00000119,NGIQ-BR-00000120,FuG,SINGLE_SEED_CONTROL,Fusiform Gyrus,Fusiform Gyrus,0.759022,0.761614,fusiform,fusiform,SAME_TOP1_TARGET
+PhG_6_1,NGIQ-BR-00000121,NGIQ-BR-00000122,PhG,COMPOSITE_SEED_PENDING,Entorhinal Cortex,Entorhinal Cortex,0.974747,0.903571,entorhinal,entorhinal,SAME_TOP1_TARGET
+PhG_6_2,NGIQ-BR-00000123,NGIQ-BR-00000124,PhG,COMPOSITE_SEED_PENDING,Parahippocampal Gyrus,Parahippocampal Gyrus,0.928191,0.951482,parahippocampal,parahippocampal,SAME_TOP1_TARGET
+PhG_6_3,NGIQ-BR-00000125,NGIQ-BR-00000126,PhG,COMPOSITE_SEED_PENDING,Parahippocampal Gyrus,Parahippocampal Gyrus,0.979133,0.836466,parahippocampal,parahippocampal,ASYMMETRIC_COVERAGE
+PhG_6_4,NGIQ-BR-00000127,NGIQ-BR-00000128,PhG,COMPOSITE_SEED_PENDING,Entorhinal Cortex,Entorhinal Cortex,0.607046,0.693798,entorhinal,entorhinal,SAME_TOP1_TARGET
+PhG_6_5,NGIQ-BR-00000129,NGIQ-BR-00000130,PhG,COMPOSITE_SEED_PENDING,Entorhinal Cortex,Entorhinal Cortex,0.833333,0.977654,entorhinal,entorhinal,ASYMMETRIC_COVERAGE
+PhG_6_6,NGIQ-BR-00000131,NGIQ-BR-00000132,PhG,COMPOSITE_SEED_PENDING,Parahippocampal Gyrus,Parahippocampal Gyrus,0.896471,0.995833,parahippocampal,parahippocampal,SAME_TOP1_TARGET
+pSTS_2_1,NGIQ-BR-00000133,NGIQ-BR-00000134,Psts,SEED_TARGET_NOT_IN_G1,Middle Temporal Gyrus,Middle Temporal Gyrus,0.026728,0.036585,bankssts,bankssts,SAME_TOP1_TARGET
+pSTS_2_2,NGIQ-BR-00000135,NGIQ-BR-00000136,Psts,SEED_TARGET_NOT_IN_G1,Inferior Parietal Lobule,Supramarginal Gyrus,0.066318,0.047441,bankssts,bankssts,DIFFERENT_TOP1_TARGET
+SPL_5_1,NGIQ-BR-00000009,NGIQ-BR-00000010,SPL,SINGLE_SEED_CONTROL,Superior Parietal Lobule,Superior Parietal Lobule,1.0,1.0,superiorparietal,superiorparietal,SAME_TOP1_TARGET
+SPL_5_2,NGIQ-BR-00000137,NGIQ-BR-00000138,SPL,SINGLE_SEED_CONTROL,Superior Parietal Lobule,Superior Parietal Lobule,0.950941,1.0,superiorparietal,superiorparietal,SAME_TOP1_TARGET
+SPL_5_3,NGIQ-BR-00000139,NGIQ-BR-00000140,SPL,SINGLE_SEED_CONTROL,Superior Parietal Lobule,Superior Parietal Lobule,0.985197,0.979167,superiorparietal,superiorparietal,SAME_TOP1_TARGET
+SPL_5_4,NGIQ-BR-00000141,NGIQ-BR-00000142,SPL,SINGLE_SEED_CONTROL,Superior Parietal Lobule,Superior Parietal Lobule,0.988279,0.986339,superiorparietal,superiorparietal,SAME_TOP1_TARGET
+SPL_5_5,NGIQ-BR-00000143,NGIQ-BR-00000144,SPL,SINGLE_SEED_CONTROL,Superior Parietal Lobule,Superior Parietal Lobule,1.0,0.967374,superiorparietal,superiorparietal,SAME_TOP1_TARGET
+IPL_6_1,NGIQ-BR-00000011,NGIQ-BR-00000012,IPL,COMPOSITE_SEED_PENDING,Inferior Parietal Lobule,Inferior Parietal Lobule,0.969985,0.98316,inferiorparietal,inferiorparietal,SAME_TOP1_TARGET
+IPL_6_2,NGIQ-BR-00000145,NGIQ-BR-00000146,IPL,COMPOSITE_SEED_PENDING,Inferior Parietal Lobule,Inferior Parietal Lobule,0.794705,0.927823,inferiorparietal,inferiorparietal,ASYMMETRIC_COVERAGE
+IPL_6_3,NGIQ-BR-00000147,NGIQ-BR-00000148,IPL,COMPOSITE_SEED_PENDING,Supramarginal Gyrus,Supramarginal Gyrus,0.974017,0.794611,supramarginal,supramarginal,ASYMMETRIC_COVERAGE
+IPL_6_4,NGIQ-BR-00000149,NGIQ-BR-00000150,IPL,COMPOSITE_SEED_PENDING,Supramarginal Gyrus,Supramarginal Gyrus,0.82732,0.695634,supramarginal,supramarginal,ASYMMETRIC_COVERAGE
+IPL_6_5,NGIQ-BR-00000151,NGIQ-BR-00000152,IPL,COMPOSITE_SEED_PENDING,Inferior Parietal Lobule,Inferior Parietal Lobule,0.901837,0.917989,inferiorparietal,inferiorparietal,SAME_TOP1_TARGET
+IPL_6_6,NGIQ-BR-00000153,NGIQ-BR-00000154,IPL,COMPOSITE_SEED_PENDING,Supramarginal Gyrus,Supramarginal Gyrus,0.970365,0.965971,supramarginal,supramarginal,SAME_TOP1_TARGET
+PCun_4_1,NGIQ-BR-00000155,NGIQ-BR-00000156,Pcun,SINGLE_SEED_CONTROL,Precuneus,Precuneus,0.9062,0.855178,precuneus,precuneus,SAME_TOP1_TARGET
+PCun_4_2,NGIQ-BR-00000157,NGIQ-BR-00000158,Pcun,SINGLE_SEED_CONTROL,Precuneus,Precuneus,0.903514,0.945191,precuneus,precuneus,SAME_TOP1_TARGET
+PCun_4_3,NGIQ-BR-00000159,NGIQ-BR-00000160,Pcun,SINGLE_SEED_CONTROL,Precuneus,Precuneus,0.963516,0.923723,precuneus,precuneus,SAME_TOP1_TARGET
+PCun_4_4,NGIQ-BR-00000161,NGIQ-BR-00000162,Pcun,SINGLE_SEED_CONTROL,Precuneus,Precuneus,0.95015,0.969338,precuneus,precuneus,SAME_TOP1_TARGET
+PoG_4_1,NGIQ-BR-00000163,NGIQ-BR-00000164,PoG,SINGLE_SEED_CONTROL,Postcentral Gyrus,Postcentral Gyrus,0.987623,0.990146,postcentral,postcentral,SAME_TOP1_TARGET
+PoG_4_2,NGIQ-BR-00000165,NGIQ-BR-00000166,PoG,SINGLE_SEED_CONTROL,Postcentral Gyrus,Postcentral Gyrus,0.910906,0.930181,postcentral,postcentral,SAME_TOP1_TARGET
+PoG_4_3,NGIQ-BR-00000167,NGIQ-BR-00000168,PoG,SINGLE_SEED_CONTROL,Postcentral Gyrus,Postcentral Gyrus,0.899218,0.97951,postcentral,postcentral,SAME_TOP1_TARGET
+PoG_4_4,NGIQ-BR-00000169,NGIQ-BR-00000170,PoG,SINGLE_SEED_CONTROL,Postcentral Gyrus,Postcentral Gyrus,0.951705,0.965445,postcentral,postcentral,SAME_TOP1_TARGET
+INS_6_1,NGIQ-BR-00000013,NGIQ-BR-00000014,INS,SINGLE_SEED_CONTROL,Insula,Insula,0.965258,0.946886,insula,insula,SAME_TOP1_TARGET
+INS_6_2,NGIQ-BR-00000171,NGIQ-BR-00000172,INS,SINGLE_SEED_CONTROL,Insula,Insula,0.601116,0.920097,insula,insula,ASYMMETRIC_COVERAGE
+INS_6_3,NGIQ-BR-00000173,NGIQ-BR-00000174,INS,SINGLE_SEED_CONTROL,Insula,Insula,0.927098,0.93921,insula,insula,SAME_TOP1_TARGET
+INS_6_4,NGIQ-BR-00000175,NGIQ-BR-00000176,INS,SINGLE_SEED_CONTROL,Insula,Insula,0.948582,0.922697,insula,insula,SAME_TOP1_TARGET
+INS_6_5,NGIQ-BR-00000177,NGIQ-BR-00000178,INS,SINGLE_SEED_CONTROL,Insula,Insula,1.0,0.957869,insula,insula,SAME_TOP1_TARGET
+INS_6_6,NGIQ-BR-00000179,NGIQ-BR-00000180,INS,SINGLE_SEED_CONTROL,Insula,Insula,0.735672,0.939262,insula,insula,ASYMMETRIC_COVERAGE
+CG_7_1,NGIQ-BR-00000181,NGIQ-BR-00000182,CG,COMPOSITE_SEED_PENDING,Isthmus Of Cingulate Gyrus,Isthmus Of Cingulate Gyrus,0.608768,0.616038,isthmuscingulate,isthmuscingulate,SAME_TOP1_TARGET
+CG_7_2,NGIQ-BR-00000183,NGIQ-BR-00000184,CG,COMPOSITE_SEED_PENDING,Caudal Anterior Cingulate Cortex,Caudal Anterior Cingulate Cortex,0.57441,0.474679,caudalanteriorcingulate,caudalanteriorcingulate,SAME_TOP1_TARGET
+CG_7_3,NGIQ-BR-00000185,NGIQ-BR-00000186,CG,COMPOSITE_SEED_PENDING,Superior Frontal Gyrus,Caudal Anterior Cingulate Cortex,0.402509,0.805991,superiorfrontal,caudalanteriorcingulate,DIFFERENT_TOP1_TARGET
+CG_7_4,NGIQ-BR-00000187,NGIQ-BR-00000188,CG,COMPOSITE_SEED_PENDING,Isthmus Of Cingulate Gyrus,Isthmus Of Cingulate Gyrus,0.861462,0.892114,isthmuscingulate,isthmuscingulate,SAME_TOP1_TARGET
+CG_7_5,NGIQ-BR-00000189,NGIQ-BR-00000190,CG,COMPOSITE_SEED_PENDING,Caudal Anterior Cingulate Cortex,Caudal Anterior Cingulate Cortex,0.454209,0.489766,caudalanteriorcingulate,caudalanteriorcingulate,SAME_TOP1_TARGET
+CG_7_6,NGIQ-BR-00000191,NGIQ-BR-00000192,CG,COMPOSITE_SEED_PENDING,Posterior Cingulate Cortex,Posterior Cingulate Cortex,0.702128,0.890982,posteriorcingulate,posteriorcingulate,ASYMMETRIC_COVERAGE
+CG_7_7,NGIQ-BR-00000193,NGIQ-BR-00000194,CG,COMPOSITE_SEED_PENDING,Rostral Anterior Cingulate Cortex,Rostral Anterior Cingulate Cortex,0.936685,0.900935,rostralanteriorcingulate,rostralanteriorcingulate,SAME_TOP1_TARGET
+MVOcC_5_1,NGIQ-BR-00000015,NGIQ-BR-00000016,MVOcC,HUMAN_AUTHORITY_APPROVED_CANDIDATE,Lingual Gyrus,Lingual Gyrus,0.981308,0.790174,lingual,lingual,ASYMMETRIC_COVERAGE
+MVOcC_5_2,NGIQ-BR-00000195,NGIQ-BR-00000196,MVOcC,HUMAN_AUTHORITY_APPROVED_CANDIDATE,Pericalcarine Cortex,Pericalcarine Cortex,0.415708,0.44259,pericalcarine,pericalcarine,SAME_TOP1_TARGET
+MVOcC_5_3,NGIQ-BR-00000197,NGIQ-BR-00000198,MVOcC,HUMAN_AUTHORITY_APPROVED_CANDIDATE,Pericalcarine Cortex,Cuneus,0.477893,0.560852,pericalcarine,cuneus,DIFFERENT_TOP1_TARGET
+MVOcC_5_4,NGIQ-BR-00000199,NGIQ-BR-00000200,MVOcC,HUMAN_AUTHORITY_APPROVED_CANDIDATE,Lingual Gyrus,Lingual Gyrus,0.979464,0.923177,lingual,lingual,SAME_TOP1_TARGET
+MVOcC_5_5,NGIQ-BR-00000201,NGIQ-BR-00000202,MVOcC,COMPOSITE_SEED_PENDING,Lingual Gyrus,Lingual Gyrus,0.379668,0.47494,lingual,lingual,SAME_TOP1_TARGET
+LOcC_4_1,NGIQ-BR-00000203,NGIQ-BR-00000204,LOcC,SINGLE_SEED_CONTROL,Lateral Occipital Cortex,Lateral Occipital Cortex,0.907963,0.951511,lateraloccipital,lateraloccipital,SAME_TOP1_TARGET
+LOcC_4_2,NGIQ-BR-00000205,NGIQ-BR-00000206,LOcC,SINGLE_SEED_CONTROL,Lateral Occipital Cortex,Lateral Occipital Cortex,0.770183,0.820695,lateraloccipital,lateraloccipital,SAME_TOP1_TARGET
+LOcC_4_3,NGIQ-BR-00000207,NGIQ-BR-00000208,LOcC,SINGLE_SEED_CONTROL,Lateral Occipital Cortex,Lateral Occipital Cortex,0.964827,0.921053,lateraloccipital,lateraloccipital,SAME_TOP1_TARGET
+LOcC_4_4,NGIQ-BR-00000209,NGIQ-BR-00000210,LOcC,SINGLE_SEED_CONTROL,Lateral Occipital Cortex,Lateral Occipital Cortex,0.945525,0.979138,lateraloccipital,lateraloccipital,SAME_TOP1_TARGET
+LOcC_2_1,NGIQ-BR-00000211,NGIQ-BR-00000212,LOcC,SINGLE_SEED_CONTROL,Superior Parietal Lobule,Superior Parietal Lobule,0.844081,0.831426,superiorparietal,superiorparietal,SAME_TOP1_TARGET
+LOcC_2_2,NGIQ-BR-00000213,NGIQ-BR-00000214,LOcC,SINGLE_SEED_CONTROL,Superior Parietal Lobule,Superior Parietal Lobule,0.991187,0.943599,superiorparietal,superiorparietal,SAME_TOP1_TARGET

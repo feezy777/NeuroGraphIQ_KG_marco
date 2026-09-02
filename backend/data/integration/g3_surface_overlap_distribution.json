@@ -1,0 +1,35 @@
+{
+  "parcels_measured": 210,
+  "hemispheres": {
+    "left": 105,
+    "right": 105
+  },
+  "cohorts": {
+    "SINGLE_SEED_CONTROL": 108,
+    "COMPOSITE_SEED_PENDING": 90,
+    "SEED_TARGET_NOT_IN_G1": 4,
+    "HUMAN_AUTHORITY_APPROVED_CANDIDATE": 8
+  },
+  "top1_g1_coverage_bins": {
+    ">=0.95": 87,
+    "0.90-0.95": 42,
+    "0.80-0.90": 26,
+    "0.70-0.80": 14,
+    "0.50-0.70": 24,
+    "<0.50": 17
+  },
+  "single_seed": {
+    "n": 108,
+    "median": 0.951226,
+    "min": 0.594683,
+    "p5": 0.76461315,
+    "p95": 1.0,
+    "max": 1.0,
+    "expected_match": 104
+  },
+  "unlabeled_ratio_median": 0.0,
+  "unlabeled_ratio_max": 0.0,
+  "coverage_sum_max_error": 0.0,
+  "composite_cortical_count": 98,
+  "no_g1_target_coverage_parcels": 24
+}

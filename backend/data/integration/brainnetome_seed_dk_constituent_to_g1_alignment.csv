@@ -1,0 +1,79 @@
+﻿seed_mask_code,dk_constituent_name,hemisphere,g1_entity_id,g1_name_en,g1_name_zh,g1_source_name_original,alignment_status,alignment_method
+SFG,Superior Frontal Gyrus,left,NGIQ-BR-00000294,Left Superior Frontal Gyrus,左额上回,left superior frontal,ALIGNED,DETERMINISTIC_DK_CONCEPT_MAP
+SFG,Superior Frontal Gyrus,right,NGIQ-BR-00000325,Right Superior Frontal Gyrus,右额上回,right superior frontal,ALIGNED,DETERMINISTIC_DK_CONCEPT_MAP
+MFG,Anterior and Posterior part of Middle Frontal Gyrus,left,,,,,AMBIGUOUS,DETERMINISTIC_DK_CONCEPT_MAP
+MFG,Anterior and Posterior part of Middle Frontal Gyrus,right,,,,,AMBIGUOUS,DETERMINISTIC_DK_CONCEPT_MAP
+IFG,Pars Opercularis,left,NGIQ-BR-00000284,"Left Inferior Frontal Gyrus, Pars Opercularis",左侧额下回盖部,left pars opercularis,ALIGNED,DETERMINISTIC_DK_CONCEPT_MAP
+IFG,Pars Triangularis,left,NGIQ-BR-00000286,"Left Inferior Frontal Gyrus, Pars Triangularis",左侧额下回三角部,left pars triangularis,ALIGNED,DETERMINISTIC_DK_CONCEPT_MAP
+IFG,Pars Opercularis,right,NGIQ-BR-00000315,"Right Inferior Frontal Gyrus, Pars Opercularis",右侧额下回盖部,right pars opercularis,ALIGNED,DETERMINISTIC_DK_CONCEPT_MAP
+IFG,Pars Triangularis,right,NGIQ-BR-00000317,"Right Inferior Frontal Gyrus, Pars Triangularis",右侧额下回三角部,right pars triangularis,ALIGNED,DETERMINISTIC_DK_CONCEPT_MAP
+OrG,Pars Orbitalis,left,NGIQ-BR-00000285,"Left Inferior Frontal Gyrus, Pars Orbitalis",左侧额下回眶部,left pars orbitalis,ALIGNED,DETERMINISTIC_DK_CONCEPT_MAP
+OrG,Lateral and Medial Divisions of Orbital Gyrus,left,,,,,AMBIGUOUS,DETERMINISTIC_DK_CONCEPT_MAP
+OrG,Frontal Pole,left,,,,,NO_G1_TARGET,DETERMINISTIC_DK_CONCEPT_MAP
+OrG,Pars Orbitalis,right,NGIQ-BR-00000316,"Right Inferior Frontal Gyrus, Pars Orbitalis",右侧额下回眶部,right pars orbitalis,ALIGNED,DETERMINISTIC_DK_CONCEPT_MAP
+OrG,Lateral and Medial Divisions of Orbital Gyrus,right,,,,,AMBIGUOUS,DETERMINISTIC_DK_CONCEPT_MAP
+OrG,Frontal Pole,right,,,,,NO_G1_TARGET,DETERMINISTIC_DK_CONCEPT_MAP
+PrG,Precentral Gyrus,left,NGIQ-BR-00000290,Left Precentral Gyrus,左中央前回,left precentral,ALIGNED,DETERMINISTIC_DK_CONCEPT_MAP
+PrG,Precentral Gyrus,right,NGIQ-BR-00000321,Right Precentral Gyrus,右中央前回,right precentral,ALIGNED,DETERMINISTIC_DK_CONCEPT_MAP
+PCL,Paracentral Lobule,left,NGIQ-BR-00000283,Left Paracentral Lobule,左中央旁小叶,left paracentral,ALIGNED,DETERMINISTIC_DK_CONCEPT_MAP
+PCL,Paracentral Lobule,right,NGIQ-BR-00000314,Right Paracentral Lobule,右中央旁小叶,right paracentral,ALIGNED,DETERMINISTIC_DK_CONCEPT_MAP
+STG,Superior Temporal Gyrus,left,NGIQ-BR-00000296,Left Superior Temporal Gyrus,左颞上回,left superior temporal,ALIGNED,DETERMINISTIC_DK_CONCEPT_MAP
+STG,Temporal Pole,left,,,,,NO_G1_TARGET,DETERMINISTIC_DK_CONCEPT_MAP
+STG,Transverse Temporal Cortex,left,NGIQ-BR-00000298,Left Transverse Temporal Gyrus,左颞横回,left transverse temporal,ALIGNED,DETERMINISTIC_DK_CONCEPT_MAP
+STG,Superior Temporal Gyrus,right,NGIQ-BR-00000327,Right Superior Temporal Gyrus,右颞上回,right superior temporal,ALIGNED,DETERMINISTIC_DK_CONCEPT_MAP
+STG,Temporal Pole,right,,,,,NO_G1_TARGET,DETERMINISTIC_DK_CONCEPT_MAP
+STG,Transverse Temporal Cortex,right,NGIQ-BR-00000329,Right Transverse Temporal Gyrus,右颞横回,right transverse temporal,ALIGNED,DETERMINISTIC_DK_CONCEPT_MAP
+MTG,Middle Temporal Gyrus,left,NGIQ-BR-00000281,Left Middle Temporal Gyrus,左颞中回,left middle temporal,ALIGNED,DETERMINISTIC_DK_CONCEPT_MAP
+MTG,Middle Temporal Gyrus,right,NGIQ-BR-00000312,Right Middle Temporal Gyrus,右颞中回,right middle temporal,ALIGNED,DETERMINISTIC_DK_CONCEPT_MAP
+ITG,Inferior Temporal Gyrus,left,NGIQ-BR-00000275,Left Inferior Temporal Gyrus,左颞下回,left inferior temporal,ALIGNED,DETERMINISTIC_DK_CONCEPT_MAP
+ITG,Inferior Temporal Gyrus,right,NGIQ-BR-00000306,Right Inferior Temporal Gyrus,右颞下回,right inferior temporal,ALIGNED,DETERMINISTIC_DK_CONCEPT_MAP
+FuG,Fusiform Gyrus,left,NGIQ-BR-00000273,Left Fusiform Gyrus,左梭状回,left fusiform,ALIGNED,DETERMINISTIC_DK_CONCEPT_MAP
+FuG,Fusiform Gyrus,right,NGIQ-BR-00000304,Right Fusiform Gyrus,右梭状回,right fusiform,ALIGNED,DETERMINISTIC_DK_CONCEPT_MAP
+PhG,Entorhinal Area,left,NGIQ-BR-00000272,Left Entorhinal Cortex,左内嗅皮质,left entorhinal,ALIGNED,DETERMINISTIC_DK_CONCEPT_MAP
+PhG,Parahippocampal Gyrus,left,NGIQ-BR-00000282,Left Parahippocampal Gyrus,左海马旁回,left parahippocampal,ALIGNED,DETERMINISTIC_DK_CONCEPT_MAP
+PhG,Entorhinal Area,right,NGIQ-BR-00000303,Right Entorhinal Cortex,右内嗅皮质,right entorhinal,ALIGNED,DETERMINISTIC_DK_CONCEPT_MAP
+PhG,Parahippocampal Gyrus,right,NGIQ-BR-00000313,Right Parahippocampal Gyrus,右海马旁回,right parahippocampal,ALIGNED,DETERMINISTIC_DK_CONCEPT_MAP
+Psts,Banks of the Superior Temporal Sulcus,left,,,,,NO_G1_TARGET,DETERMINISTIC_DK_CONCEPT_MAP
+Psts,Banks of the Superior Temporal Sulcus,right,,,,,NO_G1_TARGET,DETERMINISTIC_DK_CONCEPT_MAP
+SPL,Superior Parietal Lobule,left,NGIQ-BR-00000295,Left Superior Parietal Lobule,左顶上小叶,left superior parietal,ALIGNED,DETERMINISTIC_DK_CONCEPT_MAP
+SPL,Superior Parietal Lobule,right,NGIQ-BR-00000326,Right Superior Parietal Lobule,右顶上小叶,right superior parietal,ALIGNED,DETERMINISTIC_DK_CONCEPT_MAP
+IPL,Inferior Parietal Lobule,left,NGIQ-BR-00000274,Left Inferior Parietal Lobule,左侧顶下小叶,left inferior parietal,ALIGNED,DETERMINISTIC_DK_CONCEPT_MAP
+IPL,Supramarginal Gyrus,left,NGIQ-BR-00000297,Left Supramarginal Gyrus,左缘上回,left supramarginal,ALIGNED,DETERMINISTIC_DK_CONCEPT_MAP
+IPL,Inferior Parietal Lobule,right,NGIQ-BR-00000305,Right Inferior Parietal Lobule,右侧顶下小叶,right inferior parietal,ALIGNED,DETERMINISTIC_DK_CONCEPT_MAP
+IPL,Supramarginal Gyrus,right,NGIQ-BR-00000328,Right Supramarginal Gyrus,右缘上回,right supramarginal,ALIGNED,DETERMINISTIC_DK_CONCEPT_MAP
+Pcun,Precuneus Cortex,left,NGIQ-BR-00000291,Left Precuneus,左楔前叶,left precuneus,ALIGNED,DETERMINISTIC_DK_CONCEPT_MAP
+Pcun,Precuneus Cortex,right,NGIQ-BR-00000322,Right Precuneus,右楔前叶,right precuneus,ALIGNED,DETERMINISTIC_DK_CONCEPT_MAP
+PoG,Postcentral Gyrus,left,NGIQ-BR-00000288,Left Postcentral Gyrus,左中央后回,left postcentral,ALIGNED,DETERMINISTIC_DK_CONCEPT_MAP
+PoG,Postcentral Gyrus,right,NGIQ-BR-00000319,Right Postcentral Gyrus,右中央后回,right postcentral,ALIGNED,DETERMINISTIC_DK_CONCEPT_MAP
+INS,Insular Cortex,left,NGIQ-BR-00000299,Left Insula,左岛叶,left insula,ALIGNED,DETERMINISTIC_DK_CONCEPT_MAP
+INS,Insular Cortex,right,NGIQ-BR-00000330,Right Insula,右岛叶,right insula,ALIGNED,DETERMINISTIC_DK_CONCEPT_MAP
+CG,Anterior Cingulate Gyrus,left,NGIQ-BR-00000292,Left Rostral Anterior Cingulate Cortex,左喙侧前扣带皮质,left rostral anterior cingulate,ALIGNED,DETERMINISTIC_DK_CONCEPT_MAP
+CG,Posterior Cingulate Gyrus,left,NGIQ-BR-00000289,Left Posterior Cingulate Cortex,左后扣带皮质,left posterior cingulate,ALIGNED,DETERMINISTIC_DK_CONCEPT_MAP
+CG,Caudal Part of Anterior Cingulate Gyrus,left,NGIQ-BR-00000269,Left Caudal Anterior Cingulate Cortex,左尾侧前扣带皮质,left caudal anterior cingulate,ALIGNED,DETERMINISTIC_DK_CONCEPT_MAP
+CG,Isthmus of Cingulate Gyrus,left,NGIQ-BR-00000276,Left Isthmus Of Cingulate Gyrus,左扣带回峡部,left isthmus cingulate,ALIGNED,DETERMINISTIC_DK_CONCEPT_MAP
+CG,Anterior Cingulate Gyrus,right,NGIQ-BR-00000323,Right Rostral Anterior Cingulate Cortex,右喙侧前扣带皮质,right rostral anterior cingulate,ALIGNED,DETERMINISTIC_DK_CONCEPT_MAP
+CG,Posterior Cingulate Gyrus,right,NGIQ-BR-00000320,Right Posterior Cingulate Cortex,右后扣带皮质,right posterior cingulate,ALIGNED,DETERMINISTIC_DK_CONCEPT_MAP
+CG,Caudal Part of Anterior Cingulate Gyrus,right,NGIQ-BR-00000300,Right Caudal Anterior Cingulate Cortex,右尾侧前扣带皮质,right caudal anterior cingulate,ALIGNED,DETERMINISTIC_DK_CONCEPT_MAP
+CG,Isthmus of Cingulate Gyrus,right,NGIQ-BR-00000307,Right Isthmus Of Cingulate Gyrus,右扣带回峡部,right isthmus cingulate,ALIGNED,DETERMINISTIC_DK_CONCEPT_MAP
+MVOcC,Cuneus Cortex,left,NGIQ-BR-00000271,Left Cuneus,左楔叶,left cuneus,ALIGNED,DETERMINISTIC_DK_CONCEPT_MAP
+MVOcC,Pericalcarine Cortex,left,NGIQ-BR-00000287,Left Pericalcarine Cortex,左侧距状沟周围皮质,left pericalcarine,ALIGNED,DETERMINISTIC_DK_CONCEPT_MAP
+MVOcC,Lingual Gyrus,left,NGIQ-BR-00000279,Left Lingual Gyrus,左舌回,left lingual gyrus,ALIGNED,DETERMINISTIC_DK_CONCEPT_MAP
+MVOcC,Cuneus Cortex,right,NGIQ-BR-00000302,Right Cuneus,右楔叶,right cuneus,ALIGNED,DETERMINISTIC_DK_CONCEPT_MAP
+MVOcC,Pericalcarine Cortex,right,NGIQ-BR-00000318,Right Pericalcarine Cortex,右侧距状沟周围皮质,right pericalcarine,ALIGNED,DETERMINISTIC_DK_CONCEPT_MAP
+MVOcC,Lingual Gyrus,right,NGIQ-BR-00000310,Right Lingual Gyrus,右舌回,right lingual gyrus,ALIGNED,DETERMINISTIC_DK_CONCEPT_MAP
+LOcC,Lateral Occipital Gyrus,left,NGIQ-BR-00000277,Left Lateral Occipital Cortex,左外侧枕叶皮质,left lateral occipital,ALIGNED,DETERMINISTIC_DK_CONCEPT_MAP
+LOcC,Lateral Occipital Gyrus,right,NGIQ-BR-00000308,Right Lateral Occipital Cortex,右外侧枕叶皮质,right lateral occipital,ALIGNED,DETERMINISTIC_DK_CONCEPT_MAP
+Amyg,Amygdala,left,NGIQ-BR-00000253,Left Amygdala,左杏仁核,left amygdala,ALIGNED,DETERMINISTIC_DK_CONCEPT_MAP
+Amyg,Amygdala,right,NGIQ-BR-00000261,Right Amygdala,右杏仁核,right amygdala,ALIGNED,DETERMINISTIC_DK_CONCEPT_MAP
+Hipp,Hippocampus,left,NGIQ-BR-00000252,Left Hippocampus,左海马,left hippocampus,ALIGNED,DETERMINISTIC_DK_CONCEPT_MAP
+Hipp,Hippocampus,right,NGIQ-BR-00000260,Right Hippocampus,右海马,right hippocampus,ALIGNED,DETERMINISTIC_DK_CONCEPT_MAP
+BG,Caudate Nucleus,left,NGIQ-BR-00000248,Left Caudate Nucleus,左尾状核,left caudate,ALIGNED,DETERMINISTIC_DK_CONCEPT_MAP
+BG,Putamen,left,NGIQ-BR-00000249,Left Putamen,左壳核,left putamen,ALIGNED,DETERMINISTIC_DK_CONCEPT_MAP
+BG,Globus Pallidus,left,NGIQ-BR-00000250,Left Globus Pallidus,左苍白球,left pallidum,ALIGNED,DETERMINISTIC_DK_CONCEPT_MAP
+BG,Nucleus Accumbens,left,NGIQ-BR-00000254,Left Nucleus Accumbens,左伏隔核,left accumbens area,ALIGNED,DETERMINISTIC_DK_CONCEPT_MAP
+BG,Caudate Nucleus,right,NGIQ-BR-00000257,Right Caudate Nucleus,右尾状核,right caudate,ALIGNED,DETERMINISTIC_DK_CONCEPT_MAP
+BG,Putamen,right,NGIQ-BR-00000258,Right Putamen,右壳核,right putamen,ALIGNED,DETERMINISTIC_DK_CONCEPT_MAP
+BG,Globus Pallidus,right,NGIQ-BR-00000259,Right Globus Pallidus,右苍白球,right pallidum,ALIGNED,DETERMINISTIC_DK_CONCEPT_MAP
+BG,Nucleus Accumbens,right,NGIQ-BR-00000262,Right Nucleus Accumbens,右伏隔核,right accumbens area,ALIGNED,DETERMINISTIC_DK_CONCEPT_MAP
+Tha,Thalamus,left,NGIQ-BR-00000247,Left Thalamus,左丘脑,left thalamus proper,ALIGNED,DETERMINISTIC_DK_CONCEPT_MAP
+Tha,Thalamus,right,NGIQ-BR-00000256,Right Thalamus,右丘脑,right thalamus proper,ALIGNED,DETERMINISTIC_DK_CONCEPT_MAP
