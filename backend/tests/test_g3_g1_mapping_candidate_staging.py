@@ -266,15 +266,16 @@ def test_summary_consistent():
 # ---------------------------------------------------------------------------
 
 def test_production_aggregation_zero():
-    # Phase 1F-F loaded the 246 candidates as proposed+pending; the staging
-    # gate's zero-insert guarantee became "all loaded rows are proposed+pending".
+    # G3→G1 slice only. The later G4→G3 chain must not be counted here.
     conn = _conn(PROD)
     try:
         cur = conn.cursor()
-        cur.execute("SELECT count(*) FROM brain_region_aggregation_mappings")
+        cur.execute("SELECT count(*) FROM brain_region_aggregation_mappings"
+                    " WHERE source_granularity_level='G3_MESO_FINE' AND target_granularity_level='G1_MACRO'")
         total = cur.fetchone()[0]
         cur.execute("SELECT count(*) FROM brain_region_aggregation_mappings"
-                    " WHERE record_status='active' AND review_status='approved'")
+                    " WHERE source_granularity_level='G3_MESO_FINE' AND target_granularity_level='G1_MACRO'"
+                    " AND record_status='active' AND review_status='approved'")
         active = cur.fetchone()[0]
         # 1F-H approved, then 1F-I promoted the batch to active
         assert total == 246 and active == 246

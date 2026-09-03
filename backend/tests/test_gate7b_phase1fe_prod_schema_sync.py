@@ -192,17 +192,19 @@ def test_prod_e2e_aggregation_schema_parity():
 # ---------------------------------------------------------------------------
 
 def test_prod_aggregation_rows_zero():
-    # Phase 1F-F loaded the 246 candidates as proposed+pending; the schema-sync
-    # gate's zero-insert guarantee became "all loaded rows are proposed+pending".
+    # G3→G1 slice only (the schema-sync gate governs the G3→G1 batch). The G4→G3
+    # batch (461 rows) is a separate, later-frozen granularity chain and must not
+    # be counted here. Final G3→G1 state: 246 active+approved.
     conn = _conn(PROD)
     try:
         cur = conn.cursor()
-        cur.execute("SELECT count(*) FROM brain_region_aggregation_mappings")
+        cur.execute("SELECT count(*) FROM brain_region_aggregation_mappings"
+                    " WHERE source_granularity_level='G3_MESO_FINE' AND target_granularity_level='G1_MACRO'")
         total = cur.fetchone()[0]
         cur.execute("SELECT count(*) FROM brain_region_aggregation_mappings"
-                    " WHERE record_status='active' AND review_status='approved'")
+                    " WHERE source_granularity_level='G3_MESO_FINE' AND target_granularity_level='G1_MACRO'"
+                    " AND record_status='active' AND review_status='approved'")
         active = cur.fetchone()[0]
-        # 1F-H approved, then 1F-I promoted the batch to active
         assert total == 246 and active == 246
     finally:
         conn.close()

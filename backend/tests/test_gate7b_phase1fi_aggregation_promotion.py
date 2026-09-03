@@ -42,10 +42,14 @@ def _conn(db=PROD):
 
 
 def _db_rows():
+    """G3→G1 slice only. The later G4→G3 chain shares the table and must not be
+    scanned by this G3→G1 promotion gate."""
     conn = _conn()
     try:
         cur = conn.cursor()
-        cur.execute(f"SELECT * FROM {TABLE} ORDER BY mapping_pk")
+        cur.execute(f"SELECT * FROM {TABLE} "
+                    f"WHERE source_granularity_level='G3_MESO_FINE' AND target_granularity_level='G1_MACRO' "
+                    f"ORDER BY mapping_pk")
         cols = [d[0] for d in cur.description]
         return [dict(zip(cols, r)) for r in cur.fetchall()]
     finally:
@@ -159,7 +163,9 @@ def test_scientific_payload_unchanged():
     conn = _conn()
     try:
         cur = conn.cursor()
-        cur.execute(f"SELECT {', '.join(PAYLOAD_COLS)} FROM {TABLE} ORDER BY mapping_id")
+        cur.execute(f"SELECT {', '.join(PAYLOAD_COLS)} FROM {TABLE} "
+                    f"WHERE source_granularity_level='G3_MESO_FINE' AND target_granularity_level='G1_MACRO' "
+                    f"ORDER BY mapping_id")
         rows = cur.fetchall()
     finally:
         conn.close()
@@ -173,7 +179,8 @@ def test_formal_primary_query_172():
     try:
         cur = conn.cursor()
         cur.execute(f"""SELECT count(*) FROM {TABLE}
-            WHERE mapping_relation='contained_in' AND record_status='active'
+            WHERE source_granularity_level='G3_MESO_FINE' AND target_granularity_level='G1_MACRO'
+              AND mapping_relation='contained_in' AND record_status='active'
               AND review_status='approved' AND rollup_eligible=TRUE AND is_primary_rollup=TRUE""")
         assert cur.fetchone()[0] == 172
     finally:
@@ -186,7 +193,8 @@ def test_formal_all_active_query_246():
     try:
         cur = conn.cursor()
         cur.execute(f"""SELECT count(*) FROM {TABLE}
-            WHERE record_status='active' AND review_status='approved'""")
+            WHERE source_granularity_level='G3_MESO_FINE' AND target_granularity_level='G1_MACRO'
+              AND record_status='active' AND review_status='approved'""")
         assert cur.fetchone()[0] == 246
     finally:
         conn.close()
@@ -198,7 +206,8 @@ def test_formal_overlap_query_74():
     try:
         cur = conn.cursor()
         cur.execute(f"""SELECT count(*) FROM {TABLE}
-            WHERE record_status='active' AND review_status='approved'
+            WHERE source_granularity_level='G3_MESO_FINE' AND target_granularity_level='G1_MACRO'
+              AND record_status='active' AND review_status='approved'
               AND mapping_relation IN ('dominant_overlap','partial_overlap')""")
         assert cur.fetchone()[0] == 74
     finally:
@@ -212,7 +221,8 @@ def test_reverse_g1_to_g3_smoke():
         cur = conn.cursor()
         cur.execute(f"""SELECT target_region_pk, count(DISTINCT source_region_pk)
             FROM {TABLE}
-            WHERE record_status='active' AND review_status='approved'
+            WHERE source_granularity_level='G3_MESO_FINE' AND target_granularity_level='G1_MACRO'
+              AND record_status='active' AND review_status='approved'
               AND mapping_relation='contained_in' AND rollup_eligible=TRUE
             GROUP BY target_region_pk""")
         rows = cur.fetchall()
@@ -232,7 +242,8 @@ def test_rerun_preserves_reviewed_at():
     conn = _conn()
     try:
         cur = conn.cursor()
-        cur.execute(f"SELECT count(DISTINCT reviewed_at) FROM {TABLE}")
+        cur.execute(f"SELECT count(DISTINCT reviewed_at) FROM {TABLE} "
+                    f"WHERE source_granularity_level='G3_MESO_FINE' AND target_granularity_level='G1_MACRO'")
         assert cur.fetchone()[0] == 1
     finally:
         conn.close()

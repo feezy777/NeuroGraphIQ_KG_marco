@@ -40,10 +40,17 @@ def _conn(db=PROD):
 
 
 def _db_rows():
+    """G3→G1 slice only (source G3_MESO_FINE -> target G1_MACRO).
+
+    This gate's module-level DBROWS describe the G3→G1 batch. Since the frozen
+    aggregation table now also carries the later G4→G3 chain (461 rows), every
+    whole-table scan here is scoped by canonical granularity (never by ID range)."""
     conn = _conn()
     try:
         cur = conn.cursor()
-        cur.execute(f"SELECT * FROM {TABLE} ORDER BY mapping_pk")
+        cur.execute(f"SELECT * FROM {TABLE} "
+                    f"WHERE source_granularity_level='G3_MESO_FINE' AND target_granularity_level='G1_MACRO' "
+                    f"ORDER BY mapping_pk")
         cols = [d[0] for d in cur.description]
         return [dict(zip(cols, r)) for r in cur.fetchall()]
     finally:
@@ -193,14 +200,21 @@ def test_exclusions_leak_zero():
 # ---------------------------------------------------------------------------
 
 def test_source_g3_target_g1():
+    # G3→G1 slice: within the source='G3_MESO_FINE' target='G1_MACRO' batch,
+    # the resolved brain_regions granularities must exactly match.
     conn = _conn()
     try:
         cur = conn.cursor()
         cur.execute("""SELECT count(*) FROM brain_region_aggregation_mappings b
             JOIN brain_regions s ON s.entity_pk=b.source_region_pk
             JOIN brain_regions t ON t.entity_pk=b.target_region_pk
-            WHERE s.granularity_level<>'G3_MESO_FINE' OR t.granularity_level<>'G1_MACRO'""")
+            WHERE b.source_granularity_level='G3_MESO_FINE' AND b.target_granularity_level='G1_MACRO'
+              AND (s.granularity_level<>'G3_MESO_FINE' OR t.granularity_level<>'G1_MACRO')""")
         assert cur.fetchone()[0] == 0
+        # the G3→G1 slice is exactly 246 rows
+        cur.execute("SELECT count(*) FROM brain_region_aggregation_mappings"
+                    " WHERE source_granularity_level='G3_MESO_FINE' AND target_granularity_level='G1_MACRO'")
+        assert cur.fetchone()[0] == 246
     finally:
         conn.close()
 
@@ -212,7 +226,8 @@ def test_hemisphere_mismatch_zero():
         cur.execute("""SELECT count(*) FROM brain_region_aggregation_mappings b
             JOIN brain_regions s ON s.entity_pk=b.source_region_pk
             JOIN brain_regions t ON t.entity_pk=b.target_region_pk
-            WHERE s.hemisphere<>t.hemisphere""")
+            WHERE b.source_granularity_level='G3_MESO_FINE' AND b.target_granularity_level='G1_MACRO'
+              AND s.hemisphere<>t.hemisphere""")
         assert cur.fetchone()[0] == 0
     finally:
         conn.close()

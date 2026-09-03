@@ -41,10 +41,14 @@ def _conn(db=PROD):
 
 
 def _db_rows():
+    """G3→G1 slice only. The later G4→G3 chain lives in the same table and must
+    not be scanned by this G3→G1 approval gate."""
     conn = _conn()
     try:
         cur = conn.cursor()
-        cur.execute(f"SELECT * FROM {TABLE} ORDER BY mapping_pk")
+        cur.execute(f"SELECT * FROM {TABLE} "
+                    f"WHERE source_granularity_level='G3_MESO_FINE' AND target_granularity_level='G1_MACRO' "
+                    f"ORDER BY mapping_pk")
         cols = [d[0] for d in cur.description]
         return [dict(zip(cols, r)) for r in cur.fetchall()]
     finally:

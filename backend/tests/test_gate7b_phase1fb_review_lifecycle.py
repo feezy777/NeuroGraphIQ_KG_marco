@@ -285,17 +285,18 @@ def test_deprecated_and_non_primary_rows_not_blocked(db):
 # ---------------------------------------------------------------------------
 
 def test_production_mapping_count_zero():
-    # Phase 1F-F loaded the 246 candidates as proposed+pending; the schema-only
-    # gate's zero-insert guarantee became "all loaded rows are proposed+pending".
+    # G3→G1 slice only. The later G4→G3 chain (461 rows) is a separate granularity
+    # batch and must not be counted by this G3→G1 review-lifecycle gate.
     conn = _conn(PROD)
     try:
         cur = conn.cursor()
-        cur.execute("SELECT count(*) FROM brain_region_aggregation_mappings")
+        cur.execute("SELECT count(*) FROM brain_region_aggregation_mappings"
+                    " WHERE source_granularity_level='G3_MESO_FINE' AND target_granularity_level='G1_MACRO'")
         total = cur.fetchone()[0]
         cur.execute("SELECT count(*) FROM brain_region_aggregation_mappings"
-                    " WHERE record_status='active' AND review_status='approved'")
+                    " WHERE source_granularity_level='G3_MESO_FINE' AND target_granularity_level='G1_MACRO'"
+                    " AND record_status='active' AND review_status='approved'")
         active = cur.fetchone()[0]
-        # 1F-H approved, then 1F-I promoted the batch to active
         assert total == 246 and active == 246
     finally:
         conn.close()

@@ -42,10 +42,14 @@ def _conn(db=PROD):
 
 
 def _db_rows():
+    """G3→G1 slice only. The frozen table also carries the later G4→G3 chain;
+    all G3→G1 gate scans are scoped by canonical granularity."""
     conn = _conn()
     try:
         cur = conn.cursor()
-        cur.execute(f"SELECT * FROM {TABLE} ORDER BY mapping_pk")
+        cur.execute(f"SELECT * FROM {TABLE} "
+                    f"WHERE source_granularity_level='G3_MESO_FINE' AND target_granularity_level='G1_MACRO' "
+                    f"ORDER BY mapping_pk")
         cols = [d[0] for d in cur.description]
         return [dict(zip(cols, r)) for r in cur.fetchall()]
     finally:
@@ -168,7 +172,8 @@ def test_identity_granularity():
         cur.execute(f"""SELECT count(*) FROM {TABLE} b
             JOIN brain_regions s ON s.entity_pk=b.source_region_pk
             JOIN brain_regions t ON t.entity_pk=b.target_region_pk
-            WHERE s.granularity_level<>'G3_MESO_FINE' OR t.granularity_level<>'G1_MACRO'""")
+            WHERE b.source_granularity_level='G3_MESO_FINE' AND b.target_granularity_level='G1_MACRO'
+              AND (s.granularity_level<>'G3_MESO_FINE' OR t.granularity_level<>'G1_MACRO')""")
         assert cur.fetchone()[0] == 0
     finally:
         conn.close()
@@ -182,7 +187,8 @@ def test_hemisphere_zero():
         cur.execute(f"""SELECT count(*) FROM {TABLE} b
             JOIN brain_regions s ON s.entity_pk=b.source_region_pk
             JOIN brain_regions t ON t.entity_pk=b.target_region_pk
-            WHERE s.hemisphere<>t.hemisphere""")
+            WHERE b.source_granularity_level='G3_MESO_FINE' AND b.target_granularity_level='G1_MACRO'
+              AND s.hemisphere<>t.hemisphere""")
         assert cur.fetchone()[0] == 0
     finally:
         conn.close()
@@ -239,11 +245,11 @@ def test_no_production_mutation():
     conn = _conn()
     try:
         cur = conn.cursor()
-        cur.execute(f"SELECT count(*) FROM {TABLE} WHERE review_status='approved'")
+        cur.execute(f"SELECT count(*) FROM {TABLE} WHERE source_granularity_level='G3_MESO_FINE' AND target_granularity_level='G1_MACRO' AND review_status='approved'")
         assert cur.fetchone()[0] == 246
-        cur.execute(f"SELECT count(*) FROM {TABLE} WHERE record_status='active'")
+        cur.execute(f"SELECT count(*) FROM {TABLE} WHERE source_granularity_level='G3_MESO_FINE' AND target_granularity_level='G1_MACRO' AND record_status='active'")
         assert cur.fetchone()[0] == 246
-        cur.execute(f"SELECT count(*) FROM {TABLE} WHERE rollup_eligible=TRUE OR is_primary_rollup=TRUE")
+        cur.execute(f"SELECT count(*) FROM {TABLE} WHERE source_granularity_level='G3_MESO_FINE' AND target_granularity_level='G1_MACRO' AND (rollup_eligible=TRUE OR is_primary_rollup=TRUE)")
         assert cur.fetchone()[0] == 172
     finally:
         conn.close()
