@@ -1,0 +1,15 @@
+{
+  "canonical_g4_count": 440,
+  "spatial_identity_aligned": 440,
+  "identity_alignment_status": "440/440 DETERMINISTIC via julich_source_region_id",
+  "official_spaces": [
+    "MNI 152 ICBM 2009c Nonlinear Asymmetric",
+    "MNI Colin 27"
+  ],
+  "map_semantics": "OVERLAPPING_PROBABILISTIC_ATLAS=TRUE",
+  "available_map_files_in_repo": [],
+  "map_acquirable_via": "EBRAINS DOI 10.25493/KNSN-XB4 via siibra (not installed) or direct EBRAINS dataset download",
+  "grid_resolution_known": false,
+  "affine_known": false,
+  "note": "Julich-Brain = probabilistic cytoarchitectonic maps (10 post-mortem subjects); each area is a probability map; whole-brain MPM is derived, not the native representation. Do NOT treat as a single deterministic single-label volume."
+}

@@ -1,0 +1,69 @@
+{
+  "phase": "G4_G3_AGGREGATION_PROMOTION_V1",
+  "prepromotion": {
+    "total": 461,
+    "proposed": 461,
+    "active": 0,
+    "approved": 461,
+    "rollup": 0,
+    "primary": 0
+  },
+  "attempted": 461,
+  "updated": 461,
+  "already_active": 0,
+  "failed": 0,
+  "postpromotion": {
+    "total": 461,
+    "proposed": 0,
+    "active": 461,
+    "approved": 461
+  },
+  "contained": 20,
+  "dominant": 110,
+  "partial": 331,
+  "rollup_true": 20,
+  "primary_true": 20,
+  "contained_rollup_true": 20,
+  "dominant_rollup_true": 0,
+  "partial_rollup_true": 0,
+  "primary_unique_source_count": 20,
+  "primary_uniqueness_violation": 0,
+  "mapped_source_count": 267,
+  "exclusion_leak": 0,
+  "unexpected_field_mutation_count": 0,
+  "scientific_hash_unchanged": true,
+  "review_metadata_unchanged": true,
+  "transaction_committed": true,
+  "rerun_idempotent": true,
+  "whole_table": {
+    "active": 707,
+    "approved": 707,
+    "rollup": 192,
+    "primary": 192
+  },
+  "g3_g1_before": {
+    "total": 246,
+    "active": 246,
+    "approved": 246,
+    "rollup": 172,
+    "primary": 172
+  },
+  "g3_g1_after": {
+    "total": 246,
+    "active": 246,
+    "approved": 246,
+    "rollup": 172,
+    "primary": 172
+  },
+  "agg_table_total_after": 707,
+  "timestamp": "2026-09-03T08:58:32.669739+00:00",
+  "rerun_observations": [
+    {
+      "promoted": 0,
+      "already_active": 461,
+      "failed": 0,
+      "note": "NOOP: all 461 active with correct rollup; review metadata untouched",
+      "timestamp": "2026-09-03T08:58:58.838027+00:00"
+    }
+  ]
+}

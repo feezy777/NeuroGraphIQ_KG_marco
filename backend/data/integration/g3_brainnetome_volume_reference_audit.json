@@ -1,0 +1,68 @@
+{
+  "canonical_g3_count": 246,
+  "official_volumetric_nifti_present": false,
+  "freesurfer_surface_package": {
+    "present": true,
+    "source": "BN_Atlas_freesurfer.zip",
+    "annot_labels_are_julich_style_codes": true,
+    "cortical_surface_parcels": 210
+  },
+  "subject_volume_bn_mgz": {
+    "shape": [
+      256,
+      256,
+      256
+    ],
+    "dtype": ">f4",
+    "voxel_size_mm": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "affine": [
+      [
+        -1.0,
+        -0.0,
+        -0.0,
+        127.0
+      ],
+      [
+        -0.0,
+        0.0,
+        1.0,
+        -145.5
+      ],
+      [
+        0.0,
+        -1.0,
+        0.0,
+        147.0
+      ],
+      [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ]
+    ],
+    "orientation": [
+      "L",
+      "I",
+      "A"
+    ],
+    "unique_labels": 211,
+    "non_background_voxels": 740535
+  },
+  "official_mni152_246_map": {
+    "expected_file": "BN_Atlas_246_1mm.nii.gz",
+    "present": false,
+    "official_download": "http://atlas.brainnetome.org/download.html"
+  },
+  "external_regions_label_index_range": [
+    1,
+    246
+  ],
+  "note": "Repo holds Brainnetome FreeSurfer SURFACE package + a subject-native BN.mgz (FreeSurfer MNI-ish header, 210 cortical labels). The official BNA246 MNI152 1mm volumetric atlas (246 whole-brain labels incl. 36 subcortical) is NOT present.",
+  "volume_identity_aligned": 246,
+  "volume_identity_note": "246/246 ALIGNED via parcel_id==volumetric_label_index (official Brainnetome LUT labels 1-246 present in external_regions). Official BN_Atlas_246_1mm.nii.gz FILE still NOT in repo; identity chain to volumetric labels is proven, spatial voxel data must be acquired."
+}

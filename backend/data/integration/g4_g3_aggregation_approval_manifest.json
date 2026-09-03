@@ -1,0 +1,50 @@
+{
+  "phase": "G4_G3_AGGREGATION_APPROVAL_V1",
+  "preapproval_total": 461,
+  "preapproval_pending": 461,
+  "preapproval_approved": 0,
+  "attempted": 461,
+  "updated": 461,
+  "already_approved": 0,
+  "failed": 0,
+  "postapproval_total": 461,
+  "contained": 20,
+  "dominant": 110,
+  "partial": 331,
+  "proposed": 461,
+  "active": 0,
+  "pending": 0,
+  "approved": 461,
+  "rollup_true": 0,
+  "primary_true": 0,
+  "reviewer": "gate2jd_g4_g3_aggregation_approval",
+  "reviewed_at": "2026-09-03T08:47:28.921615+00:00",
+  "reviewed_by_count": 461,
+  "reviewed_at_nonnull_count": 461,
+  "unexpected_field_mutation_count": 0,
+  "exclusion_leak": 0,
+  "scientific_hash_unchanged": true,
+  "transaction_committed": true,
+  "rerun_idempotent": true,
+  "g3_g1_before": {
+    "total": 246,
+    "active": 246,
+    "approved": 246,
+    "rollup": 172
+  },
+  "g3_g1_after": {
+    "total": 246,
+    "active": 246,
+    "approved": 246,
+    "rollup": 172
+  },
+  "rerun_observations": [
+    {
+      "updated": 0,
+      "already_approved": 461,
+      "failed": 0,
+      "note": "NOOP: all 461 already approved; reviewed_at not overwritten",
+      "timestamp": "2026-09-03T08:47:41.583253+00:00"
+    }
+  ]
+}

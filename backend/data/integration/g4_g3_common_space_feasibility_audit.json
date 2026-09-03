@@ -1,0 +1,13 @@
+{
+  "phase": "G4_G3_COMMON_SPACE_FEASIBILITY_V1",
+  "G4_reference_space": "MNI 152 ICBM 2009c Nonlinear Asymmetric / MNI Colin 27 (declared; no map file present)",
+  "G3_reference_space": "MNI152 (declared in atlas registry); no official volumetric NIfTI present; FreeSurfer surface + subject-native BN.mgz only",
+  "same_template": "NOT_PROVEN — no G4 map file and no official G3 MNI volumetric file present to compare",
+  "same_grid": "UNKNOWN",
+  "resampling_required": "UNDETERMINED (no G4 map to resample)",
+  "registration_required": "UNDETERMINED",
+  "probabilistic_overlap_required": true,
+  "primary_classification": "SPATIAL_ASSET_ACQUISITION_REQUIRED",
+  "reason": "Neither Julich v3.1 spatial maps (probabilistic NIfTIs) nor the official Brainnetome BNA246 MNI152 volumetric atlas are present in the repo. Cannot establish voxel overlap until official assets are acquired.",
+  "next_scientific_overlap": "probability-weighted overlap (G4 PMs) vs Brainnetome volume occupancy, after acquiring both official MNI assets; do NOT threshold G4 PMs into a fake deterministic single-label map"
+}

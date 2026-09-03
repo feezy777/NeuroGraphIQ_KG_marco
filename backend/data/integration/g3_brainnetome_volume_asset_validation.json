@@ -1,0 +1,16 @@
+{
+  "phase": "G3_BRAINNETOME_VOLUME_ASSET_VALIDATION_V1",
+  "validation_status": "ASSET_NOT_ACQUIRED",
+  "note": "Official BN_Atlas_246_1mm.nii.gz is NOT present in backend/data/atlases/brainnetome/bna246/volume_raw/. Validation deferred until a human downloads from the official Brainnetome source (atlas.brainnetome.org/download.html; unreachable from this network — fallback CSTCloud). Registry identity already validated in Phase 2A (246/246 deterministic via parcel_id == volumetric label_index 1..246).",
+  "expected_on_acquisition": {
+    "official_file": "BN_Atlas_246_1mm.nii.gz",
+    "readability_check": "load via nibabel; confirm shape/spacing/affine/orientation/template",
+    "label_integrity": "read all nonzero label values; expect exactly 246 unique parcel labels; missing=0, unexpected=0",
+    "label_range": "1..246 complete",
+    "hemisphere_integrity": "123 left / 123 right consistent with authoritative registry",
+    "identity_map": "label index -> official BNA parcel -> canonical G3 (246/246 deterministic, no fuzzy matching)"
+  },
+  "actual_template": null,
+  "actual_grid": null,
+  "auxiliary_note": "The FreeSurfer package subject volume BN.mgz (256^3, 1mm, LAS, 210 labels) remains an AUXILIARY surface-package asset only; it is NOT the formal G3 volumetric atlas."
+}

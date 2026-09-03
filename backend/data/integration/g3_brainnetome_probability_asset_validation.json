@@ -1,0 +1,26 @@
+{
+ "asset": "BNA_PM_4D.nii.gz",
+ "ndim": 4,
+ "shape": [
+  145,
+  173,
+  145,
+  246
+ ],
+ "component_count": 246,
+ "all_components_readable": true,
+ "empty_components": 0,
+ "probability_min": 0.0,
+ "probability_max": 100.0,
+ "probability_scale": "0-100 percent (not 0-1 as README states)",
+ "background_value": 0.0,
+ "nan_count": 0,
+ "inf_count": 0,
+ "overlapping_probabilistic_atlas": true,
+ "overlap_note": "572161 voxels have >1 component active; max 13 components at one voxel; NOT mutually-exclusive hard label",
+ "voxels_with_multiple_components": 572161,
+ "max_components_at_voxel": 13,
+ "hemisphere_left": 123,
+ "hemisphere_right": 123,
+ "file_identity_alignment": "246/246 ALIGNED (component index == parcel_id == canonical G3, deterministic via LUT+registry)"
+}

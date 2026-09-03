@@ -1,0 +1,61 @@
+{
+ "phase": "G4_G3_EXACT_SPACE_IDENTITY_AUDIT_V1",
+ "brainnetome_bn_246_1mm": {
+  "shape": [
+   182,
+   218,
+   182
+  ],
+  "voxel_mm": [
+   1.0,
+   1.0,
+   1.0
+  ],
+  "orientation": [
+   "L",
+   "A",
+   "S"
+  ],
+  "reorient_to_ras_affine_matches_NLin6Asym": true,
+  "physical_extent_matches_NLin6Asym": true
+ },
+ "templateflow_mni152nlin6asym_res01": {
+  "shape": [
+   182,
+   218,
+   182
+  ],
+  "voxel_mm": [
+   1.0,
+   1.0,
+   1.0
+  ],
+  "orientation": [
+   "R",
+   "A",
+   "S"
+  ],
+  "sha256": "72f8edc99d7e696da7717db20b73897d8da5909d7f30b1c9a7e2a79e9f64ff2f"
+ },
+ "templateflow_mni152nlin2009casym_res01": {
+  "shape": [
+   193,
+   229,
+   193
+  ],
+  "voxel_mm": [
+   1.0,
+   1.0,
+   1.0
+  ],
+  "orientation": [
+   "R",
+   "A",
+   "S"
+  ],
+  "sha256": "97cee2cf7f51388d76d7b3632c8375d688d0fa171e1bede81fcef23726bb3d73"
+ },
+ "exact_space_classification": "BRAINNETOME_SPACE_CONFIRMED_MNI152NLIN6ASYM",
+ "reason": "BN_Atlas_246_1mm.nii.gz shape 182x218x182, 1mm, and reorient-to-RAS affine + physical extent are IDENTICAL to TemplateFlow MNI152NLin6Asym res-01 (FSL/HCP MNI152 1mm grid). The LAS display orientation is only the NIfTI x-flip convention, not a space difference. Julich v3.1 = MNI152NLin2009cAsym (193x229x193). The two are DIFFERENT standard templates.",
+ "julich_exact_space": "MNI152NLin2009cAsym (native, 193x229x193 1mm, from siibra metadata)"
+}

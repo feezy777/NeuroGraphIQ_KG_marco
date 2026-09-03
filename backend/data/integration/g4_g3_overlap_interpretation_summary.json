@@ -1,0 +1,282 @@
+{
+ "phase": "G4_G3_OVERLAP_INTERPRETATION_V1",
+ "julich_spatial_components": 414,
+ "one_to_one_julich_component_count": 390,
+ "shared_spatial_component_count": 24,
+ "shared_canonical_leaf_count": 64,
+ "shared_distinct_leaf_count": 64,
+ "canonical_leaf_accounting": {
+  "one_to_one_distinct_leaves": 390,
+  "one_to_one_canonical_leaf_subset": 376,
+  "one_to_one_noncanonical_single_leaves": [
+   "JULICH_BRAIN_CYTOARCHITECTONIC_ATLAS_V3_1_FRONTAL_II_GAPMAP_LEFT",
+   "JULICH_BRAIN_CYTOARCHITECTONIC_ATLAS_V3_1_FRONTAL_II_GAPMAP_RIGHT",
+   "JULICH_BRAIN_CYTOARCHITECTONIC_ATLAS_V3_1_FRONTAL_I_1_GAPMAP_LEFT",
+   "JULICH_BRAIN_CYTOARCHITECTONIC_ATLAS_V3_1_FRONTAL_I_1_GAPMAP_RIGHT",
+   "JULICH_BRAIN_CYTOARCHITECTONIC_ATLAS_V3_1_FRONTAL_I_2_GAPMAP_LEFT",
+   "JULICH_BRAIN_CYTOARCHITECTONIC_ATLAS_V3_1_FRONTAL_I_2_GAPMAP_RIGHT",
+   "JULICH_BRAIN_CYTOARCHITECTONIC_ATLAS_V3_1_FRONTAL_TO_OCCIPITAL_GAPMAP_LEFT",
+   "JULICH_BRAIN_CYTOARCHITECTONIC_ATLAS_V3_1_FRONTAL_TO_OCCIPITAL_GAPMAP_RIGHT",
+   "JULICH_BRAIN_CYTOARCHITECTONIC_ATLAS_V3_1_FRONTAL_TO_TEMPORAL_II_GAPMAP_LEFT",
+   "JULICH_BRAIN_CYTOARCHITECTONIC_ATLAS_V3_1_FRONTAL_TO_TEMPORAL_II_GAPMAP_RIGHT",
+   "JULICH_BRAIN_CYTOARCHITECTONIC_ATLAS_V3_1_FRONTAL_TO_TEMPORAL_I_GAPMAP_LEFT",
+   "JULICH_BRAIN_CYTOARCHITECTONIC_ATLAS_V3_1_FRONTAL_TO_TEMPORAL_I_GAPMAP_RIGHT",
+   "JULICH_BRAIN_CYTOARCHITECTONIC_ATLAS_V3_1_TEMPORAL_TO_PARIETAL_GAPMAP_LEFT",
+   "JULICH_BRAIN_CYTOARCHITECTONIC_ATLAS_V3_1_TEMPORAL_TO_PARIETAL_GAPMAP_RIGHT"
+  ],
+  "shared_distinct_canonical_leaves": 64,
+  "shared_noncanonical_leaves": [],
+  "canonical_union_check": 440,
+  "hypothesis_check": "gate hypothesized 24 shared components -> 50 remaining canonical leaves; measured = 64 canonical leaves (not 50) because 14 one-to-one single leaves are outside the 440-canonical registry."
+ },
+ "hard_label_transform": {
+  "status": "PASS",
+  "source_asset": "D:\\Tool\\Coding\\IDE\\PyCharm\\NeuroGraphIQ_KG_marco\\backend\\data\\atlases\\brainnetome\\bna246\\volume_raw\\BN_Atlas_246_1mm.nii.gz",
+  "source_sha256": "0d90d084952bdbddf417abb457f4eec016cbb95dfd53a4801713806da5646ba3",
+  "source_space": "MNI152NLin6Asym 1mm",
+  "target_space": "MNI152NLin2009cAsym 1mm (Julich native)",
+  "transform_file": "D:\\Tool\\Coding\\IDE\\PyCharm\\NeuroGraphIQ_KG_marco\\backend\\data\\atlases\\templateflow_ref\\MNI152NLin2009cAsym_from-MNI152NLin6Asym_mode-image_xfm.h5",
+  "transform_sha256": "2e3869a07b96aec406e0419ca2e434afc54882d37cc212b933b139d1b63a4dfe",
+  "interpolation": "NearestNeighbor (GenericLabel)",
+  "tool": "SimpleITK",
+  "tool_version": "2.5.6",
+  "output_asset": "D:\\Tool\\Coding\\IDE\\PyCharm\\NeuroGraphIQ_KG_marco\\backend\\data\\atlases\\brainnetome\\bna246\\transformed_label_to_julich2009c\\BN_Atlas_246_1mm_NLin6to2009c_labels.nii.gz",
+  "output_sha256": "9c0185c7c0b9a2bf03a9e72d296d4fc8caed0e1318a59723a52ada8f06f1e19f",
+  "shape": [
+   193,
+   229,
+   193
+  ],
+  "grid_match": true,
+  "integer_labels_only": true,
+  "labels_range_ok": true,
+  "labels_present_count": 247,
+  "labels_vanished_in_target": [],
+  "nonzero_voxels_target": 1201455,
+  "recorded": "2026-09-03T07:31:21.303973+00:00"
+ },
+ "role_of_evidence": {
+  "primary": "Julich probability x Brainnetome probability (cross-atlas spatial association; NOT a partition; g4_mass_weighted_g3 is not '% of G4 belonging to G3')",
+  "auxiliary": "hard-label coverage of G4 mass inside BN_Atlas_246_1mm parcels (containment interpretability only)"
+ },
+ "empirical_distribution_one_to_one_390": {
+  "hard_top1_coverage": {
+   "min": 2.3e-05,
+   "p5": 0.173674,
+   "p10": 0.234063,
+   "p25": 0.366974,
+   "median": 0.460523,
+   "p75": 0.576409,
+   "p90": 0.729724,
+   "p95": 0.823012,
+   "max": 0.94973
+  },
+  "hard_top2_coverage": {
+   "min": 1e-06,
+   "p5": 0.040688,
+   "p10": 0.066877,
+   "p25": 0.12562,
+   "median": 0.196602,
+   "p75": 0.273162,
+   "p90": 0.327491,
+   "p95": 0.370149,
+   "max": 0.438215
+  },
+  "hard_total_bna_coverage": {
+   "min": 0.0,
+   "p5": 0.202515,
+   "p10": 0.476235,
+   "p25": 0.824099,
+   "median": 0.898585,
+   "p75": 0.956854,
+   "p90": 0.975756,
+   "p95": 0.985351,
+   "max": 0.99957
+  },
+  "bna_uncovered_fraction": {
+   "min": 0.00043,
+   "p5": 0.014649,
+   "p10": 0.024244,
+   "p25": 0.043146,
+   "median": 0.101415,
+   "p75": 0.175901,
+   "p90": 0.523765,
+   "p95": 0.797485,
+   "max": 1.0
+  },
+  "hard_top1_top2_margin": {
+   "min": 0.0,
+   "p5": 0.017062,
+   "p10": 0.038629,
+   "p25": 0.091806,
+   "median": 0.222743,
+   "p75": 0.406703,
+   "p90": 0.637253,
+   "p95": 0.774053,
+   "max": 0.933031
+  },
+  "pp_top1_g4_weighted": {
+   "min": 0.0,
+   "p5": 0.13022,
+   "p10": 0.195486,
+   "p25": 0.301023,
+   "median": 0.383164,
+   "p75": 0.47275,
+   "p90": 0.584327,
+   "p95": 0.658465,
+   "max": 0.843932
+  },
+  "pp_top2_g4_weighted": {
+   "min": 0.0,
+   "p5": 0.070029,
+   "p10": 0.097567,
+   "p25": 0.148898,
+   "median": 0.197161,
+   "p75": 0.263984,
+   "p90": 0.314252,
+   "p95": 0.346634,
+   "max": 0.407232
+  },
+  "pp_top1_top2_margin": {
+   "min": 0.0,
+   "p5": 0.006138,
+   "p10": 0.014293,
+   "p25": 0.060972,
+   "median": 0.143713,
+   "p75": 0.272222,
+   "p90": 0.388486,
+   "p95": 0.522241,
+   "max": 0.773048
+  },
+  "pp_top1_cosine": {
+   "min": 1e-06,
+   "p5": 0.129398,
+   "p10": 0.226427,
+   "p25": 0.330619,
+   "median": 0.450883,
+   "p75": 0.555295,
+   "p90": 0.654112,
+   "p95": 0.690126,
+   "max": 0.822401
+  },
+  "pp_top1_soft_dice": {
+   "min": 1e-06,
+   "p5": 0.044275,
+   "p10": 0.090252,
+   "p25": 0.180712,
+   "median": 0.30881,
+   "p75": 0.453672,
+   "p90": 0.580701,
+   "p95": 0.617399,
+   "max": 0.788086
+  },
+  "effective_target_count": {
+   "min": 1.0,
+   "p5": 1.411695,
+   "p10": 1.6889,
+   "p25": 2.2734,
+   "median": 3.07525,
+   "p75": 3.879375,
+   "p90": 4.9237,
+   "p95": 6.15892,
+   "max": 24.1859
+  }
+ },
+ "joint_2d_pattern": {
+  "HIGH_CONCENTRATION_CLUSTER_count": 43,
+  "DUAL_TARGET_BAND_count": 111,
+  "LOW_BNA_COVERAGE_count": 19,
+  "AMBIGUOUS_MIDDLE_count": 217,
+  "spearman_hard_top1_vs_pp_top1_g4w": 0.9164,
+  "note": "descriptive only; not named contained/dominant/partial"
+ },
+ "top1_agreement_count": 358,
+ "top1_disagreement_count": 44,
+ "top1_na_count": 12,
+ "zero_association_count": 10,
+ "zero_association_rows": [
+  339,
+  340,
+  341,
+  342,
+  343,
+  344,
+  345,
+  346,
+  347,
+  348
+ ],
+ "coverage_gap_candidate_count": 9,
+ "coverage_gap_candidate_rows": [
+  {
+   "row_index": 349,
+   "asset": "NRP_MIDBRAIN_NUCLEUS_RUBER_PARVOCELLULAR_PART_LEFT.nii.gz",
+   "hard_total": 0.011859,
+   "uncovered": 0.988141
+  },
+  {
+   "row_index": 350,
+   "asset": "NRP_MIDBRAIN_NUCLEUS_RUBER_PARVOCELLULAR_PART_RIGHT.nii.gz",
+   "hard_total": 0.00261611,
+   "uncovered": 0.99738389
+  },
+  {
+   "row_index": 371,
+   "asset": "SNC_MIDBRAIN_SUBSTANTIA_NIGRA_PARS_COMPACTA_LEFT.nii.gz",
+   "hard_total": 4.499e-05,
+   "uncovered": 0.99995501
+  },
+  {
+   "row_index": 372,
+   "asset": "SNC_MIDBRAIN_SUBSTANTIA_NIGRA_PARS_COMPACTA_RIGHT.nii.gz",
+   "hard_total": 0.0,
+   "uncovered": 1.0
+  },
+  {
+   "row_index": 373,
+   "asset": "SNR_MIDBRAIN_SUBSTANTIA_NIGRA_PARS_RETICULATA_LEFT.nii.gz",
+   "hard_total": 0.00341583,
+   "uncovered": 0.99658417
+  },
+  {
+   "row_index": 374,
+   "asset": "SNR_MIDBRAIN_SUBSTANTIA_NIGRA_PARS_RETICULATA_RIGHT.nii.gz",
+   "hard_total": 0.00420014,
+   "uncovered": 0.99579986
+  },
+  {
+   "row_index": 377,
+   "asset": "STN_SUBTHALAMUS_LEFT.nii.gz",
+   "hard_total": 0.01429471,
+   "uncovered": 0.98570529
+  },
+  {
+   "row_index": 378,
+   "asset": "STN_SUBTHALAMUS_RIGHT.nii.gz",
+   "hard_total": 0.0,
+   "uncovered": 1.0
+  },
+  {
+   "row_index": 414,
+   "asset": "ZI_THALAMUS_ZONA_INCERTA_RIGHT.nii.gz",
+   "hard_total": 0.06193867,
+   "uncovered": 0.93806133
+  }
+ ],
+ "evidence_pattern_counts": {
+  "SINGLE_TARGET_CONCENTRATED": 47,
+  "DIFFUSE_ASSOCIATION": 190,
+  "MULTI_TARGET_CONCENTRATED": 97,
+  "SHARED_SPATIAL_REPRESENTATION": 19,
+  "PROBABILITY_HARDLABEL_DISAGREEMENT": 44,
+  "ZERO_BNA_ASSOCIATION": 10,
+  "LOW_BNA_COVERAGE": 7
+ },
+ "evidence_strata_are_descriptive_only": true,
+ "classification_thresholds": "NOT_DEFINED",
+ "scientific_decisions_created": false,
+ "shared_component_hierarchy_split": "NO_INDEPENDENT_LEAF_SPATIAL_EVIDENCE (single official probability map per component; no finer/hemisphere-child map in the 414-map official set)",
+ "threshold_sensitivity_table": "g4_g3_threshold_sensitivity_table.csv (DESCRIPTIVE_ONLY)",
+ "recorded": "2026-09-03T07:47:26.424523+00:00",
+ "phase2g_matrix_hash": "a64d0c598300d1f0e6d56c67c1e2564775287447d5c17f77741bcf96ec2df874"
+}

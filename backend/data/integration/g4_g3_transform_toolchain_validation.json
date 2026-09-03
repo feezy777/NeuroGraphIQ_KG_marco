@@ -1,0 +1,113 @@
+{
+ "phase": "G4_G3_TRANSFORM_TOOLCHAIN_VALIDATION",
+ "readiness": "READY_FOR_G4_G3_BATCH_TRANSFORM",
+ "gate_scope_note": "This gate performed ONE single-component source->target smoke only. Batch transform of all 246 Brainnetome probability components, resampling of Julich maps, overlap computation and any G4->G3 spatial mapping are OUT OF SCOPE and were NOT executed.",
+ "toolchain": "SimpleITK 2.5.6",
+ "direction_lock_summary": {
+  "decision": "as_stored (no inverse)",
+  "evidence": {
+   "brain_dice_vs_2009c_template": 0.9726,
+   "intensity_corr": 0.8597,
+   "ok": true
+  }
+ },
+ "interpolation": "Linear",
+ "background": 0.0,
+ "source": {
+  "file": "D:\\Tool\\Coding\\IDE\\PyCharm\\NeuroGraphIQ_KG_marco\\backend\\data\\atlases\\brainnetome\\bna246\\volume_raw\\BNA_PM_4D.nii.gz",
+  "sha256": "b1318517f61d08f714c25e55ee580eb8a487c0b7ab1ddbcc7eac852e4e97f020"
+ },
+ "transform": {
+  "file": "D:\\Tool\\Coding\\IDE\\PyCharm\\NeuroGraphIQ_KG_marco\\backend\\data\\atlases\\templateflow_ref\\MNI152NLin2009cAsym_from-MNI152NLin6Asym_mode-image_xfm.h5",
+  "sha256": "2e3869a07b96aec406e0419ca2e434afc54882d37cc212b933b139d1b63a4dfe",
+  "direction": "as_stored (no GetInverse) — locked by template-agreement probe Dice 0.973"
+ },
+ "target_reference": {
+  "file": "D:\\Tool\\Coding\\IDE\\PyCharm\\NeuroGraphIQ_KG_marco\\backend\\data\\atlases\\julich\\v3.1\\spatial_raw\\probability_maps\\ACBL_VENTRAL_STRIATUM_LATERAL_ACCUMBENS_LEFT.nii.gz",
+  "sha256": "185a1d6c179c91bb1f02b3fc0d128b4607504a775edfec48fcc1435d9240bfdf"
+ },
+ "smoke": {
+  "component": 1,
+  "parcel": "SFG_L_7_1",
+  "canonical_g3_id": "NGIQ-BR-00000001",
+  "hemisphere": "left",
+  "checks": {
+   "TARGET_GRID_MATCH": true,
+   "NaN_Inf_absent": true,
+   "raw_percent_range_0_100": true,
+   "normalized_range_0_1": true,
+   "no_hemisphere_flip": true,
+   "centroid_within_2009c_brain": true
+  },
+  "source_stats": {
+   "component_index": 1,
+   "min": 0.0,
+   "max": 100.0,
+   "sum": 385387.01855802536,
+   "nonzero_voxels": 18688,
+   "center_of_mass_world_mm": [
+    -7.01,
+    16.52,
+    51.81
+   ]
+  },
+  "transformed_raw_stats": {
+   "min": 0.0,
+   "max": 98.95964279700434,
+   "sum": 825969.6784561012,
+   "nonzero_voxels": 55869,
+   "nan": 0,
+   "inf": 0,
+   "center_of_mass_world_mm": [
+    -7.81,
+    16.25,
+    53.34
+   ]
+  },
+  "output_raw_percent": "data\\atlases\\brainnetome\\bna246\\transformed_to_julich2009c_smoke\\BNA_PM4D_comp001_NLin6to2009c_raw_percent.nii.gz",
+  "output_raw_percent_sha256": "163b2b6e8a2602d222659fd73e220bb36dbd87a21bdaf3c5878ae6ef4cc99f88",
+  "output_normalized_probability": "data\\atlases\\brainnetome\\bna246\\transformed_to_julich2009c_smoke\\BNA_PM4D_comp001_NLin6to2009c_probability.nii.gz",
+  "output_normalized_probability_sha256": "34109ed3a3d2a0ca6a94e6426fabfcd23354bd8cb96daa1d22ba6a045fa72306",
+  "qa_image": "data\\integration\\qa\\g4_g3_transform_smoke\\smoke_comp001_slices.png"
+ },
+ "physical_lattice_report": {
+  "bn_atlas_246_1mm": {
+   "shape": [
+    182,
+    218,
+    182
+   ],
+   "origin_world_mm": [
+    90.0,
+    -126.0,
+    -72.0
+   ]
+  },
+  "bna_pm_4d_grid": {
+   "shape": [
+    145,
+    173,
+    145
+   ],
+   "origin_world_mm": [
+    90.0,
+    -126.0,
+    -72.0
+   ]
+  },
+  "hcp40_1_25mm": {
+   "shape": [
+    145,
+    173,
+    145
+   ],
+   "origin_world_mm": [
+    90.0,
+    -126.0,
+    -72.0
+   ]
+  }
+ },
+ "all_checks_pass": true,
+ "recorded": "2026-09-03"
+}

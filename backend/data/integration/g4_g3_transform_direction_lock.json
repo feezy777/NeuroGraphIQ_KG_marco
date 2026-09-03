@@ -1,0 +1,12 @@
+{
+  "probe": "template-agreement direction lock",
+  "method": "resample real MNI152NLin6Asym T1w onto real MNI152NLin2009cAsym reference grid using as-stored composite vs GetInverse; score against actual 2009c template",
+  "result": {
+    "forward_as_stored": {"brain_dice_vs_2009c_template": 0.9726, "intensity_corr": 0.8597, "ok": true},
+    "inverse": {"note": "SimpleITK Transform.GetInverse() throws 'Unable to create inverse!' on the DisplacementFieldTransform composite; not required"},
+    "winning_direction": "as_stored (no inverse)"
+  },
+  "conclusion": "TemplateFlow ITK h5 is authored as the pull-back transform: sitk.Resample(moving=<NLin6-space image>, reference=<2009c grid>, transform=<h5 as-stored>, linear, 0) produces anatomically correct NLin6->2009c output (Dice 0.973 against the true 2009c template). No inversion needed.",
+  "implication_for_toolchain": "transform_brainnetome_to_julich2009c.py applies the composite AS-STORED (no GetInverse).",
+  "recorded": "2026-09-03"
+}

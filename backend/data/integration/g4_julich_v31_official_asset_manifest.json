@@ -1,0 +1,34 @@
+{
+ "atlas": "Julich-Brain Cytoarchitectonic Atlas v3.1",
+ "atlas_id": "minds/core/parcellationatlas/v1.0.0/94c1125b-b87e-45e4-901c-00daee7f2579-310",
+ "version": "3.1.0",
+ "provider": "EBRAINS / siibra",
+ "dataset_doi": "10.25493/KNSN-XB4",
+ "representation": {
+  "primary": "probabilistic/statistical",
+  "semantics": "OVERLAPPING_PROBABILISTIC_ATLAS",
+  "mpm": "DERIVED_AUXILIARY"
+ },
+ "space": "MNI 152 ICBM 2009c Nonlinear Asymmetric",
+ "shape": [
+  193,
+  229,
+  193
+ ],
+ "voxel_spacing_mm": [
+  1.0,
+  1.0,
+  1.0
+ ],
+ "spatial_component_count": 414,
+ "files_on_disk": 414,
+ "total_size_bytes": 89075428,
+ "local_dir": "backend/data/atlases/julich/v3.1/spatial_raw/probability_maps/",
+ "siibra_version": "1.0.1-alpha.21",
+ "canonical_g4_total": 440,
+ "alignment": {
+  "component_rows": 414,
+  "components_aligned_to_canonical": 414,
+  "distinct_canonical_leaf_ids_covered": 454
+ }
+}

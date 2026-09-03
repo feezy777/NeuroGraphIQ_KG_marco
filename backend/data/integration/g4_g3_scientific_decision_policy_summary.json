@@ -1,0 +1,79 @@
+{
+ "phase": "G4_G3_SCIENTIFIC_DECISION_POLICY_APPLICATION_V1",
+ "canonical_g4_count": 440,
+ "direct_decisionable_count": 376,
+ "shared_canonical_count": 64,
+ "noncanonical_spatial_component_count": 14,
+ "decision_counts": {
+  "CONFLICT_REVIEW": 126,
+  "PARTIAL_OVERLAP": 101,
+  "APPROVE_DOMINANT_OVERLAP": 109,
+  "APPROVE_CONTAINED_IN": 22,
+  "SHARED_SPATIAL_EVIDENCE_ONLY": 64,
+  "NO_G3_MAPPING": 18
+ },
+ "preliminary_relation_row_count": 367,
+ "contained_rollup_source_count": 22,
+ "conflict_reason_distribution": {
+  "LOW_DOMINANCE": 6,
+  "HIGH_FRAGMENTATION": 71,
+  "PARTIAL_TARGET_EVIDENCE_INCONSISTENT": 5,
+  "PROBABILITY_HARDLABEL_TOP1_DISAGREEMENT": 35,
+  "DIFFUSE_ASSOCIATION": 8,
+  "LOW_BNA_COVERAGE": 1
+ },
+ "policy_order": [
+  "1 SHARED_EVIDENCE_EXCLUSION",
+  "2 NONCANONICAL_COMPONENT_EXCLUSION",
+  "3 NO_G3_MAPPING_ZERO_OR_COVERAGE_GAP",
+  "4 DISAGREEMENT_CONFLICT",
+  "5 APPROVE_CONTAINED_IN",
+  "6 APPROVE_DOMINANT_OVERLAP",
+  "7 PARTIAL_OVERLAP",
+  "8 FALLBACK_CONFLICT"
+ ],
+ "policy_thresholds_v1": {
+  "contained_hard_top1_coverage_min": 0.8,
+  "contained_uncovered_max": 0.15,
+  "contained_hard_top2_max": 0.1,
+  "contained_effective_targets_max": 2.0,
+  "contained_pp_ratio_min": 1.5,
+  "dominant_hard_total_min": 0.7,
+  "dominant_hard_top1_min": 0.5,
+  "dominant_margin_min": 0.2,
+  "dominant_pp_ratio_min": 1.25,
+  "partial_hard_total_min": 0.6,
+  "partial_target_cov_min": 0.15,
+  "partial_top2_cumulative_min": 0.6,
+  "no_mapping_gap_hard_total_max": 0.1,
+  "no_mapping_gap_pp_g4w_max": 0.05,
+  "note": "project-conservative OPERATIONAL thresholds; NOT a universal neuroscience rule"
+ },
+ "policy_semantics": {
+  "APPROVE_CONTAINED_IN": "majority of G4 mass inside ONE G3 + pp/hard agreement; future rollup TRUE (hierarchical parent)",
+  "APPROVE_DOMINANT_OVERLAP": "clear dominant G3 but NOT strict containment; future rollup FALSE (dominant != parent)",
+  "PARTIAL_OVERLAP": ">=2 co-dominant G3 targets (all targets with hard cov>=0.15 kept); future rollup FALSE",
+  "NO_G3_MAPPING": "conservative: no reliable G3 association (zero BNA spatial association or coverage gap)",
+  "CONFLICT_REVIEW": "evidence disagreement / near-boundary / ambiguous; NOT auto-decided",
+  "SHARED_SPATIAL_EVIDENCE_ONLY": "no independent leaf spatial evidence; governance exclusion, NOT an ontology relation"
+ },
+ "sensitivity_analysis": {
+  "contained_cut_counts": {
+   "0.75": 25,
+   "0.80": 22,
+   "0.85": 15
+  },
+  "dominant_top1_cut_counts": {
+   "0.45": 134,
+   "0.50": 109,
+   "0.55": 81
+  },
+  "note": "SENSITIVITY_ANALYSIS only; does not change V1 policy result (V1 uses 0.80 contained / 0.50 dominant)."
+ },
+ "review_status": "PENDING_OWNER_REVIEW",
+ "owner_review_required": true,
+ "database_write": false,
+ "mapping_candidate_staging": false,
+ "approval_promotion": false,
+ "recorded": "2026-09-03T07:50:06.647077+00:00"
+}

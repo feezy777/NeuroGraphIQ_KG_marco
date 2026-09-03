@@ -1,0 +1,17 @@
+{
+ "probability_value_min": 0.0,
+ "probability_value_max": 0.9163573384284973,
+ "probability_unit": "0..1 (verified max<=1.0 over sample; no file exceeded 1.0)",
+ "background_value": 0.0,
+ "nan_inf_present": false,
+ "overlap_allowed": true,
+ "overlapping_probabilistic_atlas": true,
+ "uniform_grid_sample": true,
+ "sample_shape": [
+  193,
+  229,
+  193
+ ],
+ "reference_space": "MNI 152 ICBM 2009c Nonlinear Asymmetric",
+ "files_sampled_for_semantics": 50
+}

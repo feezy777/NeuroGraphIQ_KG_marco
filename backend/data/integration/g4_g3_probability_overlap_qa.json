@@ -1,0 +1,76 @@
+{
+ "representative_components": [
+  {
+   "role": "LATERAL_LEFT_1",
+   "row_index": 271,
+   "julich_asset_file": "AREA_TE_3_STG_LEFT.nii.gz",
+   "julich_region_name": "Area Te 3 (STG) left",
+   "julich_hemisphere": "left",
+   "com_x_mm": -62.94,
+   "spatial_identity_status": "ONE_TO_ONE_CANONICAL",
+   "png": "D:\\Tool\\Coding\\IDE\\PyCharm\\NeuroGraphIQ_KG_marco\\backend\\data\\integration\\qa\\g4_g3_probability_overlap\\rep_LATERAL_LEFT_1_row271.png"
+  },
+  {
+   "role": "LATERAL_LEFT_2",
+   "row_index": 221,
+   "julich_asset_file": "AREA_PFOP_IPL_LEFT.nii.gz",
+   "julich_region_name": "Area PFop (IPL) left",
+   "julich_hemisphere": "left",
+   "com_x_mm": -60.86,
+   "spatial_identity_status": "ONE_TO_ONE_CANONICAL",
+   "png": "D:\\Tool\\Coding\\IDE\\PyCharm\\NeuroGraphIQ_KG_marco\\backend\\data\\integration\\qa\\g4_g3_probability_overlap\\rep_LATERAL_LEFT_2_row221.png"
+  },
+  {
+   "role": "LATERAL_RIGHT_1",
+   "row_index": 272,
+   "julich_asset_file": "AREA_TE_3_STG_RIGHT.nii.gz",
+   "julich_region_name": "Area Te 3 (STG) right",
+   "julich_hemisphere": "right",
+   "com_x_mm": 63.17,
+   "spatial_identity_status": "ONE_TO_ONE_CANONICAL",
+   "png": "D:\\Tool\\Coding\\IDE\\PyCharm\\NeuroGraphIQ_KG_marco\\backend\\data\\integration\\qa\\g4_g3_probability_overlap\\rep_LATERAL_RIGHT_1_row272.png"
+  },
+  {
+   "role": "LATERAL_RIGHT_2",
+   "row_index": 226,
+   "julich_asset_file": "AREA_PF_IPL_RIGHT.nii.gz",
+   "julich_region_name": "Area PF (IPL) right",
+   "julich_hemisphere": "right",
+   "com_x_mm": 62.79,
+   "spatial_identity_status": "ONE_TO_ONE_CANONICAL",
+   "png": "D:\\Tool\\Coding\\IDE\\PyCharm\\NeuroGraphIQ_KG_marco\\backend\\data\\integration\\qa\\g4_g3_probability_overlap\\rep_LATERAL_RIGHT_2_row226.png"
+  },
+  {
+   "role": "NEAR_MIDLINE",
+   "row_index": 14,
+   "julich_asset_file": "AREA_33_ACC_RIGHT.nii.gz",
+   "julich_region_name": "Area 33 (ACC) right",
+   "julich_hemisphere": "right",
+   "com_x_mm": 5.23,
+   "spatial_identity_status": "ONE_TO_ONE_CANONICAL",
+   "png": "D:\\Tool\\Coding\\IDE\\PyCharm\\NeuroGraphIQ_KG_marco\\backend\\data\\integration\\qa\\g4_g3_probability_overlap\\rep_NEAR_MIDLINE_row014.png"
+  },
+  {
+   "role": "SUBCORTICAL",
+   "row_index": 303,
+   "julich_asset_file": "DG_HIPPOCAMPUS_LEFT.nii.gz",
+   "julich_region_name": "DG (Hippocampus) left",
+   "julich_hemisphere": "left",
+   "com_x_mm": -27.54,
+   "spatial_identity_status": "ONE_TO_ONE_CANONICAL",
+   "png": "D:\\Tool\\Coding\\IDE\\PyCharm\\NeuroGraphIQ_KG_marco\\backend\\data\\integration\\qa\\g4_g3_probability_overlap\\rep_SUBCORTICAL_row303.png"
+  }
+ ],
+ "overview_heatmap": "D:\\Tool\\Coding\\IDE\\PyCharm\\NeuroGraphIQ_KG_marco\\backend\\data\\integration\\qa\\g4_g3_probability_overlap\\matrix_overview_heatmap.png",
+ "formula_recompute_max_abs_error": 0.0,
+ "formula_recompute_errors": {
+  "cosine": 0.0,
+  "g4_mass_weighted": 0.0,
+  "g3_mass_weighted": 0.0,
+  "soft_dice": 0.0
+ },
+ "formula_recompute_ok": true,
+ "hemisphere_QA_anomaly_count": 5,
+ "opposite_hemisphere_top1_count": 5,
+ "recorded": "2026-09-03T07:08:22.625650+00:00"
+}

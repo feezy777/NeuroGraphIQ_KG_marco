@@ -1,0 +1,48 @@
+{
+ "phase": "G4_G3_STANDARD_TRANSFORM_CONTRACT_V1",
+ "source_space": "MNI152NLin6Asym (Brainnetome BN_Atlas_246_1mm / HCP40)",
+ "target_space": "MNI152NLin2009cAsym 1mm (Julich v3.1 native)",
+ "required_direction": "MNI152NLin6Asym -> MNI152NLin2009cAsym  (Brainnetome -> Julich)",
+ "templateflow_transform": {
+  "path": "data/atlases/templateflow_ref/MNI152NLin2009cAsym_from-MNI152NLin6Asym_mode-image_xfm.h5",
+  "exists": true,
+  "format": "ITK displacement field (h5)",
+  "size": 204735104,
+  "sha256": "2e3869a07b96aec406e0419ca2e434afc54882d37cc212b933b139d1b63a4dfe"
+ },
+ "classification": "STANDARD_CROSS_TEMPLATE_TRANSFORM_REQUIRED",
+ "reason": "Both templates are confirmed DIFFERENT standard MNI templates (NLin6 vs NLin2009cAsym). A standard TemplateFlow nonlinear transform (not simple resampling) is required. The official transform MNI152NLin2009cAsym_from-MNI152NLin6Asym exists and is stored.",
+ "execution_toolchain": {
+  "templateflow": true,
+  "nitransforms": "installed 25.1.0",
+  "nitransforms_h5_apply_capable": false,
+  "antspy": "NOT_INSTALLED",
+  "ants": "NOT_INSTALLED",
+  "simpletk": "installed 2.5.6 (canonical executable toolchain; reads+applies the ITK composite h5 natively)",
+  "direction_lock": "AS_STORED_NO_INVERSE (template-agreement probe: warped NLin6 template onto 2009c grid vs true 2009c template -> brain Dice 0.9726, intensity corr 0.8597; GetInverse throws and is NOT needed)",
+  "plan": "RESOLVED: SimpleITK sitk.Resample(moving=<NLin6-space image>, reference=<Julich 2009c 1mm grid>, transform=<h5 as-stored>, linear, bg=0) is the canonical toolchain. Single-component smoke executed and PASSED (see g4_g3_transform_toolchain_validation.json). Batch transform / overlap / mapping are OUT OF SCOPE for this gate."
+ },
+ "interpolation_contract": {
+  "brainnetome_deterministic_label_BN_MPM": "GenericLabel / nearest-neighbor (integer-preserving, auxiliary only)",
+  "brainnetome_probability_BNA_PM_4D": "continuous / linear for probability field (NOT nearest-neighbor)",
+  "julich_probability": "continuous / linear (NOT nearest-neighbor)"
+ },
+ "brainnetome_source_asset_status": "FILE_LEVEL_VERIFIED",
+ "source_asset_details": {
+  "BNA_PM_4D": "4D (145x173x145x246), 1.25mm, MNI152NLin6Asym/HCP40 grid, 0-100 percent probabilities, 246/246 file-aligned",
+  "BN_Atlas_246_1mm": "3D (182x218x182), 1mm, MNI152NLin6Asym, deterministic 246-label (auxiliary)"
+ },
+ "primary_vs_auxiliary": {
+  "primary": "Julich probability x Brainnetome probability (BNA_PM_4D, 0-100 -> reconcile /100)",
+  "auxiliary": "Julich probability x Brainnetome deterministic label (BN_Atlas_246_1mm)"
+ },
+ "toolchain_smoke": {
+  "status": "PASS",
+  "validation_artifact": "g4_g3_transform_toolchain_validation.json",
+  "component": 1,
+  "component_parcel": "SFG_L_7_1 (A8m_L, left)",
+  "canonical_g3_id": "NGIQ-BR-00000001",
+  "checks_all_true": ["TARGET_GRID_MATCH", "NaN_Inf_absent", "raw_percent_range_0_100", "normalized_range_0_1", "no_hemisphere_flip", "centroid_within_2009c_brain"],
+  "source_space_conservation_note": "transformed left-hemisphere parcel CoM x=-7.81mm (stayed left), centroid inside 2009c brain, world-bbox x in [-31,+1] -> confirms HCP40-1.25mm source physically coincides with NLin6Asym and the as-stored transform direction is anatomically correct"
+ }
+}

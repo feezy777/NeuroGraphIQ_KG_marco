@@ -1,0 +1,104 @@
+{
+ "phase": "G4_G3_OWNER_POLICY_REVISION_V1",
+ "frozen_unchanged": {
+  "NO_G3_MAPPING": 18,
+  "SHARED_SPATIAL_EVIDENCE_ONLY": 64,
+  "noncanonical_audit_components": 14
+ },
+ "contained": {
+  "total": 22,
+  "provisional_owner_accepted": 20,
+  "contained_boundary_review": 2,
+  "boundary_rows": [
+   {
+    "g4": "NGIQ-BR-00000370",
+    "name": "VTM (Amygdala) left",
+    "target": "NGIQ-BR-00000017",
+    "h1": "0.827706"
+   },
+   {
+    "g4": "NGIQ-BR-00000599",
+    "name": "Area FG5 (FusG) right",
+    "target": "NGIQ-BR-00000116",
+    "h1": "0.84679603"
+   }
+  ],
+  "note": "boundary rows are NOT rollup-opened in this revision"
+ },
+ "disagreement_35": {
+  "partial_set_concordant": 20,
+  "true_pp_hardlabel_conflict": 15,
+  "concordant_rows": [
+   "NGIQ-BR-00000387",
+   "NGIQ-BR-00000390",
+   "NGIQ-BR-00000392",
+   "NGIQ-BR-00000438",
+   "NGIQ-BR-00000445",
+   "NGIQ-BR-00000449",
+   "NGIQ-BR-00000487",
+   "NGIQ-BR-00000503",
+   "NGIQ-BR-00000513",
+   "NGIQ-BR-00000518",
+   "NGIQ-BR-00000549",
+   "NGIQ-BR-00000565",
+   "NGIQ-BR-00000571",
+   "NGIQ-BR-00000665",
+   "NGIQ-BR-00000666",
+   "NGIQ-BR-00000679",
+   "NGIQ-BR-00000686",
+   "NGIQ-BR-00000723",
+   "NGIQ-BR-00000749",
+   "NGIQ-BR-00000762"
+  ],
+  "true_conflict_rows": [
+   "NGIQ-BR-00000340",
+   "NGIQ-BR-00000341",
+   "NGIQ-BR-00000480",
+   "NGIQ-BR-00000485",
+   "NGIQ-BR-00000509",
+   "NGIQ-BR-00000609",
+   "NGIQ-BR-00000611",
+   "NGIQ-BR-00000612",
+   "NGIQ-BR-00000708",
+   "NGIQ-BR-00000713",
+   "NGIQ-BR-00000732",
+   "NGIQ-BR-00000733",
+   "NGIQ-BR-00000756",
+   "NGIQ-BR-00000769",
+   "NGIQ-BR-00000770"
+  ]
+ },
+ "key_20_concordant_hit": 17,
+ "high_fragmentation_71": {
+  "TRUE_DIFFUSE_CONFLICT": 39,
+  "LOW_COVERAGE_CONFLICT": 11,
+  "PLAUSIBLE_MULTI_TARGET_PARTIAL": 21
+ },
+ "partial_cumulative_policy_revision": {
+  "old_top2_cumulative_min": 0.6,
+  "new_hard_requirement": "removed (descriptive only)",
+  "selected_rule": "selected targets = hard coverage>=0.15 AND pp association>0; >=2 targets; no new final threshold set here"
+ },
+ "partial_evidence_inconsistent_5_still_conflict": true,
+ "revised_partial_candidates": {
+  "sources_total": 142,
+  "target_rows_total": 346,
+  "by_origin": {
+   "existing_partial": 101,
+   "concordant_disagreement": 20,
+   "highfrag_plausible": 21
+  }
+ },
+ "dominant_boundary_28": 28,
+ "partial_boundary_9": 9,
+ "owner_review_required": true,
+ "database_write": false,
+ "artifacts": [
+  "D:\\Tool\\Coding\\IDE\\PyCharm\\NeuroGraphIQ_KG_marco\\backend\\data\\integration\\g4_g3_owner_policy_revision_v1.csv",
+  "D:\\Tool\\Coding\\IDE\\PyCharm\\NeuroGraphIQ_KG_marco\\backend\\data\\integration\\g4_g3_disagreement_partial_reassessment.csv",
+  "D:\\Tool\\Coding\\IDE\\PyCharm\\NeuroGraphIQ_KG_marco\\backend\\data\\integration\\g4_g3_high_fragmentation_reassessment.csv",
+  "D:\\Tool\\Coding\\IDE\\PyCharm\\NeuroGraphIQ_KG_marco\\backend\\data\\integration\\g4_g3_contained_semantic_review.csv"
+ ],
+ "recorded": "2026-09-03T08:12:25.071064+00:00",
+ "key_20_rows_in_reassessment": 17
+}

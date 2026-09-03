@@ -1,0 +1,112 @@
+{
+ "phase": "G4_G3_BATCH_TRANSFORM_V1",
+ "component_total": 246,
+ "pass_count": 246,
+ "fail_count": 0,
+ "target_grid_match_count": 246,
+ "finite_pass_count": 246,
+ "range_pass_count": 246,
+ "nonempty_pass_count": 246,
+ "hemisphere_flip_count": 0,
+ "cross_check_pass_count": 246,
+ "probability_sum_ratio": {
+  "median": 0.0207,
+  "p5": 0.0195,
+  "p95": 0.0221,
+  "min": 0.018,
+  "max": 0.0244
+ },
+ "support_volume_ratio": {
+  "median": 3.0519,
+  "p5": 2.7616,
+  "p95": 3.4588,
+  "min": 2.5681,
+  "max": 3.6774
+ },
+ "boundary_touch_anomaly_candidates": [],
+ "outer_5mm_shell_mass_heavy": [],
+ "lr_pair_count": 123,
+ "lr_pair_volume_ratio_L_over_R": {
+  "median": 1.0281,
+  "p5": 0.793,
+  "p95": 1.3385,
+  "min": 0.6524,
+  "max": 1.5724
+ },
+ "malformed_pairs": {},
+ "Julich_target_grid_count": 414,
+ "Julich_target_grid_match": 414,
+ "Julich_grid_issues": [],
+ "transform_file": "data/atlases/templateflow_ref/MNI152NLin2009cAsym_from-MNI152NLin6Asym_mode-image_xfm.h5",
+ "transform_sha256": "2e3869a07b96aec406e0419ca2e434afc54882d37cc212b933b139d1b63a4dfe",
+ "tool": "SimpleITK",
+ "version": "2.5.6",
+ "interpolation": "Linear",
+ "normalization_policy": "divide_by_100_after_transform; raw percent is processing intermediate (not stored per component); normalized 0-1 is the formal downstream asset",
+ "representative_qa": [
+  "D:\\Tool\\Coding\\IDE\\PyCharm\\NeuroGraphIQ_KG_marco\\backend\\data\\integration\\qa\\g4_g3_batch_transform\\rep_comp081_MTG_L_4_1_slices.png",
+  "D:\\Tool\\Coding\\IDE\\PyCharm\\NeuroGraphIQ_KG_marco\\backend\\data\\integration\\qa\\g4_g3_batch_transform\\rep_comp075_STG_L_6_4_slices.png",
+  "D:\\Tool\\Coding\\IDE\\PyCharm\\NeuroGraphIQ_KG_marco\\backend\\data\\integration\\qa\\g4_g3_batch_transform\\rep_comp082_MTG_R_4_1_slices.png",
+  "D:\\Tool\\Coding\\IDE\\PyCharm\\NeuroGraphIQ_KG_marco\\backend\\data\\integration\\qa\\g4_g3_batch_transform\\rep_comp076_STG_R_6_4_slices.png",
+  "D:\\Tool\\Coding\\IDE\\PyCharm\\NeuroGraphIQ_KG_marco\\backend\\data\\integration\\qa\\g4_g3_batch_transform\\rep_comp184_CG_R_7_5_slices.png",
+  "D:\\Tool\\Coding\\IDE\\PyCharm\\NeuroGraphIQ_KG_marco\\backend\\data\\integration\\qa\\g4_g3_batch_transform\\rep_comp237_Tha_L_8_4_slices.png"
+ ],
+ "representative_qa_detail": [
+  {
+   "component_index": 81,
+   "official_code": "MTG_L_4_1",
+   "canonical_name": "MTG_L_4_1",
+   "hemisphere": "left",
+   "lobe": "Temporal lobe",
+   "role": "LATERAL_LEFT_1",
+   "png": "D:\\Tool\\Coding\\IDE\\PyCharm\\NeuroGraphIQ_KG_marco\\backend\\data\\integration\\qa\\g4_g3_batch_transform\\rep_comp081_MTG_L_4_1_slices.png"
+  },
+  {
+   "component_index": 75,
+   "official_code": "STG_L_6_4",
+   "canonical_name": "STG_L_6_4",
+   "hemisphere": "left",
+   "lobe": "Temporal lobe",
+   "role": "LATERAL_LEFT_2",
+   "png": "D:\\Tool\\Coding\\IDE\\PyCharm\\NeuroGraphIQ_KG_marco\\backend\\data\\integration\\qa\\g4_g3_batch_transform\\rep_comp075_STG_L_6_4_slices.png"
+  },
+  {
+   "component_index": 82,
+   "official_code": "MTG_R_4_1",
+   "canonical_name": "MTG_R_4_1",
+   "hemisphere": "right",
+   "lobe": "Temporal lobe",
+   "role": "LATERAL_RIGHT_1",
+   "png": "D:\\Tool\\Coding\\IDE\\PyCharm\\NeuroGraphIQ_KG_marco\\backend\\data\\integration\\qa\\g4_g3_batch_transform\\rep_comp082_MTG_R_4_1_slices.png"
+  },
+  {
+   "component_index": 76,
+   "official_code": "STG_R_6_4",
+   "canonical_name": "STG_R_6_4",
+   "hemisphere": "right",
+   "lobe": "Temporal lobe",
+   "role": "LATERAL_RIGHT_2",
+   "png": "D:\\Tool\\Coding\\IDE\\PyCharm\\NeuroGraphIQ_KG_marco\\backend\\data\\integration\\qa\\g4_g3_batch_transform\\rep_comp076_STG_R_6_4_slices.png"
+  },
+  {
+   "component_index": 184,
+   "official_code": "CG_R_7_5",
+   "canonical_name": "CG_R_7_5",
+   "hemisphere": "right",
+   "lobe": "Limbic lobe",
+   "role": "NEAR_MIDLINE",
+   "png": "D:\\Tool\\Coding\\IDE\\PyCharm\\NeuroGraphIQ_KG_marco\\backend\\data\\integration\\qa\\g4_g3_batch_transform\\rep_comp184_CG_R_7_5_slices.png"
+  },
+  {
+   "component_index": 237,
+   "official_code": "Tha_L_8_4",
+   "canonical_name": "Th_L_8_4",
+   "hemisphere": "left",
+   "lobe": "Subcortical nuclei",
+   "role": "SUBCORTICAL",
+   "png": "D:\\Tool\\Coding\\IDE\\PyCharm\\NeuroGraphIQ_KG_marco\\backend\\data\\integration\\qa\\g4_g3_batch_transform\\rep_comp237_Tha_L_8_4_slices.png"
+  }
+ ],
+ "batch_status": "READY_FOR_G4_G3_PROBABILITY_OVERLAP",
+ "recorded": "2026-09-03T06:52:49.700368+00:00"
+}

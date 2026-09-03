@@ -1,0 +1,98 @@
+{
+  "phase": "G4_G3_SPATIAL_ASSET_FEASIBILITY_AUDIT_V1",
+  "G4_julich": {
+    "canonical_count": 440,
+    "atlas_family": "cytoarchitecture",
+    "atlas_registry_record": {
+      "reference_space": null,
+      "resolution": null,
+      "map_type": null,
+      "region_count_declared": 454,
+      "citation_doi": "10.25493/KNSN-XB4"
+    },
+    "spatial_files_in_repo": [],
+    "downloaded_maps_present": false,
+    "official_spaces_declared": [
+      "MNI 152 ICBM 2009c Nonlinear Asymmetric",
+      "MNI Colin 27"
+    ],
+    "representation_semantics": "OVERLAPPING_PROBABILISTIC (cytoarchitectonic PMs + optional MPM)",
+    "siibra_installed_now": false,
+    "external_regions": {
+      "count": 440,
+      "with_label_index": 0,
+      "with_hemisphere": 440,
+      "reference_space_set": 0
+    },
+    "identity_chain": "canonical.metadata_json.julich_source_region_id == external_regions.source_region_id",
+    "identity_aligned": 440
+  },
+  "G3_brainnetome": {
+    "canonical_count": 246,
+    "atlas_family": "multimodal connectivity parcellation",
+    "atlas_registry_record": {
+      "reference_space": "MNI152",
+      "resolution": null,
+      "map_type": "label",
+      "region_count_declared": 246
+    },
+    "official_volumetric_nifti_present": false,
+    "freesurfer_surface_package_present": true,
+    "subject_volume_bn_mgz": {
+      "shape": [
+        256,
+        256,
+        256
+      ],
+      "dtype": ">f4",
+      "voxel_size_mm": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "affine": [
+        [
+          -1.0,
+          -0.0,
+          -0.0,
+          127.0
+        ],
+        [
+          -0.0,
+          0.0,
+          1.0,
+          -145.5
+        ],
+        [
+          0.0,
+          -1.0,
+          0.0,
+          147.0
+        ],
+        [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ]
+      ],
+      "orientation": [
+        "L",
+        "I",
+        "A"
+      ],
+      "unique_labels": 211,
+      "non_background_voxels": 740535
+    },
+    "external_regions": {
+      "count": 246,
+      "with_label_index": 246,
+      "with_hemisphere": 246,
+      "reference_space_set": 0
+    },
+    "official_download_source": "http://atlas.brainnetome.org/download.html",
+    "identity_aligned": 246,
+    "volumetric_label_index_identity_proven": true
+  },
+  "note": "Neither official MNI volumetric NIfTI present in repo. G4 stores probabilistic-atlas registry identity only (no map files). G3 stores FreeSurfer surface pkg + subject BN.mgz; official BNA246 MNI152 1mm volume absent. Both IDENTITY chains to official volumetric/region labels are deterministic (G4 440/440, G3 246/246)."
+}

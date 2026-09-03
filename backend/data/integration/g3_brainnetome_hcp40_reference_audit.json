@@ -1,0 +1,50 @@
+{
+ "asset": "HCP40_MNI_1.25mm.nii.gz",
+ "size_bytes": 3988378,
+ "sha256": "2843cb60b5d487593e40a5bbf0555d7034bfedb21a2f78fb4e84a84cc34b5552",
+ "shape": [
+  145,
+  173,
+  145
+ ],
+ "ndim": 3,
+ "dtype": "float32",
+ "voxel_spacing_mm": [
+  1.25,
+  1.25,
+  1.25
+ ],
+ "orientation": [
+  "L",
+  "A",
+  "S"
+ ],
+ "affine": [
+  [
+   -1.25,
+   0.0,
+   0.0,
+   90.0
+  ],
+  [
+   0.0,
+   1.25,
+   0.0,
+   -126.0
+  ],
+  [
+   0.0,
+   0.0,
+   1.25,
+   -72.0
+  ],
+  [
+   0.0,
+   0.0,
+   0.0,
+   1.0
+  ]
+ ],
+ "reference_space": "MNI152 (HCP40 lineage, 40 HCP subjects)",
+ "grid_relationship_to_BNA_PM_4D": "SAME_GRID (identical shape 145x173x145, identical affine, 1.25mm)"
+}

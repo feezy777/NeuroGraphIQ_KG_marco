@@ -1,0 +1,98 @@
+{
+ "julich": {
+  "shape": [
+   193,
+   229,
+   193
+  ],
+  "spacing": [
+   1,
+   1,
+   1
+  ],
+  "affine": [
+   [
+    1.0,
+    0.0,
+    0.0,
+    -96.0
+   ],
+   [
+    0.0,
+    1.0,
+    0.0,
+    -132.0
+   ],
+   [
+    0.0,
+    0.0,
+    1.0,
+    -78.0
+   ],
+   [
+    0.0,
+    0.0,
+    0.0,
+    1.0
+   ]
+  ],
+  "orientation": [
+   "R",
+   "A",
+   "S"
+  ],
+  "template": "MNI 152 ICBM 2009c Nonlinear Asymmetric (193x229x193 1mm grid)"
+ },
+ "brainnetome": {
+  "shape": [
+   182,
+   218,
+   182
+  ],
+  "spacing": [
+   1,
+   1,
+   1
+  ],
+  "affine": [
+   [
+    -1.0,
+    0.0,
+    0.0,
+    90.0
+   ],
+   [
+    0.0,
+    1.0,
+    0.0,
+    -126.0
+   ],
+   [
+    0.0,
+    0.0,
+    1.0,
+    -72.0
+   ],
+   [
+    0.0,
+    0.0,
+    0.0,
+    1.0
+   ]
+  ],
+  "orientation": [
+   "L",
+   "A",
+   "S"
+  ],
+  "template": "MNI152 (182x218x182 1mm grid)"
+ },
+ "same_template": "BOTH_MNI152_1MM_BUT_DIFFERENT_GRID_SHAPES",
+ "same_grid": false,
+ "classification": "COMMON_SPACE_RESAMPLING_REQUIRED",
+ "note": "Both are MNI152 1mm but Julich uses 193x229x193 (ICBM 2009c nonlinear) and Brainnetome uses 182x218x182 (ICBM 152). A common reference grid / resampling is required before voxel overlap.",
+ "resampling_contract": {
+  "brainnetome_deterministic_label": "nearest-neighbor (preserve integer labels)",
+  "julich_probability": "continuous interpolation appropriate for a probability field (NOT nearest-neighbor)"
+ }
+}

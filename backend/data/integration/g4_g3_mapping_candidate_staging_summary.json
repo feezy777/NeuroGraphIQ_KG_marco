@@ -1,0 +1,33 @@
+{
+ "phase": "G4_G3_MAPPING_CANDIDATE_STAGING_V1",
+ "canonical_g4_total": 440,
+ "mapped_source_count": 267,
+ "excluded_source_count": 173,
+ "candidate_relation_count": 461,
+ "contained_rows": 20,
+ "dominant_rows": 110,
+ "partial_rows": 331,
+ "contained_source_count": 20,
+ "dominant_source_count": 110,
+ "partial_source_count": 331,
+ "no_mapping_exclusion": 18,
+ "conflict_exclusion": 91,
+ "shared_exclusion": 64,
+ "scientific_rollup_true": 20,
+ "proposed_rollup_true": 0,
+ "proposed_primary_true": 0,
+ "record_status_proposed": 461,
+ "review_status_pending": 461,
+ "production_write": false,
+ "qa": {
+  "resolution_missing": 0,
+  "source_gran_mismatch": 0,
+  "target_gran_mismatch": 0,
+  "hemi_mismatch": 0,
+  "semantic_gate_fail": 0,
+  "duplicate_relation_count": 0,
+  "duplicate_candidate_id_count": 0,
+  "source_closure_union_440": true,
+  "source_closure_intersection_0": true
+ }
+}

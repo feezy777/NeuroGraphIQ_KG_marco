@@ -1,0 +1,38 @@
+{
+ "phase": "G4_G3_MAPPING_CANDIDATE_FIDELITY_REVIEW_V1",
+ "candidate_count": 461,
+ "pass_count": 461,
+ "fail_count": 0,
+ "contained_count": 20,
+ "dominant_count": 110,
+ "partial_count": 331,
+ "mapped_source_count": 267,
+ "source_identity_mismatch": 0,
+ "target_identity_mismatch": 0,
+ "granularity_mismatch": 0,
+ "hemisphere_mismatch": 0,
+ "coverage_mismatch": 0,
+ "target_coverage_semantics_status": "TARGET_COVERAGE_SEMANTICS_VALID",
+ "target_coverage_note": "schema has no stricter formal definition (no column comment/data dict); value = g3_mass_weighted_g4 probability, documented in provenance_json as the directional fraction of target G3 mass associated/explained by source G4 (probability analogue of the G3->G1 target_coverage_ratio precedent).",
+ "mapping_method_status": "VALID_spatial_overlap_enum",
+ "lifecycle_anomaly": 0,
+ "rollup_anomaly": 0,
+ "provenance_anomaly": 0,
+ "candidate_id_anomaly": 0,
+ "exclusion_count": 173,
+ "exclusion_leak": 0,
+ "partial_source_count": 137,
+ "partial_target_set_mismatch": 0,
+ "partial_multi_target_distribution": {
+  "2-target": 83,
+  "3-target": 51,
+  "4-target": 3
+ },
+ "scientific_hash_unchanged": true,
+ "final_scientific_decision_hashes": {
+  "final_decisions_sha256": "c2db56d0a39b983c6aac7dbfcdbe1b256cb4c7062bd7d227109667d826af09df",
+  "final_relations_sha256": "2f942de88b1ab99f691213478d7ea230777866062d38b8d11a631feb6b7b6e1f",
+  "final_exclusions_sha256": "c75638645238093b7cb1f9a831ac975691d955a5043a2f6977ff6f9c5f29e0b7"
+ },
+ "production_write": false
+}

@@ -1,0 +1,225 @@
+{
+ "phase": "G4_G3_PROBABILITY_OVERLAP_V1",
+ "julich_spatial_components": 414,
+ "brainnetome_components": 246,
+ "pair_count": 101844,
+ "one_to_one_julich_component_count": 390,
+ "shared_spatial_component_count": 24,
+ "canonical_g4_covered_count": 440,
+ "canonical_g4_entity_count": 440,
+ "shared_spatial_representation_count": 24,
+ "shared_component_rows": [
+  {
+   "row_index": 9,
+   "asset_file": "AREA_25_SACC_LEFT.nii.gz",
+   "canonical_count": 2
+  },
+  {
+   "row_index": 10,
+   "asset_file": "AREA_25_SACC_RIGHT.nii.gz",
+   "canonical_count": 2
+  },
+  {
+   "row_index": 211,
+   "asset_file": "AREA_P24AB_PACC_LEFT.nii.gz",
+   "canonical_count": 2
+  },
+  {
+   "row_index": 212,
+   "asset_file": "AREA_P24AB_PACC_RIGHT.nii.gz",
+   "canonical_count": 2
+  },
+  {
+   "row_index": 213,
+   "asset_file": "AREA_P24C_PACC_LEFT.nii.gz",
+   "canonical_count": 3
+  },
+  {
+   "row_index": 214,
+   "asset_file": "AREA_P24C_PACC_RIGHT.nii.gz",
+   "canonical_count": 3
+  },
+  {
+   "row_index": 237,
+   "asset_file": "AREA_PIRTB_PIRIFORMCORTEXMESIAL_TEMPOROBASAL_LEFT.nii.gz",
+   "canonical_count": 2
+  },
+  {
+   "row_index": 238,
+   "asset_file": "AREA_PIRTB_PIRIFORMCORTEXMESIAL_TEMPOROBASAL_RIGHT.nii.gz",
+   "canonical_count": 2
+  },
+  {
+   "row_index": 239,
+   "asset_file": "AREA_PIRT_PIRIFORMCORTEXMESIAL_TEMPORAL_LEFT.nii.gz",
+   "canonical_count": 2
+  },
+  {
+   "row_index": 240,
+   "asset_file": "AREA_PIRT_PIRIFORMCORTEXMESIAL_TEMPORAL_RIGHT.nii.gz",
+   "canonical_count": 2
+  },
+  {
+   "row_index": 241,
+   "asset_file": "AREA_S24_SACC_LEFT.nii.gz",
+   "canonical_count": 2
+  },
+  {
+   "row_index": 242,
+   "asset_file": "AREA_S24_SACC_RIGHT.nii.gz",
+   "canonical_count": 2
+  },
+  {
+   "row_index": 299,
+   "asset_file": "CM_AMYGDALA_LEFT.nii.gz",
+   "canonical_count": 3
+  },
+  {
+   "row_index": 300,
+   "asset_file": "CM_AMYGDALA_RIGHT.nii.gz",
+   "canonical_count": 3
+  },
+  {
+   "row_index": 323,
+   "asset_file": "IF_AMYGDALA_LEFT.nii.gz",
+   "canonical_count": 3
+  },
+  {
+   "row_index": 324,
+   "asset_file": "IF_AMYGDALA_RIGHT.nii.gz",
+   "canonical_count": 3
+  },
+  {
+   "row_index": 325,
+   "asset_file": "LB_AMYGDALA_LEFT.nii.gz",
+   "canonical_count": 4
+  },
+  {
+   "row_index": 326,
+   "asset_file": "LB_AMYGDALA_RIGHT.nii.gz",
+   "canonical_count": 4
+  },
+  {
+   "row_index": 335,
+   "asset_file": "MF_AMYGDALA_LEFT.nii.gz",
+   "canonical_count": 2
+  },
+  {
+   "row_index": 336,
+   "asset_file": "MF_AMYGDALA_RIGHT.nii.gz",
+   "canonical_count": 2
+  },
+  {
+   "row_index": 367,
+   "asset_file": "SF_AMYGDALA_LEFT.nii.gz",
+   "canonical_count": 3
+  },
+  {
+   "row_index": 368,
+   "asset_file": "SF_AMYGDALA_RIGHT.nii.gz",
+   "canonical_count": 3
+  },
+  {
+   "row_index": 379,
+   "asset_file": "SUBC_HIPPOCAMPUS_SUBICULAR_COMPLEX_LEFT.nii.gz",
+   "canonical_count": 4
+  },
+  {
+   "row_index": 380,
+   "asset_file": "SUBC_HIPPOCAMPUS_SUBICULAR_COMPLEX_RIGHT.nii.gz",
+   "canonical_count": 4
+  }
+ ],
+ "finite_pair_count": 101844,
+ "non_zero_pair_count": 10324,
+ "non_zero_pair_fraction": 0.101371,
+ "joint_mass": {
+  "min": 0.0,
+  "median": 0.0,
+  "max": 6265.60608599
+ },
+ "g4_mass_weighted_g3_probability_distribution": {
+  "min": 0.0,
+  "median": 0.0,
+  "max": 0.84393187
+ },
+ "g3_mass_weighted_g4_probability_distribution": {
+  "min": 0.0,
+  "median": 0.0,
+  "max": 0.87194609
+ },
+ "probability_cosine_distribution": {
+  "min": 0.0,
+  "median": 0.0,
+  "max": 0.82240142
+ },
+ "soft_dice_distribution": {
+  "min": 0.0,
+  "median": 0.0,
+  "max": 0.78808631
+ },
+ "opposite_hemisphere_top1_count": 5,
+ "hemisphere_flip_count": 0,
+ "hemisphere_QA_anomaly_count": 5,
+ "hemisphere_QA_anomaly_rows": [
+  {
+   "row_index": 340,
+   "asset_file": "NDENTD_CEREBELLUM_DORSAL_DENTATE_NUCLEUS_RIGHT.nii.gz",
+   "top1_g3": "NGIQ-BR-00000001",
+   "opposite_mass_ratio": 0.0,
+   "row_max_joint_mass": 0.0,
+   "cause": "DEGENERATE_ZERO_G3_OVERLAP"
+  },
+  {
+   "row_index": 342,
+   "asset_file": "NDENTV_CEREBELLUM_VENTRAL_DENTATE_NUCLEUS_RIGHT.nii.gz",
+   "top1_g3": "NGIQ-BR-00000001",
+   "opposite_mass_ratio": 0.0,
+   "row_max_joint_mass": 0.0,
+   "cause": "DEGENERATE_ZERO_G3_OVERLAP"
+  },
+  {
+   "row_index": 344,
+   "asset_file": "NFAST_CEREBELLUM_FASTIGIAL_NUCLEUS_RIGHT.nii.gz",
+   "top1_g3": "NGIQ-BR-00000001",
+   "opposite_mass_ratio": 0.0,
+   "row_max_joint_mass": 0.0,
+   "cause": "DEGENERATE_ZERO_G3_OVERLAP"
+  },
+  {
+   "row_index": 346,
+   "asset_file": "NINTERP_CEREBELLUM_INTERPOSED_NUCLEUS_RIGHT.nii.gz",
+   "top1_g3": "NGIQ-BR-00000001",
+   "opposite_mass_ratio": 0.0,
+   "row_max_joint_mass": 0.0,
+   "cause": "DEGENERATE_ZERO_G3_OVERLAP"
+  },
+  {
+   "row_index": 348,
+   "asset_file": "NRM_MIDBRAIN_NUCLEUS_RUBER_MAGNOCELLULAR_PART_RIGHT.nii.gz",
+   "top1_g3": "NGIQ-BR-00000001",
+   "opposite_mass_ratio": 0.0,
+   "row_max_joint_mass": 0.0,
+   "cause": "DEGENERATE_ZERO_G3_OVERLAP"
+  }
+ ],
+ "hemisphere_QA_note": "hemisphere_flip_count=0 (mass-majority rule). top1-opposite flags are reported and NOT auto-deleted; all current flags are right-cerebellar/midbrain Julich components with essentially no Brainnetome coverage (row_max_joint_mass ~ 0), so their argmax top-1 is a degenerate near-zero tie, not a true flip.",
+ "metric_version": "G4_G3_PROBABILITY_OVERLAP_V1",
+ "metric_formulas": {
+  "g4_probability_mass": "sum_x P4(x)",
+  "g3_probability_mass": "sum_x P3(x)",
+  "joint_weighted_mass": "sum_x P4(x)*P3(x)  (voxel volume 1 mm3 -> joint_weighted_mass_mm3 numerically equal)",
+  "g4_mass_weighted_g3_probability": "joint / g4_probability_mass (mean G3 prob under G4 mass distribution)",
+  "g3_mass_weighted_g4_probability": "joint / g3_probability_mass (mean G4 prob under G3 mass distribution)",
+  "probability_cosine": "joint / sqrt(sum P4^2 * sum P3^2)",
+  "soft_dice": "2*joint / (sum P4^2 + sum P3^2)"
+ },
+ "metric_semantics": "probability-weighted spatial association between two independently built atlases on a shared 1mm MNI152NLin2009cAsym grid; NOT a Bayesian joint probability, NOT a binary overlap, NOT a relation decision.",
+ "classification_thresholds": "NOT_DEFINED",
+ "mapping_decisions_created": false,
+ "julich_row_order": "sorted by spatial_asset_file (deterministic); see g4_g3_probability_overlap_rows.csv",
+ "g3_column_order": "component_index 1..246; see g4_g3_probability_overlap_columns.csv",
+ "matrix_hash": "a64d0c598300d1f0e6d56c67c1e2564775287447d5c17f77741bcf96ec2df874",
+ "numpy_version": "2.2.0",
+ "recorded": "2026-09-03T10:11:26.885229+00:00"
+}

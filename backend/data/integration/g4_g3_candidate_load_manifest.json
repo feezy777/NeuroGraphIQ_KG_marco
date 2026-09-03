@@ -1,0 +1,45 @@
+{
+  "phase": "G4_G3_AGGREGATION_CANDIDATE_LOAD_V1",
+  "input_candidate_sha": "1aac6042ad6affeedd1d5bf2648c34f88177506e208e3af93da6b1bc4693bde1",
+  "fidelity_review_sha": "85e31097953f07c08c429ca9d1ec6e7a319c2fb4b83db3afdaef90d6d6e3acff",
+  "preload_g4_g3_count": 0,
+  "attempted": 461,
+  "inserted": 461,
+  "skipped_existing": 0,
+  "failed": 0,
+  "postload_g4_g3_count": 461,
+  "contained": 20,
+  "dominant": 110,
+  "partial": 331,
+  "proposed": 461,
+  "pending": 461,
+  "active": 0,
+  "approved": 0,
+  "rollup_true": 0,
+  "primary_true": 0,
+  "mapped_source_count": 267,
+  "exclusion_leak": 0,
+  "transaction_committed": true,
+  "g3_g1_before": {
+    "total": 246,
+    "active": 246,
+    "approved": 246,
+    "rollup": 172
+  },
+  "g3_g1_after": {
+    "total": 246,
+    "active": 246,
+    "approved": 246,
+    "rollup": 172
+  },
+  "rerun_observations": [
+    {
+      "inserted": 0,
+      "skipped_existing": 461,
+      "failed": 0,
+      "production_g4_g3_count": 461,
+      "timestamp": "2026-09-03T08:37:30.837731+00:00"
+    }
+  ],
+  "rerun_idempotent": true
+}

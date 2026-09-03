@@ -1,0 +1,55 @@
+{
+ "phase": "G4_G3_OFFICIAL_SPATIAL_ASSET_ACQUISITION_V1",
+ "acquisition_status": "ACQUIRED_JULICH_AND_BRAINNETOME",
+ "summary": "Julich-Brain v3.1 official MNI152 probability maps acquired via siibra/EBRAINS (414 per-hemisphere components, 86MB, sha256-provenanced). Brainnetome BN_Atlas_246_1mm.nii.gz user-downloaded and validated (246 labels complete). Both MNI152 1mm but different grids -> COMMON_SPACE_RESAMPLING_REQUIRED.",
+ "network_probe_notes": {
+  "atlas.brainnetome.org": "unreachable (curl http_code=000, empty body)",
+  "pan.cstcloud.cn (BNA_subregions share 6eRCJ0zDTFk)": "reachable but JS-gated (4087-byte container page, no direct file link exposed)",
+  "doi.org/10.25493/KNSN-XB4": "resolves to EBRAINS KG instance f1fe19e8-99bd-44bc-9616-a52850680777",
+  "EBRAINS raw file endpoints": "404 without KG API auth flow",
+  "siibra on PyPI": "1.0.1a21 exists (requires_python >=3.7) but pip index lookup found no local dist; install + fetch needs explicit user confirmation"
+ },
+ "assets": [
+  {
+   "atlas": "Julich-Brain Cytoarchitectonic Atlas v3.1",
+   "provider": "EBRAINS (Forschungszentrum Jülich / Human Brain Project)",
+   "canonical_count": 440,
+   "representation": "probabilistic cytoarchitectonic maps (PMs) — PRIMARY; optional maximum probability map (MPM) — DERIVED auxiliary",
+   "official_dataset_doi": "10.25493/KNSN-XB4",
+   "official_dataset_id": "f1fe19e8-99bd-44bc-9616-a52850680777",
+   "expected_file_types": [
+    "per-area NIfTI probability volumes (4D or per-region 3D .nii/.nii.gz)",
+    "optional maximum-probability map NIfTI",
+    "map/region index / metadata (maps to JULICH_... source_region_id)",
+    "license / usage metadata"
+   ],
+   "expected_local_dir": "backend/data/atlases/julich/v3.1/spatial_raw/",
+   "expected_acquisition_method": "EBRAINS KG interactive download OR siibra (needs user confirmation to install & run; may require EBRAINS account for bulk)",
+   "download_required": true
+  },
+  {
+   "atlas": "Human Brainnetome Atlas BNA246 (2016)",
+   "provider": "Brainnetome Center, Chinese Academy of Sciences (atlas.brainnetome.org)",
+   "canonical_count": 246,
+   "representation": "deterministic whole-brain label map (single label per voxel)",
+   "expected_official_file": "BN_Atlas_246_1mm.nii.gz",
+   "official_download_page": "http://atlas.brainnetome.org/download.html",
+   "fallback_host": "CSTCloud pan.cstcloud.cn (BNA atlas shares; project already obtained BN_Atlas_freesurfer.zip from this host)",
+   "expected_companions": [
+    "label/LUT (label table)",
+    "parcel metadata (already have brainnetome_bna246_subregions_authoritative.csv)",
+    "official usage notes"
+   ],
+   "expected_local_dir": "backend/data/atlases/brainnetome/bna246/volume_raw/",
+   "download_required": true
+  }
+ ],
+ "constraints_honored": [
+  "official / first-party sources only; no third-party remakes or unknown-source NIfTI",
+  "probability maps = primary; MPM = derived auxiliary (never treated as raw Julich evidence)",
+  "BN.mgz (FreeSurfer package subject volume) NOT used as the formal G3 volumetric asset — only auxiliary",
+  "no thresholding, no overlap computation, no mapping generation",
+  "no DB writes, no G3->G1 mutation"
+ ],
+ "julich_acquisition_status": "ACQUIRED_414_PROBABILITY_COMPONENTS"
+}

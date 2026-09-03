@@ -1,0 +1,54 @@
+{
+ "asset": "BNA_PM_4D.nii.gz",
+ "size_bytes": 8547072,
+ "sha256": "b1318517f61d08f714c25e55ee580eb8a487c0b7ab1ddbcc7eac852e4e97f020",
+ "representation": "probabilistic (PRIMARY spatial representation)",
+ "shape": [
+  145,
+  173,
+  145,
+  246
+ ],
+ "ndim": 4,
+ "dtype": "float32",
+ "component_count": 246,
+ "voxel_spacing_mm": [
+  1.25,
+  1.25,
+  1.25
+ ],
+ "orientation": [
+  "L",
+  "A",
+  "S"
+ ],
+ "affine": [
+  [
+   -1.25,
+   0.0,
+   0.0,
+   90.0
+  ],
+  [
+   0.0,
+   1.25,
+   0.0,
+   -126.0
+  ],
+  [
+   0.0,
+   0.0,
+   1.25,
+   -72.0
+  ],
+  [
+   0.0,
+   0.0,
+   0.0,
+   1.0
+  ]
+ ],
+ "reference_space": "MNI152NLin6Asym (HCP40 1.25mm lineage; grid identical to HCP40 template)",
+ "probability_scale": "0-100 (PERCENT)",
+ "scale_note": "Official README states 0~1 but actual file values are 0-100 percent. NOT normalized here. Future Julich(0-1) x BNA(0-100) overlap MUST reconcile scale (divide BNA by 100) at compute time."
+}

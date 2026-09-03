@@ -1,0 +1,9 @@
+{
+ "phase": "G4_G3_TRANSFORM_SMOKE_TEST_V2",
+ "status": "PASS",
+ "reason": "Phase 2E built the SimpleITK toolchain (reads/applies the ITK composite h5 natively) and executed the single-component source->target smoke. Direction locked by template-agreement probe (as-stored, no inverse; warped NLin6 template vs true 2009c template Dice 0.9726). Smoke component 1 (SFG_L_7_1, left) PASSED all 6 checks. See g4_g3_transform_direction_lock.json and g4_g3_transform_toolchain_validation.json.",
+ "applied": "one Brainnetome probability component (BNA_PM_4D comp 1) NLin6/HCP40 1.25mm -> MNI152NLin2009cAsym 1mm grid, Linear continuous interpolation, bg=0, raw percent preserved + normalized 0-1 derivative",
+ "verified": "TARGET_GRID_MATCH=True, NaN/Inf=0, raw range [0,100], normalized range [0,1], no hemisphere flip (left parcel CoM x=-7.81mm), centroid inside 2009c brain",
+ "outcome_asset": "data/atlases/brainnetome/bna246/transformed_to_julich2009c_smoke/BNA_PM4D_comp001_NLin6to2009c_raw_percent.nii.gz",
+ "scope_note": "One-component smoke only. Batch transform of 246 components / Julich resampling / overlap / mapping are OUT OF SCOPE and were not executed."
+}

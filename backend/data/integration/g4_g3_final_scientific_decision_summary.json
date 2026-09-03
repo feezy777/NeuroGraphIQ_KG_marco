@@ -1,0 +1,353 @@
+{
+ "phase": "G4_G3_FINAL_SCIENTIFIC_DECISION_FREEZE_V1",
+ "policy_version": "G4_G3_FINAL_SCIENTIFIC_POLICY_V1",
+ "canonical_total": 440,
+ "contained_count": 20,
+ "dominant_count": 110,
+ "partial_source_count": 137,
+ "partial_relation_row_count": 331,
+ "no_mapping_count": 18,
+ "conflict_count": 91,
+ "shared_count": 64,
+ "sum_check_440": true,
+ "contained_rollup_count": 20,
+ "semantic_contained_failure": 0,
+ "contained_semantic_status": {
+  "NGIQ-BR-00000335": "EXACT_FAMILY",
+  "NGIQ-BR-00000337": "EXACT_FAMILY",
+  "NGIQ-BR-00000338": "EXACT_FAMILY",
+  "NGIQ-BR-00000413": "NESTED_COMPATIBLE_FAMILY",
+  "NGIQ-BR-00000465": "NESTED_COMPATIBLE_FAMILY",
+  "NGIQ-BR-00000467": "NESTED_COMPATIBLE_FAMILY",
+  "NGIQ-BR-00000468": "NESTED_COMPATIBLE_FAMILY",
+  "NGIQ-BR-00000494": "NESTED_COMPATIBLE_FAMILY",
+  "NGIQ-BR-00000512": "NESTED_COMPATIBLE_FAMILY",
+  "NGIQ-BR-00000515": "NESTED_COMPATIBLE_FAMILY",
+  "NGIQ-BR-00000520": "EXACT_FAMILY",
+  "NGIQ-BR-00000521": "EXACT_FAMILY",
+  "NGIQ-BR-00000522": "EXACT_FAMILY",
+  "NGIQ-BR-00000547": "EXACT_FAMILY",
+  "NGIQ-BR-00000548": "EXACT_FAMILY",
+  "NGIQ-BR-00000583": "NESTED_COMPATIBLE_FAMILY",
+  "NGIQ-BR-00000597": "EXACT_FAMILY",
+  "NGIQ-BR-00000599": "EXACT_FAMILY",
+  "NGIQ-BR-00000628": "NESTED_COMPATIBLE_FAMILY",
+  "NGIQ-BR-00000664": "EXACT_FAMILY"
+ },
+ "final_multi_target_accepted_from_21": 16,
+ "final_multi_target_rejected_from_21": 5,
+ "multi_target_gate_detail": {
+  "NGIQ-BR-00000383": {
+   "ok": false,
+   "n": 3,
+   "cum": 0.7327,
+   "hard_total": 0.9879,
+   "explained": 0.7417,
+   "reason": "MULTI_TARGET_DIFFUSE_REMAINDER",
+   "targets": [
+    "NGIQ-BR-00000156",
+    "NGIQ-BR-00000160",
+    "NGIQ-BR-00000162"
+   ]
+  },
+  "NGIQ-BR-00000384": {
+   "ok": true,
+   "n": 3,
+   "cum": 0.8029,
+   "hard_total": 0.9978,
+   "explained": 0.8046,
+   "reason": "FINAL_MULTI_TARGET_PARTIAL_GATE_PASS",
+   "targets": [
+    "NGIQ-BR-00000159",
+    "NGIQ-BR-00000201",
+    "NGIQ-BR-00000155"
+   ]
+  },
+  "NGIQ-BR-00000423": {
+   "ok": true,
+   "n": 3,
+   "cum": 0.6841,
+   "hard_total": 0.8197,
+   "explained": 0.8346,
+   "reason": "FINAL_MULTI_TARGET_PARTIAL_GATE_PASS",
+   "targets": [
+    "NGIQ-BR-00000154",
+    "NGIQ-BR-00000166",
+    "NGIQ-BR-00000148"
+   ]
+  },
+  "NGIQ-BR-00000428": {
+   "ok": true,
+   "n": 3,
+   "cum": 0.7338,
+   "hard_total": 0.7749,
+   "explained": 0.9469,
+   "reason": "FINAL_MULTI_TARGET_PARTIAL_GATE_PASS",
+   "targets": [
+    "NGIQ-BR-00000145",
+    "NGIQ-BR-00000139",
+    "NGIQ-BR-00000147"
+   ]
+  },
+  "NGIQ-BR-00000431": {
+   "ok": true,
+   "n": 3,
+   "cum": 0.756,
+   "hard_total": 0.9181,
+   "explained": 0.8234,
+   "reason": "FINAL_MULTI_TARGET_PARTIAL_GATE_PASS",
+   "targets": [
+    "NGIQ-BR-00000140",
+    "NGIQ-BR-00000144",
+    "NGIQ-BR-00000148"
+   ]
+  },
+  "NGIQ-BR-00000448": {
+   "ok": true,
+   "n": 3,
+   "cum": 0.7551,
+   "hard_total": 0.9084,
+   "explained": 0.8312,
+   "reason": "FINAL_MULTI_TARGET_PARTIAL_GATE_PASS",
+   "targets": [
+    "NGIQ-BR-00000079",
+    "NGIQ-BR-00000055",
+    "NGIQ-BR-00000077"
+   ]
+  },
+  "NGIQ-BR-00000453": {
+   "ok": true,
+   "n": 3,
+   "cum": 0.6686,
+   "hard_total": 0.8191,
+   "explained": 0.8163,
+   "reason": "FINAL_MULTI_TARGET_PARTIAL_GATE_PASS",
+   "targets": [
+    "NGIQ-BR-00000072",
+    "NGIQ-BR-00000028",
+    "NGIQ-BR-00000076"
+   ]
+  },
+  "NGIQ-BR-00000482": {
+   "ok": true,
+   "n": 3,
+   "cum": 0.7505,
+   "hard_total": 0.8222,
+   "explained": 0.9128,
+   "reason": "FINAL_MULTI_TARGET_PARTIAL_GATE_PASS",
+   "targets": [
+    "NGIQ-BR-00000053",
+    "NGIQ-BR-00000051",
+    "NGIQ-BR-00000049"
+   ]
+  },
+  "NGIQ-BR-00000501": {
+   "ok": false,
+   "n": 3,
+   "cum": 0.6252,
+   "hard_total": 0.9586,
+   "explained": 0.6522,
+   "reason": "MULTI_TARGET_DIFFUSE_REMAINDER",
+   "targets": [
+    "NGIQ-BR-00000048",
+    "NGIQ-BR-00000050",
+    "NGIQ-BR-00000052"
+   ]
+  },
+  "NGIQ-BR-00000502": {
+   "ok": true,
+   "n": 3,
+   "cum": 0.7102,
+   "hard_total": 0.9439,
+   "explained": 0.7524,
+   "reason": "FINAL_MULTI_TARGET_PARTIAL_GATE_PASS",
+   "targets": [
+    "NGIQ-BR-00000047",
+    "NGIQ-BR-00000049",
+    "NGIQ-BR-00000039"
+   ]
+  },
+  "NGIQ-BR-00000505": {
+   "ok": true,
+   "n": 4,
+   "cum": 0.9347,
+   "hard_total": 0.9722,
+   "explained": 0.9615,
+   "reason": "FINAL_MULTI_TARGET_PARTIAL_GATE_PASS",
+   "targets": [
+    "NGIQ-BR-00000042",
+    "NGIQ-BR-00000034",
+    "NGIQ-BR-00000022",
+    "NGIQ-BR-00000044"
+   ]
+  },
+  "NGIQ-BR-00000555": {
+   "ok": true,
+   "n": 4,
+   "cum": 0.8808,
+   "hard_total": 0.9564,
+   "explained": 0.9209,
+   "reason": "FINAL_MULTI_TARGET_PARTIAL_GATE_PASS",
+   "targets": [
+    "NGIQ-BR-00000176",
+    "NGIQ-BR-00000180",
+    "NGIQ-BR-00000172",
+    "NGIQ-BR-00000174"
+   ]
+  },
+  "NGIQ-BR-00000576": {
+   "ok": false,
+   "n": 3,
+   "cum": 0.6844,
+   "hard_total": 0.991,
+   "explained": 0.6907,
+   "reason": "MULTI_TARGET_DIFFUSE_REMAINDER",
+   "targets": [
+    "NGIQ-BR-00000093",
+    "NGIQ-BR-00000087",
+    "NGIQ-BR-00000089"
+   ]
+  },
+  "NGIQ-BR-00000581": {
+   "ok": true,
+   "n": 3,
+   "cum": 0.7941,
+   "hard_total": 0.8941,
+   "explained": 0.8881,
+   "reason": "FINAL_MULTI_TARGET_PARTIAL_GATE_PASS",
+   "targets": [
+    "NGIQ-BR-00000088",
+    "NGIQ-BR-00000086",
+    "NGIQ-BR-00000154"
+   ]
+  },
+  "NGIQ-BR-00000604": {
+   "ok": true,
+   "n": 3,
+   "cum": 0.7478,
+   "hard_total": 0.885,
+   "explained": 0.8449,
+   "reason": "FINAL_MULTI_TARGET_PARTIAL_GATE_PASS",
+   "targets": [
+    "NGIQ-BR-00000117",
+    "NGIQ-BR-00000115",
+    "NGIQ-BR-00000119"
+   ]
+  },
+  "NGIQ-BR-00000610": {
+   "ok": true,
+   "n": 3,
+   "cum": 0.7277,
+   "hard_total": 0.9165,
+   "explained": 0.794,
+   "reason": "FINAL_MULTI_TARGET_PARTIAL_GATE_PASS",
+   "targets": [
+    "NGIQ-BR-00000085",
+    "NGIQ-BR-00000153",
+    "NGIQ-BR-00000089"
+   ]
+  },
+  "NGIQ-BR-00000614": {
+   "ok": false,
+   "n": 3,
+   "cum": 0.6517,
+   "hard_total": 0.9138,
+   "explained": 0.7132,
+   "reason": "MULTI_TARGET_DIFFUSE_REMAINDER",
+   "targets": [
+    "NGIQ-BR-00000197",
+    "NGIQ-BR-00000195",
+    "NGIQ-BR-00000201"
+   ]
+  },
+  "NGIQ-BR-00000624": {
+   "ok": true,
+   "n": 4,
+   "cum": 0.9437,
+   "hard_total": 0.9484,
+   "explained": 0.995,
+   "reason": "FINAL_MULTI_TARGET_PARTIAL_GATE_PASS",
+   "targets": [
+    "NGIQ-BR-00000209",
+    "NGIQ-BR-00000117",
+    "NGIQ-BR-00000015",
+    "NGIQ-BR-00000199"
+   ]
+  },
+  "NGIQ-BR-00000682": {
+   "ok": false,
+   "n": 3,
+   "cum": 0.6011,
+   "hard_total": 0.9683,
+   "explained": 0.6208,
+   "reason": "MULTI_TARGET_DIFFUSE_REMAINDER",
+   "targets": [
+    "NGIQ-BR-00000121",
+    "NGIQ-BR-00000115",
+    "NGIQ-BR-00000127"
+   ]
+  },
+  "NGIQ-BR-00000722": {
+   "ok": true,
+   "n": 3,
+   "cum": 0.7214,
+   "hard_total": 0.7614,
+   "explained": 0.9475,
+   "reason": "FINAL_MULTI_TARGET_PARTIAL_GATE_PASS",
+   "targets": [
+    "NGIQ-BR-00000239",
+    "NGIQ-BR-00000241",
+    "NGIQ-BR-00000235"
+   ]
+  },
+  "NGIQ-BR-00000755": {
+   "ok": true,
+   "n": 3,
+   "cum": 0.7509,
+   "hard_total": 0.9122,
+   "explained": 0.8232,
+   "reason": "FINAL_MULTI_TARGET_PARTIAL_GATE_PASS",
+   "targets": [
+    "NGIQ-BR-00000232",
+    "NGIQ-BR-00000246",
+    "NGIQ-BR-00000234"
+   ]
+  }
+ },
+ "confirmed_partial_source_base_121": 121,
+ "vtm_final": {
+  "decision": "CONFLICT_REVIEW",
+  "reason": "SEMANTIC_FAMILY_MISMATCH",
+  "rollup": "False"
+ },
+ "ph3_final": {
+  "decision": "APPROVE_DOMINANT_OVERLAP",
+  "reason": "STRONG_SPATIAL_OVERLAP_BUT_NOT_HIERARCHICAL_CONTAINMENT"
+ },
+ "fg5_final": {
+  "decision": "APPROVE_CONTAINED_IN",
+  "reason": "OWNER_SEMANTIC_AND_SPATIAL_CONCORDANCE",
+  "rollup": "True"
+ },
+ "conflict_reason_distribution": {
+  "LOW_DOMINANCE": 6,
+  "HIGH_FRAGMENTATION": 50,
+  "PARTIAL_TARGET_EVIDENCE_INCONSISTENT": 5,
+  "PROBABILITY_HARDLABEL_TOP1_DISAGREEMENT": 15,
+  "DIFFUSE_ASSOCIATION": 8,
+  "SEMANTIC_FAMILY_MISMATCH": 1,
+  "MULTI_TARGET_DIFFUSE_REMAINDER": 5,
+  "LOW_BNA_COVERAGE": 1
+ },
+ "relation_totals": {
+  "contained": 20,
+  "dominant": 110,
+  "partial": 331,
+  "total": 461
+ },
+ "semantic_gate_rule": "contained rollup=TRUE only when semantic_compatibility_status in {EXACT_FAMILY, NESTED_COMPATIBLE_FAMILY}",
+ "operational_threshold_note": "multi-target gate selected_cumulative>=0.60 and explained_covered_fraction>=0.75 are PROJECT_OPERATIONAL thresholds, not universal neuroscience thresholds",
+ "owner_review_status": "OWNER_SCIENTIFIC_REVIEWED (not production approved)",
+ "database_write": false,
+ "recorded": "2026-09-03T08:18:38.994672+00:00"
+}

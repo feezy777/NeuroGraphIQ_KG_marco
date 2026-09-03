@@ -1,0 +1,16 @@
+{
+  "phase": "G4_JULICH_SPATIAL_ASSET_VALIDATION_V1",
+  "validation_status": "ASSET_NOT_ACQUIRED",
+  "note": "Julich-Brain v3.1 official probability maps are NOT present in backend/data/atlases/julich/v3.1/spatial_raw/. Validation of spatial files deferred until a human downloads the official EBRAINS dataset (DOI 10.25493/KNSN-XB4). Registry identity was already validated in Phase 2A (440/440 deterministic via julich_source_region_id).",
+  "expected_on_acquisition": {
+    "readability_check": "load each NIfTI via nibabel; confirm dims/spacing/affine/orientation",
+    "representation_determination": "detect 4D probability stack vs per-region 3D volumes vs other",
+    "identity_map_required": "official map/region index linking each spatial component to JULICH_... source_region_id (NOT by file order guess)",
+    "spatial_component_count": "expected to reflect actual official representation (may be <440 if not every canonical has an independent probability map); do NOT fabricate 440",
+    "probability_semantics": "record value range (0-1 vs 0-100), background value, NaN, normalization, overlap_allowed (multi-area per voxel)",
+    "mpm_separate": "if MPM present, record separately as DERIVED auxiliary (never primary evidence)"
+  },
+  "reference_spaces_declared": ["MNI 152 ICBM 2009c Nonlinear Asymmetric", "MNI Colin 27"],
+  "actual_template": null,
+  "actual_grid": null
+}
