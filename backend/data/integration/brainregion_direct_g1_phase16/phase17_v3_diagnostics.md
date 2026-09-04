@@ -1,0 +1,8 @@
+# Phase1.7 V3 Relation-level Frozen Applicability - 诊断
+
+universe=218 verified=86 review=132
+classification={'FROZEN_DECISION_PREVAILS': 14, 'VERIFIED_DIRECT_CONTAINED': 86, 'LIKELY_CONTAINED_NEEDS_SPATIAL_REVIEW': 93, 'ONTOLOGY_ENTITY_TYPE_REVIEW': 10, 'ONTOLOGY_DEFINITION_DEPENDENT': 11, 'ANATOMICAL_CONFLICT': 4}
+frozen hard-block total=14 (G3 only expected)
+applicability={'EXPLICIT_G1_ROLLUP_BLOCK': 6, 'DIRECT_G1_PAIR': 8, 'SOURCE_LEVEL_SPATIAL_ONLY': 86, 'LOWER_GRANULARITY_ONLY': 108, 'ENTITY_TYPE_GATE': 10}
+invariants={'direct_g1_frozen_overwritten': 0, 'explicit_no_rollup_overridden': 0, 'g3_dominant_promoted': 0, 'g3_no_g1_promoted': 0, 'g4_lower_granularity_used_as_hard_block': 0, 'source_level_spatial_only_used_as_hard_block': 0, 'entity_type_in_verified': 0, 'universe_missing': 0, 'universe_duplicate': 0}
+stg_6_2=[('NGIQ-BR-00000085', 'FROZEN_DECISION_PREVAILS'), ('NGIQ-BR-00000086', 'FROZEN_DECISION_PREVAILS')]
