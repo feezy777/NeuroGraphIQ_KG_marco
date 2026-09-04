@@ -1,0 +1,12 @@
+{
+  "inventory_families": 23,
+  "feasibility_93": {
+    "NO_GEOMETRY": 10,
+    "REGISTRATION_REQUIRED": 83
+  },
+  "geometry_class_93": {
+    "NO_GEOMETRY": 10,
+    "AUTHORITATIVE_NATIVE_G1_GEOMETRY": 83
+  },
+  "note": "cortical G1: DK fsaverage surface 存在(权威原生)，但 Julich volume ↔ surface 需桥接 → REGISTRATION_REQUIRED；subcortical(Thal/Hipp/Amyg/NAcc)与 Basal Forebrain: aseg/BF volume 缺失 → NO_GEOMETRY"
+}
