@@ -1,0 +1,8 @@
+# Phase1.7 V3 two-hop proxy validity & calibration
+
+rows validated=179 (LIKELY 93 + VERIFIED-anchors 86)
+metric: NON_NORMALIZED_OVERLAP_METRIC - two-hop G4->G3->G1 proxy only
+mapped coverage median: LIKELY=0.902 VERIFIED=1.0
+calibration(first rows): [{'threshold_candidate': 0.5, 'threshold_cross': 0.05, 'pass_93': 0, 'pass_86_anchors': 0}, {'threshold_candidate': 0.5, 'threshold_cross': 0.1, 'pass_93': 0, 'pass_86_anchors': 0}, {'threshold_candidate': 0.5, 'threshold_cross': 0.2, 'pass_93': 0, 'pass_86_anchors': 0}, {'threshold_candidate': 0.6, 'threshold_cross': 0.05, 'pass_93': 0, 'pass_86_anchors': 0}]
+basal forebrain rows=6
+negatives=[{'source_id': 'NGIQ-BR-00000707', 'source_name': 'Rt (Thalamus, reticular Nucleus) right', 'v3': 'ANATOMICAL_CONFLICT', 'candidate_mass_of_thal_G1': '1521.603', 'contained_mapped': '1564.181', 'candidate_fraction': '0.973'}, {'source_id': 'NGIQ-BR-00000708', 'source_name': 'Rt (Thalamus, reticular Nucleus) left', 'v3': 'ANATOMICAL_CONFLICT', 'candidate_mass_of_thal_G1': '1521.603', 'contained_mapped': '1564.181', 'candidate_fraction': '0.973'}, {'source_id': 'NGIQ-BR-00000709', 'source_name': 'ZI (Thalamus, zona incerta) right', 'v3': 'ANATOMICAL_CONFLICT', 'candidate_mass_of_thal_G1': '295.075', 'contained_mapped': '295.546', 'candidate_fraction': '0.998'}, {'source_id': 'NGIQ-BR-00000710', 'source_name': 'ZI (Thalamus, zona incerta) left', 'v3': 'ANATOMICAL_CONFLICT', 'candidate_mass_of_thal_G1': '295.075', 'contained_mapped': '295.546', 'candidate_fraction': '0.998'}]

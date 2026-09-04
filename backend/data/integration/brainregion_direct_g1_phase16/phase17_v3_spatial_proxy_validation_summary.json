@@ -1,0 +1,113 @@
+{
+  "proxy_note": "TWO_HOP_G4_G3_G1_PROXY (not direct geometry)",
+  "normalization_probe": [
+    {
+      "component": "JULICH_BRAIN_CYTOARCHITECTONIC_ATLAS_V3_",
+      "g4_probability_mass": 380.82258864,
+      "sum_joint_mm3": "793.66"
+    },
+    {
+      "component": "JULICH_BRAIN_CYTOARCHITECTONIC_ATLAS_V3_",
+      "g4_probability_mass": 190.26579335,
+      "sum_joint_mm3": "390.82"
+    },
+    {
+      "component": "JULICH_BRAIN_CYTOARCHITECTONIC_ATLAS_V3_",
+      "g4_probability_mass": 225.87733051,
+      "sum_joint_mm3": "371.63"
+    },
+    {
+      "component": "JULICH_BRAIN_CYTOARCHITECTONIC_ATLAS_V3_",
+      "g4_probability_mass": 3940.61117834,
+      "sum_joint_mm3": "7977.60"
+    },
+    {
+      "component": "JULICH_BRAIN_CYTOARCHITECTONIC_ATLAS_V3_",
+      "g4_probability_mass": 333.33452385,
+      "sum_joint_mm3": "656.66"
+    },
+    {
+      "component": "JULICH_BRAIN_CYTOARCHITECTONIC_ATLAS_V3_",
+      "g4_probability_mass": 4213.96280351,
+      "sum_joint_mm3": "7113.38"
+    }
+  ],
+  "metric_normalization": "NON_NORMALIZED_OVERLAP_METRIC",
+  "rows_validated": 179,
+  "rows_likely": 93,
+  "rows_verified_anchors": 86,
+  "mapped_coverage_likely_median": 0.902,
+  "mapped_coverage_verified_median": 1.0,
+  "mapped_coverage_likely_dist": {
+    "1.0": 40,
+    "0.8": 8,
+    "0.4": 6,
+    "0.7": 9,
+    "0.5": 4,
+    "0.3": 6,
+    "0.2": 6,
+    "0.9": 12,
+    "0.6": 2
+  },
+  "basal_forebrain_count": 6,
+  "negatives": [
+    {
+      "source_id": "NGIQ-BR-00000707",
+      "source_name": "Rt (Thalamus, reticular Nucleus) right",
+      "v3": "ANATOMICAL_CONFLICT",
+      "candidate_mass_of_thal_G1": "1521.603",
+      "contained_mapped": "1564.181",
+      "candidate_fraction": "0.973"
+    },
+    {
+      "source_id": "NGIQ-BR-00000708",
+      "source_name": "Rt (Thalamus, reticular Nucleus) left",
+      "v3": "ANATOMICAL_CONFLICT",
+      "candidate_mass_of_thal_G1": "1521.603",
+      "contained_mapped": "1564.181",
+      "candidate_fraction": "0.973"
+    },
+    {
+      "source_id": "NGIQ-BR-00000709",
+      "source_name": "ZI (Thalamus, zona incerta) right",
+      "v3": "ANATOMICAL_CONFLICT",
+      "candidate_mass_of_thal_G1": "295.075",
+      "contained_mapped": "295.546",
+      "candidate_fraction": "0.998"
+    },
+    {
+      "source_id": "NGIQ-BR-00000710",
+      "source_name": "ZI (Thalamus, zona incerta) left",
+      "v3": "ANATOMICAL_CONFLICT",
+      "candidate_mass_of_thal_G1": "295.075",
+      "contained_mapped": "295.546",
+      "candidate_fraction": "0.998"
+    }
+  ],
+  "calibration_sample": [
+    {
+      "threshold_candidate": 0.5,
+      "threshold_cross": 0.05,
+      "pass_93": 0,
+      "pass_86_anchors": 0
+    },
+    {
+      "threshold_candidate": 0.5,
+      "threshold_cross": 0.1,
+      "pass_93": 0,
+      "pass_86_anchors": 0
+    },
+    {
+      "threshold_candidate": 0.5,
+      "threshold_cross": 0.2,
+      "pass_93": 0,
+      "pass_86_anchors": 0
+    },
+    {
+      "threshold_candidate": 0.6,
+      "threshold_cross": 0.05,
+      "pass_93": 0,
+      "pass_86_anchors": 0
+    }
+  ]
+}
