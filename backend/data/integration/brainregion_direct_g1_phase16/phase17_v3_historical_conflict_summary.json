@@ -1,0 +1,36 @@
+{
+  "phase": "PHASE17_V3_HISTORICAL_CONFLICT_OBJECT_AUDIT",
+  "verified_total": 86,
+  "historical_conflict_exists": 86,
+  "historical_status": {
+    "HISTORICAL_CONFLICT": 45,
+    "SPATIAL_COMPATIBLE": 41
+  },
+  "conflict_level": {
+    "SOURCE_LEVEL_SPATIAL": 45,
+    "G4_TO_G3": 41
+  },
+  "conflict_level_of_conflict_rows": {
+    "SOURCE_LEVEL_SPATIAL": 45,
+    "G4_TO_G3": 41
+  },
+  "g4_to_g3_count": 41,
+  "source_level_spatial_count": 45,
+  "direct_g1_same_pair_conflict": 0,
+  "unknown_count": 0,
+  "not_affecting_current_g1": 86,
+  "demote_required": 0,
+  "family_by_level": {
+    "amygdala": {
+      "SOURCE_LEVEL_SPATIAL": 22
+    },
+    "thalamic": {
+      "G4_TO_G3": 33,
+      "SOURCE_LEVEL_SPATIAL": 23
+    },
+    "hippocampal": {
+      "G4_TO_G3": 8
+    }
+  },
+  "must_demote_ids": []
+}
