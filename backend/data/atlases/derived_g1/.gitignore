@@ -1,0 +1,5 @@
+# Derived G1 geometry binaries are regenerable from frozen raw sources and are
+# NOT committed. Provenance+checksum+QC live in the tracked audit artifacts under
+# backend/data/integration/brainregion_direct_g1_phase16/.
+*
+!.gitignore
