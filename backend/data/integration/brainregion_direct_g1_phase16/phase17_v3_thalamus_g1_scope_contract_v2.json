@@ -1,0 +1,135 @@
+{
+  "verdict": "THALAMUS_G1_SCOPE_PARTIALLY_FROZEN",
+  "construction_allowed": false,
+  "identity_decision": "CANONICAL_IDENTITY_FROZEN_THALAMUS_PROPER",
+  "contract_v2": {
+    "contract_id": "THALAMUS_G1_SCOPE_CONTRACT_V2",
+    "supersedes": "THALAMUS_G1_SCOPE_CONTRACT_V1",
+    "supersedes_verified": true,
+    "canonical_left_id": "NGIQ-BR-00000247",
+    "canonical_right_id": "NGIQ-BR-00000256",
+    "source_label": "thalamus proper (source rows 6/22, Fuyao Brain volume list.xlsx)",
+    "preferred_canonical_name": "Thalamus (dorsal thalami mass; 'thalamus proper')",
+    "canonical_identity": "CANONICAL_IDENTITY_FROZEN_THALAMUS_PROPER",
+    "canonical_definition": "The canonical G1 'Thalamus' expresses the DORSAL THALAMUS (thalamus proper): the main thalami mass of the diencephalon comprising the classical dorsal thalamic nuclear groups (anterior, medial, lateral, ventral, posterior/pulvinar, intralaminar, midline) plus the geniculate bodies (LGN/MGN), which modern consensus includes as integral parts of the dorsal thalamus. It EXCLUDES the ventral thalamus / perithalamus (reticular nucleus Rt, zona incerta ZI), the epithalamus (habenula), and the subthalamus. Source label 'thalamus proper' is retained verbatim; it is not upgraded into an independent ontology concept.",
+    "definition_version": "1.0",
+    "included_structures": [
+      "dorsal-thalamus nuclear groups (anterior, medial, lateral, ventral, posterior/pulvinar, intralaminar, midline)",
+      "LGN (DEC-THAL-01)",
+      "MGN (DEC-THAL-02)"
+    ],
+    "excluded_structures": [
+      "Reticular nucleus Rt (DEC-THAL-03)",
+      "Zona incerta (ventral)",
+      "Epithalamus / habenula",
+      "Subthalamus"
+    ],
+    "review_structures": [
+      "Limitans / suprageniculate L-Sg (DEC-THAL-04)"
+    ],
+    "LGN_decision": "INCLUDE (DEC-THAL-01)",
+    "MGN_decision": "INCLUDE (DEC-THAL-02)",
+    "reticular_decision": "EXCLUDE (DEC-THAL-03)",
+    "limitans_suprageniculate_decision": "REVIEW (DEC-THAL-04)",
+    "modeling_rationale": "Canonical identity frozen as THALAMUS_PROPER on the strength of the source label ('thalamus proper') + FreeSurfer aseg 'Thalamus-Proper' convention + modern consensus that dorsal thalamus includes geniculate bodies and excludes the reticular shell. Chosen on anatomy/label, NOT to cover more mappings.",
+    "primary_sources": [
+      "Mai et al. 2018 Front Neuroanat 12:114",
+      "Rolls et al. 2020 NeuroImage 206:116189 (AAL3)",
+      "Iglesias et al. 2018 NeuroImage 183:314-326",
+      "Fan et al. 2016 Cereb Cortex 26:3508-3526 (BNA246)"
+    ],
+    "secondary_sources": [
+      "UBERON:0001897 / NIFSTD / MeSH",
+      "Julich-Brain v3.1 region inventory",
+      "FreeSurfer aseg label convention ('Thalamus-Proper')"
+    ],
+    "confidence": "identity=high; LGN/MGN=medium; reticular=high; L-Sg=low",
+    "status": "THALAMUS_G1_SCOPE_PARTIALLY_FROZEN",
+    "geometry_construction_allowed": false,
+    "geometry_blocked_reasons": [
+      "L-Sg (limitans/suprageniculate) stays REVIEW (DEC-THAL-04) - unresolved",
+      "frozen G1 rollup basis is the whole-thalamus Brainnetome Tha_*_8_1..8_8 zones (BROAD extent); not yet reconciled to the frozen THALAMUS_PROPER (dorsal) identity territory"
+    ],
+    "evidence_note": "Two evidentiary tiers are kept separate: (a) FreeSurfer aseg 'Thalamus-Proper' supports a dorsal-mass LABEL CONVENTION and does not itself segment geniculate bodies; (b) LGN/MGN dorsal-thalamus MEMBERSHIP rests on the Mai-2018 / UBERON consensus that geniculate bodies are integral to the dorsal thalamus. FS atlas geometry is NOT cited as evidence for geniculate inclusion.",
+    "created_at": "2026-09-07T08:12:41+00:00",
+    "v1_present_at_creation": true
+  },
+  "identity_provenance": [
+    {
+      "canonical_id": "NGIQ-BR-00000247",
+      "current_name": "Left Thalamus",
+      "source_name": "left thalamus proper",
+      "source_file": "Brain volume list.xlsx (Fuyao clinical) + macro96_normalized_manifest.csv",
+      "source_row": "6",
+      "original_definition": "SOURCE_LABEL_ONLY_NO_FORMAL_DEFINITION",
+      "normalized_name": "Left Thalamus",
+      "hemisphere": "left",
+      "structure_type": "subcortical_region",
+      "granularity": "G1_MACRO",
+      "existing_parent": "(canonical record not exported in this read-only round)",
+      "existing_children": "(none materialized)",
+      "frozen_g3_rollups": "Brainnetome Tha_*_8_1..8_8 (8/side) -> G1 (frozen manifest)",
+      "historical_decisions": "AUTO_HIGH coarse aggregation (authoritative anatomical mapping)"
+    },
+    {
+      "canonical_id": "NGIQ-BR-00000256",
+      "current_name": "Right Thalamus",
+      "source_name": "right thalamus proper",
+      "source_file": "Brain volume list.xlsx (Fuyao clinical) + macro96_normalized_manifest.csv",
+      "source_row": "22",
+      "original_definition": "SOURCE_LABEL_ONLY_NO_FORMAL_DEFINITION",
+      "normalized_name": "Right Thalamus",
+      "hemisphere": "right",
+      "structure_type": "subcortical_region",
+      "granularity": "G1_MACRO",
+      "existing_parent": "(canonical record not exported in this read-only round)",
+      "existing_children": "(none materialized)",
+      "frozen_g3_rollups": "Brainnetome Tha_*_8_1..8_8 (8/side) -> G1 (frozen manifest)",
+      "historical_decisions": "AUTO_HIGH coarse aggregation (authoritative anatomical mapping)"
+    }
+  ],
+  "boundary_rulings": [
+    {
+      "decision_id": "DEC-THAL-01",
+      "structure": "LGN (lateral geniculate)",
+      "canonical_identity_used": "CANONICAL_IDENTITY_FROZEN_THALAMUS_PROPER",
+      "decision": "INCLUDE",
+      "confidence": "medium",
+      "rationale": "Identity = THALAMUS_PROPER (dorsal). Modern consensus (Mai 2018; UBERON) treats the dorsal lateral geniculate nucleus as an integral part of the dorsal/lateral thalamus; the 'metathalamus' label is questioned precisely because it implies the geniculates are not integral parts. AAL3 (Thal_LGN) and Iglesias (LGN) agree. This is an explicit modeling reading of the geniculate as dorsal-thalamus; it is NOT 'auto-include because FS/AAL3 carry it'.",
+      "primary_evidence": "Mai 2018 Front Neuroanat 12:114 (geniculate bodies integral to lateral/dorsal thalamus)",
+      "secondary_evidence": "AAL3 Thal_LGN; Iglesias 2018 LGN; UBERON metathalamus-in-dorsal"
+    },
+    {
+      "decision_id": "DEC-THAL-02",
+      "structure": "MGN (medial geniculate)",
+      "canonical_identity_used": "CANONICAL_IDENTITY_FROZEN_THALAMUS_PROPER",
+      "decision": "INCLUDE",
+      "confidence": "medium",
+      "rationale": "Same identity basis as LGN: MGN is a dorsal-thalamus geniculate body under modern consensus; AAL3 (Thal_MGN) and Iglesias (MGN) agree. Metathalamus naming divergence documented, not a reason to EXCLUDE under a dorsal-'proper' identity.",
+      "primary_evidence": "Mai 2018; UBERON metathalamus-in-dorsal",
+      "secondary_evidence": "AAL3 Thal_MGN; Iglesias 2018 MGN"
+    },
+    {
+      "decision_id": "DEC-THAL-03",
+      "structure": "Reticular nucleus (R/Rt)",
+      "canonical_identity_used": "CANONICAL_IDENTITY_FROZEN_THALAMUS_PROPER",
+      "decision": "EXCLUDE",
+      "confidence": "high",
+      "rationale": "Reticular nucleus is a ventral-thalamus / perithalamus shell separated from the dorsal thalami mass by the external medullary lamina; it is NOT part of dorsal-thalamus 'proper'. AAL3 excludes it; Julich places Rt under ventral-thalamus; Iglesias segments it but its generative prior groups reticular with white matter. Iglesias 'thalamic nuclei atlas coverage' does not make Rt a member of NeuroGraphIQ G1 'thalamus proper'.",
+      "primary_evidence": "Mai 2018; AAL3 (excluded); Julich (ventral-thalamus Rt)",
+      "secondary_evidence": "UBERON reticular = ventral/perithalamus; Iglesias R (WM-prior)"
+    },
+    {
+      "decision_id": "DEC-THAL-04",
+      "structure": "Limitans / suprageniculate (L-Sg / Li / Sg)",
+      "canonical_identity_used": "CANONICAL_IDENTITY_FROZEN_THALAMUS_PROPER",
+      "decision": "REVIEW",
+      "confidence": "low",
+      "rationale": "L-Sg is a small posterior-complex / metathalamic-adjacent border nucleus. Membership is genuinely contested: AAL3 drops limitans for size (12 voxels), FS keeps L-Sg, Julich keeps posterior Li/Sg. It is spatially near MGN but must NOT be assumed to follow the MGN decision. Left in REVIEW (no forced convergence) pending an explicit small-nucleus / posterior-complex modeling decision.",
+      "primary_evidence": "AAL3 (excluded, size); Julich posterior Li/Sg; Iglesias L-Sg",
+      "secondary_evidence": "Mai 2018 posterior nuclear complex discussion"
+    }
+  ],
+  "script_version": "phase17_v3_adjudicate_thalamus_canonical_identity.py v1",
+  "run_timestamp": "2026-09-07T08:12:41+00:00"
+}
