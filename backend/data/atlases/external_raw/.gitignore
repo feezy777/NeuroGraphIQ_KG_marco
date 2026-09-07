@@ -1,0 +1,5 @@
+# Raw external atlas binaries are NOT committed (no-commit round; several are
+# LOCAL_USE_ONLY / LICENSE_UNCLEAR). Provenance+checksum live in the tracked
+# acquisition artifacts under backend/data/integration/brainregion_direct_g1_phase16/.
+*
+!.gitignore
