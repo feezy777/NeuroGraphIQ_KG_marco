@@ -1,0 +1,29 @@
+{
+  "final_verdict": "BN_ROLLUP_BASIS_PARTIALLY_COMPATIBLE",
+  "incompatible": 0,
+  "total": 16,
+  "stats": {
+    "LIKELY_COMPATIBLE_NEEDS_SPATIAL_CONFIRMATION": 16
+  },
+  "relation_verdict_distribution": {
+    "KEEP_FROZEN_MAPPING_PENDING_DIRECT_SPATIAL_VALIDATION": 10,
+    "KEEP_FROZEN_MAPPING_PENDING_BOUNDARY_AND_DIRECT_VALIDATION": 6
+  },
+  "lsg_dependent_relations": 6,
+  "non_lsg_dependent_relations": 10,
+  "bilateral_asymmetry": {},
+  "evidence_mode": "SEMANTIC_ANATOMICAL_COMPATIBILITY (+ gross BNA-246 spatial support)",
+  "not_direct_g1_validation": "no independent THALAMUS_PROPER geometry built; compatibility is LIKELY, not confirmed",
+  "preconstruction_rollup_compatibility": "PASS_WITH_POSTCONSTRUCTION_VALIDATION_REQUIRED",
+  "preconstruction_gate": "PASSED",
+  "source_blocker_v2": "BN_ROLLUP_BASIS_NOT_RECONCILED",
+  "blocker2_effective_status": "NO_LONGER_PRECONSTRUCTION_BLOCKER",
+  "construction_blocker_status": "RECLASSIFIED_OUT_OF_CONSTRUCTION_GATE",
+  "postconstruction_requirement": "DIRECT_BN_G3_TO_G1_SPATIAL_VALIDATION_REQUIRED",
+  "promotion_gate": "BLOCKED_UNTIL_DIRECT_VALIDATION",
+  "active_construction_blockers": [
+    "DEC-THAL-04 (L-Sg / Limitans-Suprageniculate boundary)"
+  ],
+  "geometry_construction": "BLOCKED_BY_LSG_ONLY",
+  "promotion": "BLOCKED"
+}

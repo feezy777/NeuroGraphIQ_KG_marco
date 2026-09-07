@@ -1,0 +1,71 @@
+{
+  "gate_transition_id": "GATE-TRANSITION-THAL-BN-ROLLUP-01",
+  "transition_type": "BLOCKER_RECLASSIFICATION_ACROSS_GATE_SPLIT",
+  "source_contract": "THALAMUS_G1_SCOPE_CONTRACT_V2",
+  "source_contract_sha256": "b18e3531cc88301631782f870ad7c8757cb75193028b6bb3e0f88e4f40ba1869",
+  "source_blocker": "BN_ROLLUP_BASIS_NOT_RECONCILED",
+  "source_blocker_original_text": "frozen G1 rollup basis is the whole-thalamus Brainnetome Tha_*_8_1..8_8 zones (BROAD extent); not yet reconciled to the frozen THALAMUS_PROPER (dorsal) identity territory",
+  "v2_historical_snapshot": "NOT_MODIFIED",
+  "audit_round": "Brainnetome G3 Thalamus rollup basis <-> THALAMUS_PROPER compatibility",
+  "audit_result": "BN_ROLLUP_BASIS_PARTIALLY_COMPATIBLE",
+  "decision_ids": [
+    "DEC-THAL-ROLLUP-01",
+    "DEC-THAL-ROLLUP-02",
+    "DEC-THAL-ROLLUP-03",
+    "DEC-THAL-ROLLUP-04",
+    "DEC-THAL-ROLLUP-05",
+    "DEC-THAL-ROLLUP-06",
+    "DEC-THAL-ROLLUP-07",
+    "DEC-THAL-ROLLUP-08",
+    "DEC-THAL-ROLLUP-09",
+    "DEC-THAL-ROLLUP-10",
+    "DEC-THAL-ROLLUP-11",
+    "DEC-THAL-ROLLUP-12",
+    "DEC-THAL-ROLLUP-13",
+    "DEC-THAL-ROLLUP-14",
+    "DEC-THAL-ROLLUP-15",
+    "DEC-THAL-ROLLUP-16"
+  ],
+  "preconstruction_gate": "PASSED",
+  "preconstruction_rollup_compatibility": "PASS_WITH_POSTCONSTRUCTION_VALIDATION_REQUIRED",
+  "construction_blocker_status": "RECLASSIFIED_OUT_OF_CONSTRUCTION_GATE",
+  "blocker2_effective_status": "NO_LONGER_PRECONSTRUCTION_BLOCKER",
+  "postconstruction_requirement": "DIRECT_BN_G3_TO_G1_SPATIAL_VALIDATION_REQUIRED",
+  "promotion_gate": "BLOCKED_UNTIL_DIRECT_VALIDATION",
+  "active_construction_blockers": [
+    "DEC-THAL-04 (L-Sg / Limitans-Suprageniculate boundary)"
+  ],
+  "reason": "Current audit found no anatomical incompatibility across all 16 frozen Brainnetome thalamus rollups, but independent direct spatial validation cannot occur until the authoritative THALAMUS_PROPER G1 geometry exists.",
+  "note": "'Pre-construction gate passed' != '16 frozen mappings finally validated'. Blocker #2 is reclassified out of the pre-construction gate into the post-construction direct-validation gate; it is NOT deleted and the V2 historical record is NOT retro-edited.",
+  "relation_verdict_distribution": {
+    "KEEP_FROZEN_MAPPING_PENDING_DIRECT_SPATIAL_VALIDATION": 10,
+    "KEEP_FROZEN_MAPPING_PENDING_BOUNDARY_AND_DIRECT_VALIDATION": 6
+  },
+  "lsg_dependent_relations": 6,
+  "non_lsg_dependent_relations": 10,
+  "final_effective_state": {
+    "thalamus_ontology_identity": "FROZEN_THALAMUS_PROPER",
+    "probability_aggregation": "SUM / FROZEN",
+    "bn_rollup_semantic_compatibility": "PASS_PRECONSTRUCTION",
+    "bn_rollup_direct_spatial_validation": "PENDING_POSTCONSTRUCTION",
+    "lsg_scope": "REVIEW",
+    "geometry_construction": "BLOCKED_BY_LSG_ONLY",
+    "promotion": "BLOCKED"
+  },
+  "provenance_chain": {
+    "gate_transition_to": "current rollup audit (DEC-THAL-ROLLUP-01..16)",
+    "audit_to": "frozen G3 relations (g3_to_g1_full_decision_coverage_manifest.csv)",
+    "frozen_to": "THALAMUS_G1_SCOPE_CONTRACT_V2",
+    "v2_to": "THALAMUS_G1_SCOPE_CONTRACT_V1",
+    "v1_to": "Brainnetome authoritative metadata (Fan 2016 / BNA246)",
+    "v1_sha256": "324a67163a15eae3427b1453a234b0e184958fa773dde400b819d88e9dd21333",
+    "v2_sha256": "b18e3531cc88301631782f870ad7c8757cb75193028b6bb3e0f88e4f40ba1869",
+    "frozen_manifest_sha256": "fd4023d14aeb46eb251ddf9e2a939c71fc6a0b53df7fb19057c526961b4ccd6b",
+    "bna_source_sha256": "ac71c4eb8a49523e44dffb185165682622102464163632db17ab1e5d3159e23e",
+    "rollup_audit_csv_sha256": "813d72e6738e28af70c503bdf8831be4b0053490e300711e1d1e7c9cbfd33404",
+    "rollup_audit_summary_sha256": "b486630b8c7d9e1bb686ed79d0e96324506dc6267d59d8a0dec0ab69602ab90f",
+    "diagnostics_md_sha256": "3af3c14064eb249ff081eb60b2aab29f844d8c92d8cc932fe542541dd8e1d02a",
+    "script_version": "phase17_v3_audit_thalamus_bn_rollup_compatibility.py v2 (gate-split)",
+    "run_timestamp": "2026-09-07T13:49:58+00:00"
+  }
+}

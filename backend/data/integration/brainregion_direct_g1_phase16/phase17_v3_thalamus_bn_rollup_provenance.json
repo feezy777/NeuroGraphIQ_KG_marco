@@ -1,0 +1,52 @@
+{
+  "audit_round": "Thalamus BN rollup basis <-> THALAMUS_PROPER compatibility + gate split",
+  "frozen_manifest": {
+    "path": "data\\integration\\g3_to_g1\\g3_to_g1_full_decision_coverage_manifest.csv",
+    "sha256": "fd4023d14aeb46eb251ddf9e2a939c71fc6a0b53df7fb19057c526961b4ccd6b"
+  },
+  "bna_authoritative": {
+    "path": "data\\atlases\\brainnetome\\bna246\\brainnetome_bna246_subregions_authoritative.csv",
+    "sha256": "ac71c4eb8a49523e44dffb185165682622102464163632db17ab1e5d3159e23e"
+  },
+  "v2_contract": {
+    "path": "data\\integration\\brainregion_direct_g1_phase16\\phase17_v3_thalamus_g1_scope_contract_v2.json",
+    "sha256": "b18e3531cc88301631782f870ad7c8757cb75193028b6bb3e0f88e4f40ba1869"
+  },
+  "v1_contract": {
+    "path": "data\\integration\\brainregion_direct_g1_phase16\\phase17_v3_thalamus_g1_scope_contract.json",
+    "sha256": "324a67163a15eae3427b1453a234b0e184958fa773dde400b819d88e9dd21333"
+  },
+  "bna_det_mask": "data\\atlases\\brainnetome\\bna246\\volume_raw\\BN_Atlas_246_1mm.nii.gz",
+  "spatial_evidence_type": {
+    "union_voxels": 26083,
+    "world_x_range": [
+      -28.0,
+      26.0
+    ],
+    "far_lateral_voxels_absx_gt30": 0,
+    "spatial_evidence_type": "GROSS_TERRITORY_CHECK_BNA246_MASK",
+    "note": "BNA-246 1mm deterministic atlas mask (independent of the G3->G1 decision mapping); coarse territorial only - cannot adjudicate thin reticular-shell margins and is not G1-geometry validation"
+  },
+  "outputs": {
+    "rollup_csv": {
+      "path": "data\\integration\\brainregion_direct_g1_phase16\\phase17_v3_thalamus_bn_rollup_compatibility.csv",
+      "sha256": "813d72e6738e28af70c503bdf8831be4b0053490e300711e1d1e7c9cbfd33404"
+    },
+    "summary_json": {
+      "path": "data\\integration\\brainregion_direct_g1_phase16\\phase17_v3_thalamus_bn_rollup_summary.json",
+      "sha256": "b486630b8c7d9e1bb686ed79d0e96324506dc6267d59d8a0dec0ab69602ab90f"
+    },
+    "diagnostics_md": {
+      "path": "data\\integration\\brainregion_direct_g1_phase16\\phase17_v3_thalamus_bn_rollup_diagnostics.md",
+      "sha256": "3af3c14064eb249ff081eb60b2aab29f844d8c92d8cc932fe542541dd8e1d02a"
+    },
+    "gate_transition": {
+      "path": "data\\integration\\brainregion_direct_g1_phase16\\phase17_v3_thalamus_bn_rollup_gate_transition.json",
+      "sha256": "24c06632eb0ab726f5248571bc828eae1ab30c8b8358a229f5ec31c8e12073c8"
+    }
+  },
+  "canonical_identity": "THALAMUS_PROPER (V2)",
+  "script_version": "phase17_v3_audit_thalamus_bn_rollup_compatibility.py v2 (gate-split)",
+  "run_timestamp": "2026-09-07T13:49:58+00:00",
+  "note": "frozen mappings NOT modified; V2 NOT retro-edited; read-only audit + gate-transition record"
+}
