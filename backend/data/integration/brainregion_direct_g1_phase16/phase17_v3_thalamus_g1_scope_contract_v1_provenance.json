@@ -1,0 +1,29 @@
+{
+  "provenance_sidecar_for": "THALAMUS_G1_SCOPE_CONTRACT_V1",
+  "snapshot_sha256": "324a67163a15eae3427b1453a234b0e184958fa773dde400b819d88e9dd21333",
+  "snapshot_path": "data/integration/brainregion_direct_g1_phase16/phase17_v3_thalamus_g1_scope_contract.json",
+  "historical_round": "Phase1.7 V3 - Thalamus G1 Ontology Scope Resolution (scope-resolution round)",
+  "generator": "phase17_v3_resolve_thalamus_g1_ontology_scope.py",
+  "generator_sha256": "79d771012798bca8970f0b8d0e6636b211af38af07e7a9ec67f39d9e8a9e991f",
+  "generator_script_version": "phase17_v3_resolve_thalamus_g1_ontology_scope.py v1",
+  "generator_run_timestamp": "2026-09-07T07:56:52+00:00",
+  "missing_metadata": [
+    "contract_id field (contract identified by contract_name only)",
+    "generator script_version not embedded inside the JSON",
+    "run_timestamp not embedded inside the JSON (created_at present)"
+  ],
+  "superseded_by": "THALAMUS_G1_SCOPE_CONTRACT_V2",
+  "provenance_status": "V1_SNAPSHOT_AUTHENTICITY_VERIFIED",
+  "authenticity_method": "deterministic generator rerun to temp dir + semantic comparison ignoring timestamps; regen verdict/content equals stored V1",
+  "canonical_left_id": "NGIQ-BR-00000247",
+  "canonical_right_id": "NGIQ-BR-00000256",
+  "verdict": "THALAMUS_G1_SCOPE_PARTIALLY_FROZEN",
+  "construction_allowed": false,
+  "source_inputs_actually_read_by_generator": [
+    "macro96_normalized_manifest.csv (source rows 6/22 'thalamus proper')",
+    "g3_to_g1/g3_to_g1_full_decision_coverage_manifest.csv (frozen rollup rows)",
+    "brainnetome_bna246_subregions_authoritative.csv (Tha_*_8_1..8_8)"
+  ],
+  "note_inputs": "g3_brainnetome_to_g1_macro_candidates.csv and Brain volume list.xlsx are referenced by the generator's provenance text/constants but are not load_csv()-read; listed as documentary provenance, not computational inputs.",
+  "note": "Sidecar only records provenance; it does NOT modify the original V1 scientific JSON. V1 remains the historical snapshot of the scope-resolution round."
+}

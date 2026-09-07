@@ -1,0 +1,438 @@
+{
+  "verdict": "THALAMUS_G1_SCOPE_PARTIALLY_FROZEN",
+  "construction_allowed": false,
+  "contract": {
+    "contract_name": "THALAMUS_G1_SCOPE_CONTRACT_V1",
+    "canonical_left_id": "NGIQ-BR-00000247",
+    "canonical_right_id": "NGIQ-BR-00000256",
+    "canonical_term": "Left/Right Thalamus (G1_MACRO)",
+    "preferred_definition": "Whole-thalamus rollup of Brainnetome G3 Tha_*_8_1..8_8 connectivity parcels, textually labelled 'thalamus proper' from the Macro96 clinical source list",
+    "scope_type": "WHOLE_THALAMUS_BROAD (rollup) with 'proper' label -> DEFINITION_INCONSISTENT unresolved",
+    "included_source_structures": [
+      "Pulvinar",
+      "Anterior nuclei",
+      "Mediodorsal",
+      "Ventral nuclei",
+      "Intralaminar",
+      "Midline nuclei",
+      "Lateral posterior / laterodorsal",
+      "Ventral anterior magnocellular"
+    ],
+    "excluded_source_structures": [
+      "Habenula / epithalamus",
+      "Zona incerta"
+    ],
+    "ontology_review_structures": [
+      "LGN",
+      "MGN",
+      "Reticular nucleus",
+      "Limitans / suprageniculate"
+    ],
+    "definition_source": "Macro96 'Brain volume list.xlsx' (Fuyao clinical list) text; operational boundary = Brainnetome G3 whole-thalamus rollup",
+    "source_atlas_alignment_notes": "AAL3 includes LGN/MGN inside Thalamus but excludes reticular+limitans+paratenial; Julich separates metathalamus and ventral-thalamus as children of thalamus; FS segments 26 incl. R+L-Sg; Brainnetome zones are connectivity-based and do not testify to nuclear membership",
+    "modeling_decision": "Scope is an ontology modeling choice, not a spatial one. Dorsal-thalamus core (anterior/ventral/mediodorsal/intralaminar/midline/pulvinar/LP/LD) INCLUDED at high confidence; LGN/MGN (metathalamus), Reticular, and limitans-type border nuclei remain ONTOLOGY_REVIEW pending an explicit canonical modeling decision",
+    "scientific_rationale": "no geometry is used to decide membership (no target-driven bias); decisions rest on official atlas definitions + anatomical literature + frozen mapping history",
+    "decision_confidence": "core=high; boundary=low",
+    "decision_status": "THALAMUS_G1_SCOPE_PARTIALLY_FROZEN",
+    "supersedes": null,
+    "created_at": "2026-09-07T07:56:52+00:00",
+    "canonical_scope_current_state": "DEFINITION_INCONSISTENT",
+    "geometry_construction_allowed": false,
+    "references": {
+      "aal3": "Rolls, Huang, Lin, Feng, Joliot 2020 NeuroImage 206:116189 (thalamic parcellation derived from Iglesias 2018 FS atlas)",
+      "freesurfer": "Iglesias et al. 2018 NeuroImage 183:314-326 (arXiv:1806.08634); FS ThalamicNuclei / SubfieldAtlasesICBMspace",
+      "brainnetome": "Fan et al. 2016 Cereb Cortex 26:3508-3526 (BNA246 Table 1); local brainnetome_bna246_subregions_authoritative.csv",
+      "julich": "Julich-Brain v3.1 region inventory (local); cytoarchitectonic",
+      "macro96": "Fuyao clinical 'Brain volume list.xlsx' (archive 5e1b1037)"
+    },
+    "frozen_mapping_evidence": {
+      "n_frozen_g3_thal_rows": 16,
+      "n_brainnetome_parcels_in_manifest": 16,
+      "brainnetome_parcel_codes": [
+        "Tha_L_8_1",
+        "Tha_L_8_2",
+        "Tha_L_8_3",
+        "Tha_L_8_4",
+        "Tha_L_8_5",
+        "Tha_L_8_6",
+        "Tha_L_8_7",
+        "Tha_L_8_8",
+        "Tha_R_8_1",
+        "Tha_R_8_2",
+        "Tha_R_8_3",
+        "Tha_R_8_4",
+        "Tha_R_8_5",
+        "Tha_R_8_6",
+        "Tha_R_8_7",
+        "Tha_R_8_8"
+      ],
+      "brainnetome_subdivision_names": [
+        [
+          "Tha_L_8_1",
+          "medial pre-frontal thalamus"
+        ],
+        [
+          "Tha_L_8_2",
+          "pre-motor thalamus"
+        ],
+        [
+          "Tha_L_8_3",
+          "sensory thalamus"
+        ],
+        [
+          "Tha_L_8_4",
+          "rostral temporal thalamus"
+        ],
+        [
+          "Tha_L_8_5",
+          "posterior parietal thalamus"
+        ],
+        [
+          "Tha_L_8_6",
+          "occipital thalamus"
+        ],
+        [
+          "Tha_L_8_7",
+          "caudal temporal thalamus"
+        ],
+        [
+          "Tha_L_8_8",
+          "lateral pre-frontal thalamus"
+        ],
+        [
+          "Tha_R_8_1",
+          "medial pre-frontal thalamus"
+        ],
+        [
+          "Tha_R_8_2",
+          "pre-motor thalamus"
+        ],
+        [
+          "Tha_R_8_3",
+          "sensory thalamus"
+        ],
+        [
+          "Tha_R_8_4",
+          "rostral temporal thalamus"
+        ],
+        [
+          "Tha_R_8_5",
+          "posterior parietal thalamus"
+        ],
+        [
+          "Tha_R_8_6",
+          "occipital thalamus"
+        ],
+        [
+          "Tha_R_8_7",
+          "caudal temporal thalamus"
+        ],
+        [
+          "Tha_R_8_8",
+          "lateral pre-frontal thalamus"
+        ]
+      ]
+    },
+    "frozen_mapping_source": "g3_to_g1_full_decision_coverage_manifest.csv (NGIQ-BR-00000247/56 rollup rows)"
+  },
+  "decisions": [
+    {
+      "decision_id": "THAL_SCOPE_01",
+      "canonical_region_id": "NGIQ-BR-00000247;NGIQ-BR-00000256",
+      "source_structure": "LGN (lateral geniculate)",
+      "source_atlas": "multi-atlas (AAL3/BN/FS/Julich)",
+      "source_version": "AAL3v1/BN246/FS-Iglesias2018/Julich-Brain v3.1",
+      "source_reference": "IN(Thal_LGN) | NOT_INDIVIDUAL(connectivity zones) | IN(LGN) | METATHALAMUS(CGL under metathalamus)",
+      "source_definition": "AAL3 puts LGN inside Thalamus subdivision; Julich separates as metathalamus child of thalamus; FS segments LGN as a nucleus; Brainnetome 8 connectivity parcels cannot prove membership -> genuine modeling divergence -> REVIEW",
+      "decision": "ONTOLOGY_REVIEW",
+      "decision_reason": "AAL3 includes the geniculate inside its Thalamus set; Julich separates metathalamus (CGL) as a distinct child of thalamus; FS segments LGN. Metathalamus-vs-dorsal membership is a genuine modeling choice not decidable from current NeuroGraphIQ G1 provenance.",
+      "evidence_type": "official_atlas_definition+literature+frozen_mapping",
+      "confidence": "low",
+      "script_version": "phase17_v3_resolve_thalamus_g1_ontology_scope.py v1",
+      "run_timestamp": "2026-09-07T07:56:52+00:00"
+    },
+    {
+      "decision_id": "THAL_SCOPE_02",
+      "canonical_region_id": "NGIQ-BR-00000247;NGIQ-BR-00000256",
+      "source_structure": "MGN (medial geniculate)",
+      "source_atlas": "multi-atlas (AAL3/BN/FS/Julich)",
+      "source_version": "AAL3v1/BN246/FS-Iglesias2018/Julich-Brain v3.1",
+      "source_reference": "IN(Thal_MGN) | NOT_INDIVIDUAL(connectivity zones) | IN(MGN) | METATHALAMUS(CGM under metathalamus)",
+      "source_definition": "same reasoning as LGN -> REVIEW",
+      "decision": "ONTOLOGY_REVIEW",
+      "decision_reason": "same as LGN: AAL3 includes MGN in Thalamus, Julich separates metathalamus (CGM), FS segments MGN -> REVIEW.",
+      "evidence_type": "official_atlas_definition+literature+frozen_mapping",
+      "confidence": "low",
+      "script_version": "phase17_v3_resolve_thalamus_g1_ontology_scope.py v1",
+      "run_timestamp": "2026-09-07T07:56:52+00:00"
+    },
+    {
+      "decision_id": "THAL_SCOPE_03",
+      "canonical_region_id": "NGIQ-BR-00000247;NGIQ-BR-00000256",
+      "source_structure": "Reticular nucleus (R/Rt)",
+      "source_atlas": "multi-atlas (AAL3/BN/FS/Julich)",
+      "source_version": "AAL3v1/BN246/FS-Iglesias2018/Julich-Brain v3.1",
+      "source_reference": "EXCLUDED('thin shell, not included') | NOT_INDIVIDUAL(connectivity zones) | IN(R) | VENTRAL_THALAMUS(Rt under ventral thalamus)",
+      "source_definition": "Iglesias segments R but groups it with white-matter prior; AAL3 explicitly excludes; Julich = ventral-thalamus child; 'thalamus proper' (dorsal) classically excludes reticular -> REVIEW",
+      "decision": "ONTOLOGY_REVIEW",
+      "decision_reason": "classical 'thalamus proper' (dorsal) excludes the reticular shell; Iglesias segments R but its generative prior groups reticular with white matter; AAL3 excludes it; Julich places Rt in ventral thalamus -> REVIEW.",
+      "evidence_type": "official_atlas_definition+literature+frozen_mapping",
+      "confidence": "low",
+      "script_version": "phase17_v3_resolve_thalamus_g1_ontology_scope.py v1",
+      "run_timestamp": "2026-09-07T07:56:52+00:00"
+    },
+    {
+      "decision_id": "THAL_SCOPE_04",
+      "canonical_region_id": "NGIQ-BR-00000247;NGIQ-BR-00000256",
+      "source_structure": "Pulvinar (PuA/PuM/PuL/PuI)",
+      "source_atlas": "multi-atlas (AAL3/BN/FS/Julich)",
+      "source_version": "AAL3v1/BN246/FS-Iglesias2018/Julich-Brain v3.1",
+      "source_reference": "IN(Thal_Pu*) | (within PPtha/Otha zones) | IN(Pu*) | IN(posterior group PUm/PUl/PUi/PUa)",
+      "source_definition": "unambiguous dorsal-thalamus posterior group",
+      "decision": "INCLUDE",
+      "decision_reason": "unambiguous dorsal-thalamus group; present across AAL3/FS/Julich and within Brainnetome whole-thalamus connectivity zones; G1 'whole-thalamus' rollup covers it.",
+      "evidence_type": "official_atlas_definition+literature+frozen_mapping",
+      "confidence": "high",
+      "script_version": "phase17_v3_resolve_thalamus_g1_ontology_scope.py v1",
+      "run_timestamp": "2026-09-07T07:56:52+00:00"
+    },
+    {
+      "decision_id": "THAL_SCOPE_05",
+      "canonical_region_id": "NGIQ-BR-00000247;NGIQ-BR-00000256",
+      "source_structure": "Anterior nuclei (AV/AM/AD)",
+      "source_atlas": "multi-atlas (AAL3/BN/FS/Julich)",
+      "source_version": "AAL3v1/BN246/FS-Iglesias2018/Julich-Brain v3.1",
+      "source_reference": "IN(Thal_AV; AM+AD folded) | (within functional zones) | IN(AV; AM/AD folded in AV) | IN(anterior group AV/AM/LD)",
+      "source_definition": "dorsal-thalamus anterior group; consistent across atlases",
+      "decision": "INCLUDE",
+      "decision_reason": "unambiguous dorsal-thalamus group; present across AAL3/FS/Julich and within Brainnetome whole-thalamus connectivity zones; G1 'whole-thalamus' rollup covers it.",
+      "evidence_type": "official_atlas_definition+literature+frozen_mapping",
+      "confidence": "high",
+      "script_version": "phase17_v3_resolve_thalamus_g1_ontology_scope.py v1",
+      "run_timestamp": "2026-09-07T07:56:52+00:00"
+    },
+    {
+      "decision_id": "THAL_SCOPE_06",
+      "canonical_region_id": "NGIQ-BR-00000247;NGIQ-BR-00000256",
+      "source_structure": "Mediodorsal (MDm/MDl)",
+      "source_atlas": "multi-atlas (AAL3/BN/FS/Julich)",
+      "source_version": "AAL3v1/BN246/FS-Iglesias2018/Julich-Brain v3.1",
+      "source_reference": "IN(Thal_MDm/MDl) | (mPF/lPF zones) | IN(MDm/MDl) | IN(medial group MD)",
+      "source_definition": "dorsal-thalamus medial group",
+      "decision": "INCLUDE",
+      "decision_reason": "unambiguous dorsal-thalamus group; present across AAL3/FS/Julich and within Brainnetome whole-thalamus connectivity zones; G1 'whole-thalamus' rollup covers it.",
+      "evidence_type": "official_atlas_definition+literature+frozen_mapping",
+      "confidence": "high",
+      "script_version": "phase17_v3_resolve_thalamus_g1_ontology_scope.py v1",
+      "run_timestamp": "2026-09-07T07:56:52+00:00"
+    },
+    {
+      "decision_id": "THAL_SCOPE_07",
+      "canonical_region_id": "NGIQ-BR-00000247;NGIQ-BR-00000256",
+      "source_structure": "Ventral nuclei (VA/VLa/VLp/VM/VPL)",
+      "source_atlas": "multi-atlas (AAL3/BN/FS/Julich)",
+      "source_version": "AAL3v1/BN246/FS-Iglesias2018/Julich-Brain v3.1",
+      "source_reference": "IN(Thal_VA/VL/VPL) | (Stha/mPMtha) | IN(VA/VLa/VLp/VM/VPL/VAmc) | IN(ventral group VA/VLA/VLP/VPL/VM/VPi...)",
+      "source_definition": "dorsal-thalamus ventral group",
+      "decision": "INCLUDE",
+      "decision_reason": "unambiguous dorsal-thalamus group; present across AAL3/FS/Julich and within Brainnetome whole-thalamus connectivity zones; G1 'whole-thalamus' rollup covers it.",
+      "evidence_type": "official_atlas_definition+literature+frozen_mapping",
+      "confidence": "high",
+      "script_version": "phase17_v3_resolve_thalamus_g1_ontology_scope.py v1",
+      "run_timestamp": "2026-09-07T07:56:52+00:00"
+    },
+    {
+      "decision_id": "THAL_SCOPE_08",
+      "canonical_region_id": "NGIQ-BR-00000247;NGIQ-BR-00000256",
+      "source_structure": "Intralaminar (CM/Pf/CL/CeM/Pc)",
+      "source_atlas": "multi-atlas (AAL3/BN/FS/Julich)",
+      "source_version": "AAL3v1/BN246/FS-Iglesias2018/Julich-Brain v3.1",
+      "source_reference": "IN(Thal_IL; CeM/CL/Pc/CM/Pf) | (within zones) | IN(CM/Pf/CL/CeM/Pc) | IN(intralaminar CM/Pf/CL/CeM...)",
+      "source_definition": "dorsal-thalamus intralaminar group",
+      "decision": "INCLUDE",
+      "decision_reason": "unambiguous dorsal-thalamus group; present across AAL3/FS/Julich and within Brainnetome whole-thalamus connectivity zones; G1 'whole-thalamus' rollup covers it.",
+      "evidence_type": "official_atlas_definition+literature+frozen_mapping",
+      "confidence": "high",
+      "script_version": "phase17_v3_resolve_thalamus_g1_ontology_scope.py v1",
+      "run_timestamp": "2026-09-07T07:56:52+00:00"
+    },
+    {
+      "decision_id": "THAL_SCOPE_09",
+      "canonical_region_id": "NGIQ-BR-00000247;NGIQ-BR-00000256",
+      "source_structure": "Midline nuclei (MV/Re/Pt/Pv)",
+      "source_atlas": "multi-atlas (AAL3/BN/FS/Julich)",
+      "source_version": "AAL3v1/BN246/FS-Iglesias2018/Julich-Brain v3.1",
+      "source_reference": "IN(Thal_Re=Reuniens; Pt excluded too small) | (within zones) | IN(MV(Re)/Pt) | IN(medial group MV/Pv...)",
+      "source_definition": "Reuniens+paratenial are midline nuclei of dorsal complex; AAL3 keeps Reuniens, drops Pt (size); FS keeps both",
+      "decision": "INCLUDE",
+      "decision_reason": "Reuniens (and paratenial) are midline nuclei of the dorsal thalamus complex; AAL3 keeps Reuniens, FS keeps MV(Re)/Pt, Julich medial group -> INCLUDE.",
+      "evidence_type": "official_atlas_definition+literature+frozen_mapping",
+      "confidence": "high",
+      "script_version": "phase17_v3_resolve_thalamus_g1_ontology_scope.py v1",
+      "run_timestamp": "2026-09-07T07:56:52+00:00"
+    },
+    {
+      "decision_id": "THAL_SCOPE_10",
+      "canonical_region_id": "NGIQ-BR-00000247;NGIQ-BR-00000256",
+      "source_structure": "Limitans / suprageniculate (L-Sg / Li/Sg)",
+      "source_atlas": "multi-atlas (AAL3/BN/FS/Julich)",
+      "source_version": "AAL3v1/BN246/FS-Iglesias2018/Julich-Brain v3.1",
+      "source_reference": "EXCLUDED(limitans 12 voxels) | NOT_INDIVIDUAL | IN(L-Sg) | IN(posterior group Li/Sg)",
+      "source_definition": "AAL3 excludes limitans; FS keeps L-Sg; Julich posterior Li/Sg; border nucleus -> REVIEW",
+      "decision": "ONTOLOGY_REVIEW",
+      "decision_reason": "limitans is a posterior border nucleus excluded by AAL3 (12 voxels), kept by FS (L-Sg) and Julich (Li/Sg) -> REVIEW.",
+      "evidence_type": "official_atlas_definition+literature+frozen_mapping",
+      "confidence": "low",
+      "script_version": "phase17_v3_resolve_thalamus_g1_ontology_scope.py v1",
+      "run_timestamp": "2026-09-07T07:56:52+00:00"
+    },
+    {
+      "decision_id": "THAL_SCOPE_11",
+      "canonical_region_id": "NGIQ-BR-00000247;NGIQ-BR-00000256",
+      "source_structure": "Lateral posterior / laterodorsal (LP/LD)",
+      "source_atlas": "multi-atlas (AAL3/BN/FS/Julich)",
+      "source_version": "AAL3v1/BN246/FS-Iglesias2018/Julich-Brain v3.1",
+      "source_reference": "IN(Thal_LP) | (PPtha) | IN(LP/LD) | IN(LP posterior; LD anterior)",
+      "source_definition": "dorsal-thalamus posterior/lateral group",
+      "decision": "INCLUDE",
+      "decision_reason": "unambiguous dorsal-thalamus group; present across AAL3/FS/Julich and within Brainnetome whole-thalamus connectivity zones; G1 'whole-thalamus' rollup covers it.",
+      "evidence_type": "official_atlas_definition+literature+frozen_mapping",
+      "confidence": "high",
+      "script_version": "phase17_v3_resolve_thalamus_g1_ontology_scope.py v1",
+      "run_timestamp": "2026-09-07T07:56:52+00:00"
+    },
+    {
+      "decision_id": "THAL_SCOPE_12",
+      "canonical_region_id": "NGIQ-BR-00000247;NGIQ-BR-00000256",
+      "source_structure": "Habenula / epithalamus",
+      "source_atlas": "multi-atlas (AAL3/BN/FS/Julich)",
+      "source_version": "AAL3v1/BN246/FS-Iglesias2018/Julich-Brain v3.1",
+      "source_reference": "NOT_IN_THAL(no habenula in Thal set) | NOT_IN_THA | NOT_IN_THAL_ATLAS | (epithalamus, not in Thal scope)",
+      "source_definition": "epithalamus; not part of G1 Thalamus in any source",
+      "decision": "EXCLUDE",
+      "decision_reason": "epithalamus/subthalamus; not part of G1 Thalamus in any source (AAL3/BN/FS/Julich agree).",
+      "evidence_type": "official_atlas_definition+literature+frozen_mapping",
+      "confidence": "high",
+      "script_version": "phase17_v3_resolve_thalamus_g1_ontology_scope.py v1",
+      "run_timestamp": "2026-09-07T07:56:52+00:00"
+    },
+    {
+      "decision_id": "THAL_SCOPE_13",
+      "canonical_region_id": "NGIQ-BR-00000247;NGIQ-BR-00000256",
+      "source_structure": "Zona incerta (ZI)",
+      "source_atlas": "multi-atlas (AAL3/BN/FS/Julich)",
+      "source_version": "AAL3v1/BN246/FS-Iglesias2018/Julich-Brain v3.1",
+      "source_reference": "NOT_IN_THAL | NOT_IN_THA | NOT_IN_THAL_ATLAS | VENTRAL_THALAMUS(ZI)",
+      "source_definition": "subthalamic; not G1 Thalamus",
+      "decision": "EXCLUDE",
+      "decision_reason": "epithalamus/subthalamus; not part of G1 Thalamus in any source (AAL3/BN/FS/Julich agree).",
+      "evidence_type": "official_atlas_definition+literature+frozen_mapping",
+      "confidence": "high",
+      "script_version": "phase17_v3_resolve_thalamus_g1_ontology_scope.py v1",
+      "run_timestamp": "2026-09-07T07:56:52+00:00"
+    },
+    {
+      "decision_id": "THAL_SCOPE_14",
+      "canonical_region_id": "NGIQ-BR-00000247;NGIQ-BR-00000256",
+      "source_structure": "Ventral anterior magnocellular (VAmc)",
+      "source_atlas": "multi-atlas (AAL3/BN/FS/Julich)",
+      "source_version": "AAL3v1/BN246/FS-Iglesias2018/Julich-Brain v3.1",
+      "source_reference": "(folded in Thal_VA) | (within VA zone) | IN(VAmc) | (VA)",
+      "source_definition": "FS-specific subdivision of VA; part of ventral group -> INCLUDE as VA",
+      "decision": "INCLUDE",
+      "decision_reason": "VAmc is an FS-specific subdivision of the ventral anterior nucleus (VA); part of the ventral group -> INCLUDE as VA.",
+      "evidence_type": "official_atlas_definition+literature+frozen_mapping",
+      "confidence": "high",
+      "script_version": "phase17_v3_resolve_thalamus_g1_ontology_scope.py v1",
+      "run_timestamp": "2026-09-07T07:56:52+00:00"
+    }
+  ],
+  "frozen_mapping_evidence": {
+    "n_frozen_g3_thal_rows": 16,
+    "n_brainnetome_parcels_in_manifest": 16,
+    "brainnetome_parcel_codes": [
+      "Tha_L_8_1",
+      "Tha_L_8_2",
+      "Tha_L_8_3",
+      "Tha_L_8_4",
+      "Tha_L_8_5",
+      "Tha_L_8_6",
+      "Tha_L_8_7",
+      "Tha_L_8_8",
+      "Tha_R_8_1",
+      "Tha_R_8_2",
+      "Tha_R_8_3",
+      "Tha_R_8_4",
+      "Tha_R_8_5",
+      "Tha_R_8_6",
+      "Tha_R_8_7",
+      "Tha_R_8_8"
+    ],
+    "brainnetome_subdivision_names": [
+      [
+        "Tha_L_8_1",
+        "medial pre-frontal thalamus"
+      ],
+      [
+        "Tha_L_8_2",
+        "pre-motor thalamus"
+      ],
+      [
+        "Tha_L_8_3",
+        "sensory thalamus"
+      ],
+      [
+        "Tha_L_8_4",
+        "rostral temporal thalamus"
+      ],
+      [
+        "Tha_L_8_5",
+        "posterior parietal thalamus"
+      ],
+      [
+        "Tha_L_8_6",
+        "occipital thalamus"
+      ],
+      [
+        "Tha_L_8_7",
+        "caudal temporal thalamus"
+      ],
+      [
+        "Tha_L_8_8",
+        "lateral pre-frontal thalamus"
+      ],
+      [
+        "Tha_R_8_1",
+        "medial pre-frontal thalamus"
+      ],
+      [
+        "Tha_R_8_2",
+        "pre-motor thalamus"
+      ],
+      [
+        "Tha_R_8_3",
+        "sensory thalamus"
+      ],
+      [
+        "Tha_R_8_4",
+        "rostral temporal thalamus"
+      ],
+      [
+        "Tha_R_8_5",
+        "posterior parietal thalamus"
+      ],
+      [
+        "Tha_R_8_6",
+        "occipital thalamus"
+      ],
+      [
+        "Tha_R_8_7",
+        "caudal temporal thalamus"
+      ],
+      [
+        "Tha_R_8_8",
+        "lateral pre-frontal thalamus"
+      ]
+    ]
+  }
+}

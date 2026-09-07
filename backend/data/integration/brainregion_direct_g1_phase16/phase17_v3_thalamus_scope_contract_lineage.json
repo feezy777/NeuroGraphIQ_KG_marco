@@ -1,0 +1,24 @@
+{
+  "lineage_id": "THALAMUS_SCOPE_LINEAGE_001",
+  "lineage_description": "Thalamus G1 scope contract V1 -> V2 repository-level continuity record. Repairs the V2->V1 chain so a clean clone / audit can trace V2 (committed) down to V1 (now tracked) and onward to the scope-resolution generator + source inputs.",
+  "v1_contract_id": "THALAMUS_G1_SCOPE_CONTRACT_V1",
+  "v1_path": "data/integration/brainregion_direct_g1_phase16/phase17_v3_thalamus_g1_scope_contract.json",
+  "v1_sha256": "324a67163a15eae3427b1453a234b0e184958fa773dde400b819d88e9dd21333",
+  "v1_git_tracked": true,
+  "v1_generator": "phase17_v3_resolve_thalamus_g1_ontology_scope.py",
+  "v1_generator_sha256": "79d771012798bca8970f0b8d0e6636b211af38af07e7a9ec67f39d9e8a9e991f",
+  "v1_provenance_sidecar": "phase17_v3_thalamus_g1_scope_contract_v1_provenance.json",
+  "v2_contract_id": "THALAMUS_G1_SCOPE_CONTRACT_V2",
+  "v2_path": "data/integration/brainregion_direct_g1_phase16/phase17_v3_thalamus_g1_scope_contract_v2.json",
+  "v2_sha256": "b18e3531cc88301631782f870ad7c8757cb75193028b6bb3e0f88e4f40ba1869",
+  "v2_supersedes": "THALAMUS_G1_SCOPE_CONTRACT_V1",
+  "supersedes_id_match": true,
+  "repository_chain_verified": true,
+  "verification_commit_pending": false,
+  "notes": [
+    "V1 was originally produced by phase17_v3_resolve_thalamus_g1_ontology_scope.py in the 'Thalamus G1 Ontology Scope Resolution' round and remained an uncommitted local snapshot. This round (provenance continuity repair) adds V1 to git tracking so the V2.supersedes=V1 chain is reproducible from a clean clone.",
+    "V1 scientific content is NOT modified by this round; only its git-tracked status and provenance sidecar/lineage records are added.",
+    "V2 sha256 recorded at commit time; if V2 is later regenerated with a new timestamp its sha will change - lineage should be refreshed then."
+  ],
+  "historical_report_state_note": "The V1 scope-resolution diagnostics and V2 canonical-identity diagnostics stated 'no commit' / '不要 commit' at generation time. That reflected the true state then. V1 is committed in this provenance-continuity round; V2 was committed in the canonical-identity round (31fba9e). Historical report wording is preserved verbatim (not rewritten); this lineage record documents the later commit state."
+}

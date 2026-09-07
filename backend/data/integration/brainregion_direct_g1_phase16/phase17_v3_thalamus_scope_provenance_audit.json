@@ -1,0 +1,41 @@
+{
+  "v1_snapshot_authenticity": "VERIFIED",
+  "repository_provenance_chain_complete": true,
+  "generator_reproducibility": "VERIFIED_LOCAL",
+  "checks": {
+    "v1_file_exists": true,
+    "v1_git_tracked": true,
+    "v2_git_tracked": true,
+    "v1_generator_git_tracked": true,
+    "v1_sidecar_git_tracked": true,
+    "lineage_git_tracked": true,
+    "v1_contract_name": "THALAMUS_G1_SCOPE_CONTRACT_V1",
+    "v2_contract_id": "THALAMUS_G1_SCOPE_CONTRACT_V2",
+    "v2_supersedes": "THALAMUS_G1_SCOPE_CONTRACT_V1",
+    "supersedes_id_match": true,
+    "v1_verdict": "THALAMUS_G1_SCOPE_PARTIALLY_FROZEN",
+    "v2_verdict": "THALAMUS_G1_SCOPE_PARTIALLY_FROZEN",
+    "lineage_v1_sha_matches": true,
+    "lineage_v2_sha_matches": true,
+    "lineage_gen_sha_matches": true,
+    "lineage_v1_git_tracked_flag": true,
+    "lineage_supersedes_id_match": true,
+    "lineage_repository_chain_verified": true,
+    "sidecar_snapshot_sha_matches": true,
+    "sidecar_generator_sha_matches": true
+  },
+  "v1": {
+    "path": "backend/data/integration/brainregion_direct_g1_phase16/phase17_v3_thalamus_g1_scope_contract.json",
+    "sha256": "324a67163a15eae3427b1453a234b0e184958fa773dde400b819d88e9dd21333"
+  },
+  "v2": {
+    "path": "backend/data/integration/brainregion_direct_g1_phase16/phase17_v3_thalamus_g1_scope_contract_v2.json",
+    "sha256": "b18e3531cc88301631782f870ad7c8757cb75193028b6bb3e0f88e4f40ba1869"
+  },
+  "generator": {
+    "path": "backend/scripts/phase17_v3_resolve_thalamus_g1_ontology_scope.py",
+    "sha256": "79d771012798bca8970f0b8d0e6636b211af38af07e7a9ec67f39d9e8a9e991f"
+  },
+  "status_definition": "Tier A repository_chain_verified = V1+V2+generator git-tracked, V2.supersedes==V1.contract_id, recorded SHA256s match on-disk. Clean-clone reproducible from this commit. Tier B generator_reproducibility is a separate best-effort rerun that needs source data CSVs (g3 manifest, BNA authoritative) which may live in the wider data relocation; it does not gate Tier A.",
+  "note": "read-only provenance audit; no V1/V2 content modified"
+}

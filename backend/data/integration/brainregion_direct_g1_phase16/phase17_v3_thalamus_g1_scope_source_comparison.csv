@@ -1,0 +1,15 @@
+﻿structure,aal3,brainnetome,fs,julich,canonical_candidate,notes
+LGN (lateral geniculate),IN(Thal_LGN),NOT_INDIVIDUAL(connectivity zones),IN(LGN),METATHALAMUS(CGL under metathalamus),ONTOLOGY_REVIEW,AAL3 puts LGN inside Thalamus subdivision; Julich separates as metathalamus child of thalamus; FS segments LGN as a nucleus; Brainnetome 8 connectivity parcels cannot prove membership -> genuine modeling divergence -> REVIEW
+MGN (medial geniculate),IN(Thal_MGN),NOT_INDIVIDUAL(connectivity zones),IN(MGN),METATHALAMUS(CGM under metathalamus),ONTOLOGY_REVIEW,same reasoning as LGN -> REVIEW
+Reticular nucleus (R/Rt),"EXCLUDED('thin shell, not included')",NOT_INDIVIDUAL(connectivity zones),IN(R),VENTRAL_THALAMUS(Rt under ventral thalamus),ONTOLOGY_REVIEW,Iglesias segments R but groups it with white-matter prior; AAL3 explicitly excludes; Julich = ventral-thalamus child; 'thalamus proper' (dorsal) classically excludes reticular -> REVIEW
+Pulvinar (PuA/PuM/PuL/PuI),IN(Thal_Pu*),(within PPtha/Otha zones),IN(Pu*),IN(posterior group PUm/PUl/PUi/PUa),INCLUDE,unambiguous dorsal-thalamus posterior group
+Anterior nuclei (AV/AM/AD),IN(Thal_AV; AM+AD folded),(within functional zones),IN(AV; AM/AD folded in AV),IN(anterior group AV/AM/LD),INCLUDE,dorsal-thalamus anterior group; consistent across atlases
+Mediodorsal (MDm/MDl),IN(Thal_MDm/MDl),(mPF/lPF zones),IN(MDm/MDl),IN(medial group MD),INCLUDE,dorsal-thalamus medial group
+Ventral nuclei (VA/VLa/VLp/VM/VPL),IN(Thal_VA/VL/VPL),(Stha/mPMtha),IN(VA/VLa/VLp/VM/VPL/VAmc),IN(ventral group VA/VLA/VLP/VPL/VM/VPi...),INCLUDE,dorsal-thalamus ventral group
+Intralaminar (CM/Pf/CL/CeM/Pc),IN(Thal_IL; CeM/CL/Pc/CM/Pf),(within zones),IN(CM/Pf/CL/CeM/Pc),IN(intralaminar CM/Pf/CL/CeM...),INCLUDE,dorsal-thalamus intralaminar group
+Midline nuclei (MV/Re/Pt/Pv),IN(Thal_Re=Reuniens; Pt excluded too small),(within zones),IN(MV(Re)/Pt),IN(medial group MV/Pv...),INCLUDE(midline),"Reuniens+paratenial are midline nuclei of dorsal complex; AAL3 keeps Reuniens, drops Pt (size); FS keeps both"
+Limitans / suprageniculate (L-Sg / Li/Sg),EXCLUDED(limitans 12 voxels),NOT_INDIVIDUAL,IN(L-Sg),IN(posterior group Li/Sg),ONTOLOGY_REVIEW,AAL3 excludes limitans; FS keeps L-Sg; Julich posterior Li/Sg; border nucleus -> REVIEW
+Lateral posterior / laterodorsal (LP/LD),IN(Thal_LP),(PPtha),IN(LP/LD),IN(LP posterior; LD anterior),INCLUDE,dorsal-thalamus posterior/lateral group
+Habenula / epithalamus,NOT_IN_THAL(no habenula in Thal set),NOT_IN_THA,NOT_IN_THAL_ATLAS,"(epithalamus, not in Thal scope)",EXCLUDE,epithalamus; not part of G1 Thalamus in any source
+Zona incerta (ZI),NOT_IN_THAL,NOT_IN_THA,NOT_IN_THAL_ATLAS,VENTRAL_THALAMUS(ZI),EXCLUDE,subthalamic; not G1 Thalamus
+Ventral anterior magnocellular (VAmc),(folded in Thal_VA),(within VA zone),IN(VAmc),(VA),INCLUDE,FS-specific subdivision of VA; part of ventral group -> INCLUDE as VA
