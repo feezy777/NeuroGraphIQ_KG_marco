@@ -2,6 +2,6 @@
 Thalamus,AUTHORITATIVE_PROBABILITY_ATLAS_SOURCE_FOUND,PENDING_EXTERNAL,MNI-ICBM 152 2009c symmetric,FALSE/UNKNOWN until header,FS/Iglesias thal nuclei
 Hippocampus,AUTHORITATIVE_PROBABILITY_ATLAS_SOURCE_FOUND,PENDING_EXTERNAL,MNI-ICBM 152 2009c symmetric,FALSE/UNKNOWN until header,FS/Iglesias subfields; construction must follow hippocampus proper vs formation ontology (no subiculum merge this round)
 Amygdala,AUTHORITATIVE_PROBABILITY_ATLAS_SOURCE_FOUND,PENDING_EXTERNAL,MNI-ICBM 152 2009c symmetric,FALSE/UNKNOWN until header,FS SubfieldAtlasesICBMspace: hippocampal subfields + nuclei of amygdala
-Nucleus Accumbens,STANDARD_GROUP_GEOMETRY_NOT_CONFIRMED,,n/a,n/a,segmentation model only - not group atlas
+Nucleus Accumbens,AUTHORITATIVE_PROBABILITY_ATLAS_SOURCE_FOUND,PENDING_EXTERNAL,MNI152NLin2009cAsym + NLin6Asym (CIT168),FALSE/UNKNOWN until header,"CIT168 (Pauli, Nili & Tyszka 2018; Scientific Data 5:180063); NAC included; 2009cAsym projection available (OSF vak6p); exact grid to verify"
 Basal Forebrain,AUTHORITATIVE_PROBABILITY_ATLAS_SOURCE_FOUND,PENDING_EXTERNAL,MNI152 (variant verify),FALSE/UNKNOWN until header,"Zaborszky 2008 (Ch1-3, Ch4; JuBrain/AnatomyToolbox); license TO_VERIFY"
-BST,NO_MATCHED_AUTHORITATIVE_GROUP_GEOMETRY,,,,keep separate; not merged into Ch atlas
+BST,AUTHORITATIVE_PROBABILITY_ATLAS_SOURCE_FOUND,PENDING_EXTERNAL,MNI152 (Blackford whole); MNI (Sibbach d/v); Colin27/ICBM152 (Brandstetter cyto),FALSE/UNKNOWN until header,"PRIMARY whole-BST = Blackford/Theiss 2017 (NeuroVault col 2017, n=10, whole BNST); SECONDARY = Sibbach 2024 d/vBNST (n=25, 7T); Brandstetter cyto 10-brain (BSTC/D/M/P, BigBrain)"

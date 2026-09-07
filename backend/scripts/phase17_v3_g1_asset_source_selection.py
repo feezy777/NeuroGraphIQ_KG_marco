@@ -173,21 +173,81 @@ ASSETS = [
       registration_required="YES(to group)", resampling_required="YES",
       scientific_risk="segmentation model/output is NOT a group atlas",
       acquisition_status="SUBJECT_SPECIFIC_ONLY", exact_voxel_grid_match="n/a"),
-    # ---------------- no acceptable source ----------------
-    A(asset_id="BF_BST", supported_g1="Basal Forebrain BST",
-      atlas_name="Bed nucleus of stria terminalis - no matched authoritative group geometry",
-      atlas_version="", source_org="", official_source="", publication="", doi="",
-      geometry_type="n/a", coordinate_space="unknown", local_raw_path="",
-      independent_gold_standard_candidate="FALSE",
-      scientific_risk="kept separate; not merged into Ch atlas",
-      acquisition_status="NO_ACCEPTABLE_SOURCE", exact_voxel_grid_match="n/a"),
-    A(asset_id="NAcc_GROUP", supported_g1="Nucleus Accumbens",
-      atlas_name="group probabilistic accumbens - not confirmed",
-      atlas_version="", source_org="", official_source="", publication="", doi="",
-      geometry_type="n/a", coordinate_space="unknown", local_raw_path="",
-      independent_gold_standard_candidate="FALSE(no group atlas)",
-      scientific_risk="segmentation model only; do not force as gold standard",
-      acquisition_status="STANDARD_GROUP_GEOMETRY_NOT_CONFIRMED", exact_voxel_grid_match="n/a"),
+    # ---------------- NAcc: CIT168 (verified group atlas, incl 2009cAsym projection) ----------------
+    A(asset_id="CIT168_NAcc", supported_g1="Nucleus Accumbens (NAC) + subcortical nuclei",
+      atlas_name="CIT168 subcortical nuclei atlas (Pauli, Nili & Tyszka 2018)",
+      atlas_version="2018 (Scientific Data 5:180063)", source_org="Caltech (Tyszka)",
+      official_source="https://github.com/jmtyszka/CIT168-SubCorticalAtlas ; OSF; PennLINC/AtlasPack",
+      publication="Pauli, Nili & Tyszka 2018, Scientific Data 5:180063",
+      doi="10.1038/sdata.2018.63", geometry_type="group probabilistic atlas",
+      surface_or_volume="volume", probabilistic_or_discrete="probabilistic",
+      coordinate_space="MNI152NLin6Asym and MNI152NLin2009cAsym (both provided)",
+      template="MNI152NLin2009cAsym + NLin6Asym", resolution="1mm (high-res)",
+      original_filename="tpl-MNI152NLin2009cAsym_atlas-CIT168_res-01_desc-RAS_dseg.nii.gz (OSF vak6p); NLin6Asym (OSF 2qswg); LUT (OSF 6qrcb)",
+      local_raw_path="", license="see OSF project (academic; verify)", redistribution_status="see project",
+      asset_role="NAcc G1 probability", native_or_derived="derived (normalized group)",
+      subject_specific_or_group="group standard", independent_from_g3_g1_mapping="TRUE",
+      independent_gold_standard_candidate="YES(NAC)",
+      registration_required="NO for 2009cAsym file (same family; grid to verify)",
+      resampling_required="TRUE(grid check after download)",
+      scientific_risk="2009cAsym projection exists but voxel grid UNKNOWN until header read",
+      notes="CIT168 includes NAC; MNI152NLin2009cAsym projection available; potential_exact_template_family_match=TRUE (grid to verify)",
+      acquisition_status="PENDING_EXTERNAL", exact_voxel_grid_match="FALSE/UNKNOWN(not inspected)"),
+    # ---------------- BST: three verified group atlases ----------------
+    A(asset_id="BST_BLACKFORD_WHOLE", supported_g1="BST (whole bed nucleus of stria terminalis)",
+      atlas_name="Blackford/Theiss whole-BNST probabilistic mask",
+      atlas_version="2017 (NeuroImage 146:288-292)",
+      source_org="Vanderbilt (Blackford lab)", official_source="NeuroVault collection 2017",
+      publication="Theiss, Ridgewell, McHugo, Heckers, Blackford 2017",
+      doi="10.1016/j.neuroimage.2016.11.047",
+      geometry_type="group probabilistic mask", surface_or_volume="volume",
+      probabilistic_or_discrete="probabilistic",
+      coordinate_space="MNI152 (FSL/ANTs 1mm normalization)", template="MNI152 (variant to verify)",
+      resolution="1mm", original_filename="(NeuroVault collection 2017)",
+      local_raw_path="", license="see NeuroVault record", redistribution_status="public (NeuroVault)",
+      asset_role="BST whole G1 probability", native_or_derived="derived (normalized group)",
+      subject_specific_or_group="group standard (n=10)",
+      independent_from_g3_g1_mapping="TRUE",
+      independent_gold_standard_candidate="YES(whole BST)",
+      registration_required="YES(to NLin2009cAsym)", resampling_required="YES",
+      scientific_risk="whole BNST; MNI152 variant needs template check",
+      notes="whole-BST coverage; PRIMARY whole-BST candidate",
+      acquisition_status="PENDING_EXTERNAL", exact_voxel_grid_match="FALSE/UNKNOWN"),
+    A(asset_id="BST_SIBBACH_DV", supported_g1="BST (dBNST+vBNST subdivisions)",
+      atlas_name="Sibbach et al. d/v BNST probabilistic atlases",
+      atlas_version="2024 (Brain Struct Funct 229:273-283)",
+      source_org="Univ Pittsburgh (Banihashemi)", official_source="paper data (PMC10917873)",
+      publication="Sibbach et al. 2024", doi="10.1007/s00429-023-02713-z",
+      geometry_type="group probabilistic atlas", surface_or_volume="volume",
+      probabilistic_or_discrete="probabilistic",
+      coordinate_space="MNI (7T normalized)", template="MNI (variant to verify)",
+      resolution="~1mm", original_filename="(dBNST/vBNST maps)",
+      local_raw_path="", license="see paper/data availability", redistribution_status="available",
+      asset_role="BST subdivision probability", native_or_derived="derived (normalized group)",
+      subject_specific_or_group="group standard (n=25)", independent_from_g3_g1_mapping="TRUE",
+      independent_gold_standard_candidate="YES(dBNST/vBNST)",
+      registration_required="YES(to NLin2009cAsym)", resampling_required="YES",
+      scientific_risk="subdivisions dorsal/ventral; whole BST = d+v within this atlas's own definition (no naive cross-atlas union)",
+      notes="SECONDARY subdivision candidate",
+      acquisition_status="PENDING_EXTERNAL", exact_voxel_grid_match="FALSE/UNKNOWN"),
+    A(asset_id="BST_CYTO_10BRAIN", supported_g1="BST (central/dorsal/medial/posterior subdivisions)",
+      atlas_name="Brandstetter et al. cytoarchitectonic BST (10 postmortem brains)",
+      atlas_version="2026 (Imaging Neuroscience; Jülich)",
+      source_org="FZ Jülich/Amunts", official_source="EBRAINS / Julich-Brain / HBM",
+      publication="Brandstetter et al. (Imaging Neuroscience)",
+      doi="10.1162/IMAG.a.1260",
+      geometry_type="probabilistic cytoarchitectonic maps (+BigBrain ultra-high-res)",
+      surface_or_volume="volume (+BigBrain)", probabilistic_or_discrete="probabilistic",
+      coordinate_space="Colin-27 and ICBM-152", template="Colin27/ICBM152 (not 2009cAsym)",
+      resolution="~1mm (+BigBrain)", original_filename="(BSTC/BSTD/BSTM/BSTP maps)",
+      local_raw_path="", license="open (EBRAINS/HBM terms)", redistribution_status="open",
+      asset_role="BST subdivision reference", native_or_derived="native (cytoarchitectonic, 10 brains)",
+      subject_specific_or_group="group standard", independent_from_g3_g1_mapping="TRUE",
+      independent_gold_standard_candidate="YES(subdivisions)",
+      registration_required="YES(to NLin2009cAsym)", resampling_required="YES",
+      scientific_risk="Colin27/ICBM152 spaces != NLin2009cAsym",
+      notes="high-resolution/cyto subdivision reference",
+      acquisition_status="PENDING_EXTERNAL", exact_voxel_grid_match="FALSE/UNKNOWN"),
 ]
 
 COLUMNS = list(BASE.keys())
@@ -227,14 +287,21 @@ def main():
              acquisition="PENDING_EXTERNAL", space="MNI-ICBM 152 2009c symmetric",
              grid="FALSE/UNKNOWN until header",
              source="FS SubfieldAtlasesICBMspace: hippocampal subfields + nuclei of amygdala"),
-        dict(structure="Nucleus Accumbens", status="STANDARD_GROUP_GEOMETRY_NOT_CONFIRMED",
-             acquisition="", space="n/a", grid="n/a", source="segmentation model only - not group atlas"),
+        dict(structure="Nucleus Accumbens", status="AUTHORITATIVE_PROBABILITY_ATLAS_SOURCE_FOUND",
+             acquisition="PENDING_EXTERNAL", space="MNI152NLin2009cAsym + NLin6Asym (CIT168)",
+             grid="FALSE/UNKNOWN until header",
+             source="CIT168 (Pauli, Nili & Tyszka 2018; Scientific Data 5:180063); NAC included; "
+                    "2009cAsym projection available (OSF vak6p); exact grid to verify"),
         dict(structure="Basal Forebrain", status="AUTHORITATIVE_PROBABILITY_ATLAS_SOURCE_FOUND",
              acquisition="PENDING_EXTERNAL", space="MNI152 (variant verify)",
              grid="FALSE/UNKNOWN until header",
              source="Zaborszky 2008 (Ch1-3, Ch4; JuBrain/AnatomyToolbox); license TO_VERIFY"),
-        dict(structure="BST", status="NO_MATCHED_AUTHORITATIVE_GROUP_GEOMETRY",
-             acquisition="", space="", grid="", source="keep separate; not merged into Ch atlas"),
+        dict(structure="BST", status="AUTHORITATIVE_PROBABILITY_ATLAS_SOURCE_FOUND",
+             acquisition="PENDING_EXTERNAL", space="MNI152 (Blackford whole); MNI (Sibbach d/v); "
+                    "Colin27/ICBM152 (Brandstetter cyto)",
+             grid="FALSE/UNKNOWN until header",
+             source="PRIMARY whole-BST = Blackford/Theiss 2017 (NeuroVault col 2017, n=10, whole BNST); "
+                    "SECONDARY = Sibbach 2024 d/vBNST (n=25, 7T); Brandstetter cyto 10-brain (BSTC/D/M/P, BigBrain)"),
     ]
     with open(OUTSC, "w", newline="", encoding="utf-8-sig") as fh:
         w = csv.DictWriter(fh, fieldnames=list(sub[0].keys()))
@@ -260,16 +327,21 @@ def main():
 - acquisition_status = PENDING_EXTERNAL; license_status = TO_VERIFY; download_source = TO_VERIFY.
 - NO download performed this round.
 - Brainnetome G3 provides NO Basal Forebrain surrogate; Accumbens/Thalamus must NOT be used as BF surrogate.
-- **BST (bed nucleus of stria terminalis) kept SEPARATE**: no matched authoritative group geometry;
-  not merged into the Ch atlas.
+- **BST (bed nucleus of stria terminalis) kept SEPARATE** from the Basal Forebrain Ch1-4/NbM family:
+  it is an independent geometry-source family (never merged into the Ch atlas).
+- BST authoritative group geometry now FOUND (all PENDING_EXTERNAL):
+  PRIMARY whole-BST = Blackford/Theiss 2017 (NeuroVault collection 2017, n=10);
+  SECONDARY = Sibbach 2024 d/vBNST (n=25, 7T); Brandstetter/Jülich cytoarchitectonic BST
+  (BSTC/D/M/P, 10 postmortem brains, Colin-27/ICBM-152). No download performed this round.
 """
     with open(OUTB, "w", encoding="utf-8") as fh:
         fh.write(bf)
     diag = ["# External G1 asset source selection (fact-corrected)", "",
             "status=" + str(dict(status)),
-            "Thalamus/Hippocampus/Amygdala/Basal Forebrain -> AUTHORITATIVE_PROBABILITY_ATLAS_SOURCE_FOUND / PENDING_EXTERNAL",
+            "Thalamus/Hippocampus/Amygdala/NAcc/Basal Forebrain/BST -> AUTHORITATIVE_PROBABILITY_ATLAS_SOURCE_FOUND / PENDING_EXTERNAL",
             "No exact voxel-grid claim before real header read (RESAMPLING_REQUIRED).",
-            "NAcc -> STANDARD_GROUP_GEOMETRY_NOT_CONFIRMED; BST -> NO_MATCHED_AUTHORITATIVE_GROUP_GEOMETRY; aseg -> SUBJECT_SPECIFIC_ONLY."]
+            "NAcc -> CIT168 (2009cAsym projection); BST -> Blackford whole-BNST PRIMARY (Sibbach/Brandstetter SECONDARY); "
+            "aseg -> SUBJECT_SPECIFIC_ONLY; BF/BST remain independent source families."]
     with open(OUTD, "w", encoding="utf-8") as fh:
         fh.write("\n".join(diag))
     print("assets", len(ASSETS), "status", dict(status))
