@@ -1,0 +1,27 @@
+{
+  "assets": 11,
+  "status": {
+    "LOCAL_PRESENT": 4,
+    "PENDING_EXTERNAL": 4,
+    "SUBJECT_SPECIFIC_ONLY": 1,
+    "NO_ACCEPTABLE_SOURCE": 1,
+    "STANDARD_GROUP_GEOMETRY_NOT_CONFIRMED": 1
+  },
+  "source_found_pending": [
+    "FS_SUBFIELD_HIPPO",
+    "FS_AMYG_NUCLEI",
+    "FS_THAL_ICBM",
+    "BF_ZABORSZKY_CH1234"
+  ],
+  "local_present": [
+    "JULICH_V31_PM",
+    "BN_2009C_TRANSFORMED_PM",
+    "FS_DK_SURFACE",
+    "TPL_2009C_T1"
+  ],
+  "no_acceptable": [
+    "BF_BST",
+    "NAcc_GROUP"
+  ],
+  "note": "no downloads; corrected Amygdala/BF statuses; no exact-voxel claim before header read"
+}

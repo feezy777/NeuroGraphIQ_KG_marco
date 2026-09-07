@@ -1,0 +1,4 @@
+﻿route,verdict,class_
+A_FS_DK_surface_bridge,native DK surface present; volume gold standard needs official FS surf2vol/template bridge,B_AUTHORITATIVE_NATIVE_REQUIRES_BRIDGE
+B_independent_MNI_volumetric_DK,no clean authoritative DK-equivalent 2009c volume locally,E_THIRD_PARTY_DERIVED / NO_ASSET
+C_other_gyral_atlas,name alone != current G1 definition; not acceptable gold standard,F_SURROGATE_NOT_ACCEPTABLE
