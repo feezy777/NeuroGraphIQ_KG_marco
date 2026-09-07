@@ -132,7 +132,11 @@ ASSETS = [
     A(asset_id="FS_THAL_ICBM", supported_g1="Thalamus",
       atlas_name="FreeSurfer/Iglesias thalamic nuclei", atlas_version="ICBM 2009c symmetric",
       source_org="Martinos/FreeSurfer", official_source="surfer.nmr.mgh.harvard.edu",
-      publication="Iglesias et al. 2018", doi="10.1016/j.neuroimage.2018.06.012",
+      publication="Iglesias et al. 2018 (NeuroImage 183:314-326)",
+      doi="10.1016/j.neuroimage.2018.08.012",
+      doi_correction=("old=10.1016/j.neuroimage.2018.06.012 -> "
+                      "corrected=10.1016/j.neuroimage.2018.08.012; 2018.06.012 is not "
+                      "the Iglesias thalamic-nuclei atlas DOI"),
       geometry_type="group probabilistic atlas", surface_or_volume="volume",
       probabilistic_or_discrete="probabilistic",
       coordinate_space="MNI-ICBM 152 2009c symmetric", template="2009c symmetric",

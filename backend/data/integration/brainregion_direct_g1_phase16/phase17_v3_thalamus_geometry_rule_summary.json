@@ -1,0 +1,319 @@
+{
+  "verdict": "GEOMETRY_RULE_BLOCKED_BY_ONTOLOGY_SCOPE",
+  "verdict_rationale": "Probability layer RESOLVED: data proves a mutually-exclusive categorical normalized posterior (sum over all 53 channels == 1.0 at every voxel; background ch0 == 1 - sum(nuclei)). Therefore for any fixed included set S of whole-Thalamus nucleus channels, P_Thalamus(x) = sum_{i in S} P_i(x) -> operator = SUM (identical to CLIPPED_SUM; MAX and PROBABILISTIC_UNION are NOT valid: UNION is an independent-Bernoulli product measured ~15% below SUM). Aggregation rule is FROZEN AT THE PROBABILITY LAYER only. Geometry construction is BLOCKED because the G1 ontology scope is INCOMPLETE: the Macro96 label reads 'thalamus proper' while the frozen G1 target is populated as the Brainnetome G3 whole-thalamus rollup (8 parcels/hemisphere); which nucleus channels (incl. LGN/MGN/reticular/border) are INCLUDED_CHANNELS is not yet frozen and cannot be resolved in this read-only round without spatial geometry. No geometry is built until INCLUDED_CHANNELS is frozen.",
+  "probability_aggregation_semantics": "RESOLVED",
+  "probability_aggregation_operator": "SUM",
+  "aggregation_rule_status": "FROZEN_AT_PROBABILITY_LAYER",
+  "g1_scope_status": "ONTOLOGY_SCOPE_INCOMPLETE",
+  "geometry_construction_status": "BLOCKED_BY_ONTOLOGY_SCOPE",
+  "construction_allowed": false,
+  "sum_applicability": "SUM applies only to the mutually-exclusive nucleus channels included in the same G1 Thalamus once INCLUDED_CHANNELS is frozen: P_G1(x)=sum_i P_i(x), i in INCLUDED_CHANNELS. MAX: not applicable. PROBABILISTIC_UNION: not applicable (not independent Bernoulli). CLIPPED_SUM: numerically == SUM here; not a separate operator.",
+  "canonical": {
+    "Left": {
+      "g1_region_id": "NGIQ-BR-00000247",
+      "canonical_name": "Left Thalamus"
+    },
+    "Right": {
+      "g1_region_id": "NGIQ-BR-00000256",
+      "canonical_name": "Right Thalamus"
+    }
+  },
+  "g1_ontology_scope": "Macro96 pool label 'left/right thalamus proper' (AAL3-derived); frozen G1 target NGIQ-BR-00000247/56 populated as whole-thalamus rollup of Brainnetome G3 Tha_*_8_1..8_8 (AUTO_HIGH). Scope text 'proper' vs rollup 'whole' not spatially reconciled => ONTOLOGY_SCOPE_INCOMPLETE; geometry BLOCKED",
+  "source": {
+    "asset_id": "FS_THAL_ICBM",
+    "file": "ThalamusProbs.MNIsymSpace.nii.gz",
+    "sha256": "640377ae93cf0782365a698573970c2a429a775c6f64dcf9ac02536156b51f22",
+    "names_file": "ThalamusProbs.MNIsymSpace.names.txt",
+    "names_sha256": "74b70bfa4fa75aa05a0bee9fcb548fa97bea20bfceef43b63a97c52a3923bfec",
+    "local_path": "data/atlases/external_raw/freesurfer_icbm2009c/thalamus/ThalamusProbs.MNIsymSpace.nii.gz",
+    "atlas": "FreeSurfer SubfieldAtlasesICBMspace Thalamus (Iglesias 2018)",
+    "atlas_version": "ICBM 2009c symmetric release",
+    "paper": "Iglesias et al. 2018 NeuroImage (arXiv:1806.08634)",
+    "doi": "10.1016/j.neuroimage.2018.08.012",
+    "official_source": "surfer.nmr.mgh.harvard.edu/fswiki/SubfieldAtlasesICBMspace",
+    "channel_metadata_source": "ThalamusProbs.MNIsymSpace.names.txt (same zip)"
+  },
+  "header": {
+    "shape": [
+      138,
+      106,
+      94,
+      53
+    ],
+    "zooms": [
+      0.5,
+      0.5,
+      0.5,
+      0.0
+    ],
+    "affine": [
+      0.5,
+      0.0,
+      0.0,
+      -34.0,
+      0.0,
+      0.5,
+      0.0,
+      -46.0,
+      0.0,
+      0.0,
+      0.5,
+      -19.0,
+      0.0,
+      0.0,
+      0.0,
+      1.0
+    ],
+    "orientation": "RAS",
+    "qform_code": 1,
+    "sform_code": 1,
+    "raw_dtype": "float32",
+    "computed_dtype": "float64"
+  },
+  "n_channels": 53,
+  "n_left": [
+    1,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+    15,
+    16,
+    17,
+    18,
+    19,
+    20,
+    21,
+    22,
+    23,
+    24,
+    25,
+    26,
+    27,
+    51
+  ],
+  "n_right": [
+    2,
+    3,
+    28,
+    29,
+    30,
+    31,
+    32,
+    33,
+    34,
+    35,
+    36,
+    37,
+    38,
+    39,
+    40,
+    41,
+    42,
+    43,
+    44,
+    45,
+    46,
+    47,
+    48,
+    49,
+    50,
+    52
+  ],
+  "n_background": [
+    0
+  ],
+  "channel_count_expected": 53,
+  "channel_count_actual": 53,
+  "channel_count_match": true,
+  "laterality": {
+    "ok": true,
+    "left_channels": 26,
+    "right_channels": 26,
+    "background_channels": 1,
+    "mismatches": []
+  },
+  "semantics": {
+    "sum_all_channels": {
+      "min": 0.9999999469146132,
+      "mean": 0.9999999999927052,
+      "median": 1.0,
+      "p90": 1.0,
+      "p95": 1.0000000149011612,
+      "p99": 1.0000000298896339,
+      "max": 1.0000000521540642
+    },
+    "sum_nucleus_channels_LR": {
+      "min": 0.0,
+      "mean": 0.11158866084021384,
+      "median": 0.0,
+      "p90": 0.7431736536935374,
+      "p95": 0.9999999685678631,
+      "p99": 1.0000000288709998,
+      "max": 1.0000000887121132
+    },
+    "sum_left_channels": {
+      "min": 0.0,
+      "mean": 0.0557943304201069,
+      "median": 0.0,
+      "p90": 0.000316941968048928,
+      "p95": 0.7425581642928586,
+      "p99": 1.0000000140330667,
+      "max": 1.0000000887121132
+    },
+    "sum_right_channels": {
+      "min": 0.0,
+      "mean": 0.0557943304201069,
+      "median": 0.0,
+      "p90": 0.000316941968048928,
+      "p95": 0.7425581642928586,
+      "p99": 1.0000000140330667,
+      "max": 1.0000000887121132
+    },
+    "background_channel": {
+      "min": -5.634501576423645e-08,
+      "mean": 0.8884113391524916,
+      "median": 1.0,
+      "p90": 1.0,
+      "p95": 1.0,
+      "p99": 1.0,
+      "max": 1.0
+    },
+    "S_all_min_within_1e-5": true,
+    "frac_S_all_eq1": 1.0,
+    "frac_S_nuc_gt1": 0.0,
+    "frac_S_nuc_eq1": 0.054593638548048336,
+    "frac_0_lt_Snuc_lt_1": 0.15159210840184084,
+    "frac_Snuc_eq0": 0.7936222575183705,
+    "bg_eq_1_minus_nuc_frac": 1.0,
+    "bg_lt_half_frac_LRsum_eq1": 0.6721492235596802,
+    "n_lowbg_voxels": 152362,
+    "interpretation": "MUTUALLY_EXCLUSIVE_CATEGORICAL_NORMALIZED_POSTERIOR",
+    "evidence": "sum over all 53 channels == 1.0 at every voxel; background ch0 == 1 - sum(nuclei); consistent with Iglesias 2018 Bayesian label model"
+  },
+  "background_diagnosis": {
+    "n_bg_gt_half": 1222670,
+    "frac_bg_gt_half": 0.8891938514885471,
+    "n_lowbg": 152362,
+    "frac_lowbg_LR_sum_eq1": 0.6721492235596802,
+    "note": "channel 0 'Unknown' is the explicit complement (not missing mass): sum over ALL 53 channels == 1 at every voxel. Where bg<0.5 yet L-channel+R-channel sum is not ~1, the remainder is the background channel itself in the 0<bg<0.5 range (partial-volume / model uncertainty), not a leak and not cross-hemisphere mass."
+  },
+  "aggregation_comparison": [
+    {
+      "name": "SUM",
+      "n_support": 144398,
+      "value_min": 8.077813418161384e-10,
+      "value_max": 1.0000000887121132,
+      "mass": 76718.98974622045,
+      "weighted_volume_mm3": 9589.873718277559,
+      "hemisphere": "Left"
+    },
+    {
+      "name": "MAX",
+      "n_support": 144398,
+      "value_min": 8.077813418161384e-10,
+      "value_max": 1.0,
+      "mass": 56825.87156797634,
+      "weighted_volume_mm3": 7103.233945997044,
+      "hemisphere": "Left"
+    },
+    {
+      "name": "PROBABILISTIC_UNION",
+      "n_support": 144398,
+      "value_min": 8.077813973272896e-10,
+      "value_max": 1.0,
+      "mass": 64925.268607999766,
+      "weighted_volume_mm3": 8115.6585759999725,
+      "hemisphere": "Left"
+    },
+    {
+      "name": "CLIPPED_SUM",
+      "n_support": 144398,
+      "value_min": 8.077813418161384e-10,
+      "value_max": 1.0,
+      "mass": 76718.98926394152,
+      "weighted_volume_mm3": 9589.873657992692,
+      "hemisphere": "Left"
+    },
+    {
+      "name": "SUM",
+      "n_support": 144398,
+      "value_min": 8.077813418161384e-10,
+      "value_max": 1.0000000887121132,
+      "mass": 76718.98974622044,
+      "weighted_volume_mm3": 9589.873718277557,
+      "hemisphere": "Right"
+    },
+    {
+      "name": "MAX",
+      "n_support": 144398,
+      "value_min": 8.077813418161384e-10,
+      "value_max": 1.0,
+      "mass": 56825.87156797633,
+      "weighted_volume_mm3": 7103.2339459970435,
+      "hemisphere": "Right"
+    },
+    {
+      "name": "PROBABILISTIC_UNION",
+      "n_support": 144398,
+      "value_min": 8.077813973272896e-10,
+      "value_max": 1.0,
+      "mass": 64925.268607999766,
+      "weighted_volume_mm3": 8115.6585759999725,
+      "hemisphere": "Right"
+    },
+    {
+      "name": "CLIPPED_SUM",
+      "n_support": 144398,
+      "value_min": 8.077813418161384e-10,
+      "value_max": 1.0,
+      "mass": 76718.9892639415,
+      "weighted_volume_mm3": 9589.87365799269,
+      "hemisphere": "Right"
+    }
+  ],
+  "coordinate_relation": {
+    "source_space": "MNI-ICBM 152 2009c symmetric",
+    "target_space": "MNI152NLin2009cAsym",
+    "source_grid": "138x106x94 @0.5mm",
+    "target_grid": "193x229x193 @1mm",
+    "template_variant_difference": "SYMMETRIC_VS_ASYMMETRIC",
+    "relation": "SYMMETRIC_TO_ASYMMETRIC_TEMPLATE_TRANSFORM_REQUIRED",
+    "transform_executed": false,
+    "resampling_executed": false
+  },
+  "flags": {
+    "threshold_applied": false,
+    "binarization_applied": false,
+    "registration_applied": false,
+    "resampling_applied": false,
+    "geometry_constructed": false
+  },
+  "provenance_chain": [
+    "Iglesias 2018 official paper (26 nuclei, Bayesian)",
+    "FS wiki ThalamicNuclei / SubfieldAtlasesICBMspace",
+    "raw sha256 640377ae93cf0782365a698573970c2a429a775c6f64dcf9ac02536156b51f22",
+    "names.txt channel metadata (same release zip)",
+    "data-verified categorical posterior (sum==1)",
+    "inclusion/exclusion per channel table",
+    "aggregation operator audit (SUM/MAX/UNION/CLIP)",
+    "verdict = GEOMETRY_RULE_BLOCKED_BY_ONTOLOGY_SCOPE (probability layer RESOLVED / SUM; ontology scope INCOMPLETE)"
+  ],
+  "doi_correction": {
+    "old_value": "10.1016/j.neuroimage.2018.06.012",
+    "corrected_value": "10.1016/j.neuroimage.2018.08.012",
+    "reason": "2018.06.012 is not the Iglesias thalamic-nuclei atlas DOI; the correct DOI for Iglesias et al., 'A probabilistic atlas of the human thalamic nuclei combining ex vivo MRI and histology', NeuroImage 183 (2018):314-326 is 2018.08.012",
+    "source": "official NeuroImage record / publisher page",
+    "correction_date": "2026-09-07T07:36:26+00:00",
+    "applies_to": "living manifest + this audit metadata only; historical frozen snapshots are superseded, not rewritten"
+  },
+  "script": "phase17_v3_audit_thalamus_g1_geometry_rule.py v1",
+  "construction_timestamp": "2026-09-07T07:36:26+00:00"
+}

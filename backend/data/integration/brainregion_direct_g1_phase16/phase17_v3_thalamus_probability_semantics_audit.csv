@@ -1,0 +1,17 @@
+﻿metric,value
+sum_all_channels,"{""min"": 0.9999999469146132, ""mean"": 0.9999999999927052, ""median"": 1.0, ""p90"": 1.0, ""p95"": 1.0000000149011612, ""p99"": 1.0000000298896339, ""max"": 1.0000000521540642}"
+sum_nucleus_channels_LR,"{""min"": 0.0, ""mean"": 0.11158866084021384, ""median"": 0.0, ""p90"": 0.7431736536935374, ""p95"": 0.9999999685678631, ""p99"": 1.0000000288709998, ""max"": 1.0000000887121132}"
+sum_left_channels,"{""min"": 0.0, ""mean"": 0.0557943304201069, ""median"": 0.0, ""p90"": 0.000316941968048928, ""p95"": 0.7425581642928586, ""p99"": 1.0000000140330667, ""max"": 1.0000000887121132}"
+sum_right_channels,"{""min"": 0.0, ""mean"": 0.0557943304201069, ""median"": 0.0, ""p90"": 0.000316941968048928, ""p95"": 0.7425581642928586, ""p99"": 1.0000000140330667, ""max"": 1.0000000887121132}"
+background_channel,"{""min"": -5.634501576423645e-08, ""mean"": 0.8884113391524916, ""median"": 1.0, ""p90"": 1.0, ""p95"": 1.0, ""p99"": 1.0, ""max"": 1.0}"
+S_all_min_within_1e-5,True
+frac_S_all_eq1,1.0
+frac_S_nuc_gt1,0.0
+frac_S_nuc_eq1,0.054593638548048336
+frac_0_lt_Snuc_lt_1,0.15159210840184084
+frac_Snuc_eq0,0.7936222575183705
+bg_eq_1_minus_nuc_frac,1.0
+bg_lt_half_frac_LRsum_eq1,0.6721492235596802
+n_lowbg_voxels,152362
+interpretation,MUTUALLY_EXCLUSIVE_CATEGORICAL_NORMALIZED_POSTERIOR
+evidence,sum over all 53 channels == 1.0 at every voxel; background ch0 == 1 - sum(nuclei); consistent with Iglesias 2018 Bayesian label model
