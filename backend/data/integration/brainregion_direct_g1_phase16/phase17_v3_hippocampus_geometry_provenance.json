@@ -1,0 +1,87 @@
+{
+  "function": "Hippocampus G1 canonical scope adjudication + reference geometry construction",
+  "canonical_identity": {
+    "identity_id": "HIPPOCAMPUS_G1_CANONICAL_IDENTITY_V1",
+    "verdict": "HIPPOCAMPUS_BROAD_OPERATIONAL",
+    "file": "data/integration/brainregion_direct_g1_phase16/phase17_v3_hippocampus_canonical_identity_v1.json",
+    "sha256": "ba8c255eacaf592c8aa75ac0a37f17793700f50aed984bf8c1b9dd1d4b874c20"
+  },
+  "canonical_left": {
+    "canonical_region_id": "NGIQ-BR-00000252",
+    "preferred_name": "Left Hippocampus"
+  },
+  "canonical_right": {
+    "canonical_region_id": "NGIQ-BR-00000260",
+    "preferred_name": "Right Hippocampus"
+  },
+  "canonical_identity_sources": [
+    "data/atlases/macro96/macro96_normalized_manifest.csv (G1_MACRO 'Left/Right Hippocampus'; no formal definition)",
+    "data/integration/brainregion_direct_g1_phase16/direct_g1_high_confidence.csv (NGIQ-BR-00000252 = Left Hippocampus / NGIQ-BR-00000260 = Right Hippocampus)",
+    "data/integration/brainregion_direct_g1_phase16/phase17_v3_classification.csv (VERIFIED CA1/CA2/CA3/DG L/R; ONTOLOGY_DEFINITION_DEPENDENT subicular family + HATA)"
+  ],
+  "raw_source": {
+    "asset": "FreeSurfer/Iglesias HippoAmygProbs.MNIsymSpace",
+    "left_sha256": "a79d5f88acfa21684a6f8c1e78da21e74ccbf152e68fb845fde048f451c4474e",
+    "right_sha256": "4d20bb95435afc9a139279ae2a159d8dfbf3f1b1de0d07d901ff6cf08570e5a3",
+    "names_sha256": "16f01c45cb93876c56bf8aedc5eb0604ad742da5e0f051bf2846429a2db8ced5",
+    "channel_count": 30
+  },
+  "probability_semantics": {
+    "semantics": "MUTUALLY_EXCLUSIVE_CATEGORICAL",
+    "operator": "SUM",
+    "per_side": {
+      "left": "MUTUALLY_EXCLUSIVE_CATEGORICAL",
+      "right": "MUTUALLY_EXCLUSIVE_CATEGORICAL"
+    }
+  },
+  "scope_contract": {
+    "path": "data/integration/brainregion_direct_g1_phase16/phase17_v3_hippocampus_g1_scope_contract_v1.json",
+    "verdict": "HIPPOCAMPUS_G1_SCOPE_FROZEN",
+    "sha256": "e853c5ce3cb5f33a96babb65d6425baaa78a51b5db6b4fe5558eba7881e671f4"
+  },
+  "native_geometry": {
+    "manifest": "data/integration/brainregion_direct_g1_phase16/phase17_v3_hippocampus_g1_native_geometry_manifest.json",
+    "manifest_sha256": "e74487d032fc2873a14bbf0294ec07ce3b4cc295f63867715c62b10497e83df1",
+    "left_sha256": "f0599f696a0342233ee503e80ff593842bb725cd010d4422d3ffa46559212bee",
+    "right_sha256": "1e7d9ee789d4b254cee576f21f403c8cd7454da21b944f3c94c3e70243379d77"
+  },
+  "spatial_bridge": {
+    "manifest": "data/integration/brainregion_direct_g1_phase16/phase17_v3_hippocampus_spatial_bridge_manifest.json",
+    "spatial_bridge_id": "SPB-MNI2009C-SYM-ASYM-SHARED-FRAME-V1",
+    "manifest_sha256": "cdc40d14046ed1f9096ca4c95d1d1ec0502c3b12adf26496508f024916eeb336"
+  },
+  "reference_geometry": {
+    "manifest": "data/integration/brainregion_direct_g1_phase16/phase17_v3_hippocampus_g1_reference_geometry_manifest.json",
+    "manifest_sha256": "06c260bcfe8f2fe0b84af37f21fb406e08104cba2a2cb68c69bf96ba6689d23d",
+    "left_sha256": "9ae850b3a8fe9ce91cb6a551f40c89751a681937bc3ca9a78a6881e6e3841ef4",
+    "right_sha256": "e7d68082be02cde8b7f24749752c4190b644da0128fb5f116323146b5d9767d7"
+  },
+  "julich_reference": {
+    "path": "data/atlases/julich/v3.1/spatial_raw/probability_maps/ACBL_VENTRAL_STRIATUM_LATERAL_ACCUMBENS_LEFT.nii.gz",
+    "sha256": "185a1d6c179c91bb1f02b3fc0d128b4607504a775edfec48fcc1435d9240bfdf"
+  },
+  "registration_applied": false,
+  "nonlinear_registration_applied": false,
+  "resampling_applied": true,
+  "template_variant_uncertainty": "PRESENT",
+  "residual_spatial_limitation": "TEMPLATE_VARIANT_ANATOMICAL_MISMATCH_NOT_EXPLICITLY_WARP_CORRECTED",
+  "no_world_x_split": true,
+  "laterality_authority": "source-native left/right atlas files",
+  "no_atlas_coverage_driven_ontology_inflation": true,
+  "independent_from_g3_g1_mapping": true,
+  "circularity_risk": "NONE",
+  "classification_csv": "NOT_TOUCHED",
+  "db_write": false,
+  "promotion": false,
+  "commit": false,
+  "software": {
+    "python_version": "3.13.12",
+    "platform": "Windows-11-10.0.26200-SP0",
+    "numpy_version": "2.2.0",
+    "scipy_version": "1.15.3",
+    "nibabel_version": "5.4.2"
+  },
+  "script": "phase17_v3_construct_hippocampus_g1_geometry.py",
+  "script_version": "phase17_v3_construct_hippocampus_g1_geometry.py v1",
+  "run_timestamp": "2026-09-08T08:18:39+00:00"
+}

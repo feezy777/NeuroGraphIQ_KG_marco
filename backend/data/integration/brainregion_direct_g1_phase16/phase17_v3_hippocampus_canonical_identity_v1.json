@@ -1,0 +1,205 @@
+{
+  "identity_id": "HIPPOCAMPUS_G1_CANONICAL_IDENTITY_V1",
+  "canonical_left": {
+    "canonical_region_id": "NGIQ-BR-00000252",
+    "preferred_name": "Left Hippocampus"
+  },
+  "canonical_right": {
+    "canonical_region_id": "NGIQ-BR-00000260",
+    "preferred_name": "Right Hippocampus"
+  },
+  "source_label": "Hippocampus / 海马 (Macro96)",
+  "source_has_formal_definition": false,
+  "source_definition_state": "SOURCE_LABEL_ONLY_NO_FORMAL_DEFINITION",
+  "verdict": "HIPPOCAMPUS_BROAD_OPERATIONAL",
+  "proper_vs_formation_adjudication": {
+    "hippocampus_proper": "cornu ammonis (CA1-CA4)",
+    "dentate_gyrus": "not hippocampus proper but part of FS aseg 'Hippocampus' and of the frozen VERIFIED DG relations",
+    "hippocampal_formation": "DG + CA + subicular complex (+ HATA as transition)",
+    "decision": "G1 'Hippocampus' = HIPPOCAMPUS_BROAD_OPERATIONAL: CA fields (CA1-CA4 incl CA2) + dentate gyrus (GC/ML-DG) + hippocampal molecular layer + hippocampal tail - the CA+DG hippocampal body consistent with the frozen reviewer rationale (FS 定义含海马体+齿状回). The subicular complex and HATA are NOT asserted G1 members (kept definition-dependent / outside the closed scope). HIPPOCAMPAL_FORMATION was NOT adopted merely to widen coverage."
+  },
+  "basis_priority": [
+    "Macro96/source terminology (label only)",
+    "frozen VERIFIED relation history (CA1/CA2/CA3/DG -> Left/Right Hippocampus)",
+    "FreeSurfer/Iglesias hippocampal-subfield label semantics",
+    "standard human neuroanatomy terminology",
+    "cross-atlas consistency (informative only)"
+  ],
+  "frozen_relations": {
+    "verified_in_g1": [
+      "CA1",
+      "CA2",
+      "CA3",
+      "DG"
+    ],
+    "verified_count": 8,
+    "verified_status_evidence": "phase17_v3_classification.csv VERIFIED_DIRECT_CONTAINED (CA1/CA2/CA3/DG left+right)",
+    "dependent_structures": [
+      "Subiculum",
+      "Presubiculum",
+      "Parasubiculum",
+      "Prosubiculum",
+      "Transsubiculum",
+      "HATA"
+    ],
+    "dependent_status": "ONTOLOGY_DEFINITION_DEPENDENT"
+  },
+  "history_conflict_check": {
+    "conflict": false,
+    "note": "all 8 frozen VERIFIED structures (CA1/CA2/CA3/DG) are contained in the CA+DG operational scope; none excluded"
+  },
+  "structure_membership": [
+    {
+      "structure": "CA1",
+      "g1_membership": "INCLUDE",
+      "in_hippocampus_proper": true,
+      "in_hippocampal_formation": true,
+      "geometry_channel": "CA1-head/CA1-body",
+      "reason": "cornu ammonis field; hippocampus proper; frozen VERIFIED_DIRECT_CONTAINED",
+      "confidence": "HIGH"
+    },
+    {
+      "structure": "CA2",
+      "g1_membership": "INCLUDE",
+      "in_hippocampus_proper": true,
+      "in_hippocampal_formation": true,
+      "geometry_channel": "NO_INDEPENDENT_CHANNEL (CA2 merged into CA1/CA3 in the Iglesias atlas)",
+      "reason": "hippocampus proper; frozen VERIFIED_DIRECT_CONTAINED; spatially represented by CA1/CA3 territory",
+      "confidence": "HIGH"
+    },
+    {
+      "structure": "CA3",
+      "g1_membership": "INCLUDE",
+      "in_hippocampus_proper": true,
+      "in_hippocampal_formation": true,
+      "geometry_channel": "CA3-head/CA3-body",
+      "reason": "cornu ammonis field; frozen VERIFIED_DIRECT_CONTAINED",
+      "confidence": "HIGH"
+    },
+    {
+      "structure": "CA4",
+      "g1_membership": "INCLUDE",
+      "in_hippocampus_proper": false,
+      "in_hippocampal_formation": true,
+      "geometry_channel": "CA4-head/CA4-body",
+      "reason": "dentate-hilar region included with the DG/CA body of the operational G1 'Hippocampus'",
+      "confidence": "MODERATE"
+    },
+    {
+      "structure": "Dentate Gyrus (GC/ML-DG)",
+      "g1_membership": "INCLUDE",
+      "in_hippocampus_proper": false,
+      "in_hippocampal_formation": true,
+      "geometry_channel": "GC-ML-DG-head/GC-ML-DG-body",
+      "reason": "dentate gyrus is part of the FS aseg 'Hippocampus' body and of the frozen VERIFIED DG relations; excluded from strict hippocampus-proper nomenclature but included in the operational G1 (per frozen rationale '海马体+齿状回')",
+      "confidence": "HIGH"
+    },
+    {
+      "structure": "Hippocampal molecular layer",
+      "g1_membership": "INCLUDE",
+      "in_hippocampus_proper": true,
+      "in_hippocampal_formation": true,
+      "geometry_channel": "molecular_layer_HP-head/-body",
+      "reason": "molecular layer over the CA/DG body; part of the hippocampus gray body",
+      "confidence": "HIGH"
+    },
+    {
+      "structure": "Hippocampal tail",
+      "g1_membership": "INCLUDE",
+      "in_hippocampus_proper": false,
+      "in_hippocampal_formation": true,
+      "geometry_channel": "Hippocampal_tail",
+      "reason": "posterior continuation of the CA/DG body; part of the operational G1 body",
+      "confidence": "MODERATE"
+    },
+    {
+      "structure": "Subiculum",
+      "g1_membership": "EXCLUDE",
+      "in_hippocampus_proper": false,
+      "in_hippocampal_formation": true,
+      "geometry_channel": "subiculum-head/-body (EXCLUDE)",
+      "reason": "hippocampal-formation component but NOT part of the CA+DG operational G1; membership definition-dependent (frozen ONTOLOGY_DEFINITION_DEPENDENT)",
+      "confidence": "HIGH"
+    },
+    {
+      "structure": "Presubiculum",
+      "g1_membership": "EXCLUDE",
+      "in_hippocampus_proper": false,
+      "in_hippocampal_formation": true,
+      "geometry_channel": "presubiculum-head/-body (EXCLUDE)",
+      "reason": "same as Subiculum",
+      "confidence": "HIGH"
+    },
+    {
+      "structure": "Parasubiculum",
+      "g1_membership": "EXCLUDE",
+      "in_hippocampus_proper": false,
+      "in_hippocampal_formation": true,
+      "geometry_channel": "parasubiculum (EXCLUDE)",
+      "reason": "same as Subiculum",
+      "confidence": "HIGH"
+    },
+    {
+      "structure": "Prosubiculum",
+      "g1_membership": "EXCLUDE",
+      "in_hippocampus_proper": false,
+      "in_hippocampal_formation": true,
+      "geometry_channel": "NO_CHANNEL (NOT_APPLICABLE)",
+      "reason": "transitional CA1-subiculum band; no FS channel; definition-dependent",
+      "confidence": "MODERATE"
+    },
+    {
+      "structure": "Transsubiculum",
+      "g1_membership": "EXCLUDE",
+      "in_hippocampus_proper": false,
+      "in_hippocampal_formation": true,
+      "geometry_channel": "NO_CHANNEL (NOT_APPLICABLE)",
+      "reason": "subiculum-presubiculum transition; no FS channel; definition-dependent",
+      "confidence": "MODERATE"
+    },
+    {
+      "structure": "HATA",
+      "g1_membership": "EXCLUDE",
+      "in_hippocampus_proper": false,
+      "in_hippocampal_formation": true,
+      "geometry_channel": "HATA (EXCLUDE)",
+      "reason": "hippocampo-amygdaloid transition; organised by the source LUT with hippocampal subfields but excluded from Amygdala and NOT auto-added here; membership definition-dependent (TRANSITIONAL_STRUCTURE_OUTSIDE_CANONICAL_SCOPE)",
+      "confidence": "HIGH"
+    },
+    {
+      "structure": "Fimbria",
+      "g1_membership": "EXCLUDE",
+      "in_hippocampus_proper": false,
+      "in_hippocampal_formation": false,
+      "geometry_channel": "fimbria (EXCLUDE)",
+      "reason": "white-matter output tract, not hippocampal gray body",
+      "confidence": "HIGH"
+    },
+    {
+      "structure": "Alveus",
+      "g1_membership": "EXCLUDE",
+      "in_hippocampus_proper": false,
+      "in_hippocampal_formation": false,
+      "geometry_channel": "alveus (EXCLUDE)",
+      "reason": "white-matter layer, not hippocampal gray body",
+      "confidence": "HIGH"
+    },
+    {
+      "structure": "Hippocampal fissure",
+      "g1_membership": "EXCLUDE",
+      "in_hippocampus_proper": false,
+      "in_hippocampal_formation": false,
+      "geometry_channel": "hippocampal-fissure (EXCLUDE)",
+      "reason": "fissure/CSF space, not gray matter",
+      "confidence": "HIGH"
+    }
+  ],
+  "ontology_vs_coverage_note": "Ontology membership and source geometric channel coverage are recorded separately. FreeSurfer channel presence does not force canonical membership and vice versa.",
+  "canonical_identity_sources": [
+    "data/atlases/macro96/macro96_normalized_manifest.csv (G1_MACRO 'Left/Right Hippocampus'; no formal definition)",
+    "data/integration/brainregion_direct_g1_phase16/direct_g1_high_confidence.csv (NGIQ-BR-00000252 = Left Hippocampus / NGIQ-BR-00000260 = Right Hippocampus)",
+    "data/integration/brainregion_direct_g1_phase16/phase17_v3_classification.csv (VERIFIED CA1/CA2/CA3/DG L/R; ONTOLOGY_DEFINITION_DEPENDENT subicular family + HATA)"
+  ],
+  "created_at": "2026-09-08T08:18:39+00:00",
+  "script_version": "phase17_v3_construct_hippocampus_g1_geometry.py v1"
+}

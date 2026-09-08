@@ -1,0 +1,45 @@
+{
+  "spatial_bridge_id": "SPB-MNI2009C-SYM-ASYM-SHARED-FRAME-V1",
+  "spatial_bridge_class": "SHARED_COORDINATE_REFERENCE_GRID_RESAMPLING",
+  "spatial_bridge_statement": "SHARED_STEREOTAXIC_FRAME_REFERENCE_GRID_RESAMPLE",
+  "type_note": "Spatial Bridge (NOT a TRF); same frozen bridge principle, applied to the HippoAmyg source.",
+  "source_space": "ICBM152_2009C_SYMMETRIC",
+  "target_reference_space": "MNI152NLin2009cAsym",
+  "julich_target_reference": {
+    "path": "data/atlases/julich/v3.1/spatial_raw/probability_maps/ACBL_VENTRAL_STRIATUM_LATERAL_ACCUMBENS_LEFT.nii.gz",
+    "sha256": "185a1d6c179c91bb1f02b3fc0d128b4607504a775edfec48fcc1435d9240bfdf"
+  },
+  "interpolation": "LINEAR",
+  "registration_applied": false,
+  "nonlinear_registration_applied": false,
+  "nonlinear_registration_claimed": false,
+  "deformation_field_applied": false,
+  "resampling_applied": true,
+  "template_variant_statement": "DIFFERENT_TEMPLATE_VARIANTS_WITH_SHARED_STEREOTAXIC_COORDINATE_FRAME",
+  "residual_spatial_limitation": "TEMPLATE_VARIANT_ANATOMICAL_MISMATCH_NOT_EXPLICITLY_WARP_CORRECTED",
+  "authoritative_nonlinear_sym_asym_transform": "NOT_AVAILABLE_NOT_USED",
+  "source_compatibility": {
+    "left": {
+      "grid": [
+        164,
+        224,
+        196
+      ],
+      "qform_code": 1,
+      "sform_code": 1,
+      "shared_frame_compatible": true
+    },
+    "right": {
+      "grid": [
+        164,
+        224,
+        196
+      ],
+      "qform_code": 1,
+      "sform_code": 1,
+      "shared_frame_compatible": true
+    }
+  },
+  "script_version": "phase17_v3_construct_hippocampus_g1_geometry.py v1",
+  "run_timestamp": "2026-09-08T08:18:39+00:00"
+}

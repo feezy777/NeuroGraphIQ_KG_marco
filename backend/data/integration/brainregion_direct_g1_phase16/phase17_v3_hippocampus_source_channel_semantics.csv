@@ -1,0 +1,31 @@
+﻿channel_index,numeric_label,official_name,anatomical_family,ontology_scope_decision,geometry_scope_decision,reason
+0,0,Unknown,BACKGROUND,BACKGROUND_NOT_A_STRUCTURE,EXCLUDE,background channel 0; not a structure
+1,226,Hippocampal_tail,HIPPOCAMPUS_G1_INCLUDE,INCLUDE,INCLUDE,hippocampal tail: part of the operational G1 hippocampal body (CA+DG)
+2,236,subiculum-body,HIPPOCAMPAL_OTHER,HIPPOCAMPAL_FORMATION_COMPONENT_OUTSIDE_CURRENT_G1,EXCLUDE,subiculum-body: hippocampal-formation/transition/white-matter channel not part of the closed CA+DG operational G1 scope
+3,238,CA1-body,HIPPOCAMPUS_G1_INCLUDE,INCLUDE,INCLUDE,CA1-body: part of the operational G1 hippocampal body (CA+DG)
+4,235,subiculum-head,HIPPOCAMPAL_OTHER,HIPPOCAMPAL_FORMATION_COMPONENT_OUTSIDE_CURRENT_G1,EXCLUDE,subiculum-head: hippocampal-formation/transition/white-matter channel not part of the closed CA+DG operational G1 scope
+5,215,hippocampal-fissure,HIPPOCAMPAL_OTHER,HIPPOCAMPAL_FORMATION_COMPONENT_OUTSIDE_CURRENT_G1,EXCLUDE,hippocampal-fissure: hippocampal-formation/transition/white-matter channel not part of the closed CA+DG operational G1 scope
+6,233,presubiculum-head,HIPPOCAMPAL_OTHER,HIPPOCAMPAL_FORMATION_COMPONENT_OUTSIDE_CURRENT_G1,EXCLUDE,presubiculum-head: hippocampal-formation/transition/white-matter channel not part of the closed CA+DG operational G1 scope
+7,201,alveus,HIPPOCAMPAL_OTHER,HIPPOCAMPAL_FORMATION_COMPONENT_OUTSIDE_CURRENT_G1,EXCLUDE,alveus: hippocampal-formation/transition/white-matter channel not part of the closed CA+DG operational G1 scope
+8,237,CA1-head,HIPPOCAMPUS_G1_INCLUDE,INCLUDE,INCLUDE,CA1-head: part of the operational G1 hippocampal body (CA+DG)
+9,234,presubiculum-body,HIPPOCAMPAL_OTHER,HIPPOCAMPAL_FORMATION_COMPONENT_OUTSIDE_CURRENT_G1,EXCLUDE,presubiculum-body: hippocampal-formation/transition/white-matter channel not part of the closed CA+DG operational G1 scope
+10,203,parasubiculum,HIPPOCAMPAL_OTHER,HIPPOCAMPAL_FORMATION_COMPONENT_OUTSIDE_CURRENT_G1,EXCLUDE,parasubiculum: hippocampal-formation/transition/white-matter channel not part of the closed CA+DG operational G1 scope
+11,245,molecular_layer_HP-head,HIPPOCAMPUS_G1_INCLUDE,INCLUDE,INCLUDE,molecular_layer_HP-head: part of the operational G1 hippocampal body (CA+DG)
+12,246,molecular_layer_HP-body,HIPPOCAMPUS_G1_INCLUDE,INCLUDE,INCLUDE,molecular_layer_HP-body: part of the operational G1 hippocampal body (CA+DG)
+13,243,GC-ML-DG-head,HIPPOCAMPUS_G1_INCLUDE,INCLUDE,INCLUDE,GC-ML-DG-head: part of the operational G1 hippocampal body (CA+DG)
+14,240,CA3-body,HIPPOCAMPUS_G1_INCLUDE,INCLUDE,INCLUDE,CA3-body: part of the operational G1 hippocampal body (CA+DG)
+15,244,GC-ML-DG-body,HIPPOCAMPUS_G1_INCLUDE,INCLUDE,INCLUDE,GC-ML-DG-body: part of the operational G1 hippocampal body (CA+DG)
+16,241,CA4-head,HIPPOCAMPUS_G1_INCLUDE,INCLUDE,INCLUDE,CA4-head: part of the operational G1 hippocampal body (CA+DG)
+17,242,CA4-body,HIPPOCAMPUS_G1_INCLUDE,INCLUDE,INCLUDE,CA4-body: part of the operational G1 hippocampal body (CA+DG)
+18,212,fimbria,HIPPOCAMPAL_OTHER,HIPPOCAMPAL_FORMATION_COMPONENT_OUTSIDE_CURRENT_G1,EXCLUDE,fimbria: hippocampal-formation/transition/white-matter channel not part of the closed CA+DG operational G1 scope
+19,239,CA3-head,HIPPOCAMPUS_G1_INCLUDE,INCLUDE,INCLUDE,CA3-head: part of the operational G1 hippocampal body (CA+DG)
+20,211,HATA,HIPPOCAMPAL_OTHER,HIPPOCAMPAL_FORMATION_COMPONENT_OUTSIDE_CURRENT_G1,EXCLUDE,HATA: hippocampal-formation/transition/white-matter channel not part of the closed CA+DG operational G1 scope
+21,7001,Lateral-nucleus,AMYGDALA,AMYGDALA_NOT_IN_HIPPOCAMPUS,EXCLUDE,amygdala sub-nucleus channel; must never enter Hippocampus geometry (scope conservation)
+22,7003,Basal-nucleus,AMYGDALA,AMYGDALA_NOT_IN_HIPPOCAMPUS,EXCLUDE,amygdala sub-nucleus channel; must never enter Hippocampus geometry (scope conservation)
+23,7008,Accessory-Basal-nucleus,AMYGDALA,AMYGDALA_NOT_IN_HIPPOCAMPUS,EXCLUDE,amygdala sub-nucleus channel; must never enter Hippocampus geometry (scope conservation)
+24,7010,Anterior-amygdaloid-area-AAA,AMYGDALA,AMYGDALA_NOT_IN_HIPPOCAMPUS,EXCLUDE,amygdala sub-nucleus channel; must never enter Hippocampus geometry (scope conservation)
+25,7005,Central-nucleus,AMYGDALA,AMYGDALA_NOT_IN_HIPPOCAMPUS,EXCLUDE,amygdala sub-nucleus channel; must never enter Hippocampus geometry (scope conservation)
+26,7006,Medial-nucleus,AMYGDALA,AMYGDALA_NOT_IN_HIPPOCAMPUS,EXCLUDE,amygdala sub-nucleus channel; must never enter Hippocampus geometry (scope conservation)
+27,7007,Cortical-nucleus,AMYGDALA,AMYGDALA_NOT_IN_HIPPOCAMPUS,EXCLUDE,amygdala sub-nucleus channel; must never enter Hippocampus geometry (scope conservation)
+28,7009,Corticoamygdaloid-transitio,AMYGDALA,AMYGDALA_NOT_IN_HIPPOCAMPUS,EXCLUDE,amygdala sub-nucleus channel; must never enter Hippocampus geometry (scope conservation)
+29,7015,Paralaminar-nucleus,AMYGDALA,AMYGDALA_NOT_IN_HIPPOCAMPUS,EXCLUDE,amygdala sub-nucleus channel; must never enter Hippocampus geometry (scope conservation)

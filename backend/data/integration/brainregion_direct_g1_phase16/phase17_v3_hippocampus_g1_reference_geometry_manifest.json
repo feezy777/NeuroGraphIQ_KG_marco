@@ -1,0 +1,191 @@
+{
+  "geometry_class": "AUTHORITATIVE_DERIVED_G1_GEOMETRY",
+  "derivation": "REFERENCE_GRID_RESAMPLING_FROM_FROZEN_NATIVE_G1_GEOMETRY",
+  "spatial_bridge_id": "SPB-MNI2009C-SYM-ASYM-SHARED-FRAME-V1",
+  "registration_applied": false,
+  "nonlinear_registration_applied": false,
+  "resampling_applied": true,
+  "interpolation": "LINEAR",
+  "template_variant_uncertainty": "PRESENT",
+  "residual_spatial_limitation": "TEMPLATE_VARIANT_ANATOMICAL_MISMATCH_NOT_EXPLICITLY_WARP_CORRECTED",
+  "direct_overlap_grid_ready": true,
+  "direct_validation_executed": false,
+  "reference_space": "MNI152NLin2009cAsym / Julich reference grid",
+  "entries": [
+    {
+      "geometry_id": "GEO-G1-HIPP-L-MNI2009CASYM-V1",
+      "canonical_region_id": "NGIQ-BR-00000252",
+      "hemisphere": "left",
+      "geometry_class": "AUTHORITATIVE_DERIVED_G1_GEOMETRY",
+      "derivation": "REFERENCE_GRID_RESAMPLING_FROM_FROZEN_NATIVE_G1_GEOMETRY",
+      "source_native_geometry": {
+        "geometry_id": "GEO-G1-HIPP-L-FS2009CSYM-V1",
+        "output_path": "data/atlases/derived_g1/left_hippocampus_prob_icbm2009csym.nii.gz",
+        "output_sha256": "f0599f696a0342233ee503e80ff593842bb725cd010d4422d3ffa46559212bee"
+      },
+      "scope_contract": {
+        "id": "HIPPOCAMPUS_G1_SCOPE_CONTRACT_V1",
+        "verdict": "HIPPOCAMPUS_G1_SCOPE_FROZEN"
+      },
+      "spatial_bridge_id": "SPB-MNI2009C-SYM-ASYM-SHARED-FRAME-V1",
+      "interpolation": "LINEAR",
+      "output_path": "data/atlases/derived_g1/left_hippocampus_prob_mni2009casym.nii.gz",
+      "output_sha256": "9ae850b3a8fe9ce91cb6a551f40c89751a681937bc3ca9a78a6881e6e3841ef4",
+      "output_grid": {
+        "shape": [
+          193,
+          229,
+          193
+        ],
+        "spacing_mm": 1.0,
+        "affine": [
+          [
+            1.0,
+            0.0,
+            0.0,
+            -96.0
+          ],
+          [
+            0.0,
+            1.0,
+            0.0,
+            -132.0
+          ],
+          [
+            0.0,
+            0.0,
+            1.0,
+            -78.0
+          ],
+          [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ]
+        ],
+        "qform_code": 4,
+        "sform_code": 4
+      },
+      "probability_min": 0.0,
+      "probability_max": 1.0,
+      "sum_probability_mass": 2911.283,
+      "weighted_volume_mm3": 2911.283,
+      "support_voxels": 6876,
+      "centroid_mm": [
+        -25.827,
+        -23.503,
+        -12.736
+      ],
+      "native_to_target_relative_volume_change": -0.0001,
+      "contralateral_mass_fraction": 0.0,
+      "anterior_posterior_extent_mm": null,
+      "template_variant_uncertainty": "PRESENT",
+      "residual_spatial_limitation": "TEMPLATE_VARIANT_ANATOMICAL_MISMATCH_NOT_EXPLICITLY_WARP_CORRECTED",
+      "direct_overlap_grid_ready": true,
+      "direct_validation_executed": false,
+      "registration_applied": false,
+      "nonlinear_registration_applied": false,
+      "resampling_applied": true,
+      "threshold_applied": false,
+      "binarization_applied": false,
+      "clipping_applied": false,
+      "normalization_applied": false,
+      "no_artificial_symmetrization": true,
+      "independent_from_g3_g1_mapping": true,
+      "circularity_risk": "NONE",
+      "script_version": "phase17_v3_construct_hippocampus_g1_geometry.py v1",
+      "run_timestamp": "2026-09-08T08:18:39+00:00"
+    },
+    {
+      "geometry_id": "GEO-G1-HIPP-R-MNI2009CASYM-V1",
+      "canonical_region_id": "NGIQ-BR-00000260",
+      "hemisphere": "right",
+      "geometry_class": "AUTHORITATIVE_DERIVED_G1_GEOMETRY",
+      "derivation": "REFERENCE_GRID_RESAMPLING_FROM_FROZEN_NATIVE_G1_GEOMETRY",
+      "source_native_geometry": {
+        "geometry_id": "GEO-G1-HIPP-R-FS2009CSYM-V1",
+        "output_path": "data/atlases/derived_g1/right_hippocampus_prob_icbm2009csym.nii.gz",
+        "output_sha256": "1e7d9ee789d4b254cee576f21f403c8cd7454da21b944f3c94c3e70243379d77"
+      },
+      "scope_contract": {
+        "id": "HIPPOCAMPUS_G1_SCOPE_CONTRACT_V1",
+        "verdict": "HIPPOCAMPUS_G1_SCOPE_FROZEN"
+      },
+      "spatial_bridge_id": "SPB-MNI2009C-SYM-ASYM-SHARED-FRAME-V1",
+      "interpolation": "LINEAR",
+      "output_path": "data/atlases/derived_g1/right_hippocampus_prob_mni2009casym.nii.gz",
+      "output_sha256": "e7d68082be02cde8b7f24749752c4190b644da0128fb5f116323146b5d9767d7",
+      "output_grid": {
+        "shape": [
+          193,
+          229,
+          193
+        ],
+        "spacing_mm": 1.0,
+        "affine": [
+          [
+            1.0,
+            0.0,
+            0.0,
+            -96.0
+          ],
+          [
+            0.0,
+            1.0,
+            0.0,
+            -132.0
+          ],
+          [
+            0.0,
+            0.0,
+            1.0,
+            -78.0
+          ],
+          [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ]
+        ],
+        "qform_code": 4,
+        "sform_code": 4
+      },
+      "probability_min": 0.0,
+      "probability_max": 1.0,
+      "sum_probability_mass": 2911.283,
+      "weighted_volume_mm3": 2911.283,
+      "support_voxels": 6876,
+      "centroid_mm": [
+        25.827,
+        -23.503,
+        -12.736
+      ],
+      "native_to_target_relative_volume_change": -0.0001,
+      "contralateral_mass_fraction": 0.0,
+      "anterior_posterior_extent_mm": null,
+      "template_variant_uncertainty": "PRESENT",
+      "residual_spatial_limitation": "TEMPLATE_VARIANT_ANATOMICAL_MISMATCH_NOT_EXPLICITLY_WARP_CORRECTED",
+      "direct_overlap_grid_ready": true,
+      "direct_validation_executed": false,
+      "registration_applied": false,
+      "nonlinear_registration_applied": false,
+      "resampling_applied": true,
+      "threshold_applied": false,
+      "binarization_applied": false,
+      "clipping_applied": false,
+      "normalization_applied": false,
+      "no_artificial_symmetrization": true,
+      "independent_from_g3_g1_mapping": true,
+      "circularity_risk": "NONE",
+      "script_version": "phase17_v3_construct_hippocampus_g1_geometry.py v1",
+      "run_timestamp": "2026-09-08T08:18:39+00:00"
+    }
+  ],
+  "bilateral": {
+    "volume_ratio_L_over_R": 1.0
+  },
+  "script_version": "phase17_v3_construct_hippocampus_g1_geometry.py v1",
+  "run_timestamp": "2026-09-08T08:18:39+00:00"
+}

@@ -1,0 +1,333 @@
+{
+  "contract_id": "HIPPOCAMPUS_G1_SCOPE_CONTRACT_V1",
+  "canonical_identity": "HIPPOCAMPUS_BROAD_OPERATIONAL",
+  "canonical_identity_id": "HIPPOCAMPUS_G1_CANONICAL_IDENTITY_V1",
+  "canonical_left": {
+    "canonical_region_id": "NGIQ-BR-00000252",
+    "preferred_name": "Left Hippocampus"
+  },
+  "canonical_right": {
+    "canonical_region_id": "NGIQ-BR-00000260",
+    "preferred_name": "Right Hippocampus"
+  },
+  "source": {
+    "asset": "FreeSurfer/Iglesias HippoAmygProbs.MNIsymSpace (left/right)",
+    "left_sha256": "a79d5f88acfa21684a6f8c1e78da21e74ccbf152e68fb845fde048f451c4474e",
+    "right_sha256": "4d20bb95435afc9a139279ae2a159d8dfbf3f1b1de0d07d901ff6cf08570e5a3",
+    "channel_count": 30,
+    "probability_semantics": {
+      "left": "MUTUALLY_EXCLUSIVE_CATEGORICAL",
+      "right": "MUTUALLY_EXCLUSIVE_CATEGORICAL",
+      "operator": "SUM"
+    }
+  },
+  "channel_summary": {
+    "total": 30,
+    "included_geometry_channels": [
+      1,
+      3,
+      8,
+      11,
+      12,
+      13,
+      14,
+      15,
+      16,
+      17,
+      19
+    ],
+    "included_labels": [
+      226,
+      237,
+      238,
+      239,
+      240,
+      241,
+      242,
+      243,
+      244,
+      245,
+      246
+    ],
+    "geometry_excluded_hippocampal_channels": 9,
+    "amygdala_channels_excluded": 9,
+    "background_excluded": 1
+  },
+  "decisions": [
+    {
+      "channel_index": 0,
+      "numeric_label": 0,
+      "official_name": "Unknown",
+      "anatomical_family": "BACKGROUND",
+      "ontology_scope_decision": "BACKGROUND_NOT_A_STRUCTURE",
+      "geometry_scope_decision": "EXCLUDE",
+      "reason": "background channel 0; not a structure"
+    },
+    {
+      "channel_index": 1,
+      "numeric_label": 226,
+      "official_name": "Hippocampal_tail",
+      "anatomical_family": "HIPPOCAMPUS_G1_INCLUDE",
+      "ontology_scope_decision": "INCLUDE",
+      "geometry_scope_decision": "INCLUDE",
+      "reason": "hippocampal tail: part of the operational G1 hippocampal body (CA+DG)"
+    },
+    {
+      "channel_index": 2,
+      "numeric_label": 236,
+      "official_name": "subiculum-body",
+      "anatomical_family": "HIPPOCAMPAL_OTHER",
+      "ontology_scope_decision": "HIPPOCAMPAL_FORMATION_COMPONENT_OUTSIDE_CURRENT_G1",
+      "geometry_scope_decision": "EXCLUDE",
+      "reason": "subiculum-body: hippocampal-formation/transition/white-matter channel not part of the closed CA+DG operational G1 scope"
+    },
+    {
+      "channel_index": 3,
+      "numeric_label": 238,
+      "official_name": "CA1-body",
+      "anatomical_family": "HIPPOCAMPUS_G1_INCLUDE",
+      "ontology_scope_decision": "INCLUDE",
+      "geometry_scope_decision": "INCLUDE",
+      "reason": "CA1-body: part of the operational G1 hippocampal body (CA+DG)"
+    },
+    {
+      "channel_index": 4,
+      "numeric_label": 235,
+      "official_name": "subiculum-head",
+      "anatomical_family": "HIPPOCAMPAL_OTHER",
+      "ontology_scope_decision": "HIPPOCAMPAL_FORMATION_COMPONENT_OUTSIDE_CURRENT_G1",
+      "geometry_scope_decision": "EXCLUDE",
+      "reason": "subiculum-head: hippocampal-formation/transition/white-matter channel not part of the closed CA+DG operational G1 scope"
+    },
+    {
+      "channel_index": 5,
+      "numeric_label": 215,
+      "official_name": "hippocampal-fissure",
+      "anatomical_family": "HIPPOCAMPAL_OTHER",
+      "ontology_scope_decision": "HIPPOCAMPAL_FORMATION_COMPONENT_OUTSIDE_CURRENT_G1",
+      "geometry_scope_decision": "EXCLUDE",
+      "reason": "hippocampal-fissure: hippocampal-formation/transition/white-matter channel not part of the closed CA+DG operational G1 scope"
+    },
+    {
+      "channel_index": 6,
+      "numeric_label": 233,
+      "official_name": "presubiculum-head",
+      "anatomical_family": "HIPPOCAMPAL_OTHER",
+      "ontology_scope_decision": "HIPPOCAMPAL_FORMATION_COMPONENT_OUTSIDE_CURRENT_G1",
+      "geometry_scope_decision": "EXCLUDE",
+      "reason": "presubiculum-head: hippocampal-formation/transition/white-matter channel not part of the closed CA+DG operational G1 scope"
+    },
+    {
+      "channel_index": 7,
+      "numeric_label": 201,
+      "official_name": "alveus",
+      "anatomical_family": "HIPPOCAMPAL_OTHER",
+      "ontology_scope_decision": "HIPPOCAMPAL_FORMATION_COMPONENT_OUTSIDE_CURRENT_G1",
+      "geometry_scope_decision": "EXCLUDE",
+      "reason": "alveus: hippocampal-formation/transition/white-matter channel not part of the closed CA+DG operational G1 scope"
+    },
+    {
+      "channel_index": 8,
+      "numeric_label": 237,
+      "official_name": "CA1-head",
+      "anatomical_family": "HIPPOCAMPUS_G1_INCLUDE",
+      "ontology_scope_decision": "INCLUDE",
+      "geometry_scope_decision": "INCLUDE",
+      "reason": "CA1-head: part of the operational G1 hippocampal body (CA+DG)"
+    },
+    {
+      "channel_index": 9,
+      "numeric_label": 234,
+      "official_name": "presubiculum-body",
+      "anatomical_family": "HIPPOCAMPAL_OTHER",
+      "ontology_scope_decision": "HIPPOCAMPAL_FORMATION_COMPONENT_OUTSIDE_CURRENT_G1",
+      "geometry_scope_decision": "EXCLUDE",
+      "reason": "presubiculum-body: hippocampal-formation/transition/white-matter channel not part of the closed CA+DG operational G1 scope"
+    },
+    {
+      "channel_index": 10,
+      "numeric_label": 203,
+      "official_name": "parasubiculum",
+      "anatomical_family": "HIPPOCAMPAL_OTHER",
+      "ontology_scope_decision": "HIPPOCAMPAL_FORMATION_COMPONENT_OUTSIDE_CURRENT_G1",
+      "geometry_scope_decision": "EXCLUDE",
+      "reason": "parasubiculum: hippocampal-formation/transition/white-matter channel not part of the closed CA+DG operational G1 scope"
+    },
+    {
+      "channel_index": 11,
+      "numeric_label": 245,
+      "official_name": "molecular_layer_HP-head",
+      "anatomical_family": "HIPPOCAMPUS_G1_INCLUDE",
+      "ontology_scope_decision": "INCLUDE",
+      "geometry_scope_decision": "INCLUDE",
+      "reason": "molecular_layer_HP-head: part of the operational G1 hippocampal body (CA+DG)"
+    },
+    {
+      "channel_index": 12,
+      "numeric_label": 246,
+      "official_name": "molecular_layer_HP-body",
+      "anatomical_family": "HIPPOCAMPUS_G1_INCLUDE",
+      "ontology_scope_decision": "INCLUDE",
+      "geometry_scope_decision": "INCLUDE",
+      "reason": "molecular_layer_HP-body: part of the operational G1 hippocampal body (CA+DG)"
+    },
+    {
+      "channel_index": 13,
+      "numeric_label": 243,
+      "official_name": "GC-ML-DG-head",
+      "anatomical_family": "HIPPOCAMPUS_G1_INCLUDE",
+      "ontology_scope_decision": "INCLUDE",
+      "geometry_scope_decision": "INCLUDE",
+      "reason": "GC-ML-DG-head: part of the operational G1 hippocampal body (CA+DG)"
+    },
+    {
+      "channel_index": 14,
+      "numeric_label": 240,
+      "official_name": "CA3-body",
+      "anatomical_family": "HIPPOCAMPUS_G1_INCLUDE",
+      "ontology_scope_decision": "INCLUDE",
+      "geometry_scope_decision": "INCLUDE",
+      "reason": "CA3-body: part of the operational G1 hippocampal body (CA+DG)"
+    },
+    {
+      "channel_index": 15,
+      "numeric_label": 244,
+      "official_name": "GC-ML-DG-body",
+      "anatomical_family": "HIPPOCAMPUS_G1_INCLUDE",
+      "ontology_scope_decision": "INCLUDE",
+      "geometry_scope_decision": "INCLUDE",
+      "reason": "GC-ML-DG-body: part of the operational G1 hippocampal body (CA+DG)"
+    },
+    {
+      "channel_index": 16,
+      "numeric_label": 241,
+      "official_name": "CA4-head",
+      "anatomical_family": "HIPPOCAMPUS_G1_INCLUDE",
+      "ontology_scope_decision": "INCLUDE",
+      "geometry_scope_decision": "INCLUDE",
+      "reason": "CA4-head: part of the operational G1 hippocampal body (CA+DG)"
+    },
+    {
+      "channel_index": 17,
+      "numeric_label": 242,
+      "official_name": "CA4-body",
+      "anatomical_family": "HIPPOCAMPUS_G1_INCLUDE",
+      "ontology_scope_decision": "INCLUDE",
+      "geometry_scope_decision": "INCLUDE",
+      "reason": "CA4-body: part of the operational G1 hippocampal body (CA+DG)"
+    },
+    {
+      "channel_index": 18,
+      "numeric_label": 212,
+      "official_name": "fimbria",
+      "anatomical_family": "HIPPOCAMPAL_OTHER",
+      "ontology_scope_decision": "HIPPOCAMPAL_FORMATION_COMPONENT_OUTSIDE_CURRENT_G1",
+      "geometry_scope_decision": "EXCLUDE",
+      "reason": "fimbria: hippocampal-formation/transition/white-matter channel not part of the closed CA+DG operational G1 scope"
+    },
+    {
+      "channel_index": 19,
+      "numeric_label": 239,
+      "official_name": "CA3-head",
+      "anatomical_family": "HIPPOCAMPUS_G1_INCLUDE",
+      "ontology_scope_decision": "INCLUDE",
+      "geometry_scope_decision": "INCLUDE",
+      "reason": "CA3-head: part of the operational G1 hippocampal body (CA+DG)"
+    },
+    {
+      "channel_index": 20,
+      "numeric_label": 211,
+      "official_name": "HATA",
+      "anatomical_family": "HIPPOCAMPAL_OTHER",
+      "ontology_scope_decision": "HIPPOCAMPAL_FORMATION_COMPONENT_OUTSIDE_CURRENT_G1",
+      "geometry_scope_decision": "EXCLUDE",
+      "reason": "HATA: hippocampal-formation/transition/white-matter channel not part of the closed CA+DG operational G1 scope"
+    },
+    {
+      "channel_index": 21,
+      "numeric_label": 7001,
+      "official_name": "Lateral-nucleus",
+      "anatomical_family": "AMYGDALA",
+      "ontology_scope_decision": "AMYGDALA_NOT_IN_HIPPOCAMPUS",
+      "geometry_scope_decision": "EXCLUDE",
+      "reason": "amygdala sub-nucleus channel; must never enter Hippocampus geometry (scope conservation)"
+    },
+    {
+      "channel_index": 22,
+      "numeric_label": 7003,
+      "official_name": "Basal-nucleus",
+      "anatomical_family": "AMYGDALA",
+      "ontology_scope_decision": "AMYGDALA_NOT_IN_HIPPOCAMPUS",
+      "geometry_scope_decision": "EXCLUDE",
+      "reason": "amygdala sub-nucleus channel; must never enter Hippocampus geometry (scope conservation)"
+    },
+    {
+      "channel_index": 23,
+      "numeric_label": 7008,
+      "official_name": "Accessory-Basal-nucleus",
+      "anatomical_family": "AMYGDALA",
+      "ontology_scope_decision": "AMYGDALA_NOT_IN_HIPPOCAMPUS",
+      "geometry_scope_decision": "EXCLUDE",
+      "reason": "amygdala sub-nucleus channel; must never enter Hippocampus geometry (scope conservation)"
+    },
+    {
+      "channel_index": 24,
+      "numeric_label": 7010,
+      "official_name": "Anterior-amygdaloid-area-AAA",
+      "anatomical_family": "AMYGDALA",
+      "ontology_scope_decision": "AMYGDALA_NOT_IN_HIPPOCAMPUS",
+      "geometry_scope_decision": "EXCLUDE",
+      "reason": "amygdala sub-nucleus channel; must never enter Hippocampus geometry (scope conservation)"
+    },
+    {
+      "channel_index": 25,
+      "numeric_label": 7005,
+      "official_name": "Central-nucleus",
+      "anatomical_family": "AMYGDALA",
+      "ontology_scope_decision": "AMYGDALA_NOT_IN_HIPPOCAMPUS",
+      "geometry_scope_decision": "EXCLUDE",
+      "reason": "amygdala sub-nucleus channel; must never enter Hippocampus geometry (scope conservation)"
+    },
+    {
+      "channel_index": 26,
+      "numeric_label": 7006,
+      "official_name": "Medial-nucleus",
+      "anatomical_family": "AMYGDALA",
+      "ontology_scope_decision": "AMYGDALA_NOT_IN_HIPPOCAMPUS",
+      "geometry_scope_decision": "EXCLUDE",
+      "reason": "amygdala sub-nucleus channel; must never enter Hippocampus geometry (scope conservation)"
+    },
+    {
+      "channel_index": 27,
+      "numeric_label": 7007,
+      "official_name": "Cortical-nucleus",
+      "anatomical_family": "AMYGDALA",
+      "ontology_scope_decision": "AMYGDALA_NOT_IN_HIPPOCAMPUS",
+      "geometry_scope_decision": "EXCLUDE",
+      "reason": "amygdala sub-nucleus channel; must never enter Hippocampus geometry (scope conservation)"
+    },
+    {
+      "channel_index": 28,
+      "numeric_label": 7009,
+      "official_name": "Corticoamygdaloid-transitio",
+      "anatomical_family": "AMYGDALA",
+      "ontology_scope_decision": "AMYGDALA_NOT_IN_HIPPOCAMPUS",
+      "geometry_scope_decision": "EXCLUDE",
+      "reason": "amygdala sub-nucleus channel; must never enter Hippocampus geometry (scope conservation)"
+    },
+    {
+      "channel_index": 29,
+      "numeric_label": 7015,
+      "official_name": "Paralaminar-nucleus",
+      "anatomical_family": "AMYGDALA",
+      "ontology_scope_decision": "AMYGDALA_NOT_IN_HIPPOCAMPUS",
+      "geometry_scope_decision": "EXCLUDE",
+      "reason": "amygdala sub-nucleus channel; must never enter Hippocampus geometry (scope conservation)"
+    }
+  ],
+  "scope_verdict": "HIPPOCAMPUS_G1_SCOPE_FROZEN",
+  "review_channels": [],
+  "geometry_allowed": true,
+  "no_world_x_split": true,
+  "laterality_authority": "source-native left/right atlas files (no world-X split)"
+}

@@ -1,0 +1,212 @@
+{
+  "geometry_class": "AUTHORITATIVE_DERIVED_G1_GEOMETRY",
+  "derivation": "PROBABILITY_CHANNEL_AGGREGATION_FROM_FROZEN_SCOPE",
+  "space_status": "SOURCE_NATIVE_ICBM2009C_SYMMETRIC",
+  "probability_semantics": "MUTUALLY_EXCLUSIVE_CATEGORICAL",
+  "aggregation_operator": "SUM",
+  "canonical_identity": "HIPPOCAMPUS_G1_CANONICAL_IDENTITY_V1",
+  "scope_contract": "HIPPOCAMPUS_G1_SCOPE_CONTRACT_V1",
+  "raw_left_sha256": "a79d5f88acfa21684a6f8c1e78da21e74ccbf152e68fb845fde048f451c4474e",
+  "raw_right_sha256": "4d20bb95435afc9a139279ae2a159d8dfbf3f1b1de0d07d901ff6cf08570e5a3",
+  "entries": [
+    {
+      "geometry_id": "GEO-G1-HIPP-L-FS2009CSYM-V1",
+      "canonical_region_id": "NGIQ-BR-00000252",
+      "hemisphere": "left",
+      "geometry_class": "AUTHORITATIVE_DERIVED_G1_GEOMETRY",
+      "derivation": "PROBABILITY_CHANNEL_AGGREGATION_FROM_FROZEN_SCOPE",
+      "source_path": "data/atlases/external_raw/freesurfer_icbm2009c/hippocampus/HippoAmygProbs.MNIsymSpace.left.nii.gz",
+      "included_channels": [
+        226,
+        237,
+        238,
+        239,
+        240,
+        241,
+        242,
+        243,
+        244,
+        245,
+        246
+      ],
+      "included_channel_indices": [
+        1,
+        3,
+        8,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        19
+      ],
+      "excluded_channel_count": 19,
+      "aggregation_operator": "SUM",
+      "probability_semantics": "MUTUALLY_EXCLUSIVE_CATEGORICAL",
+      "scope_contract_id": "HIPPOCAMPUS_G1_SCOPE_CONTRACT_V1",
+      "canonical_identity_id": "HIPPOCAMPUS_G1_CANONICAL_IDENTITY_V1",
+      "output_path": "data/atlases/derived_g1/left_hippocampus_prob_icbm2009csym.nii.gz",
+      "output_sha256": "f0599f696a0342233ee503e80ff593842bb725cd010d4422d3ffa46559212bee",
+      "output_grid": {
+        "shape": [
+          164,
+          224,
+          196
+        ],
+        "spacing_mm": 0.25,
+        "affine": [
+          [
+            0.25,
+            0.0,
+            0.0,
+            -45.0
+          ],
+          [
+            0.0,
+            0.25,
+            0.0,
+            -49.0
+          ],
+          [
+            0.0,
+            0.0,
+            0.25,
+            -35.0
+          ],
+          [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ]
+        ],
+        "qform_code": 1,
+        "sform_code": 1
+      },
+      "probability_min": 0.0,
+      "probability_max": 1.0,
+      "sum_probability_mass": 186337.754,
+      "voxel_volume_mm3": 0.015625,
+      "weighted_volume_mm3": 2911.527,
+      "support_voxels": 440242,
+      "centroid_mm": [
+        -25.826,
+        -23.514,
+        -12.727
+      ],
+      "max_abs_conservation_residual": 0.0,
+      "amygdala_contamination_fraction": 0.016509,
+      "registration_applied": false,
+      "resampling_applied": false,
+      "transform_id": null,
+      "independent_from_g3_g1_mapping": true,
+      "circularity_risk": "NONE",
+      "script_version": "phase17_v3_construct_hippocampus_g1_geometry.py v1",
+      "run_timestamp": "2026-09-08T08:18:39+00:00"
+    },
+    {
+      "geometry_id": "GEO-G1-HIPP-R-FS2009CSYM-V1",
+      "canonical_region_id": "NGIQ-BR-00000260",
+      "hemisphere": "right",
+      "geometry_class": "AUTHORITATIVE_DERIVED_G1_GEOMETRY",
+      "derivation": "PROBABILITY_CHANNEL_AGGREGATION_FROM_FROZEN_SCOPE",
+      "source_path": "data/atlases/external_raw/freesurfer_icbm2009c/hippocampus/HippoAmygProbs.MNIsymSpace.right.nii.gz",
+      "included_channels": [
+        226,
+        237,
+        238,
+        239,
+        240,
+        241,
+        242,
+        243,
+        244,
+        245,
+        246
+      ],
+      "included_channel_indices": [
+        1,
+        3,
+        8,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        19
+      ],
+      "excluded_channel_count": 19,
+      "aggregation_operator": "SUM",
+      "probability_semantics": "MUTUALLY_EXCLUSIVE_CATEGORICAL",
+      "scope_contract_id": "HIPPOCAMPUS_G1_SCOPE_CONTRACT_V1",
+      "canonical_identity_id": "HIPPOCAMPUS_G1_CANONICAL_IDENTITY_V1",
+      "output_path": "data/atlases/derived_g1/right_hippocampus_prob_icbm2009csym.nii.gz",
+      "output_sha256": "1e7d9ee789d4b254cee576f21f403c8cd7454da21b944f3c94c3e70243379d77",
+      "output_grid": {
+        "shape": [
+          164,
+          224,
+          196
+        ],
+        "spacing_mm": 0.25,
+        "affine": [
+          [
+            -0.25,
+            -0.0,
+            -0.0,
+            45.0
+          ],
+          [
+            0.0,
+            0.25,
+            0.0,
+            -49.0
+          ],
+          [
+            0.0,
+            0.0,
+            0.25,
+            -35.0
+          ],
+          [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ]
+        ],
+        "qform_code": 1,
+        "sform_code": 1
+      },
+      "probability_min": 0.0,
+      "probability_max": 1.0,
+      "sum_probability_mass": 186337.754,
+      "voxel_volume_mm3": 0.015625,
+      "weighted_volume_mm3": 2911.527,
+      "support_voxels": 440242,
+      "centroid_mm": [
+        25.826,
+        -23.514,
+        -12.727
+      ],
+      "max_abs_conservation_residual": 0.0,
+      "amygdala_contamination_fraction": 0.016509,
+      "registration_applied": false,
+      "resampling_applied": false,
+      "transform_id": null,
+      "independent_from_g3_g1_mapping": true,
+      "circularity_risk": "NONE",
+      "script_version": "phase17_v3_construct_hippocampus_g1_geometry.py v1",
+      "run_timestamp": "2026-09-08T08:18:39+00:00"
+    }
+  ],
+  "bilateral": {
+    "volume_ratio_L_over_R": 1.0
+  },
+  "script_version": "phase17_v3_construct_hippocampus_g1_geometry.py v1",
+  "run_timestamp": "2026-09-08T08:18:39+00:00"
+}
