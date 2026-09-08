@@ -1,0 +1,37 @@
+{
+  "supersession_id": "DEC-THAL-DIRECT-02-S1",
+  "supersedes": "DEC-THAL-DIRECT-02",
+  "decision_kind": "EFFECTIVE_DECISION_SUPERSESSION",
+  "g3_region_id": "NGIQ-BR-00000233",
+  "g3_official_code": "Tha_L_8_2",
+  "g3_abbreviation": "mPMtha",
+  "relation": {
+    "frozen_mapping_decision": "APPROVE_CONTAINED_IN",
+    "frozen_g1_target": "NGIQ-BR-00000247",
+    "g1_geometry_id": "GEO-G1-THAL-L-MNI2009CASYM-V1"
+  },
+  "previous_verdict": "FROZEN_MAPPING_REQUIRES_REVIEW",
+  "effective_verdict": "KEEP_FROZEN_MAPPING_WITH_SPATIAL_UNCERTAINTY",
+  "mapping_conflict": false,
+  "mapping_review_required": false,
+  "root_cause_primary": "G1_PROBABILITY_ENVELOPE_BOUNDARY_LIMITATION",
+  "root_cause_secondary": "SHARED_TEMPLATE_VARIANT_BOUNDARY_MISMATCH",
+  "raw_bna_intrinsic_asymmetry": "PRESENT",
+  "template_variant_uncertainty": "PRESENT",
+  "confidence": {
+    "mapping_not_incompatible": "HIGH",
+    "primary_secondary_ascription": "MODERATE"
+  },
+  "root_cause_audit": {
+    "audit_id": "Tha_L_8_2 / mPMtha-L direct spatial discrepancy root-cause audit",
+    "path": "data/integration/brainregion_direct_g1_phase16/phase17_v3_thalamus_l8_2_discrepancy_summary.json",
+    "sha256": "ef3befd6ab4dc6a5bda03f22fca5fb1d05cd2506368ccf15cb9ee0ab13b349f1"
+  },
+  "provenance_path": "data/integration/brainregion_direct_g1_phase16/phase17_v3_thalamus_l8_2_discrepancy_provenance.json",
+  "provenance_sha256": "ad6801a8dcf0f6126fa201b97279c82e7e7c2c2eaa27e062bb1abc76922ca681",
+  "historical_decisions_path": "data/integration/brainregion_direct_g1_phase16/phase17_v3_thalamus_bn_direct_spatial_decisions.csv",
+  "historical_decisions_sha256": "fc5cd60f95fb557418d78479a06caa58fd885dee9b9ffaf7f9dbc15523124480",
+  "historical_outputs_rewritten": false,
+  "note": "Supersedes only the previous REVIEW notation of DEC-THAL-DIRECT-02. The historical direct-validation snapshot is left untouched. Effective verdict keeps the frozen mapping WITH documented spatial uncertainty because the root cause is a G1 probability-envelope boundary limitation + shared-template-variant mismatch, not a mapping incompatibility.",
+  "created_at": "2026-09-08T07:31:01+00:00"
+}

@@ -1,0 +1,188 @@
+{
+  "function": "Tha_L_8_2 / mPMtha-L direct spatial discrepancy root-cause audit",
+  "primary_case": "Tha_L_8_2",
+  "paired_control": "Tha_R_8_2",
+  "neighbour_controls_read_only": [
+    "Tha_L_8_1/Tha_R_8_1",
+    "Tha_L_8_3/Tha_R_8_3",
+    "Tha_L_8_4/Tha_R_8_4"
+  ],
+  "dec_thal_direct_02": "DEC-THAL-DIRECT-02",
+  "frozen_g3_relation": {
+    "g3_region_id": "NGIQ-BR-00000233",
+    "official_label": "Tha_L_8_2",
+    "abbreviation": "mPMtha",
+    "official_name": "pre-motor thalamus",
+    "frozen_decision": "APPROVE_CONTAINED_IN",
+    "frozen_g1_target": "NGIQ-BR-00000247",
+    "manifest_target": "NGIQ-BR-00000247",
+    "manifest_frozen_decision": "APPROVE_CONTAINED_IN"
+  },
+  "asymmetry_stage": "STAGE_A_RAW_BNA_INTRINSIC_ASYMMETRY_PRESENT_AND_AMPLIFIED_AT_G1_BOUNDARY",
+  "asymmetry_stage_metrics": {
+    "stage_A_raw_mirror_distance_L_vs_R": 4.596,
+    "stage_A_control_mirror_max": 3.075,
+    "stage_A_volume_ratio_L_R": 0.7787,
+    "stage_B_tgt_mirror_distance_L_vs_R": 5.678,
+    "stage_B_control_mirror_max": 3.968,
+    "stage_B_volume_ratio_L_R": 0.7818,
+    "stage_C_containment_L": 0.1232,
+    "stage_C_containment_R": 0.51914,
+    "stage_C_containment_abs_diff": 0.3959
+  },
+  "fs_geometry_categorization": {
+    "left_mPMtha": {
+      "in_G1_support": 0.531931,
+      "in_FS_full_thalami_incl_reticular": 0.68009,
+      "reticular_strong_gt_0_5": 0.011868,
+      "reticular_partial_shell": 0.14816,
+      "outside_FS_thalami": 0.31991
+    },
+    "right_mPMtha": {
+      "in_G1_support": 0.92938,
+      "in_FS_full_thalami_incl_reticular": 0.975474,
+      "reticular_strong_gt_0_5": 0.018921,
+      "reticular_partial_shell": 0.046094,
+      "outside_FS_thalami": 0.024526
+    }
+  },
+  "discrepancy_localization": {
+    "mask_definition": "Tha_L_8_2 parcel support AND P_G1<0.1",
+    "discrepant_support_voxels": 5191,
+    "discrepant_mass_fraction_of_parcel": 0.826747,
+    "discrepant_centroid_world_mm": [
+      -18.709,
+      -13.98,
+      4.039
+    ],
+    "discrepant_centroid_displacement_from_G1_centroid_mm": [
+      -7.468,
+      4.929,
+      -2.0
+    ],
+    "direction": "LATERAL+ANTERIOR (from G1 centroid: x -7.5, y +4.9, z -2.0 mm)",
+    "far_lateral_tail_x_lt_neg21_fraction_of_parcel_mass": 0.243873,
+    "discrepant_mass_far_lateral_x_lt_neg21_fraction": 0.29276,
+    "distance_shells_of_parcel_mass_vs_G1_envelope": {
+      "inside_G1_support": 0.5319307430893762,
+      "b1_2mm": 0.35258413125737,
+      "b3_5mm": 0.11519983062127895,
+      "b_gt5mm": 0.0002852950319749156
+    },
+    "reticular_strong_overlap_inside_discrepant_region": 0.003086,
+    "zi_subthalamus_note": "no ZI/subthalamus reference is present in the frozen repo; Reticular (excluded FS channel) was quantified instead"
+  },
+  "internal_geometry_qc": {
+    "self_atlas_qc_only": true,
+    "not_mapping_evidence": true,
+    "L8_2_target_cc": 1,
+    "R8_2_target_cc": 6,
+    "L8_2_mass_inside_left_bna_thalamus_union": 1.0,
+    "L8_2_overlap_with_neighbour_union_8_1_3_4": 0.0,
+    "L8_2_overlap_L8_1": 0.577006,
+    "L8_2_overlap_L8_3": 0.982757,
+    "L8_2_overlap_L8_4": 0.290461,
+    "L8_2_wrong_side": 0.0,
+    "contralateral_swap_fraction": 0.0
+  },
+  "independent_anatomical_support": {
+    "status": "RUN",
+    "note": "AAL3 coarse label, 2 mm; INDEPENDENT_ANATOMICAL_SUPPORT only, never used to decide the mapping",
+    "L8_2_whole": {
+      "Thalamus_L": 0.357479,
+      "Thalamus_R": 0.0,
+      "other_subcortical": 0.056928,
+      "label0": 0.585582,
+      "other": 1e-05,
+      "n_voxels": 10256
+    },
+    "L8_2_inG1_ge_0_1": {
+      "Thalamus_L": 0.790159,
+      "Thalamus_R": 0.0,
+      "other_subcortical": 0.008829,
+      "label0": 0.201013,
+      "other": 0.0,
+      "n_voxels": 5065
+    },
+    "L8_2_discrepant_lt_0_1": {
+      "Thalamus_L": 0.266808,
+      "Thalamus_R": 0.0,
+      "other_subcortical": 0.067008,
+      "label0": 0.666173,
+      "other": 1.2e-05,
+      "n_voxels": 5191
+    },
+    "L8_2_outsideG1_eq_0": {
+      "Thalamus_L": 0.234202,
+      "Thalamus_R": 0.0,
+      "other_subcortical": 0.105037,
+      "label0": 0.660745,
+      "other": 1.5e-05,
+      "n_voxels": 2841
+    },
+    "R8_2_whole": {
+      "Thalamus_L": 7.2e-05,
+      "Thalamus_R": 0.644958,
+      "other_subcortical": 0.002442,
+      "label0": 0.349927,
+      "other": 0.002601,
+      "n_voxels": 10500
+    }
+  },
+  "shared_template_variant_analysis": {
+    "g1_route": "2009cSym FreeSurfer geometry -> shared-frame reference-grid resample onto 2009cAsym grid; NO nonlinear Sym->Asym warp correction",
+    "bna_route": "NLin6Asym/HCP40 -> 2009cAsym via official TemplateFlow nonlinear composite (SimpleITK, Linear)",
+    "conclusion": "Both land on the same 2009cAsym grid but originate from different template frames; the G1 side carries TEMPLATE_VARIANT_ANATOMICAL_MISMATCH_NOT_EXPLICITLY_WARP_CORRECTED. A ~1-2 mm Sym<->Asym edge difference is not excluded and contributes to where the G1 envelope boundary sits relative to the BNA parcel, acting as the secondary factor that decides how much of the lateral fringe falls inside vs outside the envelope."
+  },
+  "template_variant_uncertainty": "PRESENT",
+  "residual_spatial_limitation": "TEMPLATE_VARIANT_ANATOMICAL_MISMATCH_NOT_EXPLICITLY_WARP_CORRECTED",
+  "root_cause_verdict": {
+    "primary": "G1_PROBABILITY_ENVELOPE_BOUNDARY_LIMITATION",
+    "secondary": [
+      "SHARED_TEMPLATE_VARIANT_BOUNDARY_MISMATCH"
+    ],
+    "rejected": {
+      "A_BNA_SOURCE_GEOMETRY_ANOMALY": "not supported: raw L8_2 is coherent, contiguous, correct-side and at the expected mPMtha/VL location",
+      "B_BNA_SPATIAL_ROUTE_ARTIFACT": "not supported: identical deterministic SimpleITK NLin6->2009c route for all 16; geometry conserved; no isolated displacement",
+      "E_GENUINE_CROSS_ATLAS_BOUNDARY_DISAGREEMENT": "not primary: independent AAL3 labels the L8_2 core in-G1 portion 79% Thalamus_L; the parcel belongs to the thalami",
+      "F_TRUE_MAPPING_INCOMPATIBILITY_SUPPORTED": "not supported: no independent evidence that Tha_L_8_2 lies outside the left thalami",
+      "G_ROOT_CAUSE_UNRESOLVED": "resolved"
+    },
+    "evidence": {
+      "L8_2_in_G1_support_mass_fraction": 0.531931,
+      "L8_2_outside_FS_thalami_mass_fraction": 0.31991,
+      "L8_2_in_FS_full_thalami_incl_reticular": 0.68009,
+      "L8_2_reticular_strong_gt_0_5": 0.011868,
+      "L8_2_all_discrepant_mass_within_5mm_of_G1_envelope": 0.467784,
+      "far_lateral_tail_x_lt_neg21_mass_fraction": 0.243873
+    },
+    "characteristics": {
+      "intrinsic_BNA_laterality": "L mPMtha is intrinsically smaller (vol ratio ~0.78) and more lateral (raw mirror distance 4.6 mm, the largest of the four zone pairs) than R mPMtha already at the raw-BNA stage",
+      "bn_probability_spread": "~0.59 of L8_2 probability mass lies in AAL label-0/other-subcortical regions (beyond the coarse AAL thalami), i.e. the BNA mPMtha-L probability map is broadly spread around the lateral/anterior thalami boundary",
+      "g1_boundary": "the FreeSurfer-derived G1 envelope + reticular exclusion ends at the lateral/anterior thalami boundary; AAL3 still labels ~1/4 of the discrepant mass as Thalamus_L where G1 is 0, indicating the FS envelope is conservative there"
+    }
+  },
+  "mapping_gate": {
+    "direct_conflict_count": 0,
+    "requires_review_count_before_supersession": 1,
+    "true_mapping_incompatibility_supported": false,
+    "superseding_mapping_verdict": "KEEP_FROZEN_MAPPING_WITH_SPATIAL_UNCERTAINTY",
+    "supersedes": "DEC-THAL-DIRECT-02 prior FROZEN_MAPPING_REQUIRES_REVIEW notation (root cause established as envelope/template-variant; no mapping incompatibility)",
+    "clarification": "The prior evidence label DIRECT_SPATIAL_CONFLICT described a MATERIAL DIRECT SPATIAL DISCREPANCY in the metric, NOT a confirmed mapping conflict; do not describe DEC-THAL-DIRECT-02 as a mapping conflict",
+    "postconstruction_gate": "CLOSABLE_NO_MAPPING_CONFLICT",
+    "postconstruction_gate_note": "no relation requires mapping review after this audit; L8_2 is retained with documented spatial uncertainty caused by the G1 envelope / shared-template variant; full geometric confirmation would need an improved G1 (authoritative Sym->Asym or extended coverage)",
+    "final_freeze": "ENABLED_RECOMMEND_FORM_IN_FREEZE_GATE",
+    "final_freeze_note": "blocking discrepancy root-caused; final freeze artifact is not auto-written by this read-only audit round (historical outputs untouched)"
+  },
+  "target_driven_correction_applied": false,
+  "no_transform_retuning": true,
+  "no_threshold_tuning": true,
+  "no_scope_modification": true,
+  "classification_independent": true,
+  "db_zero_write": true,
+  "promotion": "BLOCKED",
+  "commit": false,
+  "historical_direct_validation_outputs_rewritten": false,
+  "script_version": "phase17_v3_audit_thalamus_l8_2_discrepancy.py v1",
+  "run_timestamp": "2026-09-08T07:20:16+00:00"
+}

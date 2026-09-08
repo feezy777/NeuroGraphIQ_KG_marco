@@ -1,0 +1,103 @@
+{
+  "function": "Brainnetome G3 Thalamus -> THALAMUS_PROPER G1 direct spatial validation",
+  "evidence_type": "DIRECT_SPATIAL_OVERLAP_IN_SHARED_MNI2009C_COORDINATE_FRAME",
+  "shared_template_variant_uncertainty": "PRESENT",
+  "residual_spatial_limitation": "TEMPLATE_VARIANT_ANATOMICAL_MISMATCH_NOT_EXPLICITLY_WARP_CORRECTED",
+  "g1_left": {
+    "path": "data/atlases/derived_g1/left_thalamus_proper_prob_mni2009casym.nii.gz",
+    "sha256": "bd431608fcea3c5f0f7387b1b0e1010582fa2e39dae95a300b3bba976a10cc87",
+    "geometry_id": "GEO-G1-THAL-L-MNI2009CASYM-V1"
+  },
+  "g1_right": {
+    "path": "data/atlases/derived_g1/right_thalamus_proper_prob_mni2009casym.nii.gz",
+    "sha256": "73e4242b581f2420c316593f6cd85183ea7f99c29e2b817b0257cdf267c5bd3b",
+    "geometry_id": "GEO-G1-THAL-R-MNI2009CASYM-V1"
+  },
+  "g1_native_source": {
+    "path": "see native geometry manifest entries",
+    "manifest": "GEO-G1-THAL-L-FS2009CSYM-V1/GEO-G1-THAL-R-FS2009CSYM-V1"
+  },
+  "superseded_g1": {
+    "left": "37a82b65d86d81b1558582dee301e79ee367d60856f95d6a55b0219cf28a87a1",
+    "right": "1c9b8b8de9103c1e091c9fb6e0577182416d5a6ba0c1b7f6d41e1e913958253f",
+    "status": "SUPERSEDED / INVALIDATED_BY_TRANSFORM_PROVENANCE_REPAIR",
+    "note": "never consumed as current evidence"
+  },
+  "spatial_bridge": {
+    "spatial_bridge_id": "SPB-MNI2009C-SYM-ASYM-SHARED-FRAME-V1",
+    "class_name": "SHARED_COORDINATE_REFERENCE_GRID_RESAMPLING",
+    "manifest_sha256": "952df5fffb45c8875e0ebc36cc69d17b5fb3ebfdd9c8578bc692f32d7faf7f25",
+    "registration_applied": false,
+    "nonlinear_registration_applied": false,
+    "resampling_applied": true
+  },
+  "julich_target_reference": {
+    "path": "data/atlases/julich/v3.1/spatial_raw/probability_maps/ACBL_VENTRAL_STRIATUM_LATERAL_ACCUMBENS_LEFT.nii.gz",
+    "sha256": "185a1d6c179c91bb1f02b3fc0d128b4607504a775edfec48fcc1435d9240bfdf"
+  },
+  "v3_scope_contract": {
+    "path": "data/integration/brainregion_direct_g1_phase16/phase17_v3_thalamus_g1_scope_contract_v3.json",
+    "sha256": "22e24a31bab9659769f7e550ee32f8e3b37887d0ae1a4c4c4cf64974c3c05f68"
+  },
+  "frozen_universe": {
+    "manifest": "data/integration/g3_to_g1/g3_to_g1_full_decision_coverage_manifest.csv",
+    "manifest_sha256": "fd4023d14aeb46eb251ddf9e2a939c71fc6a0b53df7fb19057c526961b4ccd6b",
+    "rollup_csv": "data/integration/brainregion_direct_g1_phase16/phase17_v3_thalamus_bn_rollup_compatibility.csv",
+    "rollup_csv_sha256": "813d72e6738e28af70c503bdf8831be4b0053490e300711e1d1e7c9cbfd33404",
+    "n": 16,
+    "left": 8,
+    "right": 8
+  },
+  "brainnetome_geometry_route": {
+    "source_asset": "data/atlases/brainnetome/bna246/volume_raw/BNA_PM_4D.nii.gz",
+    "source_space": "MNI152NLin6Asym (HCP40 1.25mm grid)",
+    "target_space": "MNI152NLin2009cAsym 1mm",
+    "tool": "SimpleITK",
+    "tool_version": "2.5.6",
+    "batch_transform_manifest": "data/integration/g3_brainnetome_assets/g3_brainnetome_to_julich_batch_transform_manifest.csv",
+    "batch_transform_manifest_sha256": "c8606b53cd1dbcb993cb42fcbd34fc58b8163bb5679d46a815fa469a676b40d6",
+    "per_parcel_shas": {
+      "Tha_L_8_1": "f5e9e6210e4708fb58e2041d6645862510002d447d14d00e61e550e7c508a2e4",
+      "Tha_L_8_2": "2b5707eaeb835815464e023101b2b3111eda2a51a69e0045ed79a503f27d0558",
+      "Tha_L_8_3": "c1756b277c18b4e2587987a930c0d72ef5316ce29fc236b48c29f0baa207e690",
+      "Tha_L_8_4": "771c378b3d8f5dc9f9d63b248c7da276d414b057e23ba08ab37f816cfbc1ff85",
+      "Tha_L_8_5": "50617aeae80d660dba1cb76bd966969b23ed4be0bf1632e85e37c9c20fa94d1a",
+      "Tha_L_8_6": "9601195226ea5ee409cd3f75c880ce01b2be78dda59f34f0ff5f18f71af25ac8",
+      "Tha_L_8_7": "d13e509663c2c245e2a1e1686fbae8cdd43756a1cf68e01a8c9f9d02146bbe70",
+      "Tha_L_8_8": "9f7e950dc05d582b794b819cd0b9beac4997c36508a563d531a79c32317abbcf",
+      "Tha_R_8_1": "e10e031bead669126a6b1e3980e59f0ff68ec907bcb907047c66083eb9707c61",
+      "Tha_R_8_2": "7ede82c7aa9aeaa9c1c1135116573844a800181a4f7460fc4640b9d0f0f7f87f",
+      "Tha_R_8_3": "98c392af2e7420fac8b6044915a29f25237547d73f61fcb45483f63d3eb6b1af",
+      "Tha_R_8_4": "c17aa65a7786fe2cde44a5155ebafd5b3fc8215b6fb362186b00c14d65857822",
+      "Tha_R_8_5": "ff79339d1783123ff2f0e32ab6753d8695bbfc6af41e690fa085ce75a894e0bf",
+      "Tha_R_8_6": "455fc0cc0fa88c64fa61eddb46234089b61af1f1f02c23ae7f7c2553ffbe0fb8",
+      "Tha_R_8_7": "72573448061b7d6ac173641728989c6a4c0ac05c210c6bc3e4d06862ab516d21",
+      "Tha_R_8_8": "694acfe72956fd73559734ed5b201e4070f7cb32fb24ca1be07473dd5318fa36"
+    }
+  },
+  "reticular_qc_source": {
+    "asset": "FreeSurfer/Iglesias ThalamusProbs.MNIsymSpace (excluded channels Left-R/Right-R)",
+    "path": "data/atlases/external_raw/freesurfer_icbm2009c/thalamus/ThalamusProbs.MNIsymSpace.nii.gz",
+    "sha256": "640377ae93cf0782365a698573970c2a429a775c6f64dcf9ac02536156b51f22",
+    "channel_names_sha256": "74b70bfa4fa75aa05a0bee9fcb548fa97bea20bfceef43b63a97c52a3923bfec",
+    "note": "in-memory shared-frame resample only; no new geometry file/SHA"
+  },
+  "registration_applied": false,
+  "nonlinear_registration_applied": false,
+  "resampling_applied": true,
+  "classification_independent": true,
+  "classification_csv": "NOT_TOUCHED (phase17_v3_classification.csv unchanged)",
+  "db_write": false,
+  "promotion": false,
+  "commit": false,
+  "software": {
+    "python_version": "3.13.12",
+    "platform": "Windows-11-10.0.26200-SP0",
+    "numpy_version": "2.2.0",
+    "scipy_version": "1.15.3",
+    "nibabel_version": "5.4.2"
+  },
+  "script": "phase17_v3_validate_thalamus_bn_direct_spatial.py",
+  "script_version": "phase17_v3_validate_thalamus_bn_direct_spatial.py v2 (DIRECT_SPATIAL + FINAL_FREEZE round)",
+  "run_timestamp": "2026-09-08T06:59:50+00:00"
+}

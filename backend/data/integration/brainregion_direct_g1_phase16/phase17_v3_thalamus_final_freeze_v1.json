@@ -1,0 +1,171 @@
+{
+  "freeze_id": "THALAMUS_PHASE17_FINAL_FREEZE_V1",
+  "canonical_left_id": "NGIQ-BR-00000247",
+  "canonical_right_id": "NGIQ-BR-00000256",
+  "ontology_identity": "THALAMUS_PROPER",
+  "ontology_status": "FROZEN",
+  "scope_contract": "THALAMUS_G1_SCOPE_CONTRACT_V3",
+  "scope_contract_sha256": "22e24a31bab9659769f7e550ee32f8e3b37887d0ae1a4c4c4cf64974c3c05f68",
+  "scope_status": "FROZEN",
+  "probability_semantics": "MUTUALLY_EXCLUSIVE_CATEGORICAL",
+  "aggregation_operator": "SUM",
+  "native_geometry_status": "FROZEN",
+  "native_geometry_ids": [
+    "GEO-G1-THAL-L-FS2009CSYM-V1",
+    "GEO-G1-THAL-R-FS2009CSYM-V1"
+  ],
+  "reference_grid_geometry_status": "FROZEN",
+  "reference_grid_geometry_ids": [
+    "GEO-G1-THAL-L-MNI2009CASYM-V1",
+    "GEO-G1-THAL-R-MNI2009CASYM-V1"
+  ],
+  "current_g1_geometry": {
+    "left_sha256": "bd431608fcea3c5f0f7387b1b0e1010582fa2e39dae95a300b3bba976a10cc87",
+    "right_sha256": "73e4242b581f2420c316593f6cd85183ea7f99c29e2b817b0257cdf267c5bd3b",
+    "left_geometry_id": "GEO-G1-THAL-L-MNI2009CASYM-V1",
+    "right_geometry_id": "GEO-G1-THAL-R-MNI2009CASYM-V1"
+  },
+  "superseded_syn_geometry": {
+    "left": "37a82b65d86d81b1558582dee301e79ee367d60856f95d6a55b0219cf28a87a1",
+    "right": "1c9b8b8de9103c1e091c9fb6e0577182416d5a6ba0c1b7f6d41e1e913958253f",
+    "status": "SUPERSEDED / NOT_CURRENT",
+    "note": "must never be consumed as current evidence"
+  },
+  "spatial_bridge_status": "FROZEN_SHARED_COORDINATE_RESAMPLE",
+  "spatial_bridge_id": "SPB-MNI2009C-SYM-ASYM-SHARED-FRAME-V1",
+  "authoritative_nonlinear_sym_asym_transform": "NOT_AVAILABLE_NOT_USED",
+  "template_variant_uncertainty": "PRESENT",
+  "residual_spatial_limitation": "TEMPLATE_VARIANT_ANATOMICAL_MISMATCH_NOT_EXPLICITLY_WARP_CORRECTED",
+  "evidence_mode": "DIRECT_SPATIAL_OVERLAP_IN_SHARED_MNI2009C_COORDINATE_FRAME",
+  "evidence_mode_note": "NOT DIRECT_OVERLAP_AFTER_AUTHORITATIVE_SYM_TO_ASYM_REGISTRATION",
+  "bn_preconstruction_gate": "PASSED",
+  "bn_postconstruction_gate": "CLOSED_NO_MAPPING_CONFLICT",
+  "bn_direct_validation_status": "PASSED_WITH_RECORDED_SPATIAL_UNCERTAINTY",
+  "relation_counts": {
+    "total": 16,
+    "supported": 7,
+    "uncertainty": 9,
+    "review": 0,
+    "conflict": 0,
+    "insufficient": 0
+  },
+  "effective_decision_ids": [
+    "DEC-THAL-DIRECT-01",
+    "DEC-THAL-DIRECT-02",
+    "DEC-THAL-DIRECT-03",
+    "DEC-THAL-DIRECT-04",
+    "DEC-THAL-DIRECT-05",
+    "DEC-THAL-DIRECT-06",
+    "DEC-THAL-DIRECT-07",
+    "DEC-THAL-DIRECT-08",
+    "DEC-THAL-DIRECT-09",
+    "DEC-THAL-DIRECT-10",
+    "DEC-THAL-DIRECT-11",
+    "DEC-THAL-DIRECT-12",
+    "DEC-THAL-DIRECT-13",
+    "DEC-THAL-DIRECT-14",
+    "DEC-THAL-DIRECT-15",
+    "DEC-THAL-DIRECT-16"
+  ],
+  "direct_02_supersession_id": "DEC-THAL-DIRECT-02-S1",
+  "direct_02_effective_verdict": "KEEP_FROZEN_MAPPING_WITH_SPATIAL_UNCERTAINTY",
+  "direct_02_true_mapping_incompatibility": false,
+  "remaining_blocking_thalamus_items": [],
+  "nonblocking_uncertainties": [
+    {
+      "decision": "DEC-THAL-DIRECT-02 (Tha_L_8_2, superseded by DEC-THAL-DIRECT-02-S1)",
+      "kind": "NON_BLOCKING_SPATIAL_UNCERTAINTY",
+      "note": "G1 probability-envelope boundary limitation + shared-template-variant mismatch; raw BNA intrinsic L/R asymmetry PRESENT"
+    },
+    {
+      "decision": "DEC-THAL-DIRECT-12 (Tha_R_8_4)",
+      "kind": "NON_BLOCKING_SPATIAL_UNCERTAINTY",
+      "note": "MIDLINE_LEAK (<=2 mm band; BN asset correct-side mass fraction 0.780); root cause NOT expanded in this round"
+    },
+    {
+      "kind": "SHARED_TEMPLATE_VARIANT_UNCERTAINTY",
+      "note": "G1 derived from 2009cSym shared-frame resample; BN side nonlinearly warped NLin6Asym->2009cAsym; residual not warp-corrected (PRESENT)"
+    },
+    {
+      "kind": "RECORDED_BOUNDARY_UNCERTAINTY",
+      "note": "boundary uncertainty retained on all other effective WITH_SPATIAL_UNCERTAINTY decisions (Tha_L_8_3, Tha_L_8_4, Tha_L_8_7, Tha_L_8_8, Tha_R_8_2, Tha_R_8_3, Tha_R_8_7)"
+    }
+  ],
+  "promotion_readiness": "READY_FOR_LATER_GLOBAL_PROMOTION_REVIEW",
+  "promotion_executed": false,
+  "db_zero_write": true,
+  "classification_csv_unchanged": true,
+  "classification_snapshot": {
+    "verified": 86,
+    "non_verified": 132,
+    "likely": 93
+  },
+  "provenance_chain": [
+    {
+      "role": "effective direct decisions",
+      "path": "data/integration/brainregion_direct_g1_phase16/phase17_v3_thalamus_bn_direct_effective_decisions.csv"
+    },
+    {
+      "role": "L8_2 supersession (DEC-THAL-DIRECT-02-S1)",
+      "path": "data/integration/brainregion_direct_g1_phase16/phase17_v3_thalamus_direct_decision_supersession.json",
+      "sha256": "cd9067c3f00cc20a9db656ca9d0b87ec6978cfa993cb48cdd15ca931e01d3c65"
+    },
+    {
+      "role": "historical direct decisions (DEC-THAL-DIRECT-01..16)",
+      "path": "data/integration/brainregion_direct_g1_phase16/phase17_v3_thalamus_bn_direct_spatial_decisions.csv",
+      "sha256": "fc5cd60f95fb557418d78479a06caa58fd885dee9b9ffaf7f9dbc15523124480"
+    },
+    {
+      "role": "historical direct validation summary",
+      "path": "data/integration/brainregion_direct_g1_phase16/phase17_v3_thalamus_bn_direct_spatial_summary.json",
+      "sha256": "0aa349308190087d315cca6a1130d491a17de6c11d57731863ad8d67798e616e"
+    },
+    {
+      "role": "L8_2 discrepancy root-cause audit summary",
+      "path": "data/integration/brainregion_direct_g1_phase16/phase17_v3_thalamus_l8_2_discrepancy_summary.json",
+      "sha256": "ef3befd6ab4dc6a5bda03f22fca5fb1d05cd2506368ccf15cb9ee0ab13b349f1"
+    },
+    {
+      "role": "L8_2 discrepancy audit provenance",
+      "path": "data/integration/brainregion_direct_g1_phase16/phase17_v3_thalamus_l8_2_discrepancy_provenance.json",
+      "sha256": "ad6801a8dcf0f6126fa201b97279c82e7e7c2c2eaa27e062bb1abc76922ca681"
+    },
+    {
+      "role": "frozen G3->G1 relations",
+      "path": "data/integration/g3_to_g1/g3_to_g1_full_decision_coverage_manifest.csv",
+      "sha256": "fd4023d14aeb46eb251ddf9e2a939c71fc6a0b53df7fb19057c526961b4ccd6b"
+    },
+    {
+      "role": "DEC-THAL-ROLLUP-01..16 bindings",
+      "path": "data/integration/brainregion_direct_g1_phase16/phase17_v3_thalamus_bn_rollup_compatibility.csv",
+      "sha256": "813d72e6738e28af70c503bdf8831be4b0053490e300711e1d1e7c9cbfd33404"
+    },
+    {
+      "role": "BNA NLin6Asym->2009cAsym batch transform manifest",
+      "path": "data/integration/g3_brainnetome_assets/g3_brainnetome_to_julich_batch_transform_manifest.csv",
+      "sha256": "c8606b53cd1dbcb993cb42fcbd34fc58b8163bb5679d46a815fa469a676b40d6"
+    },
+    {
+      "role": "spatial bridge manifest (SPB-MNI2009C-SYM-ASYM-SHARED-FRAME-V1)",
+      "path": "data/integration/brainregion_direct_g1_phase16/phase17_v3_thalamus_spatial_bridge_manifest.json",
+      "sha256": "952df5fffb45c8875e0ebc36cc69d17b5fb3ebfdd9c8578bc692f32d7faf7f25"
+    },
+    {
+      "role": "native geometry manifest",
+      "path": "data/integration/brainregion_direct_g1_phase16/phase17_v3_thalamus_g1_native_geometry_manifest.json",
+      "sha256": "0074957066365b086375b59fd8b87fff6d97524390dbe351a618b198de67cbcd"
+    },
+    {
+      "role": "V3 scope contract",
+      "path": "data/integration/brainregion_direct_g1_phase16/phase17_v3_thalamus_g1_scope_contract_v3.json",
+      "sha256": "22e24a31bab9659769f7e550ee32f8e3b37887d0ae1a4c4c4cf64974c3c05f68"
+    },
+    {
+      "role": "transform retraction (superseded SyN route)",
+      "path": "data/integration/brainregion_direct_g1_phase16/phase17_v3_thalamus_transform_retraction.json",
+      "sha256": "3704fae3125c86ce102c3d956da866597a0479549dc000582eaf3a9363e8ab36"
+    }
+  ],
+  "created_at": "2026-09-08T07:31:01+00:00",
+  "script_version": "phase17_v3_freeze_thalamus_postconstruction.py v1"
+}

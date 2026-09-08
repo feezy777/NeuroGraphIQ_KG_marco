@@ -1,0 +1,254 @@
+{
+  "function": "Brainnetome G3 Thalamus -> THALAMUS_PROPER G1 Direct Spatial Validation + Thalamus Final Freeze assessment",
+  "evidence_type": "DIRECT_SPATIAL_OVERLAP_IN_SHARED_MNI2009C_COORDINATE_FRAME",
+  "shared_template_variant_uncertainty": "PRESENT",
+  "not_after_authoritative_registration": "NO authoritative nonlinear Sym->Asym registration is claimed",
+  "residual_spatial_limitation": "TEMPLATE_VARIANT_ANATOMICAL_MISMATCH_NOT_EXPLICITLY_WARP_CORRECTED",
+  "registration_applied": false,
+  "resampling_applied": true,
+  "target_reference_space": "MNI152NLin2009cAsym / Julich reference grid (193x229x193 @1mm RAS)",
+  "spatial_bridge_id": "SPB-MNI2009C-SYM-ASYM-SHARED-FRAME-V1",
+  "g1_left_sha": "bd431608fcea3c5f0f7387b1b0e1010582fa2e39dae95a300b3bba976a10cc87",
+  "g1_right_sha": "73e4242b581f2420c316593f6cd85183ea7f99c29e2b817b0257cdf267c5bd3b",
+  "g1_left_geometry_id": "GEO-G1-THAL-L-MNI2009CASYM-V1",
+  "g1_right_geometry_id": "GEO-G1-THAL-R-MNI2009CASYM-V1",
+  "superseded_g1": {
+    "left": "37a82b65d86d81b1558582dee301e79ee367d60856f95d6a55b0219cf28a87a1",
+    "right": "1c9b8b8de9103c1e091c9fb6e0577182416d5a6ba0c1b7f6d41e1e913958253f",
+    "note": "never consumed as current evidence"
+  },
+  "v3_contract_sha256": "22e24a31bab9659769f7e550ee32f8e3b37887d0ae1a4c4c4cf64974c3c05f68",
+  "universe": {
+    "total": 16,
+    "left": 8,
+    "right": 8,
+    "source": "frozen g3_to_g1_full_decision_coverage_manifest.csv cross-bound to DEC-THAL-ROLLUP-01..16"
+  },
+  "evidence_grades": {
+    "total": 16,
+    "directly_supported": 7,
+    "directly_supported_with_boundary_uncertainty": 8,
+    "direct_spatial_conflict": 1,
+    "direct_evidence_insufficient": 0
+  },
+  "mapping_verdicts": {
+    "keep_frozen_mapping_directly_supported": 7,
+    "keep_frozen_mapping_with_spatial_uncertainty": 8,
+    "frozen_mapping_requires_review": 1,
+    "frozen_mapping_direct_conflict": 0
+  },
+  "left_right_distribution": {
+    "left": {
+      "total": 8,
+      "directly_supported": 3,
+      "boundary_uncertainty": 4,
+      "direct_spatial_conflict": 1,
+      "evidence_insufficient": 0
+    },
+    "right": {
+      "total": 8,
+      "directly_supported": 4,
+      "boundary_uncertainty": 4,
+      "direct_spatial_conflict": 0,
+      "evidence_insufficient": 0
+    }
+  },
+  "bn_g3_to_g1_direct_spatial_validation": "PARTIALLY_PASSED",
+  "postconstruction_gate": "OPEN_NOT_CLOSED",
+  "postconstruction_gate_reason": "material DIRECT_SPATIAL_CONFLICT present",
+  "lsg_dependent_relations": {
+    "total": 6,
+    "decision_ids": [
+      "DEC-THAL-DIRECT-05",
+      "DEC-THAL-DIRECT-06",
+      "DEC-THAL-DIRECT-07",
+      "DEC-THAL-DIRECT-13",
+      "DEC-THAL-DIRECT-14",
+      "DEC-THAL-DIRECT-15"
+    ],
+    "status": "ALL_RESOLVED_WITH_DIRECT_EVIDENCE",
+    "note": "DEC-THAL-04 (L-Sg) frozen INCLUDE -> ontology dependency removed; relations evaluated on direct spatial evidence only"
+  },
+  "bilateral_qa": {
+    "total_pairs": 8,
+    "asymmetry_review_pairs": [
+      {
+        "zone": "Tha_8_2",
+        "abbreviation": "mPMtha",
+        "left_decision": "DEC-THAL-DIRECT-02",
+        "right_decision": "DEC-THAL-DIRECT-10",
+        "left_containment": 0.123198,
+        "right_containment": 0.519135,
+        "containment_abs_diff": 0.395937,
+        "left_volume_mm3": 1411.379,
+        "right_volume_mm3": 1805.201,
+        "volume_ratio_L_over_R": 0.7818,
+        "left_grade": "DIRECT_SPATIAL_CONFLICT",
+        "right_grade": "DIRECTLY_SUPPORTED_WITH_BOUNDARY_UNCERTAINTY",
+        "left_verdict": "FROZEN_MAPPING_REQUIRES_REVIEW",
+        "right_verdict": "KEEP_FROZEN_MAPPING_WITH_SPATIAL_UNCERTAINTY",
+        "left_threshold05_fraction": 0.113628,
+        "right_threshold05_fraction": 0.512,
+        "pair_flag": "BILATERAL_ASYMMETRY_REVIEW"
+      },
+      {
+        "zone": "Tha_8_4",
+        "abbreviation": "rTtha",
+        "left_decision": "DEC-THAL-DIRECT-04",
+        "right_decision": "DEC-THAL-DIRECT-12",
+        "left_containment": 0.538432,
+        "right_containment": 0.304178,
+        "containment_abs_diff": 0.234254,
+        "left_volume_mm3": 2065.892,
+        "right_volume_mm3": 1665.543,
+        "volume_ratio_L_over_R": 1.2404,
+        "left_grade": "DIRECTLY_SUPPORTED_WITH_BOUNDARY_UNCERTAINTY",
+        "right_grade": "DIRECTLY_SUPPORTED_WITH_BOUNDARY_UNCERTAINTY",
+        "left_verdict": "KEEP_FROZEN_MAPPING_WITH_SPATIAL_UNCERTAINTY",
+        "right_verdict": "KEEP_FROZEN_MAPPING_WITH_SPATIAL_UNCERTAINTY",
+        "left_threshold05_fraction": 0.537518,
+        "right_threshold05_fraction": 0.292901,
+        "pair_flag": "BILATERAL_ASYMMETRY_REVIEW"
+      },
+      {
+        "zone": "Tha_8_8",
+        "abbreviation": "lPFtha",
+        "left_decision": "DEC-THAL-DIRECT-08",
+        "right_decision": "DEC-THAL-DIRECT-16",
+        "left_containment": 0.525168,
+        "right_containment": 0.783422,
+        "containment_abs_diff": 0.258254,
+        "left_volume_mm3": 2112.963,
+        "right_volume_mm3": 1767.404,
+        "volume_ratio_L_over_R": 1.1955,
+        "left_grade": "DIRECTLY_SUPPORTED_WITH_BOUNDARY_UNCERTAINTY",
+        "right_grade": "DIRECTLY_SUPPORTED",
+        "left_verdict": "KEEP_FROZEN_MAPPING_WITH_SPATIAL_UNCERTAINTY",
+        "right_verdict": "KEEP_FROZEN_MAPPING_DIRECTLY_SUPPORTED",
+        "left_threshold05_fraction": 0.521761,
+        "right_threshold05_fraction": 0.790975,
+        "pair_flag": "BILATERAL_ASYMMETRY_REVIEW"
+      }
+    ]
+  },
+  "reticular_exclusion_qc": {
+    "status": "PASSED",
+    "note": "no BN parcel substantially occupies the excluded Reticular territory; max per-parcel overlap <= 3.2%; Reticular is NOT re-added to G1",
+    "territory_source": "FS_RETICULAR_EXCLUDED_CHANNEL_SHARED_FRAME_RESAMPLE_IN_MEMORY",
+    "max_parcel_overlap_fraction": 0.032296
+  },
+  "reference_levels": {
+    "conflict_containment_below": 0.2,
+    "conflict_outside_envelope_above": 0.3,
+    "direct_support_containment_at_least": 0.6,
+    "midline_leak_note_fraction_at_least": 0.02,
+    "bilateral_asymmetry_pair_abs_diff_at_least": 0.2,
+    "reticular_territory_probability_threshold": 0.5,
+    "rationale": "Descriptive zones introduced in THIS round to map the continuous probability-weighted evidence onto the evidence-grade vocabulary. They are NOT frozen Phase1.7 gate thresholds, NOT the old G4->G3 90/5 proxy, NOT calibrated for promotion, and classification-independent. Each reference sits inside a large empirical gap of the 16-parcel distribution: next-lowest containment above the conflict zone is 0.304 (vs <0.20); next-highest outside-envelope fraction below the conflict zone is 0.175 (vs >0.30); supported parcels all have containment >=0.684 (vs <0.60 for all others); only one parcel has midline leak >=0.02 (next is 0.0024); flagged asymmetry pairs are 0.234-0.396 (unflagged <=0.131). Continuous metrics are primary."
+  },
+  "circularity_risk": "NONE",
+  "independence_note": "G1 geometry independent of G3->G1 mapping (FreeSurfer); BN parcel geometry independent (BNA_PM_4D -> MNI152NLin2009cAsym SimpleITK route). Mapping used only for association.",
+  "classification_proposal": {
+    "classification_csv": "phase17_v3_classification.csv",
+    "classification_csv_touched": "FALSE",
+    "proposal_scope": "The 16 Thalamus G3 relations are governed by the frozen g3_to_g1 manifest (CANONICAL_NAME_AUTHORITY_FROZEN / AUTO_HIGH / APPROVE_CONTAINED_IN), NOT by phase17_v3_classification.csv (which contains no Thalamus G3 rows).",
+    "proposed_action": "KEEP_ALL_16_FROZEN (no change this round)",
+    "deferred_review": [
+      {
+        "decision_id": "DEC-THAL-DIRECT-02",
+        "official_code": "Tha_L_8_2",
+        "note": "direct spatial evidence conflicts with the current G1 geometry; frozen mapping retained pending separate review"
+      },
+      {
+        "decision_id": "DEC-THAL-DIRECT-12",
+        "official_code": "Tha_R_8_4",
+        "note": "boundary/midline uncertainty (asset correct-side fraction 0.780); frozen mapping retained pending separate review"
+      }
+    ],
+    "global_86_132_93": "UNCHANGED"
+  },
+  "db_zero_write": "TRUE",
+  "promotion": "BLOCKED",
+  "lifecycle_or_classification_changed": false,
+  "commit": "none",
+  "final_freeze": {
+    "freeze_id": "THALAMUS_PHASE17_FINAL_FREEZE_V1",
+    "freeze_formed": false,
+    "ontology_status": "FROZEN",
+    "scope_status": "FROZEN",
+    "native_geometry_status": "FROZEN",
+    "reference_grid_geometry_status": "FROZEN",
+    "spatial_bridge_status": "FROZEN",
+    "template_variant_uncertainty": "PRESENT",
+    "bn_preconstruction_gate": "PASSED",
+    "bn_direct_validation_status": "PARTIALLY_PASSED",
+    "relation_counts": {
+      "total": 16,
+      "directly_supported": 7,
+      "supported_with_boundary_uncertainty": 8,
+      "direct_spatial_conflict": 1,
+      "direct_evidence_insufficient": 0,
+      "left_right": {
+        "left": {
+          "total": 8,
+          "directly_supported": 3,
+          "boundary_uncertainty": 4,
+          "direct_spatial_conflict": 1,
+          "evidence_insufficient": 0
+        },
+        "right": {
+          "total": 8,
+          "directly_supported": 4,
+          "boundary_uncertainty": 4,
+          "direct_spatial_conflict": 0,
+          "evidence_insufficient": 0
+        }
+      }
+    },
+    "postconstruction_gate": "OPEN_NOT_CLOSED",
+    "remaining_thalamus_review_items": [
+      {
+        "decision_id": "DEC-THAL-DIRECT-02",
+        "official_code": "Tha_L_8_2",
+        "grade": "DIRECT_SPATIAL_CONFLICT",
+        "weighted_containment": 0.123198,
+        "outside_support_fraction": 0.468069
+      },
+      {
+        "decision_id": "DEC-THAL-DIRECT-04",
+        "official_code": "Tha_L_8_4",
+        "grade": "DIRECTLY_SUPPORTED_WITH_BOUNDARY_UNCERTAINTY",
+        "note": "BILATERAL_ASYMMETRY_REVIEW"
+      },
+      {
+        "decision_id": "DEC-THAL-DIRECT-08",
+        "official_code": "Tha_L_8_8",
+        "grade": "DIRECTLY_SUPPORTED_WITH_BOUNDARY_UNCERTAINTY",
+        "note": "BILATERAL_ASYMMETRY_REVIEW"
+      },
+      {
+        "decision_id": "DEC-THAL-DIRECT-10",
+        "official_code": "Tha_R_8_2",
+        "grade": "DIRECTLY_SUPPORTED_WITH_BOUNDARY_UNCERTAINTY",
+        "note": "BILATERAL_ASYMMETRY_REVIEW"
+      },
+      {
+        "decision_id": "DEC-THAL-DIRECT-12",
+        "official_code": "Tha_R_8_4",
+        "grade": "DIRECTLY_SUPPORTED_WITH_BOUNDARY_UNCERTAINTY",
+        "note": "BILATERAL_ASYMMETRY_REVIEW | MIDLINE_LEAK"
+      },
+      {
+        "decision_id": "DEC-THAL-DIRECT-16",
+        "official_code": "Tha_R_8_8",
+        "grade": "DIRECTLY_SUPPORTED",
+        "note": "BILATERAL_ASYMMETRY_REVIEW"
+      }
+    ],
+    "promotion_readiness": "BLOCKED",
+    "provenance_chain_status": "COMPLETE",
+    "not_formed_reason": "deferred: DIRECT_SPATIAL_CONFLICT present (DEC-THAL-DIRECT-02 / Tha_L_8_2); postconstruction gate open"
+  },
+  "script_version": "phase17_v3_validate_thalamus_bn_direct_spatial.py v2 (DIRECT_SPATIAL + FINAL_FREEZE round)",
+  "run_timestamp": "2026-09-08T06:59:50+00:00"
+}

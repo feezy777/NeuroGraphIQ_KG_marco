@@ -1,0 +1,14 @@
+{
+  "gate_id": "THALAMUS_BN_POSTCONSTRUCTION_GATE_V1",
+  "previous_status": "OPEN_DUE_TO_MATERIAL_UNRESOLVED_DISCREPANCY",
+  "root_cause_resolution": "COMPLETED",
+  "confirmed_mapping_conflicts": 0,
+  "mapping_review_items": 0,
+  "nonblocking_spatial_uncertainties": 9,
+  "gate_status": "CLOSED_NO_MAPPING_CONFLICT",
+  "direct_validation_status": "PASSED_WITH_RECORDED_SPATIAL_UNCERTAINTY",
+  "note": "PASSED does NOT equal PERFECT_GEOMETRIC_CONTAINMENT. Continuous probability-weighted containment varied substantially across parcels (weighted containment 0.12-0.82). The recorded spatial uncertainties are retained and are NOT removed by this gate closure.",
+  "supersession": "DEC-THAL-DIRECT-02-S1",
+  "effective_decisions_path": "data/integration/brainregion_direct_g1_phase16/phase17_v3_thalamus_bn_direct_effective_decisions.csv",
+  "created_at": "2026-09-08T07:31:01+00:00"
+}
