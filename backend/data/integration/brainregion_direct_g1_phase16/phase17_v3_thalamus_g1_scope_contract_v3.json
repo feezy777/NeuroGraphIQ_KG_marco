@@ -1,0 +1,194 @@
+{
+  "verdict": "THALAMUS_G1_SCOPE_FROZEN",
+  "construction_allowed": false,
+  "identity_decision": "CANONICAL_IDENTITY_FROZEN_THALAMUS_PROPER",
+  "contract_v3": {
+    "contract_id": "THALAMUS_G1_SCOPE_CONTRACT_V3",
+    "supersedes": "THALAMUS_G1_SCOPE_CONTRACT_V2",
+    "supersedes_verified": true,
+    "canonical_left_id": "NGIQ-BR-00000247",
+    "canonical_right_id": "NGIQ-BR-00000256",
+    "canonical_identity": "CANONICAL_IDENTITY_FROZEN_THALAMUS_PROPER",
+    "canonical_definition": "The canonical G1 'Thalamus' expresses the DORSAL THALAMUS (thalamus proper): the main thalami mass of the diencephalon comprising the classical dorsal thalamic nuclear groups (anterior, medial, lateral, ventral, posterior/pulvinar, intralaminar, midline) plus the geniculate bodies (LGN/MGN), which modern consensus includes as integral parts of the dorsal thalamus. It EXCLUDES the ventral thalamus / perithalamus (reticular nucleus Rt, zona incerta ZI), the epithalamus (habenula), and the subthalamus. Source label 'thalamus proper' is retained verbatim; it is not upgraded into an independent ontology concept.",
+    "definition_version": "1.1 (supersedes V2 1.0)",
+    "inherited_decisions": {
+      "LGN_decision": "INCLUDE (DEC-THAL-01)",
+      "MGN_decision": "INCLUDE (DEC-THAL-02)",
+      "reticular_decision": "EXCLUDE (DEC-THAL-03)"
+    },
+    "new_decisions": {
+      "limitans_decision": "INCLUDE (DEC-THAL-04-LI)",
+      "suprageniculate_decision": "INCLUDE (DEC-THAL-04-SG)",
+      "lsg_freeSurfer_channel_decision": "INCLUDE (DEC-THAL-04-LSG)"
+    },
+    "dec_thal_04": "INCLUDE (supersedes V2 REVIEW)",
+    "included_structures": [
+      "dorsal-thalamus nuclear groups (anterior, medial, lateral, ventral, posterior/pulvinar, intralaminar, midline)",
+      "LGN (DEC-THAL-01)",
+      "MGN (DEC-THAL-02)"
+    ],
+    "excluded_structures": [
+      "Reticular nucleus Rt (DEC-THAL-03)",
+      "Zona incerta (ventral)",
+      "Epithalamus / habenula",
+      "Subthalamus"
+    ],
+    "review_structures": [],
+    "confidence": "identity=high; LGN/MGN=medium; reticular=high; Li/Sg=HIGH; FreeSurfer-L-Sg-channel=MEDIUM",
+    "status": "THALAMUS_G1_SCOPE_FROZEN",
+    "geometry_construction_allowed": true,
+    "geometry_blocked_reasons": [],
+    "evidence_note": "Two evidentiary tiers are kept separate: (a) FreeSurfer aseg 'Thalamus-Proper' supports a dorsal-mass LABEL CONVENTION and does not itself segment geniculate bodies; (b) LGN/MGN dorsal-thalamus MEMBERSHIP rests on the Mai-2018 / UBERON consensus that geniculate bodies are integral to the dorsal thalamus. FS atlas geometry is NOT cited as evidence for geniculate inclusion."
+  },
+  "decisions": [
+    {
+      "decision_id": "DEC-THAL-04-LI",
+      "source_structure": "Nucleus limitans (Li)",
+      "decision": "INCLUDE",
+      "confidence": "HIGH",
+      "human_evidence": [
+        "MeSH M0332227 under Posterior Thalamic Nuclei (Thalamus > Thalamic Nuclei)",
+        "Julich-Brain v3.1: dorsal thalamus > posterior group > Li",
+        "Rolls 2020: limitans in posterior group, excluded from AAL3 only for 12-voxel size"
+      ],
+      "rationale": "Controlled human terminology + human cytoarchitecture place Li inside the dorsal thalami mass; no strong human evidence excludes it."
+    },
+    {
+      "decision_id": "DEC-THAL-04-SG",
+      "source_structure": "Suprageniculate nucleus (Sg)",
+      "decision": "INCLUDE",
+      "confidence": "HIGH",
+      "human_evidence": [
+        "MeSH M0332230 under Posterior Thalamic Nuclei (Thalamus > Thalamic Nuclei)",
+        "Julich-Brain v3.1: dorsal thalamus > posterior group > Sg",
+        "Mai 2018: many authors add suprageniculate-limitans as a 4th MGB division",
+        "Kiwitz 2022 / Hirai&Jones 1989: posterior nuclear complex of the human dorsal thalami mass"
+      ],
+      "rationale": "Consistent with Li: Sg is a posterior-group member of the human dorsal thalami mass."
+    },
+    {
+      "decision_id": "DEC-THAL-04-LSG",
+      "source_structure": "L-Sg combined (FreeSurfer/Iglesias channel)",
+      "decision": "INCLUDE",
+      "confidence": "MEDIUM",
+      "human_evidence": [
+        "Iglesias 2018 / FreeSurfer: L-Sg channel inside the Thalamus-Proper whole-thalami mask",
+        "Julich-Brain v3.1: Li/Sg together = posterior group of dorsal thalamus"
+      ],
+      "rationale": "The FreeSurfer L-Sg channel is atlas coverage of the Li+Sg posterior-group territory; it maps into the G1 scope as INCLUDE, but as an atlas channel its exact MRI boundary is MEDIUM-confidence pending direct spatial validation."
+    }
+  ],
+  "identity_provenance": [
+    {
+      "canonical_id": "NGIQ-BR-00000247",
+      "current_name": "Left Thalamus",
+      "source_name": "left thalamus proper",
+      "source_file": "Brain volume list.xlsx (Fuyao clinical) + macro96_normalized_manifest.csv",
+      "source_row": "6",
+      "original_definition": "SOURCE_LABEL_ONLY_NO_FORMAL_DEFINITION",
+      "normalized_name": "Left Thalamus",
+      "hemisphere": "left",
+      "structure_type": "subcortical_region",
+      "granularity": "G1_MACRO",
+      "existing_parent": "(canonical record not exported in this read-only round)",
+      "existing_children": "(none materialized)",
+      "frozen_g3_rollups": "Brainnetome Tha_*_8_1..8_8 (8/side) -> G1 (frozen manifest)",
+      "historical_decisions": "AUTO_HIGH coarse aggregation (authoritative anatomical mapping)"
+    },
+    {
+      "canonical_id": "NGIQ-BR-00000256",
+      "current_name": "Right Thalamus",
+      "source_name": "right thalamus proper",
+      "source_file": "Brain volume list.xlsx (Fuyao clinical) + macro96_normalized_manifest.csv",
+      "source_row": "22",
+      "original_definition": "SOURCE_LABEL_ONLY_NO_FORMAL_DEFINITION",
+      "normalized_name": "Right Thalamus",
+      "hemisphere": "right",
+      "structure_type": "subcortical_region",
+      "granularity": "G1_MACRO",
+      "existing_parent": "(canonical record not exported in this read-only round)",
+      "existing_children": "(none materialized)",
+      "frozen_g3_rollups": "Brainnetome Tha_*_8_1..8_8 (8/side) -> G1 (frozen manifest)",
+      "historical_decisions": "AUTO_HIGH coarse aggregation (authoritative anatomical mapping)"
+    }
+  ],
+  "boundary_rulings": [
+    {
+      "decision_id": "DEC-THAL-01",
+      "structure": "LGN (lateral geniculate)",
+      "canonical_identity_used": "CANONICAL_IDENTITY_FROZEN_THALAMUS_PROPER",
+      "decision": "INCLUDE",
+      "confidence": "medium",
+      "rationale": "Identity = THALAMUS_PROPER (dorsal). Modern consensus (Mai 2018; UBERON) treats the dorsal lateral geniculate nucleus as an integral part of the dorsal/lateral thalamus; the 'metathalamus' label is questioned precisely because it implies the geniculates are not integral parts. AAL3 (Thal_LGN) and Iglesias (LGN) agree. This is an explicit modeling reading of the geniculate as dorsal-thalamus; it is NOT 'auto-include because FS/AAL3 carry it'.",
+      "primary_evidence": "Mai 2018 Front Neuroanat 12:114 (geniculate bodies integral to lateral/dorsal thalamus)",
+      "secondary_evidence": "AAL3 Thal_LGN; Iglesias 2018 LGN; UBERON metathalamus-in-dorsal"
+    },
+    {
+      "decision_id": "DEC-THAL-02",
+      "structure": "MGN (medial geniculate)",
+      "canonical_identity_used": "CANONICAL_IDENTITY_FROZEN_THALAMUS_PROPER",
+      "decision": "INCLUDE",
+      "confidence": "medium",
+      "rationale": "Same identity basis as LGN: MGN is a dorsal-thalamus geniculate body under modern consensus; AAL3 (Thal_MGN) and Iglesias (MGN) agree. Metathalamus naming divergence documented, not a reason to EXCLUDE under a dorsal-'proper' identity.",
+      "primary_evidence": "Mai 2018; UBERON metathalamus-in-dorsal",
+      "secondary_evidence": "AAL3 Thal_MGN; Iglesias 2018 MGN"
+    },
+    {
+      "decision_id": "DEC-THAL-03",
+      "structure": "Reticular nucleus (R/Rt)",
+      "canonical_identity_used": "CANONICAL_IDENTITY_FROZEN_THALAMUS_PROPER",
+      "decision": "EXCLUDE",
+      "confidence": "high",
+      "rationale": "Reticular nucleus is a ventral-thalamus / perithalamus shell separated from the dorsal thalami mass by the external medullary lamina; it is NOT part of dorsal-thalamus 'proper'. AAL3 excludes it; Julich places Rt under ventral-thalamus; Iglesias segments it but its generative prior groups reticular with white matter. Iglesias 'thalamic nuclei atlas coverage' does not make Rt a member of NeuroGraphIQ G1 'thalamus proper'.",
+      "primary_evidence": "Mai 2018; AAL3 (excluded); Julich (ventral-thalamus Rt)",
+      "secondary_evidence": "UBERON reticular = ventral/perithalamus; Iglesias R (WM-prior)"
+    },
+    {
+      "decision_id": "DEC-THAL-04",
+      "structure": "Limitans / suprageniculate (L-Sg / Li / Sg)",
+      "canonical_identity_used": "CANONICAL_IDENTITY_FROZEN_THALAMUS_PROPER",
+      "decision": "REVIEW",
+      "confidence": "low",
+      "rationale": "L-Sg is a small posterior-complex / metathalamic-adjacent border nucleus. Membership is genuinely contested: AAL3 drops limitans for size (12 voxels), FS keeps L-Sg, Julich keeps posterior Li/Sg. It is spatially near MGN but must NOT be assumed to follow the MGN decision. Left in REVIEW (no forced convergence) pending an explicit small-nucleus / posterior-complex modeling decision.",
+      "primary_evidence": "AAL3 (excluded, size); Julich posterior Li/Sg; Iglesias L-Sg",
+      "secondary_evidence": "Mai 2018 posterior nuclear complex discussion"
+    },
+    {
+      "decision_id": "DEC-THAL-04-LI",
+      "structure": "Limitans nucleus (Li)",
+      "decision": "INCLUDE",
+      "confidence": "HIGH",
+      "rationale": "Inside dorsal thalami mass (posterior group) per MeSH + Julich v3.1 human + Rolls 2020 posterior-group placement."
+    },
+    {
+      "decision_id": "DEC-THAL-04-SG",
+      "structure": "Suprageniculate nucleus (Sg)",
+      "decision": "INCLUDE",
+      "confidence": "HIGH",
+      "rationale": "Inside dorsal thalami mass (posterior group / posterior nuclear complex) per MeSH + Julich v3.1 + Mai 2018 + Kiwitz 2022."
+    },
+    {
+      "decision_id": "DEC-THAL-04-LSG",
+      "structure": "L-Sg combined (FreeSurfer/Iglesias)",
+      "decision": "INCLUDE",
+      "confidence": "MEDIUM",
+      "rationale": "Channel = Li+Sg posterior-group territory; INCLUDE consistent, but MRI channel boundary is medium-confidence pending direct spatial validation."
+    }
+  ],
+  "script_version": "phase17_v3_adjudicate_thalamus_lsg_boundary.py v1",
+  "run_timestamp": "2026-09-07T15:40:58+00:00",
+  "provenance": {
+    "v1_sha256": "324a67163a15eae3427b1453a234b0e184958fa773dde400b819d88e9dd21333",
+    "v2_sha256": "b18e3531cc88301631782f870ad7c8757cb75193028b6bb3e0f88e4f40ba1869",
+    "julich_hierarchy_sha256": "f43fca611fb3fa6cf4d0433b883e2fd4cce1430df9bba1cca93d6638092b0480",
+    "julich_inventory_sha256": "0aca22a20318041d0163da2e107eb5adf45ae7f3699cfeb43004975f0644df67",
+    "freesurfer_thalamus_names_sha256": "74b70bfa4fa75aa05a0bee9fcb548fa97bea20bfceef43b63a97c52a3923bfec",
+    "mesh_url": "https://meshb.nlm.nih.gov/record/ui?ui=D020656",
+    "mai2018": "doi:10.3389/fnana.2018.00114",
+    "iglesias2018": "doi:10.1016/j.neuroimage.2018.08.012",
+    "rolls2020_aal3": "doi:10.1016/j.neuroimage.2019.116189",
+    "kiwitz2022": "doi:10.3389/fnana.2022.837485",
+    "hirai_jones_1989": "doi:10.1016/0165-0173(89)90007-6",
+    "access_date": "2026-09-07"
+  }
+}

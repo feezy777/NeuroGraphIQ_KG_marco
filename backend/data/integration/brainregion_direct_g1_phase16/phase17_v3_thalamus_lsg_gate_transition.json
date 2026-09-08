@@ -1,0 +1,14 @@
+{
+  "gate_transition_id": "GATE-TRANSITION-THAL-LSG-01",
+  "transition_type": "CONSTRUCTION_GATE_UNBLOCK",
+  "previous_active_blocker": "DEC-THAL-04",
+  "adjudication_result": "THALAMUS_LSG_BOUNDARY_FROZEN_INCLUDE",
+  "construction_blocker_removed": true,
+  "remaining_active_construction_blockers": [],
+  "geometry_construction_gate": "PASSED",
+  "gate_note": "Gate PASSED unlocks geometry construction for the NEXT round only; this round performs NO geometry construction.",
+  "bn_postconstruction_direct_validation": "PENDING_POSTCONSTRUCTION",
+  "promotion": "BLOCKED",
+  "v2_historical_snapshot": "NOT_MODIFIED",
+  "source_contract_v2_sha256": "b18e3531cc88301631782f870ad7c8757cb75193028b6bb3e0f88e4f40ba1869"
+}

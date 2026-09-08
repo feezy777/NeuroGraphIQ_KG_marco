@@ -1,0 +1,56 @@
+{
+  "adjudication_round": "Phase1.7 V3 - Thalamus L-Sg / Limitans-Suprageniculate boundary",
+  "canonical_identity": "THALAMUS_PROPER (V2) = dorsal thalami mass",
+  "universe": [
+    "Nucleus limitans",
+    "Suprageniculate nucleus",
+    "L-Sg combined (FreeSurfer/Iglesias channel)"
+  ],
+  "decisions": {
+    "limitans": {
+      "decision": "INCLUDE",
+      "confidence": "HIGH",
+      "evidence_tiers": [
+        "HUMAN_CONTROLLED_TERMINOLOGY (MeSH)",
+        "HUMAN_CYTOARCHITECTONIC_ATLAS (Julich v3.1, Kiwitz 2022, Hirai&Jones 1989)",
+        "HUMAN_TERMINOLOGY (Mai 2018)",
+        "HUMAN_ATLAS_DOCUMENTATION (Rolls 2020)"
+      ]
+    },
+    "suprageniculate": {
+      "decision": "INCLUDE",
+      "confidence": "HIGH",
+      "evidence_tiers": [
+        "HUMAN_CONTROLLED_TERMINOLOGY (MeSH)",
+        "HUMAN_CYTOARCHITECTONIC_ATLAS (Julich v3.1, Kiwitz 2022, Hirai&Jones 1989)",
+        "HUMAN_TERMINOLOGY (Mai 2018)"
+      ]
+    },
+    "lsg_combined_freeSurfer_channel": {
+      "decision": "INCLUDE",
+      "confidence": "MEDIUM",
+      "evidence_tiers": [
+        "HUMAN_ATLAS_COVERAGE (Iglesias 2018/FreeSurfer inside Thalamus-Proper)",
+        "HUMAN_CYTOARCHITECTONIC_ATLAS (Julich v3.1 Li/Sg = posterior group)"
+      ]
+    }
+  },
+  "dec_thal_04": {
+    "previous": "REVIEW (V2 DEC-THAL-04, confidence low)",
+    "final": "INCLUDE",
+    "confidence": "HIGH",
+    "rationale": "Multiple independent HUMAN authoritative sources place the limitans and suprageniculate nuclei inside the THALAMIC / DORSAL-THALAMIC nuclear territory: (1) NLM MeSH D020656 (Posterior Thalamic Nuclei) lists both as narrower concepts under Thalamus > Thalamic Nuclei; (2) Julich-Brain v3.1 (human cytoarchitecture, local asset) places Li and Sg under dorsal thalamus > posterior group; (3) Mai 2018 (human common terminology) reports many authors add the suprageniculate-limitans nucleus as a fourth MGB division and notes the metathalamus label wrongly implies the geniculate bodies are not integral parts of the (dorsal) lateral thalamus; (4) Kiwitz 2022 (human BigBrain) defines the posterior nuclear complex as compact limitans + suprageniculate + posterior nucleus of the thalamus; (5) Hirai & Jones 1989 (human) use posterior complex (Po, L and Sg); (6) Iglesias 2018 / FreeSurfer segregate the L-Sg channel inside the Thalamus-Proper whole-thalami mask; (7) Rolls 2020 / AAL3 describes the nucleus limitans as 'a small nucleus of 12 voxels in the posterior group' - excluded from AAL3 ONLY for size, explicitly classified in the posterior group. No strong authoritative human evidence excludes Li/Sg from the dorsal thalami mass. AAL3 absence is an ATLAS_SIZE_OR_RESOLUTION exclusion, NOT an ONTOLOGICAL exclusion (section six of the gate). Animal studies (monkey, elephant) are OUT_OF_SCOPE_NON_HUMAN and did not enter this ruling.",
+    "v2_consistency": "MGN INCLUDE (DEC-THAL-02) and L-Sg INCLUDE are internally consistent: both are members of the dorsal thalami mass / posterior-nuclear-complex territory under the frozen THALAMUS_PROPER identity. L-Sg is NOT excluded for atlas size.",
+    "internal_consistency_check": "MGN INCLUDE <-> L-Sg INCLUDE consistent; no MGN-INCLUDE/L-Sg-EXCLUDE anomaly"
+  },
+  "non_human_evidence_excluded": [
+    "Burton & Jones 1976 (monkey) - OUT_OF_SCOPE_NON_HUMAN",
+    "Maseko 2013 (elephant) - OUT_OF_SCOPE_NON_HUMAN"
+  ],
+  "geometry_used": false,
+  "transform_used": false,
+  "resample_used": false,
+  "g4_g1_overlap_used": false,
+  "reclassification_used": false,
+  "final_verdict": "THALAMUS_LSG_BOUNDARY_FROZEN_INCLUDE"
+}
