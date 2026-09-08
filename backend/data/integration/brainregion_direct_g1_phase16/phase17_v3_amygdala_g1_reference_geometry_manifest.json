@@ -1,0 +1,189 @@
+{
+  "geometry_class": "AUTHORITATIVE_DERIVED_G1_GEOMETRY",
+  "derivation": "REFERENCE_GRID_RESAMPLING_FROM_FROZEN_NATIVE_G1_GEOMETRY",
+  "spatial_bridge_id": "SPB-MNI2009C-SYM-ASYM-SHARED-FRAME-V1",
+  "registration_applied": false,
+  "nonlinear_registration_applied": false,
+  "resampling_applied": true,
+  "interpolation": "LINEAR",
+  "template_variant_uncertainty": "PRESENT",
+  "residual_spatial_limitation": "TEMPLATE_VARIANT_ANATOMICAL_MISMATCH_NOT_EXPLICITLY_WARP_CORRECTED",
+  "direct_overlap_grid_ready": true,
+  "direct_validation_executed": false,
+  "reference_space": "MNI152NLin2009cAsym / Julich reference grid",
+  "entries": [
+    {
+      "geometry_id": "GEO-G1-AMYG-L-MNI2009CASYM-V1",
+      "canonical_region_id": "NGIQ-BR-00000253",
+      "hemisphere": "left",
+      "geometry_class": "AUTHORITATIVE_DERIVED_G1_GEOMETRY",
+      "derivation": "REFERENCE_GRID_RESAMPLING_FROM_FROZEN_NATIVE_G1_GEOMETRY",
+      "source_native_geometry": {
+        "geometry_id": "GEO-G1-AMYG-L-FS2009CSYM-V1",
+        "output_path": "data/atlases/derived_g1/left_amygdala_prob_icbm2009csym.nii.gz",
+        "output_sha256": "6aceaf66bc6f4baf5df430d9c65a7717d925564873dec00695940908f0c716c7"
+      },
+      "scope_contract": {
+        "id": "AMYGDALA_G1_SCOPE_CONTRACT_V1",
+        "verdict": "AMYGDALA_G1_SCOPE_FROZEN"
+      },
+      "spatial_bridge_id": "SPB-MNI2009C-SYM-ASYM-SHARED-FRAME-V1",
+      "interpolation": "LINEAR",
+      "output_path": "data/atlases/derived_g1/left_amygdala_prob_mni2009casym.nii.gz",
+      "output_sha256": "51229502646da36dabedeebc178d7e35f2a4f550f05dfbe9fc1ecf8aba784f28",
+      "output_grid": {
+        "shape": [
+          193,
+          229,
+          193
+        ],
+        "spacing_mm": 1.0,
+        "affine": [
+          [
+            1.0,
+            0.0,
+            0.0,
+            -96.0
+          ],
+          [
+            0.0,
+            1.0,
+            0.0,
+            -132.0
+          ],
+          [
+            0.0,
+            0.0,
+            1.0,
+            -78.0
+          ],
+          [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ]
+        ],
+        "qform_code": 4,
+        "sform_code": 4
+      },
+      "probability_min": 0.0,
+      "probability_max": 1.0,
+      "sum_probability_mass": 2318.676,
+      "weighted_volume_mm3": 2318.676,
+      "support_voxels": 4884,
+      "centroid_mm": [
+        -23.52,
+        -3.756,
+        -20.063
+      ],
+      "native_to_target_relative_volume_change": 0.0002,
+      "contralateral_mass_fraction": 0.0,
+      "template_variant_uncertainty": "PRESENT",
+      "residual_spatial_limitation": "TEMPLATE_VARIANT_ANATOMICAL_MISMATCH_NOT_EXPLICITLY_WARP_CORRECTED",
+      "direct_overlap_grid_ready": true,
+      "direct_validation_executed": false,
+      "registration_applied": false,
+      "nonlinear_registration_applied": false,
+      "resampling_applied": true,
+      "threshold_applied": false,
+      "binarization_applied": false,
+      "clipping_applied": false,
+      "normalization_applied": false,
+      "no_artificial_symmetrization": true,
+      "independent_from_g3_g1_mapping": true,
+      "circularity_risk": "NONE",
+      "script_version": "phase17_v3_construct_amygdala_g1_geometry.py v1",
+      "run_timestamp": "2026-09-08T07:48:52+00:00"
+    },
+    {
+      "geometry_id": "GEO-G1-AMYG-R-MNI2009CASYM-V1",
+      "canonical_region_id": "NGIQ-BR-00000261",
+      "hemisphere": "right",
+      "geometry_class": "AUTHORITATIVE_DERIVED_G1_GEOMETRY",
+      "derivation": "REFERENCE_GRID_RESAMPLING_FROM_FROZEN_NATIVE_G1_GEOMETRY",
+      "source_native_geometry": {
+        "geometry_id": "GEO-G1-AMYG-R-FS2009CSYM-V1",
+        "output_path": "data/atlases/derived_g1/right_amygdala_prob_icbm2009csym.nii.gz",
+        "output_sha256": "e3f7f2acbd6da0db94daf4ef16db8949aee029d146857edab1571e1502489b97"
+      },
+      "scope_contract": {
+        "id": "AMYGDALA_G1_SCOPE_CONTRACT_V1",
+        "verdict": "AMYGDALA_G1_SCOPE_FROZEN"
+      },
+      "spatial_bridge_id": "SPB-MNI2009C-SYM-ASYM-SHARED-FRAME-V1",
+      "interpolation": "LINEAR",
+      "output_path": "data/atlases/derived_g1/right_amygdala_prob_mni2009casym.nii.gz",
+      "output_sha256": "5dbf039922444e02c2e12b8bc0393b5330e5226520d6122efcacb59082a812fc",
+      "output_grid": {
+        "shape": [
+          193,
+          229,
+          193
+        ],
+        "spacing_mm": 1.0,
+        "affine": [
+          [
+            1.0,
+            0.0,
+            0.0,
+            -96.0
+          ],
+          [
+            0.0,
+            1.0,
+            0.0,
+            -132.0
+          ],
+          [
+            0.0,
+            0.0,
+            1.0,
+            -78.0
+          ],
+          [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ]
+        ],
+        "qform_code": 4,
+        "sform_code": 4
+      },
+      "probability_min": 0.0,
+      "probability_max": 1.0,
+      "sum_probability_mass": 2318.676,
+      "weighted_volume_mm3": 2318.676,
+      "support_voxels": 4884,
+      "centroid_mm": [
+        23.52,
+        -3.756,
+        -20.063
+      ],
+      "native_to_target_relative_volume_change": 0.0002,
+      "contralateral_mass_fraction": 0.0,
+      "template_variant_uncertainty": "PRESENT",
+      "residual_spatial_limitation": "TEMPLATE_VARIANT_ANATOMICAL_MISMATCH_NOT_EXPLICITLY_WARP_CORRECTED",
+      "direct_overlap_grid_ready": true,
+      "direct_validation_executed": false,
+      "registration_applied": false,
+      "nonlinear_registration_applied": false,
+      "resampling_applied": true,
+      "threshold_applied": false,
+      "binarization_applied": false,
+      "clipping_applied": false,
+      "normalization_applied": false,
+      "no_artificial_symmetrization": true,
+      "independent_from_g3_g1_mapping": true,
+      "circularity_risk": "NONE",
+      "script_version": "phase17_v3_construct_amygdala_g1_geometry.py v1",
+      "run_timestamp": "2026-09-08T07:48:52+00:00"
+    }
+  ],
+  "bilateral": {
+    "volume_ratio_L_over_R": 1.0
+  },
+  "script_version": "phase17_v3_construct_amygdala_g1_geometry.py v1",
+  "run_timestamp": "2026-09-08T07:48:52+00:00"
+}

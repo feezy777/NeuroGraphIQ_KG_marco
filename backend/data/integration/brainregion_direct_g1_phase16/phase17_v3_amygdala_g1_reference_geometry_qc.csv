@@ -1,0 +1,3 @@
+﻿geometry_id,hemisphere,output_sha256,shape,weighted_volume_mm3,centroid_mm,contralateral_mass_fraction,direct_overlap_grid_ready,direct_validation_executed
+GEO-G1-AMYG-L-MNI2009CASYM-V1,left,51229502646da36dabedeebc178d7e35f2a4f550f05dfbe9fc1ecf8aba784f28,193x229x193,2318.676,"-23.52,-3.76,-20.06",0.0,True,False
+GEO-G1-AMYG-R-MNI2009CASYM-V1,right,5dbf039922444e02c2e12b8bc0393b5330e5226520d6122efcacb59082a812fc,193x229x193,2318.676,"23.52,-3.76,-20.06",0.0,True,False

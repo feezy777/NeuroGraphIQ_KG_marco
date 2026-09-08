@@ -1,0 +1,31 @@
+﻿channel_index,numeric_label,official_name,anatomical_family,scope_decision,reason
+0,0,Unknown,BACKGROUND,EXCLUDE,background / non-Amygdala channel; excluded
+1,226,Hippocampal_tail,HIPPOCAMPAL,EXCLUDE,hippocampal subfield channel (200-series); NOT part of Amygdala scope
+2,236,subiculum-body,HIPPOCAMPAL,EXCLUDE,hippocampal subfield channel (200-series); NOT part of Amygdala scope
+3,238,CA1-body,HIPPOCAMPAL,EXCLUDE,hippocampal subfield channel (200-series); NOT part of Amygdala scope
+4,235,subiculum-head,HIPPOCAMPAL,EXCLUDE,hippocampal subfield channel (200-series); NOT part of Amygdala scope
+5,215,hippocampal-fissure,HIPPOCAMPAL,EXCLUDE,hippocampal subfield channel (200-series); NOT part of Amygdala scope
+6,233,presubiculum-head,HIPPOCAMPAL,EXCLUDE,hippocampal subfield channel (200-series); NOT part of Amygdala scope
+7,201,alveus,HIPPOCAMPAL,EXCLUDE,hippocampal subfield channel (200-series); NOT part of Amygdala scope
+8,237,CA1-head,HIPPOCAMPAL,EXCLUDE,hippocampal subfield channel (200-series); NOT part of Amygdala scope
+9,234,presubiculum-body,HIPPOCAMPAL,EXCLUDE,hippocampal subfield channel (200-series); NOT part of Amygdala scope
+10,203,parasubiculum,HIPPOCAMPAL,EXCLUDE,hippocampal subfield channel (200-series); NOT part of Amygdala scope
+11,245,molecular_layer_HP-head,HIPPOCAMPAL,EXCLUDE,hippocampal subfield channel (200-series); NOT part of Amygdala scope
+12,246,molecular_layer_HP-body,HIPPOCAMPAL,EXCLUDE,hippocampal subfield channel (200-series); NOT part of Amygdala scope
+13,243,GC-ML-DG-head,HIPPOCAMPAL,EXCLUDE,hippocampal subfield channel (200-series); NOT part of Amygdala scope
+14,240,CA3-body,HIPPOCAMPAL,EXCLUDE,hippocampal subfield channel (200-series); NOT part of Amygdala scope
+15,244,GC-ML-DG-body,HIPPOCAMPAL,EXCLUDE,hippocampal subfield channel (200-series); NOT part of Amygdala scope
+16,241,CA4-head,HIPPOCAMPAL,EXCLUDE,hippocampal subfield channel (200-series); NOT part of Amygdala scope
+17,242,CA4-body,HIPPOCAMPAL,EXCLUDE,hippocampal subfield channel (200-series); NOT part of Amygdala scope
+18,212,fimbria,HIPPOCAMPAL,EXCLUDE,hippocampal subfield channel (200-series); NOT part of Amygdala scope
+19,239,CA3-head,HIPPOCAMPAL,EXCLUDE,hippocampal subfield channel (200-series); NOT part of Amygdala scope
+20,211,HATA,TRANSITION_HATA,EXCLUDE,"HATA (hippocampo-amygdaloid transition area, label 211) is organized by the authoritative source LUT within the hippocampal-subfield group (200-series); excluded to keep the Amygdala geometry equal to the Iglesias amygdala nuclei and to avoid overlapping the hippocampal territory. Membership of AHi/HATA-type transition tissue is deferred to the separate IF/MF entity-type / transition global review; atlas coverage does not drive canonical membership."
+21,7001,Lateral-nucleus,AMYGDALA,INCLUDE,official amygdala sub-nucleus channel of the Iglesias/FreeSurfer HippoAmyg atlas; part of whole Amygdala
+22,7003,Basal-nucleus,AMYGDALA,INCLUDE,official amygdala sub-nucleus channel of the Iglesias/FreeSurfer HippoAmyg atlas; part of whole Amygdala
+23,7008,Accessory-Basal-nucleus,AMYGDALA,INCLUDE,official amygdala sub-nucleus channel of the Iglesias/FreeSurfer HippoAmyg atlas; part of whole Amygdala
+24,7010,Anterior-amygdaloid-area-AAA,AMYGDALA,INCLUDE,official amygdala sub-nucleus channel of the Iglesias/FreeSurfer HippoAmyg atlas; part of whole Amygdala
+25,7005,Central-nucleus,AMYGDALA,INCLUDE,official amygdala sub-nucleus channel of the Iglesias/FreeSurfer HippoAmyg atlas; part of whole Amygdala
+26,7006,Medial-nucleus,AMYGDALA,INCLUDE,official amygdala sub-nucleus channel of the Iglesias/FreeSurfer HippoAmyg atlas; part of whole Amygdala
+27,7007,Cortical-nucleus,AMYGDALA,INCLUDE,official amygdala sub-nucleus channel of the Iglesias/FreeSurfer HippoAmyg atlas; part of whole Amygdala
+28,7009,Corticoamygdaloid-transitio,AMYGDALA,INCLUDE,official amygdala sub-nucleus channel of the Iglesias/FreeSurfer HippoAmyg atlas; part of whole Amygdala
+29,7015,Paralaminar-nucleus,AMYGDALA,INCLUDE,official amygdala sub-nucleus channel of the Iglesias/FreeSurfer HippoAmyg atlas; part of whole Amygdala

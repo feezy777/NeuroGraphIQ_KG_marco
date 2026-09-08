@@ -1,0 +1,221 @@
+{
+  "geometry_class": "AUTHORITATIVE_DERIVED_G1_GEOMETRY",
+  "derivation": "PROBABILITY_CHANNEL_AGGREGATION_FROM_FROZEN_SCOPE",
+  "space_status": "SOURCE_NATIVE_ICBM2009C_SYMMETRIC",
+  "probability_semantics": "MUTUALLY_EXCLUSIVE_CATEGORICAL",
+  "aggregation_operator": "SUM",
+  "scope_contract": "AMYGDALA_G1_SCOPE_CONTRACT_V1",
+  "raw_left_sha256": "a79d5f88acfa21684a6f8c1e78da21e74ccbf152e68fb845fde048f451c4474e",
+  "raw_right_sha256": "4d20bb95435afc9a139279ae2a159d8dfbf3f1b1de0d07d901ff6cf08570e5a3",
+  "entries": [
+    {
+      "geometry_id": "GEO-G1-AMYG-L-FS2009CSYM-V1",
+      "canonical_region_id": "NGIQ-BR-00000253",
+      "hemisphere": "left",
+      "geometry_class": "AUTHORITATIVE_DERIVED_G1_GEOMETRY",
+      "derivation": "PROBABILITY_CHANNEL_AGGREGATION_FROM_FROZEN_SCOPE",
+      "source_asset": "a79d5f88acfa21684a6f8c1e78da21e74ccbf152e68fb845fde048f451c4474e",
+      "source_path": "data/atlases/external_raw/freesurfer_icbm2009c/hippocampus/HippoAmygProbs.MNIsymSpace.left.nii.gz",
+      "included_channels": [
+        7001,
+        7003,
+        7008,
+        7010,
+        7005,
+        7006,
+        7007,
+        7009,
+        7015
+      ],
+      "included_channel_indices": [
+        21,
+        22,
+        23,
+        24,
+        25,
+        26,
+        27,
+        28,
+        29
+      ],
+      "excluded_channel_count": 21,
+      "aggregation_operator": "SUM",
+      "probability_semantics": "MUTUALLY_EXCLUSIVE_CATEGORICAL",
+      "scope_contract_id": "AMYGDALA_G1_SCOPE_CONTRACT_V1",
+      "output_path": "data/atlases/derived_g1/left_amygdala_prob_icbm2009csym.nii.gz",
+      "output_sha256": "6aceaf66bc6f4baf5df430d9c65a7717d925564873dec00695940908f0c716c7",
+      "output_grid": {
+        "shape": [
+          164,
+          224,
+          196
+        ],
+        "spacing_mm": 0.25,
+        "affine": [
+          [
+            0.25,
+            0.0,
+            0.0,
+            -45.0
+          ],
+          [
+            0.0,
+            0.25,
+            0.0,
+            -49.0
+          ],
+          [
+            0.0,
+            0.0,
+            0.25,
+            -35.0
+          ],
+          [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ]
+        ],
+        "qform_code": 1,
+        "sform_code": 1
+      },
+      "probability_min": 0.0,
+      "probability_max": 1.0,
+      "sum_probability_mass": 148367.341,
+      "voxel_volume_mm3": 0.015625,
+      "weighted_volume_mm3": 2318.24,
+      "support_voxels": 311378,
+      "centroid_mm": [
+        -23.521,
+        -3.754,
+        -20.063
+      ],
+      "bounding_box_world_mm": [
+        -37.25,
+        -14.25,
+        -34.0
+      ],
+      "max_abs_conservation_residual": 0.0,
+      "hippocampal_contamination_argmax_fraction": 0.008907,
+      "threshold_applied": false,
+      "binarization_applied": false,
+      "clipping_applied": false,
+      "normalization_applied": false,
+      "registration_applied": false,
+      "resampling_applied": false,
+      "transform_id": null,
+      "independent_from_g3_g1_mapping": true,
+      "circularity_risk": "NONE",
+      "script_version": "phase17_v3_construct_amygdala_g1_geometry.py v1",
+      "run_timestamp": "2026-09-08T07:48:52+00:00"
+    },
+    {
+      "geometry_id": "GEO-G1-AMYG-R-FS2009CSYM-V1",
+      "canonical_region_id": "NGIQ-BR-00000261",
+      "hemisphere": "right",
+      "geometry_class": "AUTHORITATIVE_DERIVED_G1_GEOMETRY",
+      "derivation": "PROBABILITY_CHANNEL_AGGREGATION_FROM_FROZEN_SCOPE",
+      "source_asset": "4d20bb95435afc9a139279ae2a159d8dfbf3f1b1de0d07d901ff6cf08570e5a3",
+      "source_path": "data/atlases/external_raw/freesurfer_icbm2009c/hippocampus/HippoAmygProbs.MNIsymSpace.right.nii.gz",
+      "included_channels": [
+        7001,
+        7003,
+        7008,
+        7010,
+        7005,
+        7006,
+        7007,
+        7009,
+        7015
+      ],
+      "included_channel_indices": [
+        21,
+        22,
+        23,
+        24,
+        25,
+        26,
+        27,
+        28,
+        29
+      ],
+      "excluded_channel_count": 21,
+      "aggregation_operator": "SUM",
+      "probability_semantics": "MUTUALLY_EXCLUSIVE_CATEGORICAL",
+      "scope_contract_id": "AMYGDALA_G1_SCOPE_CONTRACT_V1",
+      "output_path": "data/atlases/derived_g1/right_amygdala_prob_icbm2009csym.nii.gz",
+      "output_sha256": "e3f7f2acbd6da0db94daf4ef16db8949aee029d146857edab1571e1502489b97",
+      "output_grid": {
+        "shape": [
+          164,
+          224,
+          196
+        ],
+        "spacing_mm": 0.25,
+        "affine": [
+          [
+            -0.25,
+            -0.0,
+            -0.0,
+            45.0
+          ],
+          [
+            0.0,
+            0.25,
+            0.0,
+            -49.0
+          ],
+          [
+            0.0,
+            0.0,
+            0.25,
+            -35.0
+          ],
+          [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ]
+        ],
+        "qform_code": 1,
+        "sform_code": 1
+      },
+      "probability_min": 0.0,
+      "probability_max": 1.0,
+      "sum_probability_mass": 148367.341,
+      "voxel_volume_mm3": 0.015625,
+      "weighted_volume_mm3": 2318.24,
+      "support_voxels": 311378,
+      "centroid_mm": [
+        23.521,
+        -3.754,
+        -20.063
+      ],
+      "bounding_box_world_mm": [
+        9.0,
+        -14.25,
+        -34.0
+      ],
+      "max_abs_conservation_residual": 0.0,
+      "hippocampal_contamination_argmax_fraction": 0.008907,
+      "threshold_applied": false,
+      "binarization_applied": false,
+      "clipping_applied": false,
+      "normalization_applied": false,
+      "registration_applied": false,
+      "resampling_applied": false,
+      "transform_id": null,
+      "independent_from_g3_g1_mapping": true,
+      "circularity_risk": "NONE",
+      "script_version": "phase17_v3_construct_amygdala_g1_geometry.py v1",
+      "run_timestamp": "2026-09-08T07:48:52+00:00"
+    }
+  ],
+  "bilateral": {
+    "volume_ratio_L_over_R": 1.0
+  },
+  "script_version": "phase17_v3_construct_amygdala_g1_geometry.py v1",
+  "run_timestamp": "2026-09-08T07:48:52+00:00"
+}

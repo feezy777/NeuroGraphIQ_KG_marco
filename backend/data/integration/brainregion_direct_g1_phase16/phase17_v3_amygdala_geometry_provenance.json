@@ -1,0 +1,108 @@
+{
+  "function": "Amygdala G1 authoritative reference geometry construction",
+  "canonical_identity": {
+    "left": {
+      "canonical_region_id": "NGIQ-BR-00000253",
+      "preferred_name": "Left Amygdala"
+    },
+    "right": {
+      "canonical_region_id": "NGIQ-BR-00000261",
+      "preferred_name": "Right Amygdala"
+    }
+  },
+  "canonical_identity_sources": [
+    "data/atlases/macro96/macro96_normalized_manifest.csv (G1_MACRO Left/Right Amygdala)",
+    "data/integration/brainregion_direct_g1_phase16/direct_g1_high_confidence.csv (NGIQ-BR-00000253 = Left Amygdala / NGIQ-BR-00000261 = Right Amygdala)",
+    "data/integration/brainregion_direct_g1_phase16/phase17_v3_classification.csv (candidate G1 macro target naming)"
+  ],
+  "canonical_definition_basis": "whole Amygdala (Iglesias/FreeSurfer amygdala sub-nucleus channels)",
+  "raw_source": {
+    "asset": "FreeSurfer/Iglesias HippoAmygProbs.MNIsymSpace",
+    "left_path": "data/atlases/external_raw/freesurfer_icbm2009c/hippocampus/HippoAmygProbs.MNIsymSpace.left.nii.gz",
+    "left_sha256": "a79d5f88acfa21684a6f8c1e78da21e74ccbf152e68fb845fde048f451c4474e",
+    "right_path": "data/atlases/external_raw/freesurfer_icbm2009c/hippocampus/HippoAmygProbs.MNIsymSpace.right.nii.gz",
+    "right_sha256": "4d20bb95435afc9a139279ae2a159d8dfbf3f1b1de0d07d901ff6cf08570e5a3",
+    "acquisition_recorded_sha256": "a79d5f88acfa21684a6f8c1e78da21e74ccbf152e68fb845fde048f451c4474e",
+    "channel_metadata_path": "data/atlases/external_raw/freesurfer_icbm2009c/hippocampus/HippoAmygProbs.MNIsymSpace.names.txt",
+    "channel_metadata_sha256": "16f01c45cb93876c56bf8aedc5eb0604ad742da5e0f051bf2846429a2db8ced5",
+    "channel_count": 30
+  },
+  "probability_semantics": {
+    "semantics": "MUTUALLY_EXCLUSIVE_CATEGORICAL",
+    "operator": "SUM",
+    "per_side": {
+      "left": {
+        "s_all_min": 1.0,
+        "s_all_mean": 1.0,
+        "s_all_median": 1.0,
+        "s_all_p95": 1.0,
+        "s_all_p99": 1.0,
+        "s_all_max": 1.0,
+        "semantics": "MUTUALLY_EXCLUSIVE_CATEGORICAL",
+        "evidence": "sum over all 30 channels == 1.0 at every voxel (normalized categorical posterior; channel 0 = background posterior)",
+        "aggregation_operator": "SUM"
+      },
+      "right": {
+        "s_all_min": 1.0,
+        "s_all_mean": 1.0,
+        "s_all_median": 1.0,
+        "s_all_p95": 1.0,
+        "s_all_p99": 1.0,
+        "s_all_max": 1.0,
+        "semantics": "MUTUALLY_EXCLUSIVE_CATEGORICAL",
+        "evidence": "sum over all 30 channels == 1.0 at every voxel (normalized categorical posterior; channel 0 = background posterior)",
+        "aggregation_operator": "SUM"
+      }
+    }
+  },
+  "scope_contract": {
+    "path": "data/integration/brainregion_direct_g1_phase16/phase17_v3_amygdala_g1_scope_contract_v1.json",
+    "verdict": "AMYGDALA_G1_SCOPE_FROZEN",
+    "sha256": "61ff5cfd9b29eb03d3579d6dad88371bfc1d2111ba73358107136dbf37d03da8"
+  },
+  "native_geometry": {
+    "manifest": "data/integration/brainregion_direct_g1_phase16/phase17_v3_amygdala_g1_native_geometry_manifest.json",
+    "manifest_sha256": "c7c196e81b4b000b2b3686fafa37703e60b12b29d4135e21ca7dc2e1427db88d",
+    "left_sha256": "6aceaf66bc6f4baf5df430d9c65a7717d925564873dec00695940908f0c716c7",
+    "right_sha256": "e3f7f2acbd6da0db94daf4ef16db8949aee029d146857edab1571e1502489b97"
+  },
+  "spatial_bridge": {
+    "manifest": "data/integration/brainregion_direct_g1_phase16/phase17_v3_amygdala_spatial_bridge_manifest.json",
+    "manifest_sha256": "b4ac9dc6689bea97794481e59a86f854ca9131da6b37bb315d3748e199354298",
+    "spatial_bridge_id": "SPB-MNI2009C-SYM-ASYM-SHARED-FRAME-V1"
+  },
+  "reference_geometry": {
+    "manifest": "data/integration/brainregion_direct_g1_phase16/phase17_v3_amygdala_g1_reference_geometry_manifest.json",
+    "manifest_sha256": "2a63242d778fff94c0d6ef7f9b1b6e17640d8c67d41fb730a8d04e2bf2d32295",
+    "left_sha256": "51229502646da36dabedeebc178d7e35f2a4f550f05dfbe9fc1ecf8aba784f28",
+    "right_sha256": "5dbf039922444e02c2e12b8bc0393b5330e5226520d6122efcacb59082a812fc"
+  },
+  "julich_reference": {
+    "path": "data/atlases/julich/v3.1/spatial_raw/probability_maps/ACBL_VENTRAL_STRIATUM_LATERAL_ACCUMBENS_LEFT.nii.gz",
+    "sha256": "185a1d6c179c91bb1f02b3fc0d128b4607504a775edfec48fcc1435d9240bfdf"
+  },
+  "registration_applied": false,
+  "nonlinear_registration_applied": false,
+  "resampling_applied": true,
+  "template_variant_uncertainty": "PRESENT",
+  "residual_spatial_limitation": "TEMPLATE_VARIANT_ANATOMICAL_MISMATCH_NOT_EXPLICITLY_WARP_CORRECTED",
+  "no_world_x_split": true,
+  "laterality_authority": "source-native left/right atlas files",
+  "if_mf_entity_type_review": "UNRESOLVED / INDEPENDENT (not resolved by this round)",
+  "independent_from_g3_g1_mapping": true,
+  "circularity_risk": "NONE",
+  "classification_csv": "NOT_TOUCHED",
+  "db_write": false,
+  "promotion": false,
+  "commit": false,
+  "software": {
+    "python_version": "3.13.12",
+    "platform": "Windows-11-10.0.26200-SP0",
+    "numpy_version": "2.2.0",
+    "scipy_version": "1.15.3",
+    "nibabel_version": "5.4.2"
+  },
+  "script": "phase17_v3_construct_amygdala_g1_geometry.py",
+  "script_version": "phase17_v3_construct_amygdala_g1_geometry.py v1",
+  "run_timestamp": "2026-09-08T07:48:52+00:00"
+}
