@@ -1,0 +1,701 @@
+{
+  "geometry_class": "AUTHORITATIVE_DERIVED_G1_GEOMETRY",
+  "derivation": "PROBABILITY_CHANNEL_SUM_FROM_FROZEN_SCOPE",
+  "space_status": "SOURCE_NATIVE_ICBM2009C_SYMMETRIC",
+  "entries": [
+    {
+      "geometry_id": "GEO-G1-THAL-L-FS2009CSYM-V1",
+      "canonical_region_id": "NGIQ-BR-00000247",
+      "hemisphere": "left",
+      "source_asset_id": "FreeSurfer/Iglesias ThalamusProbs.MNIsymSpace",
+      "source_path": "data/atlases/external_raw/freesurfer_icbm2009c/thalamus/ThalamusProbs.MNIsymSpace.nii.gz",
+      "source_sha256": "640377ae93cf0782365a698573970c2a429a775c6f64dcf9ac02536156b51f22",
+      "channel_metadata_path": "data/atlases/external_raw/freesurfer_icbm2009c/thalamus/ThalamusProbs.MNIsymSpace.names.txt",
+      "channel_metadata_sha256": "74b70bfa4fa75aa05a0bee9fcb548fa97bea20bfceef43b63a97c52a3923bfec",
+      "scope_contract_id": "THALAMUS_G1_SCOPE_CONTRACT_V3",
+      "scope_contract_sha256": "22e24a31bab9659769f7e550ee32f8e3b37887d0ae1a4c4c4cf64974c3c05f68",
+      "probability_semantics": "MUTUALLY_EXCLUSIVE_CATEGORICAL",
+      "aggregation_operator": "SUM",
+      "included_channels": [
+        {
+          "channel_index": 1,
+          "official_name": "Left-LGN",
+          "numeric_label": 8109,
+          "nucleus": "LGN",
+          "scope_decision_id": "DEC-THAL-01",
+          "decision": "INCLUDE"
+        },
+        {
+          "channel_index": 4,
+          "official_name": "Left-MGN",
+          "numeric_label": 8115,
+          "nucleus": "MGN",
+          "scope_decision_id": "DEC-THAL-02",
+          "decision": "INCLUDE"
+        },
+        {
+          "channel_index": 5,
+          "official_name": "Left-PuI",
+          "numeric_label": 8121,
+          "nucleus": "PuI",
+          "scope_decision_id": "THAL-SCOPE-04",
+          "decision": "INCLUDE"
+        },
+        {
+          "channel_index": 6,
+          "official_name": "Left-PuM",
+          "numeric_label": 8123,
+          "nucleus": "PuM",
+          "scope_decision_id": "THAL-SCOPE-04",
+          "decision": "INCLUDE"
+        },
+        {
+          "channel_index": 7,
+          "official_name": "Left-L-Sg",
+          "numeric_label": 8111,
+          "nucleus": "L-Sg",
+          "scope_decision_id": "DEC-THAL-04-LSG",
+          "decision": "INCLUDE"
+        },
+        {
+          "channel_index": 8,
+          "official_name": "Left-VPL",
+          "numeric_label": 8133,
+          "nucleus": "VPL",
+          "scope_decision_id": "THAL-SCOPE-07",
+          "decision": "INCLUDE"
+        },
+        {
+          "channel_index": 9,
+          "official_name": "Left-CM",
+          "numeric_label": 8106,
+          "nucleus": "CM",
+          "scope_decision_id": "THAL-SCOPE-08",
+          "decision": "INCLUDE"
+        },
+        {
+          "channel_index": 10,
+          "official_name": "Left-VLa",
+          "numeric_label": 8128,
+          "nucleus": "VLa",
+          "scope_decision_id": "THAL-SCOPE-07",
+          "decision": "INCLUDE"
+        },
+        {
+          "channel_index": 11,
+          "official_name": "Left-PuA",
+          "numeric_label": 8120,
+          "nucleus": "PuA",
+          "scope_decision_id": "THAL-SCOPE-04",
+          "decision": "INCLUDE"
+        },
+        {
+          "channel_index": 12,
+          "official_name": "Left-MDm",
+          "numeric_label": 8113,
+          "nucleus": "MDm",
+          "scope_decision_id": "THAL-SCOPE-06",
+          "decision": "INCLUDE"
+        },
+        {
+          "channel_index": 13,
+          "official_name": "Left-Pf",
+          "numeric_label": 8118,
+          "nucleus": "Pf",
+          "scope_decision_id": "THAL-SCOPE-08",
+          "decision": "INCLUDE"
+        },
+        {
+          "channel_index": 14,
+          "official_name": "Left-VAmc",
+          "numeric_label": 8127,
+          "nucleus": "VAmc",
+          "scope_decision_id": "THAL-SCOPE-14",
+          "decision": "INCLUDE"
+        },
+        {
+          "channel_index": 15,
+          "official_name": "Left-MDl",
+          "numeric_label": 8112,
+          "nucleus": "MDl",
+          "scope_decision_id": "THAL-SCOPE-06",
+          "decision": "INCLUDE"
+        },
+        {
+          "channel_index": 16,
+          "official_name": "Left-CeM",
+          "numeric_label": 8104,
+          "nucleus": "CeM",
+          "scope_decision_id": "THAL-SCOPE-08",
+          "decision": "INCLUDE"
+        },
+        {
+          "channel_index": 17,
+          "official_name": "Left-VA",
+          "numeric_label": 8126,
+          "nucleus": "VA",
+          "scope_decision_id": "THAL-SCOPE-07",
+          "decision": "INCLUDE"
+        },
+        {
+          "channel_index": 18,
+          "official_name": "Left-MV(Re)",
+          "numeric_label": 8116,
+          "nucleus": "MV(Re)",
+          "scope_decision_id": "THAL-SCOPE-09",
+          "decision": "INCLUDE"
+        },
+        {
+          "channel_index": 20,
+          "official_name": "Left-VM",
+          "numeric_label": 8130,
+          "nucleus": "VM",
+          "scope_decision_id": "THAL-SCOPE-07",
+          "decision": "INCLUDE"
+        },
+        {
+          "channel_index": 21,
+          "official_name": "Left-CL",
+          "numeric_label": 8105,
+          "nucleus": "CL",
+          "scope_decision_id": "THAL-SCOPE-08",
+          "decision": "INCLUDE"
+        },
+        {
+          "channel_index": 22,
+          "official_name": "Left-PuL",
+          "numeric_label": 8122,
+          "nucleus": "PuL",
+          "scope_decision_id": "THAL-SCOPE-04",
+          "decision": "INCLUDE"
+        },
+        {
+          "channel_index": 23,
+          "official_name": "Left-Pt",
+          "numeric_label": 8119,
+          "nucleus": "Pt",
+          "scope_decision_id": "THAL-SCOPE-09",
+          "decision": "INCLUDE"
+        },
+        {
+          "channel_index": 24,
+          "official_name": "Left-AV",
+          "numeric_label": 8103,
+          "nucleus": "AV",
+          "scope_decision_id": "THAL-SCOPE-05",
+          "decision": "INCLUDE"
+        },
+        {
+          "channel_index": 25,
+          "official_name": "Left-Pc",
+          "numeric_label": 8117,
+          "nucleus": "Pc",
+          "scope_decision_id": "THAL-SCOPE-08",
+          "decision": "INCLUDE"
+        },
+        {
+          "channel_index": 26,
+          "official_name": "Left-VLp",
+          "numeric_label": 8129,
+          "nucleus": "VLp",
+          "scope_decision_id": "THAL-SCOPE-07",
+          "decision": "INCLUDE"
+        },
+        {
+          "channel_index": 27,
+          "official_name": "Left-LP",
+          "numeric_label": 8110,
+          "nucleus": "LP",
+          "scope_decision_id": "THAL-SCOPE-11",
+          "decision": "INCLUDE"
+        },
+        {
+          "channel_index": 51,
+          "official_name": "Left-LD",
+          "numeric_label": 8108,
+          "nucleus": "LD",
+          "scope_decision_id": "THAL-SCOPE-11",
+          "decision": "INCLUDE"
+        }
+      ],
+      "excluded_channels": [
+        {
+          "channel_index": 19,
+          "official_name": "Left-R",
+          "numeric_label": 8125,
+          "nucleus": "R",
+          "scope_decision_id": "DEC-THAL-03",
+          "decision": "EXCLUDE"
+        }
+      ],
+      "background_channel": {
+        "channel_index": 0,
+        "official_name": "Unknown",
+        "scope": "EXCLUDE"
+      },
+      "derivation": "PROBABILITY_CHANNEL_SUM_FROM_FROZEN_SCOPE",
+      "threshold_applied": false,
+      "binarization_applied": false,
+      "clipping_applied": false,
+      "normalization_applied": false,
+      "registration_applied": false,
+      "resampling_applied": false,
+      "transform_id": null,
+      "source_space": "ICBM152_2009c_symmetric",
+      "output_space": "ICBM152_2009c_symmetric",
+      "output_path": "data/atlases/derived_g1/left_thalamus_proper_prob_icbm2009csym.nii.gz",
+      "output_sha256": "2c9d3d2d7823a02749c77a7084339d503fcb251b5db53b7791e2f008b43f2ba8",
+      "independent_from_g3_g1_mapping": true,
+      "circularity_risk": "NONE",
+      "script": "phase17_v3_construct_thalamus_g1_native_geometry.py",
+      "script_version": "phase17_v3_construct_thalamus_g1_native_geometry.py v1",
+      "run_timestamp": "2026-09-08T03:15:55+00:00"
+    },
+    {
+      "geometry_id": "GEO-G1-THAL-R-FS2009CSYM-V1",
+      "canonical_region_id": "NGIQ-BR-00000256",
+      "hemisphere": "right",
+      "source_asset_id": "FreeSurfer/Iglesias ThalamusProbs.MNIsymSpace",
+      "source_path": "data/atlases/external_raw/freesurfer_icbm2009c/thalamus/ThalamusProbs.MNIsymSpace.nii.gz",
+      "source_sha256": "640377ae93cf0782365a698573970c2a429a775c6f64dcf9ac02536156b51f22",
+      "channel_metadata_path": "data/atlases/external_raw/freesurfer_icbm2009c/thalamus/ThalamusProbs.MNIsymSpace.names.txt",
+      "channel_metadata_sha256": "74b70bfa4fa75aa05a0bee9fcb548fa97bea20bfceef43b63a97c52a3923bfec",
+      "scope_contract_id": "THALAMUS_G1_SCOPE_CONTRACT_V3",
+      "scope_contract_sha256": "22e24a31bab9659769f7e550ee32f8e3b37887d0ae1a4c4c4cf64974c3c05f68",
+      "probability_semantics": "MUTUALLY_EXCLUSIVE_CATEGORICAL",
+      "aggregation_operator": "SUM",
+      "included_channels": [
+        {
+          "channel_index": 2,
+          "official_name": "Right-LGN",
+          "numeric_label": 8209,
+          "nucleus": "LGN",
+          "scope_decision_id": "DEC-THAL-01",
+          "decision": "INCLUDE"
+        },
+        {
+          "channel_index": 3,
+          "official_name": "Right-MGN",
+          "numeric_label": 8215,
+          "nucleus": "MGN",
+          "scope_decision_id": "DEC-THAL-02",
+          "decision": "INCLUDE"
+        },
+        {
+          "channel_index": 28,
+          "official_name": "Right-PuI",
+          "numeric_label": 8221,
+          "nucleus": "PuI",
+          "scope_decision_id": "THAL-SCOPE-04",
+          "decision": "INCLUDE"
+        },
+        {
+          "channel_index": 29,
+          "official_name": "Right-PuM",
+          "numeric_label": 8223,
+          "nucleus": "PuM",
+          "scope_decision_id": "THAL-SCOPE-04",
+          "decision": "INCLUDE"
+        },
+        {
+          "channel_index": 30,
+          "official_name": "Right-L-Sg",
+          "numeric_label": 8211,
+          "nucleus": "L-Sg",
+          "scope_decision_id": "DEC-THAL-04-LSG",
+          "decision": "INCLUDE"
+        },
+        {
+          "channel_index": 31,
+          "official_name": "Right-VPL",
+          "numeric_label": 8233,
+          "nucleus": "VPL",
+          "scope_decision_id": "THAL-SCOPE-07",
+          "decision": "INCLUDE"
+        },
+        {
+          "channel_index": 32,
+          "official_name": "Right-CM",
+          "numeric_label": 8206,
+          "nucleus": "CM",
+          "scope_decision_id": "THAL-SCOPE-08",
+          "decision": "INCLUDE"
+        },
+        {
+          "channel_index": 33,
+          "official_name": "Right-VLa",
+          "numeric_label": 8228,
+          "nucleus": "VLa",
+          "scope_decision_id": "THAL-SCOPE-07",
+          "decision": "INCLUDE"
+        },
+        {
+          "channel_index": 34,
+          "official_name": "Right-PuA",
+          "numeric_label": 8220,
+          "nucleus": "PuA",
+          "scope_decision_id": "THAL-SCOPE-04",
+          "decision": "INCLUDE"
+        },
+        {
+          "channel_index": 35,
+          "official_name": "Right-MDm",
+          "numeric_label": 8213,
+          "nucleus": "MDm",
+          "scope_decision_id": "THAL-SCOPE-06",
+          "decision": "INCLUDE"
+        },
+        {
+          "channel_index": 36,
+          "official_name": "Right-Pf",
+          "numeric_label": 8218,
+          "nucleus": "Pf",
+          "scope_decision_id": "THAL-SCOPE-08",
+          "decision": "INCLUDE"
+        },
+        {
+          "channel_index": 37,
+          "official_name": "Right-VAmc",
+          "numeric_label": 8227,
+          "nucleus": "VAmc",
+          "scope_decision_id": "THAL-SCOPE-14",
+          "decision": "INCLUDE"
+        },
+        {
+          "channel_index": 38,
+          "official_name": "Right-MDl",
+          "numeric_label": 8212,
+          "nucleus": "MDl",
+          "scope_decision_id": "THAL-SCOPE-06",
+          "decision": "INCLUDE"
+        },
+        {
+          "channel_index": 40,
+          "official_name": "Right-VA",
+          "numeric_label": 8226,
+          "nucleus": "VA",
+          "scope_decision_id": "THAL-SCOPE-07",
+          "decision": "INCLUDE"
+        },
+        {
+          "channel_index": 41,
+          "official_name": "Right-MV(Re)",
+          "numeric_label": 8216,
+          "nucleus": "MV(Re)",
+          "scope_decision_id": "THAL-SCOPE-09",
+          "decision": "INCLUDE"
+        },
+        {
+          "channel_index": 42,
+          "official_name": "Right-CeM",
+          "numeric_label": 8204,
+          "nucleus": "CeM",
+          "scope_decision_id": "THAL-SCOPE-08",
+          "decision": "INCLUDE"
+        },
+        {
+          "channel_index": 43,
+          "official_name": "Right-VM",
+          "numeric_label": 8230,
+          "nucleus": "VM",
+          "scope_decision_id": "THAL-SCOPE-07",
+          "decision": "INCLUDE"
+        },
+        {
+          "channel_index": 44,
+          "official_name": "Right-PuL",
+          "numeric_label": 8222,
+          "nucleus": "PuL",
+          "scope_decision_id": "THAL-SCOPE-04",
+          "decision": "INCLUDE"
+        },
+        {
+          "channel_index": 45,
+          "official_name": "Right-CL",
+          "numeric_label": 8205,
+          "nucleus": "CL",
+          "scope_decision_id": "THAL-SCOPE-08",
+          "decision": "INCLUDE"
+        },
+        {
+          "channel_index": 46,
+          "official_name": "Right-VLp",
+          "numeric_label": 8229,
+          "nucleus": "VLp",
+          "scope_decision_id": "THAL-SCOPE-07",
+          "decision": "INCLUDE"
+        },
+        {
+          "channel_index": 47,
+          "official_name": "Right-Pc",
+          "numeric_label": 8217,
+          "nucleus": "Pc",
+          "scope_decision_id": "THAL-SCOPE-08",
+          "decision": "INCLUDE"
+        },
+        {
+          "channel_index": 48,
+          "official_name": "Right-Pt",
+          "numeric_label": 8219,
+          "nucleus": "Pt",
+          "scope_decision_id": "THAL-SCOPE-09",
+          "decision": "INCLUDE"
+        },
+        {
+          "channel_index": 49,
+          "official_name": "Right-AV",
+          "numeric_label": 8203,
+          "nucleus": "AV",
+          "scope_decision_id": "THAL-SCOPE-05",
+          "decision": "INCLUDE"
+        },
+        {
+          "channel_index": 50,
+          "official_name": "Right-LP",
+          "numeric_label": 8210,
+          "nucleus": "LP",
+          "scope_decision_id": "THAL-SCOPE-11",
+          "decision": "INCLUDE"
+        },
+        {
+          "channel_index": 52,
+          "official_name": "Right-LD",
+          "numeric_label": 8208,
+          "nucleus": "LD",
+          "scope_decision_id": "THAL-SCOPE-11",
+          "decision": "INCLUDE"
+        }
+      ],
+      "excluded_channels": [
+        {
+          "channel_index": 39,
+          "official_name": "Right-R",
+          "numeric_label": 8225,
+          "nucleus": "R",
+          "scope_decision_id": "DEC-THAL-03",
+          "decision": "EXCLUDE"
+        }
+      ],
+      "background_channel": {
+        "channel_index": 0,
+        "official_name": "Unknown",
+        "scope": "EXCLUDE"
+      },
+      "derivation": "PROBABILITY_CHANNEL_SUM_FROM_FROZEN_SCOPE",
+      "threshold_applied": false,
+      "binarization_applied": false,
+      "clipping_applied": false,
+      "normalization_applied": false,
+      "registration_applied": false,
+      "resampling_applied": false,
+      "transform_id": null,
+      "source_space": "ICBM152_2009c_symmetric",
+      "output_space": "ICBM152_2009c_symmetric",
+      "output_path": "data/atlases/derived_g1/right_thalamus_proper_prob_icbm2009csym.nii.gz",
+      "output_sha256": "e9e93d593ddc073431d3e8d2da3e1d16e89e05ec213f9e24d6659caa9c926ae2",
+      "independent_from_g3_g1_mapping": true,
+      "circularity_risk": "NONE",
+      "script": "phase17_v3_construct_thalamus_g1_native_geometry.py",
+      "script_version": "phase17_v3_construct_thalamus_g1_native_geometry.py v1",
+      "run_timestamp": "2026-09-08T03:15:55+00:00"
+    }
+  ],
+  "source": {
+    "shape": [
+      138,
+      106,
+      94,
+      53
+    ],
+    "spacing_mm": 0.5,
+    "channel_count": 53,
+    "affine": [
+      [
+        0.5,
+        0.0,
+        0.0,
+        -34.0
+      ],
+      [
+        0.0,
+        0.5,
+        0.0,
+        -46.0
+      ],
+      [
+        0.0,
+        0.0,
+        0.5,
+        -19.0
+      ],
+      [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ]
+    ],
+    "qform_code": 1,
+    "sform_code": 1,
+    "space": "ICBM152_2009c_symmetric"
+  },
+  "v3_scope": {
+    "contract_id": "THALAMUS_G1_SCOPE_CONTRACT_V3",
+    "sha256": "22e24a31bab9659769f7e550ee32f8e3b37887d0ae1a4c4c4cf64974c3c05f68",
+    "decision_summary": {
+      "LGN": "INCLUDE DEC-THAL-01",
+      "MGN": "INCLUDE DEC-THAL-02",
+      "reticular": "EXCLUDE DEC-THAL-03",
+      "limitans": "INCLUDE DEC-THAL-04-LI",
+      "suprageniculate": "INCLUDE DEC-THAL-04-SG",
+      "l_sg_channel": "INCLUDE DEC-THAL-04-LSG"
+    }
+  },
+  "reticular_exclusion_qc": {
+    "left": {
+      "all26_mass": 76718.98974622042,
+      "g1_mass": 72645.62485183321,
+      "r_mass": 4073.3648943872477,
+      "max_abs_residual": 0.0,
+      "mean_abs_residual": 0.0,
+      "nonzero_residual_voxels": 0
+    },
+    "right": {
+      "all26_mass": 76718.98974622047,
+      "g1_mass": 72645.62485183321,
+      "r_mass": 4073.3648943872477,
+      "max_abs_residual": 0.0,
+      "mean_abs_residual": 0.0,
+      "nonzero_residual_voxels": 0
+    }
+  },
+  "atlas_conservation": {
+    "background_plus_52_nuclei": {
+      "min": 0.9999999469146132,
+      "mean": 0.9999999999927052,
+      "median": 1.0,
+      "p95": 1.0000000149011612,
+      "p99": 1.0000000298896339,
+      "max": 1.0000000521540642,
+      "frac_gt_1plus": 0.0,
+      "frac_lt_0": 0.0
+    }
+  },
+  "qc_left": {
+    "geometry_id": "GEO-G1-THAL-L-FS2009CSYM-V1",
+    "hemisphere": "left",
+    "included_channel_count": 25,
+    "excluded_channel_count": 1,
+    "probability_min": 0.0,
+    "probability_max": 1.0000000887121132,
+    "sum_probability_mass": 72645.62485183321,
+    "voxel_volume_mm3": 0.125,
+    "weighted_volume_mm3": 9080.703106479152,
+    "nonzero_support_voxels": 134809,
+    "weighted_centroid_mm": [
+      -11.24019372013143,
+      -18.908388772486518,
+      6.038820542398757
+    ],
+    "bounding_box_voxel": [
+      [
+        0,
+        15,
+        12
+      ],
+      [
+        72,
+        98,
+        80
+      ]
+    ],
+    "bounding_box_world_mm": [
+      [
+        -34.0,
+        -38.5,
+        -13.0
+      ],
+      [
+        2.0,
+        3.0,
+        21.0
+      ]
+    ],
+    "laterality_source": "SOURCE_NATIVE_CHANNEL_IDENTITY",
+    "laterality_expected": "x<0",
+    "contralateral_support_anomaly": {
+      "left": 0.0032682875743982685,
+      "right": 0.19409137601246843
+    },
+    "max_probability": 1.0000000887121132
+  },
+  "qc_right": {
+    "geometry_id": "GEO-G1-THAL-R-FS2009CSYM-V1",
+    "hemisphere": "right",
+    "included_channel_count": 25,
+    "excluded_channel_count": 1,
+    "probability_min": 0.0,
+    "probability_max": 1.0000000887121132,
+    "sum_probability_mass": 72645.62485183321,
+    "voxel_volume_mm3": 0.125,
+    "weighted_volume_mm3": 9080.703106479152,
+    "nonzero_support_voxels": 134809,
+    "weighted_centroid_mm": [
+      11.740193720131431,
+      -18.908388772486525,
+      6.038820542398761
+    ],
+    "bounding_box_voxel": [
+      [
+        65,
+        15,
+        12
+      ],
+      [
+        137,
+        98,
+        80
+      ]
+    ],
+    "bounding_box_world_mm": [
+      [
+        -1.5,
+        -38.5,
+        -13.0
+      ],
+      [
+        34.5,
+        3.0,
+        21.0
+      ]
+    ],
+    "laterality_source": "SOURCE_NATIVE_CHANNEL_IDENTITY",
+    "laterality_expected": "x>0",
+    "contralateral_support_anomaly": {
+      "left": 0.19281296726185282,
+      "right": 0.0019865633929203957
+    },
+    "max_probability": 1.0000000887121132
+  },
+  "bilateral_qc": {
+    "weighted_volume_ratio_L_over_R": 1.0,
+    "support_ratio_L_over_R": 1.0,
+    "centroid_symmetry": {
+      "L": [
+        -11.24019372013143,
+        -18.908388772486518,
+        6.038820542398757
+      ],
+      "R": [
+        11.740193720131431,
+        -18.908388772486525,
+        6.038820542398761
+      ]
+    }
+  },
+  "julich_readiness": {
+    "direct_g4_overlap_ready": false,
+    "transform_required": "SYMMETRIC_TO_ASYMMETRIC_TEMPLATE_TRANSFORM_REQUIRED",
+    "note": "native geometry is NOT Julich-ready; Sym->Asym transform is a LATER round"
+  }
+}

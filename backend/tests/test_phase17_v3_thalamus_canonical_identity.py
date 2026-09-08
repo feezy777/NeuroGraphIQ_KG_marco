@@ -142,7 +142,10 @@ def test_11_no_geometry_in_decision():
 @pytest.mark.skipif(not _HAS_V2, reason="V2 contract not present")
 def test_12_13_no_nifti_no_transform():
     assert _v2()["construction_allowed"] is False
-    assert not list(Path(BACKEND, "data", "atlases", "derived_g1").rglob("*thalamus*.nii.gz"))
+    _authorized = {"left_thalamus_proper_prob_icbm2009csym.nii.gz",
+                   "right_thalamus_proper_prob_icbm2009csym.nii.gz"}
+    present = {p.name for p in Path(BACKEND, "data", "atlases", "derived_g1").rglob("*thalamus*.nii.gz")}
+    assert present <= _authorized, present
     md = OUT_MD.read_text(encoding="utf-8")
     assert "no transform" in md.lower() or "no geometry" in md.lower()
 

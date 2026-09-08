@@ -143,8 +143,12 @@ def test_12_14_no_geometry_no_transforms():
     assert c["verdict"] in ("THALAMUS_G1_SCOPE_FROZEN",
                             "THALAMUS_G1_SCOPE_PARTIALLY_FROZEN",
                             "THALAMUS_G1_SCOPE_UNRESOLVED")
-    # no geometry produced by the scope script
-    assert not list(Path(BACKEND, "data", "atlases", "derived_g1").rglob("*thalamus*.nii.gz"))
+    # the scope script produces no geometry: derived_g1 holds only the geometry
+    # that later rounds explicitly authorized in the native-geometry manifest
+    _authorized = {"left_thalamus_proper_prob_icbm2009csym.nii.gz",
+                   "right_thalamus_proper_prob_icbm2009csym.nii.gz"}
+    present = {p.name for p in Path(BACKEND, "data", "atlases", "derived_g1").rglob("*thalamus*.nii.gz")}
+    assert present <= _authorized, present
     # scope script has no transform/resample execution (static check of outputs text)
     md = OUT_MD.read_text(encoding="utf-8")
     assert "no transform" in md.lower() or "no NIfTI" in md.lower()

@@ -158,8 +158,11 @@ def test_9_to_12_no_transform_flags():
     for f in ("registration_applied", "resampling_applied",
               "threshold_applied", "binarization_applied"):
         assert m["flags"][f] is False
-    # script must not emit left/right geometry files
-    assert not list(Path(BACKEND, "data", "atlases", "derived_g1").rglob("*thalamus*.nii.gz"))
+    # script must not emit left/right geometry files beyond the manifest-authorized set
+    _authorized = {"left_thalamus_proper_prob_icbm2009csym.nii.gz",
+                   "right_thalamus_proper_prob_icbm2009csym.nii.gz"}
+    present = {p.name for p in Path(BACKEND, "data", "atlases", "derived_g1").rglob("*thalamus*.nii.gz")}
+    assert present <= _authorized, present
 
 
 # ---- 8b. Iglesias DOI corrected ----

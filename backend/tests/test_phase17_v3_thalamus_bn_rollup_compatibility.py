@@ -204,7 +204,10 @@ def test_16_no_db():
 
 # ---- 17. no geometry ----
 def test_17_no_geometry():
-    assert not list(Path(BACKEND, "data", "atlases", "derived_g1").rglob("*thalamus*.nii.gz"))
+    _authorized = {"left_thalamus_proper_prob_icbm2009csym.nii.gz",
+                   "right_thalamus_proper_prob_icbm2009csym.nii.gz"}
+    present = {p.name for p in Path(BACKEND, "data", "atlases", "derived_g1").rglob("*thalamus*.nii.gz")}
+    assert present <= _authorized, present
 
 
 # ---- 18. no transform ----
@@ -315,7 +318,10 @@ def test_g9_non_lsg_direct_validation():
 
 # ---- G10. no geometry construction ----
 def test_g10_no_geometry():
-    assert not list(Path(BACKEND, "data", "atlases", "derived_g1").rglob("*thalamus*.nii.gz"))
+    _authorized = {"left_thalamus_proper_prob_icbm2009csym.nii.gz",
+                   "right_thalamus_proper_prob_icbm2009csym.nii.gz"}
+    present = {p.name for p in Path(BACKEND, "data", "atlases", "derived_g1").rglob("*thalamus*.nii.gz")}
+    assert present <= _authorized, present
     assert _sum()["geometry_construction"] == "BLOCKED_BY_LSG_ONLY"
 
 

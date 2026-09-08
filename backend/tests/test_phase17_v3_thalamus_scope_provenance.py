@@ -165,13 +165,20 @@ def test_12_classification_unchanged():
 def test_13_no_db_artifacts():
     # this round only adds provenance records under the integration audit dir
     assert V1_SIDE.exists() and LINEAGE.exists()
-    # no geometry produced
-    assert not list(Path(BACKEND, "data", "atlases", "derived_g1").rglob("*thalamus*.nii.gz"))
+    # no geometry produced by this round; derived_g1 may only hold the manifest-
+    # authorized native G1 geometry volumes (from a later construction round)
+    _authorized = {"left_thalamus_proper_prob_icbm2009csym.nii.gz",
+                   "right_thalamus_proper_prob_icbm2009csym.nii.gz"}
+    present = {p.name for p in Path(BACKEND, "data", "atlases", "derived_g1").rglob("*thalamus*.nii.gz")}
+    assert present <= _authorized, present
 
 
-# ---- 14. no NIfTI ----
+# ---- 14. no unexpected NIfTI ----
 def test_14_no_nifti():
-    assert not list(Path(BACKEND, "data", "atlases", "derived_g1").rglob("*thalamus*.nii.gz"))
+    _authorized = {"left_thalamus_proper_prob_icbm2009csym.nii.gz",
+                   "right_thalamus_proper_prob_icbm2009csym.nii.gz"}
+    present = {p.name for p in Path(BACKEND, "data", "atlases", "derived_g1").rglob("*thalamus*.nii.gz")}
+    assert present <= _authorized, present
 
 
 # ---- 15. audit artifact confirms read-only provenance repair ----
