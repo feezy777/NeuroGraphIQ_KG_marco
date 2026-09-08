@@ -1,0 +1,3 @@
+﻿hemisphere,g1_entity_id,total_g1_volume_mm3_equiv,bn_covered_g1_volume_mm3_equiv,uncovered_g1_volume_mm3_equiv,union_coverage_ratio,bn_union_support_voxels,top_parcel,top_parcel_g1_coverage,n_nonzero_overlap_parcels,n_parcels_evaluated,contralateral_overlap_ratio,strict_ipsilateral_wrongside_mass_fraction,cross_midline_leak_parcels,method
+left,NGIQ-BR-00000247,9080.456,8883.511,196.944,0.978311,18480,Tha_L_8_6,0.171579,8,8,0.033276,0.0,"[{'parcel': 'Tha_R_8_4', 'cross_midline_mass_fraction': 0.0948}]",union counted once; weighted by P_G1; world-X used for ipsilateral QC only
+right,NGIQ-BR-00000256,9080.571,8805.5,275.07,0.969708,16755,Tha_R_8_5,0.179753,8,8,0.000327,0.0,[],union counted once; weighted by P_G1; world-X used for ipsilateral QC only

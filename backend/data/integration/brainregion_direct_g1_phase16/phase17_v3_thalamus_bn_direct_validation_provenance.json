@@ -1,0 +1,59 @@
+{
+  "g1_left": {
+    "path": "data/atlases/derived_g1/left_thalamus_proper_prob_mni2009casym.nii.gz",
+    "sha256": "bd431608fcea3c5f0f7387b1b0e1010582fa2e39dae95a300b3bba976a10cc87"
+  },
+  "g1_right": {
+    "path": "data/atlases/derived_g1/right_thalamus_proper_prob_mni2009casym.nii.gz",
+    "sha256": "73e4242b581f2420c316593f6cd85183ea7f99c29e2b817b0257cdf267c5bd3b"
+  },
+  "superseded_g1": {
+    "left": "37a82b65d86d81b1558582dee301e79ee367d60856f95d6a55b0219cf28a87a1",
+    "right": "1c9b8b8de9103c1e091c9fb6e0577182416d5a6ba0c1b7f6d41e1e913958253f",
+    "note": "never consumed as current evidence"
+  },
+  "brainnetome_source": {
+    "directory": "data/atlases/brainnetome/bna246/transformed_to_julich2009c/probability_maps",
+    "n_thal_parcels": 16,
+    "parcel_shas": {
+      "Tha_L_8_1": "f5e9e6210e4708fb58e2041d6645862510002d447d14d00e61e550e7c508a2e4",
+      "Tha_L_8_2": "2b5707eaeb835815464e023101b2b3111eda2a51a69e0045ed79a503f27d0558",
+      "Tha_L_8_3": "c1756b277c18b4e2587987a930c0d72ef5316ce29fc236b48c29f0baa207e690",
+      "Tha_L_8_4": "771c378b3d8f5dc9f9d63b248c7da276d414b057e23ba08ab37f816cfbc1ff85",
+      "Tha_L_8_5": "50617aeae80d660dba1cb76bd966969b23ed4be0bf1632e85e37c9c20fa94d1a",
+      "Tha_L_8_6": "9601195226ea5ee409cd3f75c880ce01b2be78dda59f34f0ff5f18f71af25ac8",
+      "Tha_L_8_7": "d13e509663c2c245e2a1e1686fbae8cdd43756a1cf68e01a8c9f9d02146bbe70",
+      "Tha_L_8_8": "9f7e950dc05d582b794b819cd0b9beac4997c36508a563d531a79c32317abbcf",
+      "Tha_R_8_1": "e10e031bead669126a6b1e3980e59f0ff68ec907bcb907047c66083eb9707c61",
+      "Tha_R_8_2": "7ede82c7aa9aeaa9c1c1135116573844a800181a4f7460fc4640b9d0f0f7f87f",
+      "Tha_R_8_3": "98c392af2e7420fac8b6044915a29f25237547d73f61fcb45483f63d3eb6b1af",
+      "Tha_R_8_4": "c17aa65a7786fe2cde44a5155ebafd5b3fc8215b6fb362186b00c14d65857822",
+      "Tha_R_8_5": "ff79339d1783123ff2f0e32ab6753d8695bbfc6af41e690fa085ce75a894e0bf",
+      "Tha_R_8_6": "455fc0cc0fa88c64fa61eddb46234089b61af1f1f02c23ae7f7c2553ffbe0fb8",
+      "Tha_R_8_7": "72573448061b7d6ac173641728989c6a4c0ac05c210c6bc3e4d06862ab516d21",
+      "Tha_R_8_8": "694acfe72956fd73559734ed5b201e4070f7cb32fb24ca1be07473dd5318fa36"
+    }
+  },
+  "julich_reference": {
+    "path": "data/atlases/julich/v3.1/spatial_raw/probability_maps/ACBL_VENTRAL_STRIATUM_LATERAL_ACCUMBENS_LEFT.nii.gz",
+    "sha256": "185a1d6c179c91bb1f02b3fc0d128b4607504a775edfec48fcc1435d9240bfdf"
+  },
+  "spatial_bridge_id": "SPB-MNI2009C-SYM-ASYM-SHARED-FRAME-V1",
+  "v3_contract_sha256": "22e24a31bab9659769f7e550ee32f8e3b37887d0ae1a4c4c4cf64974c3c05f68",
+  "g3_to_g1_frozen_manifest_sha256": "fd4023d14aeb46eb251ddf9e2a939c71fc6a0b53df7fb19057c526961b4ccd6b",
+  "registration_applied": false,
+  "resampling_applied": true,
+  "nonlinear_registration_applied": false,
+  "template_variant_uncertainty": "PRESENT",
+  "residual_spatial_limitation": "TEMPLATE_VARIANT_ANATOMICAL_MISMATCH_NOT_EXPLICITLY_WARP_CORRECTED",
+  "evidence_type": "DIRECT_SPATIAL_OVERLAP_IN_SHARED_MNI2009C_COORDINATE_FRAME",
+  "software": {
+    "python_version": "3.13.12",
+    "platform": "Windows-11-10.0.26200-SP0",
+    "numpy_version": "2.2.0",
+    "nibabel_version": "5.4.2"
+  },
+  "script": "phase17_v3_validate_thalamus_bn_direct_spatial.py",
+  "script_version": "phase17_v3_validate_thalamus_bn_direct_spatial.py v1",
+  "run_timestamp": "2026-09-08T06:34:54+00:00"
+}
