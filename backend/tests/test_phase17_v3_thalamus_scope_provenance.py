@@ -168,7 +168,9 @@ def test_13_no_db_artifacts():
     # no geometry produced by this round; derived_g1 may only hold the manifest-
     # authorized native G1 geometry volumes (from a later construction round)
     _authorized = {"left_thalamus_proper_prob_icbm2009csym.nii.gz",
-                   "right_thalamus_proper_prob_icbm2009csym.nii.gz"}
+                   "right_thalamus_proper_prob_icbm2009csym.nii.gz",
+                   "left_thalamus_proper_prob_mni2009casym.nii.gz",
+                   "right_thalamus_proper_prob_mni2009casym.nii.gz"}
     present = {p.name for p in Path(BACKEND, "data", "atlases", "derived_g1").rglob("*thalamus*.nii.gz")}
     assert present <= _authorized, present
 
@@ -176,7 +178,9 @@ def test_13_no_db_artifacts():
 # ---- 14. no unexpected NIfTI ----
 def test_14_no_nifti():
     _authorized = {"left_thalamus_proper_prob_icbm2009csym.nii.gz",
-                   "right_thalamus_proper_prob_icbm2009csym.nii.gz"}
+                   "right_thalamus_proper_prob_icbm2009csym.nii.gz",
+                   "left_thalamus_proper_prob_mni2009casym.nii.gz",
+                   "right_thalamus_proper_prob_mni2009casym.nii.gz"}
     present = {p.name for p in Path(BACKEND, "data", "atlases", "derived_g1").rglob("*thalamus*.nii.gz")}
     assert present <= _authorized, present
 

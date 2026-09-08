@@ -203,7 +203,9 @@ def test_13_no_geometry():
     # adjudication is ontology-only (no geometry used/emitted); derived_g1 may only
     # hold the native G1 volumes explicitly authorized by a later construction round
     _authorized = {"left_thalamus_proper_prob_icbm2009csym.nii.gz",
-                   "right_thalamus_proper_prob_icbm2009csym.nii.gz"}
+                   "right_thalamus_proper_prob_icbm2009csym.nii.gz",
+                   "left_thalamus_proper_prob_mni2009casym.nii.gz",
+                   "right_thalamus_proper_prob_mni2009casym.nii.gz"}
     present = {p.name for p in Path(BACKEND, "data", "atlases", "derived_g1").rglob("*thalamus*.nii.gz")}
     assert present <= _authorized, present
     assert _adj()["geometry_used"] is False

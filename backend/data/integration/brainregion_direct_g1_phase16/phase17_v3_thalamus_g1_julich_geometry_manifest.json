@@ -1,0 +1,211 @@
+{
+  "geometry_class": "AUTHORITATIVE_DERIVED_G1_GEOMETRY",
+  "derivation": "REFERENCE_GRID_RESAMPLING_FROM_NATIVE_G1_GEOMETRY",
+  "spatial_bridge_id": "SPB-MNI2009C-SYM-ASYM-SHARED-FRAME-V1",
+  "transform_id": null,
+  "registration_applied": false,
+  "nonlinear_registration_applied": false,
+  "deformation_field_applied": false,
+  "resampling_applied": true,
+  "space_status": "TARGET_MNI2009C_ASYMMETRIC",
+  "target_grid_ready": true,
+  "direct_overlap_grid_ready": true,
+  "authoritatively_registered_to_julich": false,
+  "template_variant_uncertainty": "PRESENT",
+  "direct_overlap_evidence_type": "DIRECT_SPATIAL_OVERLAP_IN_SHARED_MNI2009C_COORDINATE_FRAME",
+  "interpolation": "LINEAR",
+  "threshold_applied": false,
+  "binarization_applied": false,
+  "clipping_applied": false,
+  "normalization_applied": false,
+  "entries": [
+    {
+      "geometry_id": "GEO-G1-THAL-L-MNI2009CASYM-V1",
+      "canonical_region_id": "NGIQ-BR-00000247",
+      "hemisphere": "left",
+      "source_native_geometry": {
+        "geometry_id": "GEO-G1-THAL-L-FS2009CSYM-V1",
+        "path": "data/atlases/derived_g1/left_thalamus_proper_prob_icbm2009csym.nii.gz",
+        "sha256": "2c9d3d2d7823a02749c77a7084339d503fcb251b5db53b7791e2f008b43f2ba8"
+      },
+      "scope_contract": {
+        "id": "THALAMUS_G1_SCOPE_CONTRACT_V3",
+        "sha256": "22e24a31bab9659769f7e550ee32f8e3b37887d0ae1a4c4c4cf64974c3c05f68"
+      },
+      "spatial_bridge_id": "SPB-MNI2009C-SYM-ASYM-SHARED-FRAME-V1",
+      "target_grid": {
+        "shape": [
+          193,
+          229,
+          193
+        ],
+        "spacing_mm": 1.0,
+        "affine": [
+          [
+            1.0,
+            0.0,
+            0.0,
+            -96.0
+          ],
+          [
+            0.0,
+            1.0,
+            0.0,
+            -132.0
+          ],
+          [
+            0.0,
+            0.0,
+            1.0,
+            -78.0
+          ],
+          [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ]
+        ],
+        "reference": "ACBL_VENTRAL_STRIATUM_LATERAL_ACCUMBENS_LEFT.nii.gz"
+      },
+      "output_path": "data/atlases/derived_g1/left_thalamus_proper_prob_mni2009casym.nii.gz",
+      "output_sha256": "bd431608fcea3c5f0f7387b1b0e1010582fa2e39dae95a300b3bba976a10cc87",
+      "probability_qc": {
+        "geometry_id": "GEO-G1-THAL-L-MNI2009CASYM-V1",
+        "canonical_region_id": "NGIQ-BR-00000247",
+        "hemisphere": "left",
+        "p_min": 0.0,
+        "p_max": 1.0000001192092896,
+        "p_mean": 0.0010645291190078381,
+        "sum_probability_mass": 9080.455740248359,
+        "weighted_volume_mm3": 9080.455740248359,
+        "support_voxels": 16822,
+        "centroid_mm": [
+          -11.241,
+          -18.908,
+          6.039
+        ],
+        "bbox_voxel": [
+          [
+            62,
+            94,
+            65
+          ],
+          [
+            98,
+            135,
+            99
+          ]
+        ],
+        "native_weighted_volume_mm3": 9080.70307122063,
+        "relative_volume_change": -0.0,
+        "support_change": 0.1248,
+        "frac_p_lt_neg_tol": 0.0,
+        "frac_p_gt_1_tol": 0.0,
+        "contralateral_prob_fraction": 0.000241,
+        "output_sha256": "bd431608fcea3c5f0f7387b1b0e1010582fa2e39dae95a300b3bba976a10cc87"
+      },
+      "independent_from_g3_g1_mapping": true,
+      "circularity_risk": "NONE",
+      "script": "phase17_v3_transform_thalamus_g1_to_julich_space.py",
+      "script_version": "phase17_v3_transform_thalamus_g1_to_julich_space.py v2 (SHARED_FRAME_RESAMPLE)",
+      "run_timestamp": "2026-09-08T05:57:26+00:00"
+    },
+    {
+      "geometry_id": "GEO-G1-THAL-R-MNI2009CASYM-V1",
+      "canonical_region_id": "NGIQ-BR-00000256",
+      "hemisphere": "right",
+      "source_native_geometry": {
+        "geometry_id": "GEO-G1-THAL-R-FS2009CSYM-V1",
+        "path": "data/atlases/derived_g1/right_thalamus_proper_prob_icbm2009csym.nii.gz",
+        "sha256": "e9e93d593ddc073431d3e8d2da3e1d16e89e05ec213f9e24d6659caa9c926ae2"
+      },
+      "scope_contract": {
+        "id": "THALAMUS_G1_SCOPE_CONTRACT_V3",
+        "sha256": "22e24a31bab9659769f7e550ee32f8e3b37887d0ae1a4c4c4cf64974c3c05f68"
+      },
+      "spatial_bridge_id": "SPB-MNI2009C-SYM-ASYM-SHARED-FRAME-V1",
+      "target_grid": {
+        "shape": [
+          193,
+          229,
+          193
+        ],
+        "spacing_mm": 1.0,
+        "affine": [
+          [
+            1.0,
+            0.0,
+            0.0,
+            -96.0
+          ],
+          [
+            0.0,
+            1.0,
+            0.0,
+            -132.0
+          ],
+          [
+            0.0,
+            0.0,
+            1.0,
+            -78.0
+          ],
+          [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ]
+        ],
+        "reference": "ACBL_VENTRAL_STRIATUM_LATERAL_ACCUMBENS_LEFT.nii.gz"
+      },
+      "output_path": "data/atlases/derived_g1/right_thalamus_proper_prob_mni2009casym.nii.gz",
+      "output_sha256": "73e4242b581f2420c316593f6cd85183ea7f99c29e2b817b0257cdf267c5bd3b",
+      "probability_qc": {
+        "geometry_id": "GEO-G1-THAL-R-MNI2009CASYM-V1",
+        "canonical_region_id": "NGIQ-BR-00000256",
+        "hemisphere": "right",
+        "p_min": 0.0,
+        "p_max": 1.0000001192092896,
+        "p_mean": 0.0010645425960892564,
+        "sum_probability_mass": 9080.570700035876,
+        "weighted_volume_mm3": 9080.570700035876,
+        "support_voxels": 16873,
+        "centroid_mm": [
+          11.742,
+          -18.908,
+          6.038
+        ],
+        "bbox_voxel": [
+          [
+            95,
+            94,
+            65
+          ],
+          [
+            130,
+            135,
+            99
+          ]
+        ],
+        "native_weighted_volume_mm3": 9080.703071220632,
+        "relative_volume_change": -0.0,
+        "support_change": 0.1252,
+        "frac_p_lt_neg_tol": 0.0,
+        "frac_p_gt_1_tol": 0.0,
+        "contralateral_prob_fraction": 1.5e-05,
+        "output_sha256": "73e4242b581f2420c316593f6cd85183ea7f99c29e2b817b0257cdf267c5bd3b"
+      },
+      "independent_from_g3_g1_mapping": true,
+      "circularity_risk": "NONE",
+      "script": "phase17_v3_transform_thalamus_g1_to_julich_space.py",
+      "script_version": "phase17_v3_transform_thalamus_g1_to_julich_space.py v2 (SHARED_FRAME_RESAMPLE)",
+      "run_timestamp": "2026-09-08T05:57:26+00:00"
+    }
+  ],
+  "bilateral": {
+    "volume_ratio_L_over_R": 1.0
+  },
+  "residual_spatial_limitation": "TEMPLATE_VARIANT_ANATOMICAL_MISMATCH_NOT_EXPLICITLY_WARP_CORRECTED"
+}

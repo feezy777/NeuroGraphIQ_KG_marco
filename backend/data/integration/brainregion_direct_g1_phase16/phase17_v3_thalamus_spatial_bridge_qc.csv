@@ -1,0 +1,8 @@
+﻿metric,value
+identity_shared_frame_brain_dice,0.9872
+spatial_bridge_class,SHARED_COORDINATE_REFERENCE_GRID_RESAMPLING
+registration_applied,False
+nonlinear_registration_applied,False
+resampling_applied,True
+interpolation,LINEAR
+residual_spatial_limitation,TEMPLATE_VARIANT_ANATOMICAL_MISMATCH_NOT_EXPLICITLY_WARP_CORRECTED

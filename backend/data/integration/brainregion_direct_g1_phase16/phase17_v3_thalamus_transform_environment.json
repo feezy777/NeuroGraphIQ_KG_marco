@@ -1,0 +1,13 @@
+{
+  "python_version": "3.13.12",
+  "python_executable": "C:\\Users\\Administrator\\AppData\\Local\\Programs\\Python\\Python313\\python.exe",
+  "platform": "Windows-11-10.0.26200-SP0",
+  "numpy_version": "2.2.0",
+  "scipy_version": "1.15.3",
+  "nibabel_version": "5.4.2",
+  "antspy_version": "0.6.3",
+  "simpleitk_version": "2.5.6",
+  "antspy_syn_functional": false,
+  "antspy_syn_note": "empty nonlinear warp output observed on this runtime; recorded as CURRENT_RUNTIME_IMPLEMENTATION_ANOMALY, not used",
+  "note": "Julich-reference geometry produced by shared-frame header-driven resample (nibabel+numpy); no external registration engine dependency"
+}

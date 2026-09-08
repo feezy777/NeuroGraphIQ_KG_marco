@@ -1,0 +1,65 @@
+{
+  "spatial_bridge_id": "SPB-MNI2009C-SYM-ASYM-SHARED-FRAME-V1",
+  "spatial_bridge_class": "SHARED_COORDINATE_REFERENCE_GRID_RESAMPLING",
+  "type_note": "SPB = Spatial Bridge; NOT a TRF (transform).",
+  "source_space": "ICBM152_2009C_SYMMETRIC",
+  "target_reference_space": "MNI152NLin2009cAsym",
+  "source_world_coordinate_convention": "RAS (NIfTI sform)",
+  "target_world_coordinate_convention": "RAS (NIfTI sform)",
+  "source_grid": {
+    "shape": [
+      138,
+      106,
+      94
+    ],
+    "spacing_mm": 0.5
+  },
+  "target_grid": {
+    "shape": [
+      193,
+      229,
+      193
+    ],
+    "spacing_mm": 1.0
+  },
+  "affine_relation": "identical world-coordinate frame; grids differ only by sampling",
+  "resampling_method": "header-driven trilinear world-coordinate resample",
+  "interpolation": "LINEAR",
+  "registration_applied": false,
+  "nonlinear_registration_applied": false,
+  "nonlinear_registration_claimed": false,
+  "deformation_field_applied": false,
+  "resampling_applied": true,
+  "resampling_basis": "SHARED_MNI152_2009C_WORLD_COORDINATE_FRAME",
+  "template_variant_statement": "DIFFERENT_TEMPLATE_VARIANTS_WITH_SHARED_STEREOTAXIC_COORDINATE_FRAME",
+  "template_identity_statement": "not IDENTICAL_ANATOMICAL_TEMPLATE; no NO_ANATOMICAL_DIFFERENCE claim",
+  "residual_spatial_limitation": "TEMPLATE_VARIANT_ANATOMICAL_MISMATCH_NOT_EXPLICITLY_WARP_CORRECTED",
+  "freesurfer_source_semantics": "ThalamusProbs.MNIsymSpace lives approximately in ICBM152 2009c symmetric world coordinates; probabilities share atlas world coordinates though not necessarily the voxel grid. FreeSurfer provenance does NOT prove Sym and Asym templates are anatomically identical.",
+  "transform_id": null,
+  "old_retracted_transform": {
+    "id": "TRF-ICBM2009CSYM-TO-MNI2009CASYM-V1",
+    "status": "RETRACTED"
+  },
+  "moving_template": {
+    "path": "data/atlases/external_raw/_ref/mni_icbm152_t1_tal_nlin_sym_09c.nii",
+    "sha256": "93359ab97c1c027376397612a9b6c30e95406c15bf8695bd4a8efcb2064eaa34",
+    "brain_mask_sha256": "27b30156598d900b74931bb7d88e7c8eaf73071fd87433055bc25509fe4a7c68"
+  },
+  "fixed_template": {
+    "path": "data/atlases/templateflow_ref/tpl-MNI152NLin2009cAsym_res01_desc-brain_T1w.nii.gz",
+    "sha256": "97cee2cf7f51388d76d7b3632c8375d688d0fa171e1bede81fcef23726bb3d73"
+  },
+  "julich_target_reference": {
+    "path": "data/atlases/julich/v3.1/spatial_raw/probability_maps/ACBL_VENTRAL_STRIATUM_LATERAL_ACCUMBENS_LEFT.nii.gz",
+    "sha256": "185a1d6c179c91bb1f02b3fc0d128b4607504a775edfec48fcc1435d9240bfdf"
+  },
+  "shared_frame_qc": {
+    "identity_shared_frame_brain_dice": 0.9872,
+    "note": "global brain-mask shared-frame agreement does NOT prove local thalamic anatomy identical"
+  },
+  "generated_at": "2026-09-08T05:57:26+00:00",
+  "independent_from_g3_g1_mapping": true,
+  "circularity_risk": "NONE",
+  "script": "phase17_v3_transform_thalamus_g1_to_julich_space.py",
+  "script_version": "phase17_v3_transform_thalamus_g1_to_julich_space.py v2 (SHARED_FRAME_RESAMPLE)"
+}

@@ -1,0 +1,31 @@
+{
+  "transform_id": "TRF-ICBM2009CSYM-TO-MNI2009CASYM-V1",
+  "status": "RETRACTED",
+  "reason": "ANTSPY_SYN_ZERO_DISPLACEMENT_FIELD_PROVENANCE_ANOMALY",
+  "anomaly_details": {
+    "forward_nonlinear_warp": "zero displacement",
+    "inverse_nonlinear_warp": "zero displacement",
+    "identical_sha_cause": "both represented empty/zero displacement field",
+    "full_syn_equals": "affine/shared-grid result (max abs diff 0.0)",
+    "interpretation": "previous nonlinear-transform interpretation invalid"
+  },
+  "runtime_scope_note": "CURRENT_RUNTIME_IMPLEMENTATION_ANOMALY on this Windows/Python3.13/ANTsPy 0.6.3 runtime; NOT a general statement that ANTs SyN is scientifically invalid.",
+  "replacement_route": {
+    "spatial_bridge_id": "SPB-MNI2009C-SYM-ASYM-SHARED-FRAME-V1",
+    "class_name": "SHARED_COORDINATE_REFERENCE_GRID_RESAMPLING"
+  },
+  "superseded_geometry": {
+    "left": {
+      "old_sha": "37a82b65d86d81b1558582dee301e79ee367d60856f95d6a55b0219cf28a87a1",
+      "status": "SUPERSEDED / INVALIDATED_BY_TRANSFORM_PROVENANCE_REPAIR"
+    },
+    "right": {
+      "old_sha": "1c9b8b8de9103c1e091c9fb6e0577182416d5a6ba0c1b7f6d41e1e913958253f",
+      "status": "SUPERSEDED / INVALIDATED_BY_TRANSFORM_PROVENANCE_REPAIR"
+    }
+  },
+  "history_chain": "attempt -> anomaly -> retraction -> replacement route (SPB)",
+  "generated_at": "2026-09-08T05:57:26+00:00",
+  "script": "phase17_v3_transform_thalamus_g1_to_julich_space.py",
+  "script_version": "phase17_v3_transform_thalamus_g1_to_julich_space.py v2 (SHARED_FRAME_RESAMPLE)"
+}

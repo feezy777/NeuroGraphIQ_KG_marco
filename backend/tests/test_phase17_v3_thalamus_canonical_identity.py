@@ -143,7 +143,9 @@ def test_11_no_geometry_in_decision():
 def test_12_13_no_nifti_no_transform():
     assert _v2()["construction_allowed"] is False
     _authorized = {"left_thalamus_proper_prob_icbm2009csym.nii.gz",
-                   "right_thalamus_proper_prob_icbm2009csym.nii.gz"}
+                   "right_thalamus_proper_prob_icbm2009csym.nii.gz",
+                   "left_thalamus_proper_prob_mni2009casym.nii.gz",
+                   "right_thalamus_proper_prob_mni2009casym.nii.gz"}
     present = {p.name for p in Path(BACKEND, "data", "atlases", "derived_g1").rglob("*thalamus*.nii.gz")}
     assert present <= _authorized, present
     md = OUT_MD.read_text(encoding="utf-8")
