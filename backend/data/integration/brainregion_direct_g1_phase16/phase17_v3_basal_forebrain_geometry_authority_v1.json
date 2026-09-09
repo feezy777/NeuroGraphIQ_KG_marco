@@ -1,0 +1,16 @@
+{
+  "authority_id": "BASAL_FOREBRAIN_GEOMETRY_AUTHORITY_V1",
+  "canonical_identity": "SOURCE_LABEL_ONLY_CONSERVATIVE_OPERATIONAL_SCOPE",
+  "scope": "conservative operational scope = cholinergic magnocellular basal forebrain territory (Ch1-Ch4/NbM cell groups + diagonal band + FS-aseg BF envelope); BNST / NAcc / ventral pallidum / olfactory tubercle kept independent; substantia innominata territory and broad septal nuclei remain REVIEW (documented, non-blocking).",
+  "verdict": "AUTHORITATIVE_OPERATIONAL_PROXY_GEOMETRY",
+  "value": "Zaborszky 2008 maps exactly the Ch1-Ch4 / NbM magnocellular cell groups - the cell-group core of the conservative operational (cholinergic magnocellular) Basal Forebrain G1 territory - so it is an authoritative OPERATIONAL PROXY for that territory; it is NOT a complete broad-anatomical basal-forebrain boundary (does not cover BNST / olfactory tubercle / ventral pallidum / NAcc). Any future geometry built from it must be labelled OPERATIONAL_PROXY.",
+  "asset_status": "NOT_ACQUIRED",
+  "asset_license": "ACCESS_RESTRICTED",
+  "raw_sha256": null,
+  "ontology_frozen": true,
+  "geometry_authority_scientifically_valid": true,
+  "asset_acquisition_blocked": true,
+  "alternative_not_fused": true,
+  "created_at": "2026-09-09T03:37:04+00:00",
+  "script_version": "phase17_v3_adjudicate_basal_forebrain_g1_scope_authority.py v1"
+}

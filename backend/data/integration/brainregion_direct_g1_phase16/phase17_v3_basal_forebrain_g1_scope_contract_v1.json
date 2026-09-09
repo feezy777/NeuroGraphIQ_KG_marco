@@ -1,0 +1,123 @@
+{
+  "contract_id": "BASAL_FOREBRAIN_G1_SCOPE_CONTRACT_V1",
+  "canonical_identity": "SOURCE_LABEL_ONLY_CONSERVATIVE_OPERATIONAL_SCOPE",
+  "canonical_identity_id": "BASAL_FOREBRAIN_G1_CANONICAL_IDENTITY_V1",
+  "canonical_left": {
+    "canonical_region_id": "NGIQ-BR-00000264",
+    "preferred_name": "Left Basal Forebrain"
+  },
+  "canonical_right": {
+    "canonical_region_id": "NGIQ-BR-00000265",
+    "preferred_name": "Right Basal Forebrain"
+  },
+  "scope_verdict": "BASAL_FOREBRAIN_G1_SCOPE_FROZEN",
+  "scope_statement": "conservative operational scope = cholinergic magnocellular basal forebrain territory (Ch1-Ch4/NbM cell groups + diagonal band + FS-aseg BF envelope); BNST / NAcc / ventral pallidum / olfactory tubercle kept independent; substantia innominata territory and broad septal nuclei remain REVIEW (documented, non-blocking).",
+  "memberships": [
+    {
+      "structure": "Medial septal nucleus / Ch1",
+      "decision": "INCLUDE",
+      "confidence": "HIGH",
+      "ontology_membership_confidence": "HIGH",
+      "geometry_coverage_confidence": "HIGH",
+      "note": "cholinergic basal-forebrain magnocellular group (Ch1); in Zaborszky Ch1-4 maps"
+    },
+    {
+      "structure": "Vertical limb of diagonal band / Ch2",
+      "decision": "INCLUDE",
+      "confidence": "HIGH",
+      "ontology_membership_confidence": "HIGH",
+      "geometry_coverage_confidence": "HIGH",
+      "note": "cholinergic basal-forebrain group (Ch2); in Zaborszky"
+    },
+    {
+      "structure": "Horizontal limb of diagonal band / Ch3",
+      "decision": "INCLUDE",
+      "confidence": "HIGH",
+      "ontology_membership_confidence": "HIGH",
+      "geometry_coverage_confidence": "HIGH",
+      "note": "cholinergic basal-forebrain group (Ch3); in Zaborszky"
+    },
+    {
+      "structure": "Nucleus basalis of Meynert / Ch4",
+      "decision": "INCLUDE",
+      "confidence": "HIGH",
+      "ontology_membership_confidence": "HIGH",
+      "geometry_coverage_confidence": "HIGH",
+      "note": "core cholinergic magnocellular group (Ch4/NbM); in Zaborszky"
+    },
+    {
+      "structure": "Substantia innominata",
+      "decision": "REVIEW",
+      "confidence": "MODERATE",
+      "ontology_membership_confidence": "MODERATE",
+      "geometry_coverage_confidence": "NONE/LOW",
+      "note": "region containing Ch4/NbM; likely within the FS-aseg composite BF territory but a territory (not a cell group); Zaborszky maps the cell groups within it only"
+    },
+    {
+      "structure": "Ventral pallidum",
+      "decision": "EXCLUDE",
+      "confidence": "HIGH",
+      "ontology_membership_confidence": "HIGH",
+      "geometry_coverage_confidence": "NONE/LOW",
+      "note": "pallidal territory; not part of the cholinergic magnocellular basal forebrain scope"
+    },
+    {
+      "structure": "Nucleus accumbens",
+      "decision": "EXCLUDE",
+      "confidence": "HIGH",
+      "ontology_membership_confidence": "HIGH",
+      "geometry_coverage_confidence": "NONE/LOW",
+      "note": "separate Macro96 G1 canonical (own geometry); ventral-striatal, not cholinergic BF"
+    },
+    {
+      "structure": "Olfactory tubercle",
+      "decision": "EXCLUDE",
+      "confidence": "MODERATE",
+      "ontology_membership_confidence": "MODERATE",
+      "geometry_coverage_confidence": "NONE/LOW",
+      "note": "not cholinergic magnocellular BF (Julich 'TU' grouping is atlas coverage, not membership)"
+    },
+    {
+      "structure": "Bed nucleus of stria terminalis / BNST",
+      "decision": "EXCLUDE",
+      "confidence": "HIGH",
+      "ontology_membership_confidence": "HIGH",
+      "geometry_coverage_confidence": "NONE/LOW",
+      "note": "BNST frozen independent canonical (admission ADMIT); relationship requires separate ontology adjudication; no BNST->BF relation created"
+    },
+    {
+      "structure": "Anterior commissure region",
+      "decision": "NOT_APPLICABLE",
+      "confidence": "HIGH",
+      "ontology_membership_confidence": "HIGH",
+      "geometry_coverage_confidence": "NONE/LOW",
+      "note": "white-matter tract, not a gray-matter basal-forebrain member"
+    },
+    {
+      "structure": "Septal nuclei (broad, incl. lateral septum)",
+      "decision": "REVIEW",
+      "confidence": "MODERATE",
+      "ontology_membership_confidence": "MODERATE",
+      "geometry_coverage_confidence": "NONE/LOW",
+      "note": "only the cholinergic medial-septal (Ch1) component is in scope; broader septal nuclei separate"
+    },
+    {
+      "structure": "Diagonal band structures (region)",
+      "decision": "INCLUDE",
+      "confidence": "HIGH",
+      "ontology_membership_confidence": "HIGH",
+      "geometry_coverage_confidence": "HIGH",
+      "note": "Ch2 (vertical) / Ch3 (horizontal) diagonal band; in Zaborszky"
+    }
+  ],
+  "bnst": {
+    "decision": "EXCLUDE_AND_INDEPENDENT",
+    "note": "RELATIONSHIP_REQUIRES_SEPARATE_ONTOLOGY_ADJUDICATION; no BNST->BF relation"
+  },
+  "nacc": {
+    "decision": "EXCLUDE",
+    "note": "NACC_RELATIONSHIP_NOT_ASSUMED; separate G1 canonical"
+  },
+  "created_at": "2026-09-09T03:37:04+00:00",
+  "script_version": "phase17_v3_adjudicate_basal_forebrain_g1_scope_authority.py v1"
+}

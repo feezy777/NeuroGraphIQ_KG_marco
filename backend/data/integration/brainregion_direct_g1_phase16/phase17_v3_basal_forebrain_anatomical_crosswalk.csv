@@ -1,0 +1,13 @@
+﻿structure,is_part_of_broad_anatomical_basal_forebrain,is_part_of_cholinergic_basal_forebrain_system,represented_in_zaborszky_ch1234,candidate_membership_in_current_G1,evidence,confidence
+Medial septal nucleus / Ch1,True,True,True,INCLUDE,cholinergic basal-forebrain magnocellular group (Ch1); in Zaborszky Ch1-4 maps,HIGH
+Vertical limb of diagonal band / Ch2,True,True,True,INCLUDE,cholinergic basal-forebrain group (Ch2); in Zaborszky,HIGH
+Horizontal limb of diagonal band / Ch3,True,True,True,INCLUDE,cholinergic basal-forebrain group (Ch3); in Zaborszky,HIGH
+Nucleus basalis of Meynert / Ch4,True,True,True,INCLUDE,core cholinergic magnocellular group (Ch4/NbM); in Zaborszky,HIGH
+Substantia innominata,True,True,False,REVIEW,region containing Ch4/NbM; likely within the FS-aseg composite BF territory but a territory (not a cell group); Zaborszky maps the cell groups within it only,MODERATE
+Ventral pallidum,True,False,False,EXCLUDE,pallidal territory; not part of the cholinergic magnocellular basal forebrain scope,HIGH
+Nucleus accumbens,True,False,False,EXCLUDE,"separate Macro96 G1 canonical (own geometry); ventral-striatal, not cholinergic BF",HIGH
+Olfactory tubercle,True,False,False,EXCLUDE,"not cholinergic magnocellular BF (Julich 'TU' grouping is atlas coverage, not membership)",MODERATE
+Bed nucleus of stria terminalis / BNST,True,False,False,EXCLUDE,BNST frozen independent canonical (admission ADMIT); relationship requires separate ontology adjudication; no BNST->BF relation created,HIGH
+Anterior commissure region,True,False,False,NOT_APPLICABLE,"white-matter tract, not a gray-matter basal-forebrain member",HIGH
+"Septal nuclei (broad, incl. lateral septum)",True,False,False,REVIEW,only the cholinergic medial-septal (Ch1) component is in scope; broader septal nuclei separate,MODERATE
+Diagonal band structures (region),True,True,True,INCLUDE,Ch2 (vertical) / Ch3 (horizontal) diagonal band; in Zaborszky,HIGH

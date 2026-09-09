@@ -1,0 +1,6 @@
+﻿source,concept_coverage,human_subjects,space,probability_semantics,license_access,local_availability
+Zaborszky et al. 2008 (Ch1-Ch4/NbM magnocellular probabilistic maps),Ch1-Ch4 magnocellular cell groups (operational cholinergic BF),yes,MNI152 (variant verify),probabilistic,ACCESS_RESTRICTED,NOT_ACQUIRED
+Julich-Brain v3.1 cytoarchitectonic CH_4 (NbM) L/R maps,Ch4 / nucleus basalis of Meynert,yes (postmortem),MNI152NLin2009cAsym,probabilistic/statistical,EBRAINS/siibra,LOCALLY_AVAILABLE
+Julich-Brain v3.1 cytoarchitectonic CH_123 L/R maps,Ch1-3 magnocellular groups,yes (postmortem),MNI152NLin2009cAsym,probabilistic/statistical,EBRAINS/siibra,LOCALLY_AVAILABLE
+Julich-Brain v3.1 TU / TUTi / BST / sublenticular basal-forebrain maps,associated basal-forebrain cyto elements (not cholinergic Ch1-4 scope),yes (postmortem),MNI152NLin2009cAsym,probabilistic/statistical,EBRAINS/siibra,LOCALLY_AVAILABLE
+NbM-only / Anatomy-Toolbox basal forebrain maps,NbM (Ch4) only - cannot support whole BF alone,yes,unknown,unknown,unknown,NOT_PRESENT

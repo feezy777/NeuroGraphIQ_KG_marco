@@ -1,0 +1,36 @@
+{
+  "publication": "Zaborszky et al. 2008, NeuroImage",
+  "doi": "10.1016/j.neuroimage.2008.05.055",
+  "atlas_target_concept": "magnocellular cell groups of the human basal forebrain (Ch1-Ch4 / NbM)",
+  "histological_basis": "human histology combined with in-vivo MRI (stereotaxic probabilistic maps)",
+  "subjects": "human (multiple subjects; group probabilistic)",
+  "probability_semantics": "stereotaxic probabilistic maps (magnocellular cell-group territory)",
+  "mapped_structures": [
+    "Ch1 (medial septal)",
+    "Ch2 (vertical diagonal band)",
+    "Ch3 (horizontal diagonal band)",
+    "Ch4 (nucleus basalis of Meynert)"
+  ],
+  "unmapped_basal_forebrain_structures": [
+    "BNST/BST",
+    "olfactory tubercle",
+    "ventral pallidum",
+    "nucleus accumbens",
+    "terminal islands (TUTi)",
+    "non-cholinergic septal nuclei"
+  ],
+  "reference_space": "MNI152 (variant to verify)",
+  "atlas_scope_limitation": "maps the magnocellular Ch1-Ch4 cell groups only; ATLAS_COVERAGE != CANONICAL_ONTOLOGY_SCOPE",
+  "acquisition": {
+    "asset_id": "BF_ZABORSZKY_CH1234",
+    "structure": "Basal Forebrain",
+    "download_status": "NOT_ACQUIRED",
+    "license_status": "ACCESS_RESTRICTED",
+    "local_path": "",
+    "coordinate_space": "MNI152 (variant verify); no binary this round",
+    "sha256": ""
+  },
+  "raw_sha256": null,
+  "created_at": "2026-09-09T03:37:04+00:00",
+  "script_version": "phase17_v3_adjudicate_basal_forebrain_g1_scope_authority.py v1"
+}

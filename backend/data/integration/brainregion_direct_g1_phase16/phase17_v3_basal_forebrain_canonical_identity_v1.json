@@ -1,0 +1,22 @@
+{
+  "identity_id": "BASAL_FOREBRAIN_G1_CANONICAL_IDENTITY_V1",
+  "canonical_left": {
+    "canonical_region_id": "NGIQ-BR-00000264",
+    "preferred_name": "Left Basal Forebrain"
+  },
+  "canonical_right": {
+    "canonical_region_id": "NGIQ-BR-00000265",
+    "preferred_name": "Right Basal Forebrain"
+  },
+  "verdict": "SOURCE_LABEL_ONLY_CONSERVATIVE_OPERATIONAL_SCOPE",
+  "definition": "Macro96 'Basal Forebrain' is a label-only G1 macro anchored to the FreeSurfer aseg coarse/composite 'Basal Forebrain' region. Conservative operational scope = cholinergic magnocellular basal forebrain territory: Ch1-Ch4 / NbM magnocellular cell groups + septal/diagonal-band origins + surrounding FS-aseg basal-forebrain territory. NOT broad ventral forebrain (NAcc / ventral pallidum / olfactory tubercle / BNST not auto-included).",
+  "distinction": {
+    "broad_anatomical_region_as_canonical": false,
+    "cholinergic_system_as_canonical": false,
+    "ch1_ch4_union_not_asserted": true,
+    "note": "This G1 is NOT declared equal to Ch1 u Ch2 u Ch3 u Ch4; it is a label-only macro conservatively scoped to the cholinergic magnocellular basal-forebrain territory of the FS-aseg composite anchor."
+  },
+  "anatomy_first_geometry_second": true,
+  "created_at": "2026-09-09T03:37:04+00:00",
+  "script_version": "phase17_v3_adjudicate_basal_forebrain_g1_scope_authority.py v1"
+}

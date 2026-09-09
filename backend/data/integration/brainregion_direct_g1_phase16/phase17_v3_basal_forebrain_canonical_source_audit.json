@@ -1,0 +1,41 @@
+{
+  "canonical_left": {
+    "canonical_region_id": "NGIQ-BR-00000264",
+    "preferred_name": "Left Basal Forebrain"
+  },
+  "canonical_right": {
+    "canonical_region_id": "NGIQ-BR-00000265",
+    "preferred_name": "Right Basal Forebrain"
+  },
+  "macro96": {
+    "rows": [
+      {
+        "source_row_id": "30",
+        "source_name_en": "left basal forebrain",
+        "normalized_name_en": "Left Basal Forebrain",
+        "hemisphere": "left",
+        "structure_type": "basal_forebrain",
+        "granularity_level": "G1_MACRO",
+        "normalization_note": "coarse/composite anatomical region (FreeSurfer aseg)"
+      },
+      {
+        "source_row_id": "31",
+        "source_name_en": "right basal forebrain",
+        "normalized_name_en": "Right Basal Forebrain",
+        "hemisphere": "right",
+        "structure_type": "basal_forebrain",
+        "granularity_level": "G1_MACRO",
+        "normalization_note": "coarse/composite anatomical region (FreeSurfer aseg)"
+      }
+    ],
+    "label_only": true,
+    "note": "Macro96 provides name only; normalization_note points to FreeSurfer aseg composite (coarse/composite anatomical region)"
+  },
+  "external_asset_manifest_label": "basal forebrain / Ch1-4/NbM family text target; NOT used as canonical identity",
+  "source_label_only": true,
+  "source_has_formal_definition": false,
+  "source_definition_state": "SOURCE_LABEL_ONLY_NO_FORMAL_DEFINITION",
+  "canonical_identity_source": "Macro96 G1_MACRO + FreeSurfer aseg composite anchor",
+  "created_at": "2026-09-09T03:37:04+00:00",
+  "script_version": "phase17_v3_adjudicate_basal_forebrain_g1_scope_authority.py v1"
+}
