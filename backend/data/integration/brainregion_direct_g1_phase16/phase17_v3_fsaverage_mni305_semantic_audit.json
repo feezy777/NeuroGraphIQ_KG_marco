@@ -1,0 +1,52 @@
+{
+  "audit_id": "FSAVERAGE_MNI305_SEMANTIC_AUDIT_V1",
+  "fsaverage_template_identity": {
+    "statement": "FreeSurfer-distributed average subject (fsaverage); per the official FreeSurfer wiki it is ALREADY registered to Talairach/MNI305 space and is the default MNI305 target for mri_vol2vol.",
+    "source_urls": [
+      "https://surfer.nmr.mgh.harvard.edu/fswiki/CoordinateSystems",
+      "https://freesurfer.net/fswiki/FreeSurferTalairach"
+    ],
+    "local_fsaverage": "data/atlases/freesurfer/fsaverage"
+  },
+  "distinctions": {
+    "template_anatomical_identity": "fsaverage = FS average template subject (MNI305-derived identity documented)",
+    "orig_voxel_grid": "256^3 @1mm uint8, FS-conformed internal grid, vox2ras==vox2ras_tkr",
+    "fs_conformed_volume_geometry": "conformed cube, world center ~ RAS origin area; not a scanner-space grid",
+    "tkRAS": "surface RAS (tkRAS/Torig) - for fsaverage coincides with its vox2ras (template-internal)",
+    "scanner_world_RAS": "vox2ras world RAS - distinct from tkRAS for regular subjects (c_ras shift); for fsaverage orig they coincide by construction",
+    "mni305_stereotaxic": "FreeSurfer 'Talairach MNI' coordinates ARE MNI305; true Talairach only via Brett transform",
+    "templateflow_mni305_grid": "172x220x156 @1mm RAS int16 (tpl-MNI305_T1w)"
+  },
+  "talairach_xfm": {
+    "official_semantics": "per-subject affine from orig.mgz to the MNI305 atlas (average_305); created by talairach_avi / mritotal",
+    "fsaverage_identity_role": "TALAIRACH_XFM_NOT_REQUIRED_FOR_FSAVERAGE_TEMPLATE_IDENTITY - fsaverage's MNI305/Talairach identity is template-inherent (already registered); the absent xfm is not required to assert the DOCUMENTED identity",
+    "exact_grid_affine_unverified": true,
+    "note": "asserting the exact affine of fsaverage tkRAS to the TemplateFlow tpl-MNI305 grid is NOT possible without toolchain/registration - not assumed"
+  },
+  "identity_test": {
+    "resample_target": "D:/Tool/Coding/IDE/PyCharm/NeuroGraphIQ_KG_marco/backend/data/atlases/templateflow_ref/tpl-MNI305_T1w.nii.gz",
+    "orig_sha256": "97862f8adfa48ff0c22d1441a81554f35c562c2232b43d8738730dc9ceb2c0a1",
+    "ncc_masked": 0.5928,
+    "mutual_info_bits": 0.596,
+    "brain_com_ras_mni305": [
+      0.9,
+      -16.95,
+      10.17
+    ],
+    "brain_com_ras_orig_resampled": [
+      0.76,
+      -17.39,
+      4.66
+    ],
+    "com_displacement_mm": 5.53,
+    "masked_voxels": 3905002,
+    "grid_identical": false,
+    "world_ras_identity": false,
+    "note": "moderate anatomical correspondence only; exact grid/world-RAS identity with TemplateFlow tpl-MNI305 is NOT established; an affine/nonlinear whole-brain registration would be required to map between the grids."
+  },
+  "relation_classification": "ONLY_DOCUMENTED_AS_MNI305_DERIVED",
+  "grid_identical": false,
+  "local_orig_sha256": "97862f8adfa48ff0c22d1441a81554f35c562c2232b43d8738730dc9ceb2c0a1",
+  "created_at": "2026-09-09T04:58:57+00:00",
+  "script_version": "phase17_v3_adjudicate_cortical_target_space_route.py v1"
+}

@@ -1,0 +1,65 @@
+{
+  "provider": "TemplateFlow (official template archive; Curator O. Esteban)",
+  "template_id": "tpl-MNI305",
+  "identifier": "MNI305",
+  "name": "MNI Average Brain (305 MRI) Stereotaxic Registration Model",
+  "authors": [
+    "Collins DL",
+    "Neelin P",
+    "Peters TM",
+    "Evans AC"
+  ],
+  "species": "Homo sapiens",
+  "license": "See tpl-MNI305 LICENSE (TemplateFlow)",
+  "download_url": "https://templateflow.s3.amazonaws.com/tpl-MNI305/tpl-MNI305_T1w.nii.gz",
+  "local_path": "D:/Tool/Coding/IDE/PyCharm/NeuroGraphIQ_KG_marco/backend/data/atlases/templateflow_ref/tpl-MNI305_T1w.nii.gz",
+  "sha256": "ad5bbda698844359dc16e2a50138d0285f0d77eccdc4c7855c75ad8980d7e003",
+  "annex_md5": "f590a905bdefb1bf18617d65907b2492",
+  "annex_size_bytes": 2879454,
+  "size_bytes": 2879454,
+  "shape": [
+    172,
+    220,
+    156
+  ],
+  "spacing": [
+    1.0,
+    1.0,
+    1.0
+  ],
+  "dtype": "int16",
+  "orientation": "RAS",
+  "affine": [
+    [
+      1.0,
+      0.0,
+      0.0,
+      -86.095
+    ],
+    [
+      0.0,
+      1.0,
+      0.0,
+      -126.51
+    ],
+    [
+      0.0,
+      0.0,
+      1.0,
+      -68.25
+    ],
+    [
+      0.0,
+      0.0,
+      0.0,
+      1.0
+    ]
+  ],
+  "sibling_assets_present_in_repo": [
+    "desc-brain_mask",
+    "desc-head_mask (not cached locally)"
+  ],
+  "reference_binary_status": "AVAILABLE_LOCAL_CACHE (official TemplateFlow source)",
+  "created_at": "2026-09-09T04:58:57+00:00",
+  "script_version": "phase17_v3_adjudicate_cortical_target_space_route.py v1"
+}

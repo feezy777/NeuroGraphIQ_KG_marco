@@ -1,0 +1,33 @@
+{
+  "verdict": "CORTICAL_TARGET_ROUTE_PROJECT_DERIVED_ALLOWED_PENDING_EXECUTION",
+  "coordinate_convention": {
+    "fsaverage_orig": "world RAS via vox2ras (== vox2ras_tkr for fsaverage); internal tkRAS frame",
+    "templateflow_h5": "ITK/SimpleITK convention (LPS-internal); resampling interpreted by SimpleITK from NIfTI RAS headers",
+    "mni305": "TemplateFlow tpl-MNI305 RAS grid (172x220x156 @1mm)"
+  },
+  "ras_lps": {
+    "note": "RAS and LPS must never be mixed by hand; SimpleITK reads NIfTI sform/qform so the h5 application is header-consistent; any manual composition must respect LPS convention"
+  },
+  "frozen_final_hop": {
+    "transform": "NLin6Asym -> 2009cAsym",
+    "sha256": "2e3869a07b96aec406e0419ca2e434afc54882d37cc212b933b139d1b63a4dfe",
+    "usable_as": "final hop ONLY; requires a compatible first hop whose source is fsaverage-orig/MNI305 (not present authoritatively)"
+  },
+  "no_fsaverage_as_nlin6": true,
+  "no_fsaverage_as_nlin6_note": "fsaverage/MNI305 must NEVER be treated as MNI152NLin6Asym; they are distinct spaces",
+  "composition_order": "forward: moving(fsaverage orig) -> (project-derived warp) -> target grid; if 2-hop: apply hop1 then hop2 in head-to-target order; NN for discrete ribbon",
+  "interpolation_rule": {
+    "future_binary_ribbon": "NearestNeighbor (label-safe) for discrete/binary cortical ribbon geometry in target space",
+    "future_fractional": "fractional ribbon/probability semantics to be defined separately later",
+    "note": "NOT applied this round; frozen as future semantics only"
+  },
+  "do_not_conflate_note": "Hippo/Amyg probability -> LINEAR interpolation does NOT carry over: cortical ribbon is discrete/binary geometry",
+  "g4_circularity": {
+    "used_g4_overlap": false,
+    "used_mapping_result": false,
+    "circularity_risk": "NONE"
+  },
+  "no_registration_executed": true,
+  "created_at": "2026-09-09T04:58:57+00:00",
+  "script_version": "phase17_v3_adjudicate_cortical_target_space_route.py v1"
+}
