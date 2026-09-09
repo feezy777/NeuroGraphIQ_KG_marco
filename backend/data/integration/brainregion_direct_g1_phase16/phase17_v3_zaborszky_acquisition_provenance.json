@@ -1,0 +1,53 @@
+{
+  "chain": [
+    {
+      "step": "canonical identity (frozen)",
+      "id": "BASAL_FOREBRAIN_G1_CANONICAL_IDENTITY_V1"
+    },
+    {
+      "step": "scope contract (frozen)",
+      "id": "BASAL_FOREBRAIN_G1_SCOPE_CONTRACT_V1"
+    },
+    {
+      "step": "geometry authority (frozen)",
+      "verdict": "AUTHORITATIVE_OPERATIONAL_PROXY_GEOMETRY",
+      "asset": "Zaborszky 2008 Ch1-4"
+    },
+    {
+      "step": "publication identity",
+      "title": "Stereotaxic probabilistic maps of the magnocellular cell groups in human basal forebrain",
+      "authors": "Zaborszky, Hoemke, Mohlberg, Schleicher, Amunts, Zilles",
+      "journal": "NeuroImage",
+      "year": 2008,
+      "volume_pages": "42(3):1127-1141",
+      "doi": "10.1016/j.neuroimage.2008.05.055",
+      "pmid": "18585468",
+      "pmc": "PMC2577158"
+    },
+    {
+      "step": "route audit",
+      "routes": [
+        "R1",
+        "R2",
+        "R3",
+        "R4",
+        "R5",
+        "R6",
+        "R7",
+        "R8",
+        "R9"
+      ],
+      "fetch_note": "NCBI/EuropePMC web fetches network-blocked in this session"
+    },
+    {
+      "step": "outcome",
+      "asset_status": "NOT_ACQUIRED",
+      "blocker": "BASAL_FOREBRAIN_ZABORSZKY_ASSET_ACQUISITION_BLOCKED_V1"
+    }
+  ],
+  "raw_sha256": null,
+  "fabricated_sha": false,
+  "no_bypass": true,
+  "created_at": "2026-09-09T03:43:00+00:00",
+  "script_version": "phase17_v3_acquire_zaborszky_basal_forebrain_asset.py v1"
+}

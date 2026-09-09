@@ -1,0 +1,17 @@
+{
+  "manifest_id": "ZABORSZKY_RAW_ASSET_MANIFEST",
+  "source": "ZABORSZKY_2008_HUMAN_BASAL_FOREBRAIN",
+  "asset_status": "NOT_ACQUIRED",
+  "authority": "AUTHORITATIVE_OPERATIONAL_PROXY_GEOMETRY (frozen; unchanged)",
+  "raw_sha256": null,
+  "file_count": 0,
+  "file_path": null,
+  "raw_probability_semantics_status": "NOT_CHARACTERIZED_NO_RAW_ASSET",
+  "space_status": "UNRESOLVED_NO_RAW_ASSET",
+  "laterality_semantics": "NOT_RECORDED_NO_RAW_ASSET",
+  "immutability": "raw bytes immutable once acquired (never renamed/re-gzipped/re-headed/resampled)",
+  "gitignore_policy": "raw binaries under external_raw are LOCAL_IMMUTABLE_CACHE / gitignored; never committed",
+  "note": "no authoritative original full-probability asset is acquired this round; raw SHA is null and must never be fabricated.",
+  "created_at": "2026-09-09T03:43:00+00:00",
+  "script_version": "phase17_v3_acquire_zaborszky_basal_forebrain_asset.py v1"
+}

@@ -1,0 +1,26 @@
+{
+  "blocker_id": "BASAL_FOREBRAIN_ZABORSZKY_ASSET_ACQUISITION_BLOCKED_V1",
+  "case": "B_ACCESS_RESTRICTED_MANUAL_AUTHORIZED_ACCESS_REQUIRED",
+  "scientific_authority": "FROZEN",
+  "raw_asset": "NOT_ACQUIRED",
+  "geometry": "BLOCKED_ON_AUTHORITATIVE_ASSET_ACCESS",
+  "raw_sha256": null,
+  "reason": "all legal routes were audited; the only plausible authoritative delivery (PubMed Central PMC2577158 open-access supplementary / author resource) requires a human browser session to read the license/data-availability terms and retrieve the atlas volume(s). This session cannot fetch NCBI/EuropePMC (network-blocked), and no verifiable authoritative original full-probability asset is present in the repo. No third-party derivative and no Julich CH_123/CH_4 map is substituted.",
+  "required_user_actions": [
+    "Open the PMC record PMC2577158 (or the equivalent author resource) in a browser",
+    "Read the license / data-availability statement on that record",
+    "Confirm the downloadable volume(s) are the Zaborszky 2008 Ch1-Ch4 human magnocellular-cell-group probabilistic maps (full probability, not a 50%/binary ROI)",
+    "Confirm the reference space named in the documentation (MNI single-subject; record template/version from the documentation)",
+    "Download the file(s) WITHOUT modification; keep the original .img/.hdr or .nii bytes",
+    "Place the unmodified file(s) under data/atlases/external_raw/basal_forebrain/zaborszky2008/ (raw binaries stay gitignored)",
+    "Compute and record the real SHA256 + file size",
+    "Then a later round can run Ch1-Ch4 geometry construction on the authoritative asset"
+  ],
+  "do_not": [
+    "switch to the Julich CH_123/CH_4 maps as primary",
+    "fabricate a raw SHA",
+    "bypass any login/license gate"
+  ],
+  "created_at": "2026-09-09T03:43:00+00:00",
+  "script_version": "phase17_v3_acquire_zaborszky_basal_forebrain_asset.py v1"
+}
