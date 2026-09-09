@@ -1,0 +1,70 @@
+{
+  "audit_id": "BNST_GEOMETRY_AUTHORITY_AUDIT",
+  "question": "which human dataset is PRIMARY anatomical geometry authority for whole-BNST?",
+  "source_cards": {
+    "julich_v31_whole_bst": {
+      "family": "Brandstetter/Juellich human cytoarchitectonic BST (whole-BST representation)",
+      "stored": true,
+      "modality": "postmortem histology / cytoarchitecture",
+      "whole_scope": true,
+      "laterality": "source-native left/right",
+      "reference_space": "MNI152NLin2009cAsym (stored maps)",
+      "probability_map": true,
+      "subdivisions": "none (whole); subdivision split not present",
+      "resolution": "~1 mm (cyto-derived)",
+      "provenance_doi": "10.25493/KNSN-XB4 (Julich-Brain v3.1 dataset)",
+      "in_repo_sha": {
+        "left": "b72a2396a977ebfbb3668a5fb5981ec43c676e7c497d688a788e0539f8537102",
+        "right": "8bacb4eab6c77d7bd3e3b1e02ab77f7654fe8e98c232cb2b238b53a4b3ef9d55"
+      },
+      "acquisition_status": "STORED_VERIFIED_IN_REPO",
+      "stored_sha_verified": {
+        "left": true,
+        "right": true
+      },
+      "note": "current in-repo representation of the primary anatomical family"
+    },
+    "brandstetter_2026": {
+      "family": "Brandstetter et al. 2026 (Imaging Neuroscience) cytoarchitectonic BST",
+      "stored": false,
+      "modality": "postmortem histology / cytoarchitecture",
+      "whole_scope": false,
+      "laterality": "left/right information (metadata)",
+      "reference_space": "Colin27 / ICBM-152 + BigBrain",
+      "probability_map": true,
+      "subdivisions": "BSTC / BSTD / BSTM / BSTP",
+      "doi": "10.1162/IMAG.a.1260",
+      "acquisition_status": "NOT_ACQUIRED",
+      "note": "reference-definitional source for canonical cyto subdivision concept; NOT repo-available; NOT assumed equivalent to the stored v3.1 whole map"
+    },
+    "theiss_blackford_2017": {
+      "family": "Theiss/Blackford 2017 whole-BNST in-vivo MRI",
+      "stored": true,
+      "modality": "human in-vivo MRI (manual delineation, ~10 healthy subjects)",
+      "whole_scope": true,
+      "laterality": "bilateral single map (world-X split would be a DERIVATION)",
+      "reference_space": "MNI152NLin6Asym (FSL 182x218x182 @1 mm)",
+      "probability_map": true,
+      "subdivisions": "none (whole)",
+      "doi": "10.1016/j.neuroimage.2016.11.047",
+      "acquisition_status": "RAW_ASSET_VERIFIED",
+      "in_repo_sha": "d7bfa26c7426994c",
+      "note": "independent MRI-scale clinical corroboration; NOT the primary geometry"
+    },
+    "sibbach_2024": {
+      "family": "Sibbach et al. 2024 dBNST/vBNST (7T)",
+      "stored": false,
+      "modality": "human in-vivo 7T MRI",
+      "whole_scope": false,
+      "laterality": "dorsal/ventral subdivisions",
+      "reference_space": "MNI (7T normalized; variant metadata only)",
+      "probability_map": true,
+      "subdivisions": "dBNST / vBNST",
+      "acquisition_status": "NOT_ACQUIRED",
+      "note": "subdivision evidence only; not a whole-BNST authority"
+    }
+  },
+  "equivalence_caveat": "the stored Julich-Brain v3.1 whole-BST map (dataset DOI 10.25493/KNSN-XB4) and the Brandstetter 2026 BSTC/D/M/P set (DOI 10.1162/IMAG.a.1260) are BOTH in the Julich cytoarchitectonic BST family, but their exact relationship is NOT assumed from the label; provenance DOIs differ and the 2026 subdivision set is not acquired.",
+  "created_at": "2026-09-09T03:01:32+00:00",
+  "script_version": "phase17_v3_adjudicate_bnst_geometry_authority.py v1"
+}

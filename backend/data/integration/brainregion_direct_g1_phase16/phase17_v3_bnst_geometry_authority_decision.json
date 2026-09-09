@@ -1,0 +1,91 @@
+{
+  "decision_id": "BNST_GEOMETRY_AUTHORITY_DECISION_V1",
+  "entity_authority": {
+    "role": "A. ENTITY AUTHORITY",
+    "value": "human canonical admission already ADMIT_AS_CANONICAL_BRAINREGION (BNST_CANONICAL_ENTITY_ADMISSION_V1): human neuroanatomical/cytoarchitectonic identity (Julich/Brandstetter) corroborated by Theiss/Blackford in-vivo MRI."
+  },
+  "primary_anatomical_geometry_authority": {
+    "role": "B. ANATOMICAL GEOMETRY AUTHORITY",
+    "value": "PRIMARY_ANATOMICAL_GEOMETRY_AUTHORITY = Brandstetter/Juellich human cytoarchitectonic BST family; current repo representation = Julich-Brain v3.1 whole-BST L/R probability maps on MNI152NLin2009cAsym (dataset_doi 10.25493/KNSN-XB4). Rationale: postmortem cytoarchitectonic anatomical definition; whole-BST scope compatible with WHOLE_BNST_COMPLEX; source-native left/right; already in the target 2009cAsym frame; probabilistic; in-repo provenance. The Brandstetter 2026 BSTC/D/M/P set (10.1162/IMAG.a.1260) is the reference-definitional / future subdivision-resolved source, NOT selected as the primary asset this round because it is not repo-available."
+  },
+  "corroborating_clinical_mri_geometry": {
+    "role": "C. CORROBORATING / CLINICAL GEOMETRY ASSET",
+    "value": "CORROBORATING_CLINICAL_MRI_GEOMETRY = Theiss/Blackford 2017 (in-vivo MRI whole-BNST, ~10 healthy subjects, MNI152NLin6Asym probabilistic mask, CC0). Retained as independent MRI-scale clinical corroboration only; not primary (coarser MRI delineation, bilateral single map, requires NLin6->2009c route and a world-X laterality derivation)."
+  },
+  "adjudication_dimensions": [
+    {
+      "dimension": "anatomical-definition authority",
+      "primary_geometry": "Brandstetter/Juellich cytoarchitectonic BST (primary)",
+      "corroborating_clinical": "Theiss/Blackford MRI whole-BNST"
+    },
+    {
+      "dimension": "whole-BNST scope compatibility",
+      "primary_geometry": "whole-BST map (stored v3.1)",
+      "corroborating_clinical": "whole-BNST (manual)"
+    },
+    {
+      "dimension": "left/right compatibility",
+      "primary_geometry": "source-native L/R (stored v3.1)",
+      "corroborating_clinical": "bilateral single map (world-X split needed)"
+    },
+    {
+      "dimension": "human-only validity",
+      "primary_geometry": "human (postmortem)",
+      "corroborating_clinical": "human (in-vivo MRI)"
+    },
+    {
+      "dimension": "imaging/histology modality",
+      "primary_geometry": "postmortem histology / cytoarchitecture",
+      "corroborating_clinical": "in-vivo MRI"
+    },
+    {
+      "dimension": "stereotaxic reference space",
+      "primary_geometry": "MNI152NLin2009cAsym (stored v3.1)",
+      "corroborating_clinical": "MNI152NLin6Asym"
+    },
+    {
+      "dimension": "probability-map availability",
+      "primary_geometry": "available in-repo (v3.1 whole L/R)",
+      "corroborating_clinical": "available in-repo (prob 0-1)"
+    },
+    {
+      "dimension": "subdivision contamination risk",
+      "primary_geometry": "none (whole map; subdivision set separate)",
+      "corroborating_clinical": "none (whole)"
+    },
+    {
+      "dimension": "resolution",
+      "primary_geometry": "cyto-derived ~1 mm",
+      "corroborating_clinical": "MRI 1 mm"
+    },
+    {
+      "dimension": "reproducibility / provenance",
+      "primary_geometry": "dataset DOI 10.25493/KNSN-XB4 (stored); 2026 DOI 10.1162/IMAG.a.1260 (ref)",
+      "corroborating_clinical": "DOI 10.1016/j.neuroimage.2016.11.047; CC0"
+    },
+    {
+      "dimension": "WHOLE_BNST_COMPLEX compatibility",
+      "primary_geometry": "yes (whole-BST)",
+      "corroborating_clinical": "yes (whole-BNST)"
+    },
+    {
+      "dimension": "future canonical geometry construction suitability",
+      "primary_geometry": "primary (cyto, whole, L/R, target grid)",
+      "corroborating_clinical": "corroborating (MRI, bilateral, needs route + split)"
+    },
+    {
+      "dimension": "clinical-MRI corroborating evidence",
+      "primary_geometry": "reference-definitional only",
+      "corroborating_clinical": "primary corroborating MRI asset"
+    }
+  ],
+  "notes": [
+    "geometry asset exists != authority selected; authority is decided on evidence, availability recorded separately",
+    "no multi-atlas fusion (union/intersection/majority vote) is used to build a geometry",
+    "no geometry construction started; no NIfTI generated; no transform run",
+    "Basal Forebrain relations untouched; no DB write; no Phase1.7 reclassification; no NGIQ-BR allocation",
+    "admission verdict (ADMIT_AS_CANONICAL_BRAINREGION) unchanged from commit e04ed86"
+  ],
+  "created_at": "2026-09-09T03:01:32+00:00",
+  "script_version": "phase17_v3_adjudicate_bnst_geometry_authority.py v1"
+}
