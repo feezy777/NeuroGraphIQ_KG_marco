@@ -1,0 +1,37 @@
+{
+  "aparc_aseg": {
+    "sha256": "4c7db4478ccc171f7c891378f2974d0e140ae96131a5acd202bf7f44098f56b5",
+    "shape": [
+      256,
+      256,
+      256
+    ],
+    "spacing": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "dtype": ">i4",
+    "unique_labels": 114,
+    "vox2ras_eq_orig": true,
+    "vox2ras_tkr_eq_orig": true,
+    "orientation": "LIA"
+  },
+  "orig": {
+    "sha256": "97862f8adfa48ff0c22d1441a81554f35c562c2232b43d8738730dc9ceb2c0a1",
+    "shape": [
+      256,
+      256,
+      256
+    ],
+    "spacing": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "orientation": "LIA"
+  },
+  "grid_compatible": true,
+  "source_space": "FSAVERAGE_ORIG_VOLUME_SPACE",
+  "source_identity": "EXACT_SOURCE_IDENTITY (orig refetch SHA == frozen 97862f8a...)"
+}

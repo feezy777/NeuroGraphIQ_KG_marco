@@ -1,0 +1,14 @@
+{
+  "status_id": "CORTICAL_G1_BRIDGE_EFFECTIVE_STATUS_V2",
+  "CORTICAL_G1_BRIDGE_COMPONENTS_READY_FOR_BATCH_CONSTRUCTION": true,
+  "components": {
+    "source_geometry_method": "CORTICAL_G1_APARC_ASEG_VOLUME_METHOD_V1",
+    "target_route": "CORTICAL_FSAVERAGE_TO_MNI2009C_ROUTE_V1 (FROZEN)",
+    "target_integrity": "INTEGRITY_REAUDIT_PASS"
+  },
+  "docker_freeSurfer_cli_blocker": "NON_BLOCKING_LEGACY_ROUTE_BLOCKER (3f74c23 history kept)",
+  "do_not_apply_target_transform": true,
+  "verdict": "CORTICAL_G1_APARC_ASEG_VOLUME_METHOD_FROZEN",
+  "created_at": "2026-09-09T07:16:28+00:00",
+  "script_version": "phase17_v3_adjudicate_aparc_aseg_cortical_volume_method.py v1"
+}

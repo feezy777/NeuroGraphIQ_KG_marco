@@ -1,0 +1,15 @@
+{
+  "asset": "mri/aparc+aseg.mgz",
+  "provider": "FreeSurfer official distribution (freesurfer.net)",
+  "base_url": "https://www.freesurfer.net/pub/dist/freesurfer/tutorial_versions_centos6/freesurfer/subjects/fsaverage/mri/aparc+aseg.mgz",
+  "same_source_as_frozen_assets": true,
+  "source_release": "tutorial_versions_centos6 (same as frozen annot/white/pial/orig)",
+  "sha256": "4c7db4478ccc171f7c891378f2974d0e140ae96131a5acd202bf7f44098f56b5",
+  "size_bytes": 341811,
+  "local_path": "D:/Tool/Coding/IDE/PyCharm/NeuroGraphIQ_KG_marco/backend/data/atlases/freesurfer/fsaverage/mri/aparc+aseg.mgz",
+  "policy": "LOCAL_IMMUTABLE_CACHE (gitignored)",
+  "immutable": true,
+  "orig_refetch_sha_matches_frozen": true,
+  "created_at": "2026-09-09T07:16:28+00:00",
+  "script_version": "phase17_v3_adjudicate_aparc_aseg_cortical_volume_method.py v1"
+}
