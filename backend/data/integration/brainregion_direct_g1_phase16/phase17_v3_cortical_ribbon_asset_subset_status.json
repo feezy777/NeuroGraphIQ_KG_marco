@@ -1,0 +1,147 @@
+{
+  "ribbon_required_asset_subset_status": "COMPLETE",
+  "required_for_ribbon": [
+    "label/lh.aparc.annot",
+    "label/rh.aparc.annot",
+    "surf/lh.white",
+    "surf/rh.white",
+    "surf/lh.pial",
+    "surf/rh.pial",
+    "mri/orig.mgz"
+  ],
+  "missing": [],
+  "files": {
+    "label/lh.aparc.annot": {
+      "exists": true,
+      "size_bytes": 1312250,
+      "sha256": "39b1acde9a32b4227631eb51cbcd8dff84e2138c57bf9f96d74026f2c17f1480"
+    },
+    "label/rh.aparc.annot": {
+      "exists": true,
+      "size_bytes": 1312250,
+      "sha256": "6a326aed325d313e6e0d10f67630efcd8d3b8343c50d3e108e005f626614badb"
+    },
+    "surf/lh.white": {
+      "exists": true,
+      "size_bytes": 5898808,
+      "sha256": "c80741da738b70bc0ab1e0dcd6e8eec3d3d9f22af5812c38120a8ce4fb9fa7d3"
+    },
+    "surf/rh.white": {
+      "exists": true,
+      "size_bytes": 5898808,
+      "sha256": "4e6e74efbd851e3b23a943c28b062acb3395341ac02156a4d1078d735b55e295"
+    },
+    "surf/lh.pial": {
+      "exists": true,
+      "size_bytes": 5898808,
+      "sha256": "9cb004f61a2eeb977b1b595ad6de6656afdfc1f37ade0c00a8dde91e990a0f29"
+    },
+    "surf/rh.pial": {
+      "exists": true,
+      "size_bytes": 5898808,
+      "sha256": "4f752701f74c1626ee3b6239046b9aa793ca4e87c6ae9a6b74a233c04e651212"
+    },
+    "mri/orig.mgz": {
+      "exists": true,
+      "size_bytes": 5250876,
+      "sha256": "97862f8adfa48ff0c22d1441a81554f35c562c2232b43d8738730dc9ceb2c0a1"
+    }
+  },
+  "note": "this COMPLETE subset status is a DIFFERENT completeness axis from the historical full official asset_set_status INCOMPLETE (talairach.xfm absent). History is retained unchanged.",
+  "source_internal_geometry": {
+    "shape": [
+      256,
+      256,
+      256
+    ],
+    "voxel_mm": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "dtype": "uint8",
+    "vox2ras_tkr": [
+      [
+        -1.0,
+        0.0,
+        0.0,
+        128.0
+      ],
+      [
+        0.0,
+        0.0,
+        1.0,
+        -128.0
+      ],
+      [
+        0.0,
+        -1.0,
+        0.0,
+        128.0
+      ],
+      [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ]
+    ],
+    "vox2ras_eq_vox2ras_tkr": true,
+    "surface_vertices_in_orig_FOV": {
+      "lh_white": {
+        "in_FOV_fraction": 1.0,
+        "vox_min": [
+          126.2,
+          52.7,
+          25.5
+        ],
+        "vox_max": [
+          193.7,
+          170.5,
+          192.9
+        ]
+      },
+      "lh_pial": {
+        "in_FOV_fraction": 1.0,
+        "vox_min": [
+          126.2,
+          50.0,
+          23.2
+        ],
+        "vox_max": [
+          196.8,
+          175.1,
+          197.0
+        ]
+      },
+      "rh_white": {
+        "in_FOV_fraction": 1.0,
+        "vox_min": [
+          61.2,
+          51.7,
+          26.5
+        ],
+        "vox_max": [
+          128.9,
+          171.5,
+          193.5
+        ]
+      },
+      "rh_pial": {
+        "in_FOV_fraction": 1.0,
+        "vox_min": [
+          58.0,
+          49.0,
+          24.3
+        ],
+        "vox_max": [
+          128.9,
+          175.8,
+          197.3
+        ]
+      }
+    },
+    "topology_consistent": true,
+    "note": "source-internal geometry anchored via tkRAS / vox2ras_tkr to the fsaverage orig.mgz voxel CRS (source-native; no talairach/MNI used). pial envelopes white (larger outward voxel range) on both hemispheres."
+  }
+}

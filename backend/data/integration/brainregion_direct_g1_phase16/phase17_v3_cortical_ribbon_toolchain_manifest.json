@@ -1,0 +1,66 @@
+{
+  "verdict": "CORTICAL_FSAVERAGE_RIBBON_METHOD_BLOCKED_LICENSE",
+  "stop_code": "FREESURFER_LICENSE_MANUAL_ACTION_REQUIRED",
+  "native_windows": {
+    "free_surfer_cli_present": false,
+    "note": "no FreeSurfer on native Windows PATH"
+  },
+  "wsl": {
+    "present": true,
+    "distros": "  NAME              STATE           VERSION | * docker-desktop    Stopped         2",
+    "note": "only docker-desktop distro; no general-purpose Linux distro -> not a direct native-WSL FS execution host"
+  },
+  "docker": {
+    "cli_present": true,
+    "cli_version": "Docker version 29.4.1, build 055a478",
+    "server_status": "failed to connect to the docker API at npipe:////./pipe/dockerDesktopLinuxEngine; check if the path is correct and if the daemon is running: open //./pipe/dockerDesktopLinuxEngine: The system cannot find the file specified.",
+    "note": "daemon STOPPED this session (dockerDesktopLinuxEngine pipe absent)"
+  },
+  "official_container_route": {
+    "repository": "freesurfer/freesurfer",
+    "tag": "7.4.1",
+    "source": "official FreeSurfer project on Docker Hub (freesurfer/freesurfer)",
+    "digest": "NOT_RESOLVED_THIS_SESSION (registry unreachable from session; resolved at execution time)",
+    "container_os": "NOT_RESOLVED_IMAGE_NOT_PULLED",
+    "license_mount_policy": {
+      "host_file": "license.txt (external, never committed)",
+      "container_path": "/opt/freesurfer/license.txt",
+      "fs_license_env_alternative": "FS_LICENSE"
+    },
+    "subjects_dir_mount_policy": "mount D:\\Tool\\Coding\\IDE\\PyCharm\\NeuroGraphIQ_KG_marco\\backend\\data\\atlases\\freesurfer -> $SUBJECTS_DIR (fsaverage subject)"
+  },
+  "free_surfer_version": {
+    "selected": "7.4.1 (official container tag; not locally installed)",
+    "note": "exact version pinned to official image tag at execution"
+  },
+  "license": {
+    "required": true,
+    "present": false,
+    "env_present": false,
+    "host_search": {
+      "env_candidates": {
+        "FS_LICENSE": null,
+        "FREESURFER_HOME": null
+      },
+      "checked_paths": [
+        "C:\\Users\\Administrator\\license.txt",
+        "C:\\Users\\Administrator\\.freesurfer\\license.txt",
+        "C:\\Users\\Administrator\\freesurfer\\license.txt",
+        "repo_data/atlases license.txt hits"
+      ],
+      "any_license_found": false,
+      "repo_license_hits": []
+    },
+    "obtain_via": "official FreeSurfer registration (https://surfer.nmr.mgh.harvard.edu/registration.html)",
+    "commit_policy": "license never committed"
+  },
+  "cli_to_verify": [
+    "mri_label2vol",
+    "mri_surf2vol",
+    "mri_info"
+  ],
+  "cli_executable_status": "NOT_VERIFIED_LICENSE_GATED",
+  "note": "CLI executability verified ONLY inside the official container with a mounted license; container-started alone is NOT readiness; expected container path /opt/freesurfer/bin/{mri_label2vol,mri_surf2vol,mri_info}",
+  "created_at": "2026-09-09T04:31:53+00:00",
+  "script_version": "phase17_v3_validate_fsaverage_cortical_ribbon_method.py v1"
+}

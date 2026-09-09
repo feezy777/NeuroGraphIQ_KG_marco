@@ -1,0 +1,29 @@
+{
+  "status_id": "CORTICAL_RIBBON_EFFECTIVE_PREREQUISITE_STATUS_V1",
+  "verdict": "CORTICAL_FSAVERAGE_RIBBON_METHOD_BLOCKED_LICENSE",
+  "stop_code": "FREESURFER_LICENSE_MANUAL_ACTION_REQUIRED",
+  "ribbon_required_asset_subset_status": "COMPLETE",
+  "source_asset_internal_geometry_status": "READY",
+  "source_anchor": "tkRAS / vox2ras_tkr (annot vertex -> white/pial vertex -> tkRAS -> orig vox2ras_tkr -> orig voxel CRS)",
+  "target_standard_space_route": "STILL_UNRESOLVED",
+  "talairach_xfm": "ABSENT",
+  "talairach_source_ribbon_dependency": "FALSE",
+  "talairach_target_route_dependency": "TO_BE_ADJUDICATED",
+  "talairach_blocker_role": "TARGET_ROUTE_RELATED_MISSING_ASSET",
+  "semantics_note": "talairach.xfm absence DOES_NOT_BLOCK fsaverage-internal surface-to-volume ribbon construction (subject-internal geometry is self-contained). talairach.xfm is required only for the LATER fsaverage->MNI2009c target-route adjudication; it is NOT a source-ribbon construction blocker.",
+  "historical_full_asset_set_status": "INCOMPLETE (60d81cd, unchanged - talairach.xfm absent)",
+  "method_v1_generated": false,
+  "geometry_generated": false,
+  "pilots_selected": 3,
+  "pilots_executed": 0,
+  "pilot_volume_status": "NOT_RUN_LICENSE_BLOCKED",
+  "next_actions": [
+    "1) obtain official FreeSurfer license.txt (manual registration; never commit)",
+    "2) start Docker Desktop daemon",
+    "3) docker pull freesurfer/freesurfer:7.4.1 and record digest",
+    "4) verify mri_label2vol/mri_surf2vol/mri_info inside container",
+    "5) run hemisphere-level ribbon sanity then the 3 pilots on the orig.mgz grid; freeze method_v1 only if toolchain + pilots PASS"
+  ],
+  "created_at": "2026-09-09T04:31:53+00:00",
+  "script_version": "phase17_v3_validate_fsaverage_cortical_ribbon_method.py v1"
+}

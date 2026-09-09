@@ -1,0 +1,32 @@
+{
+  "host_os": "Windows 11 Pro (build 10.0.26200) via MINGW64/Git Bash",
+  "shell": "bash (msys)",
+  "python": "3.13.12",
+  "native_free_surfer_cli": false,
+  "freesurfer_home_env": false,
+  "fs_license_env": false,
+  "wsl_present": true,
+  "wsl_distros": "  NAME              STATE           VERSION | * docker-desktop    Stopped         2",
+  "docker_cli_present": true,
+  "docker_cli_version": "Docker version 29.4.1, build 055a478",
+  "docker_server_status": "failed to connect to the docker API at npipe:////./pipe/dockerDesktopLinuxEngine; check if the path is correct and if the daemon is running: open //./pipe/dockerDesktopLinuxEngine: The system cannot find the file specified.",
+  "license_search": {
+    "env_candidates": {
+      "FS_LICENSE": null,
+      "FREESURFER_HOME": null
+    },
+    "checked_paths": [
+      "C:\\Users\\Administrator\\license.txt",
+      "C:\\Users\\Administrator\\.freesurfer\\license.txt",
+      "C:\\Users\\Administrator\\freesurfer\\license.txt",
+      "repo_data/atlases license.txt hits"
+    ],
+    "any_license_found": false,
+    "repo_license_hits": []
+  },
+  "registry_reachability": {
+    "registry_1_docker_io": "HTTP 000 / timeout via curl this session",
+    "hub_docker_com": "blocked by outbound-fetch policy this session",
+    "digest_status": "NOT_RESOLVED_THIS_SESSION"
+  }
+}
