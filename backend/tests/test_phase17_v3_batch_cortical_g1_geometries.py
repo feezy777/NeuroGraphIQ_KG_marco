@@ -79,7 +79,7 @@ def _git_clean(*paths: Path) -> bool:
 def test_1_head():
     r = subprocess.run(["git", "rev-parse", "--short", "HEAD"], cwd=BACKEND.parent,
                        capture_output=True, text=True)
-    assert r.stdout.strip() == "a32e20e"
+    assert r.stdout.strip() == "08e4508"
 
 
 # ---- 2/3. counts 62, L/R 31/31 ----

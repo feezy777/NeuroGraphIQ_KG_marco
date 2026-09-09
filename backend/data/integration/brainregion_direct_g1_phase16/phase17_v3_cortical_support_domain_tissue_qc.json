@@ -1,0 +1,30 @@
+{
+  "bna_cortical_union": {
+    "gm": 690458.0301917468,
+    "wm": 282174.5639847892,
+    "csf": 100684.20285306452,
+    "gm_frac": 0.64329,
+    "wm_frac": 0.2629,
+    "csf_frac": 0.09381,
+    "sum_prob": 1073316.8
+  },
+  "full_dk_ribbon_union": {
+    "gm": 284116.8216342868,
+    "wm": 113751.94097755454,
+    "csf": 16383.040489478735,
+    "gm_frac": 0.68586,
+    "wm_frac": 0.2746,
+    "csf_frac": 0.03955,
+    "sum_prob": 414251.8
+  },
+  "selected_62_union": {
+    "gm": 274844.01952932193,
+    "wm": 111744.67785052396,
+    "csf": 15885.36297284416,
+    "gm_frac": 0.68289,
+    "wm_frac": 0.27764,
+    "csf_frac": 0.03947,
+    "sum_prob": 402474.06
+  },
+  "note": "probability-mass fractions (TemplateFlow GM/WM/CSF); no threshold used"
+}

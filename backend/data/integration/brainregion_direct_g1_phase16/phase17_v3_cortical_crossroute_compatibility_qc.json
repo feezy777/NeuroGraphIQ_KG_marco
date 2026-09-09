@@ -1,0 +1,30 @@
+{
+  "bna_cortical_com_mm": [
+    0.59,
+    -17.69,
+    17.5
+  ],
+  "dk_ribbon_com_mm": [
+    0.32,
+    -11.5,
+    16.47
+  ],
+  "com_delta_mm": 6.282,
+  "extent_bna_vox": [
+    147,
+    182,
+    138
+  ],
+  "extent_dk_vox": [
+    144,
+    180,
+    135
+  ],
+  "bna_cortical_union_gm_frac": 0.64329,
+  "dk_ribbon_union_gm_frac": 0.68586,
+  "gm_frac_delta": 0.04257,
+  "selected62_gm_frac": 0.68289,
+  "note": "no registration/transform run; diagnostic of frozen routes only",
+  "created_at": "2026-09-09T08:21:54+00:00",
+  "script_version": "phase17_v3_audit_cortical_crossatlas_support_domain.py v1"
+}

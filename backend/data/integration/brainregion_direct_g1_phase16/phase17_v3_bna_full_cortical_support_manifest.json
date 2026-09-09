@@ -1,0 +1,16 @@
+{
+  "cortical_parcel_ids": [
+    1,
+    210
+  ],
+  "cortical_parcel_count": 210,
+  "subcortical_ids": [
+    211,
+    246
+  ],
+  "subcortical_parcel_count": 36,
+  "bna_cortical_union_voxels": 1107275,
+  "diag_asset": "BNA_FULL_CORTICAL_UNION_MNI2009C_V1 (gitignored)",
+  "created_at": "2026-09-09T08:21:54+00:00",
+  "script_version": "phase17_v3_audit_cortical_crossatlas_support_domain.py v1"
+}
