@@ -1,0 +1,18 @@
+{
+  "decision_id": "BNST_G1_ROLLUP_DECISION_V1",
+  "verdict": "G1_ROLLUP_UNRESOLVED",
+  "macro96_parent": null,
+  "plausible_macro96_parent": "Left/Right Basal Forebrain (NGIQ-BR-00000264/00000265)",
+  "existing_candidate_evidence": [
+    "NGIQ-BR-00000343",
+    "NGIQ-BR-00000344"
+  ],
+  "note": "Julich-Brain G4 BST candidates (LIKELY_CONTAINED_NEEDS_SPATIAL_REVIEW + CONFLICT_REVIEW) already point at Basal Forebrain G1. Containment of BNST in the Basal Forebrain G1 macro is therefore a plausible-but-unconfirmed open question that this round is NOT allowed to resolve (Basal Forebrain scope is out of scope). No forced part_of/contained_in is created for Basal Forebrain, Amygdala, NAcc or Thalamus. Resolution is deferred to the Basal Forebrain scope round.",
+  "rejected_forced_parents": {
+    "BasalForebrain": "not forced (open LIKELY/CONFLICT candidate; deferred)",
+    "Amygdala": "no evidence",
+    "NucleusAccumbens": "no evidence",
+    "Thalamus": "no evidence"
+  },
+  "created_at": "2026-09-09T02:51:59+00:00"
+}

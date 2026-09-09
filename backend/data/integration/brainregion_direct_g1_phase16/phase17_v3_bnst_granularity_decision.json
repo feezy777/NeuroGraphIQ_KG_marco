@@ -1,0 +1,13 @@
+{
+  "decision_id": "BNST_GRANULARITY_DECISION_V1",
+  "verdict": "NON_G1_CANONICAL_BRAINREGION",
+  "existing_granularity_class": "subregion (L3)",
+  "existing_granularity_code": "subregion",
+  "description": "fine-grained subcortical canonical region on the existing 'subregion' (L3) scale band (subnucleus/subfield level). whole-BNST is not a Macro96 macro and is deliberately NOT elevated to G1_MACRO.",
+  "vocabulary_reference": "backend/migrations/20260826_multiscale_granularity_refactor.sql (macro L1 / meso L2 / subregion L3 / cyto L4 / molecular L5)",
+  "candidate_layer_context": "the existing Julich BST maps are registered at G4/fine (cyto) granularity in the candidate layer; that is context, not the proposed whole-BNST canonical granularity",
+  "invented_G2": false,
+  "fabricated_G1": false,
+  "note": "no G2 was invented (ontology has no formal G2 token); no G1_MACRO was fabricated.",
+  "created_at": "2026-09-09T02:51:59+00:00"
+}

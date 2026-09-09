@@ -1,0 +1,8 @@
+﻿term,canonical_structure,verdict,note
+BST,True,SAME_CANONICAL_STRUCTURE,abbreviation of bed nucleus of the stria terminalis
+BNST,True,SAME_CANONICAL_STRUCTURE,abbreviation (bed nucleus stria terminalis)
+Bed nucleus of the stria terminalis,True,SAME_CANONICAL_STRUCTURE,preferred canonical human terminology
+Bed nuclei of the stria terminalis,True,SAME_CANONICAL_STRUCTURE,complex reading of the same structure
+bed nucleus of stria terminalis,True,SAME_CANONICAL_STRUCTURE,Blackford/Theiss 2017 asset label
+"BST (Basal Forebrain, Bed Nucleus)",True,SAME_CANONICAL_STRUCTURE,Julich-Brain G4 candidate label; adds a basal-forebrain grouping context that is an open containment question (see G1 roll-up decision)
+dBNST / vBNST,False,SCOPE_DIFFERENCE_SUBDIVISION,dorsal/ventral subdivisions (Sibbach); not the whole canonical concept

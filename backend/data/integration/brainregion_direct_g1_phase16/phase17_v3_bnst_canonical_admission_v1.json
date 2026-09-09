@@ -1,0 +1,35 @@
+{
+  "admission_id": "BNST_CANONICAL_ENTITY_ADMISSION_V1",
+  "verdict": "ADMIT_AS_CANONICAL_BRAINREGION",
+  "structure": "Bed nucleus of the stria terminalis (whole BNST complex)",
+  "human_evidence": [
+    {
+      "source": "Blackford/Theiss 2017 whole-BNST probabilistic atlas (human n=10)",
+      "role": "primary human geometry/identity evidence",
+      "status": "ACQUIRED_VERIFIED"
+    },
+    {
+      "source": "Sibbach et al. 2024 dBNST/vBNST human probabilistic atlas (n=25)",
+      "role": "human subdivision evidence",
+      "status": "NOT_ACQUIRED_METADATA"
+    },
+    {
+      "source": "Brandstetter/Juellich human cytoarchitectonic BST (BSTC/D/M/P)",
+      "role": "human cytoarchitectonic support",
+      "status": "NOT_ACQUIRED_METADATA"
+    },
+    {
+      "source": "standard human neuroanatomical terminology",
+      "role": "terminology/identity support",
+      "status": "LITERATURE"
+    }
+  ],
+  "animal_evidence_used": false,
+  "non_human_note": "animal evidence (e.g. Allen mouse 'bed nucleus') OUT_OF_SCOPE_NON_HUMAN; not used as admission authority",
+  "criteria_met": {
+    "anatomically_bounded": true,
+    "human_neural_structure": true,
+    "accepted_regional_identity": true
+  },
+  "created_at": "2026-09-09T02:51:59+00:00"
+}

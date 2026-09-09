@@ -1,0 +1,55 @@
+{
+  "proposal_id": "BNST_CANONICAL_REGION_PROPOSAL_V1",
+  "proposal_entities": [
+    {
+      "proposal_entity_id": "PROP-BNST-L-V1",
+      "preferred_name": "Left bed nucleus of the stria terminalis",
+      "aliases": [
+        "Left BNST",
+        "Left BST"
+      ],
+      "chinese_name": "左侧终纹床核",
+      "hemisphere": "left",
+      "entity_type": "BrainRegion (canonical proposal)",
+      "whole_subdivision_scope": "WHOLE_BNST_COMPLEX"
+    },
+    {
+      "proposal_entity_id": "PROP-BNST-R-V1",
+      "preferred_name": "Right bed nucleus of the stria terminalis",
+      "aliases": [
+        "Right BNST",
+        "Right BST"
+      ],
+      "chinese_name": "右侧终纹床核",
+      "hemisphere": "right",
+      "entity_type": "BrainRegion (canonical proposal)",
+      "whole_subdivision_scope": "WHOLE_BNST_COMPLEX"
+    }
+  ],
+  "status": "PROPOSED_CANONICAL",
+  "not_active_not_promoted": true,
+  "canonical_definition": "whole bed nucleus of the stria terminalis (BNST complex), a small subcortical grey-matter structure of the basal forebrain / extended-amygdala region, per the human whole-BNST concept of Blackford/Theiss 2017",
+  "laterality": "LATERALIZED_CANONICAL_ENTITIES_REQUIRED",
+  "granularity": "NON_G1_CANONICAL_BRAINREGION / existing class subregion (L3)",
+  "g1_rollup_status": "G1_ROLLUP_UNRESOLVED",
+  "canonical_id_status": "PENDING_CANONICAL_ALLOCATION",
+  "canonical_ids": {
+    "left": "PENDING_CANONICAL_ALLOCATION",
+    "right": "PENDING_CANONICAL_ALLOCATION"
+  },
+  "id_allocation_policy_note": "no file-level NGIQ-BR allocator / reservation mechanism exists in the repository (canonical region_code is a DB-layer 'ng:br:*' IRI allocated at region creation); NGIQ-BR ids are therefore NOT guessed (no max+1) and NOT reserved this round",
+  "proposal_id_policy_note": "PROP-* are stable proposal tags only, NOT canonical NGIQ-BR ids",
+  "human_authority_sources": [
+    "Blackford/Theiss 2017 whole-BNST probabilistic atlas (human n=10)",
+    "Sibbach et al. 2024 dBNST/vBNST human probabilistic atlas (n=25)",
+    "Brandstetter/Juellich human cytoarchitectonic BST (BSTC/D/M/P)",
+    "standard human neuroanatomical terminology"
+  ],
+  "blackford_relation": {
+    "asset": "BST_BLACKFORD_WHOLE",
+    "relation": "SUPPORTS_GEOMETRY_FOR whole-BNST proposed canonical concept",
+    "geometry_authority_available": true
+  },
+  "geometry_construction": "NOT_STARTED",
+  "created_at": "2026-09-09T02:51:59+00:00"
+}

@@ -1,0 +1,51 @@
+{
+  "audit_id": "BNST_REPOSITORY_ENTITY_AUDIT",
+  "macro96_pool": {
+    "count_bnst": 0,
+    "note": "Macro96 has NO BST/BNST row"
+  },
+  "canonical_brainregions": {
+    "count_bnst": 0,
+    "note": "no canonical BST/BNST BrainRegion in canonical records"
+  },
+  "canonical_ngiq_br_ids": {
+    "count_bnst": 0,
+    "note": "no canonical NGIQ-BR id refers to BST/BNST"
+  },
+  "julich_g4_candidate_rows": {
+    "count": 2,
+    "rows": [
+      {
+        "source_entity_id": "NGIQ-BR-00000343",
+        "source_name_en": "BST (Basal Forebrain, Bed Nucleus) right",
+        "source_granularity": "G4_MICROSTRUCTURAL_FINE",
+        "hemisphere": "right",
+        "candidate_g1_entity_id": "NGIQ-BR-00000265",
+        "candidate_g1_name_en": "Right Basal Forebrain",
+        "v3_classification": "LIKELY_CONTAINED_NEEDS_SPATIAL_REVIEW",
+        "frozen_decision": "CONFLICT_REVIEW"
+      },
+      {
+        "source_entity_id": "NGIQ-BR-00000344",
+        "source_name_en": "BST (Basal Forebrain, Bed Nucleus) left",
+        "source_granularity": "G4_MICROSTRUCTURAL_FINE",
+        "hemisphere": "left",
+        "candidate_g1_entity_id": "NGIQ-BR-00000264",
+        "candidate_g1_name_en": "Left Basal Forebrain",
+        "v3_classification": "LIKELY_CONTAINED_NEEDS_SPATIAL_REVIEW",
+        "frozen_decision": "CONFLICT_REVIEW"
+      }
+    ],
+    "note": "candidate/source layer only (Julich-Brain), mapped to Basal Forebrain G1 candidate with LIKELY + CONFLICT_REVIEW; NOT canonical entities and NOT modified by this round"
+  },
+  "external_manifest_label": {
+    "asset_id": "BST_BLACKFORD_WHOLE",
+    "supported_g1_label": "BST (whole bed nucleus of stria terminalis)",
+    "semantic": "ASSET_TARGET_LABEL_WITHOUT_CANONICAL_ENTITY",
+    "stale": "SEMANTIC_LABEL_STALE_NOT_CANONICAL_G1",
+    "note": "field records a planned-support target anatomical concept; it does NOT assert an existing canonical G1 entity"
+  },
+  "conclusion": "repository has NO canonical BNST entity. BST is present only as (a) a Julich G4 candidate pair under Basal Forebrain (LIKELY/CONFLICT_REVIEW) and (b) a planned-support text label in the external asset manifest.",
+  "created_at": "2026-09-09T02:51:59+00:00",
+  "script_version": "phase17_v3_adjudicate_bnst_canonical_admission.py v1"
+}
