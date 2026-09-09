@@ -1,0 +1,11 @@
+{
+  "source": "FreeSurfer official distribution (freesurfer.net tutorial mirror)",
+  "base_url": "https://www.freesurfer.net/pub/dist/freesurfer/tutorial_versions_centos6/freesurfer/subjects/fsaverage",
+  "distribution": "tutorial_versions_centos6",
+  "release_identity": "PARTIALLY_RESOLVED",
+  "release_note": "official FreeSurfer 'tutorial_versions_centos6' freesurfer distribution; exact patch release not determinable from the tutorial mirror (no version file); NOT fabricated",
+  "provider": "Martinos Center / FreeSurfer",
+  "acquisition_timestamp": "2026-09-09T04:17:17+00:00",
+  "same_release_asset_set": true,
+  "route": "R1"
+}

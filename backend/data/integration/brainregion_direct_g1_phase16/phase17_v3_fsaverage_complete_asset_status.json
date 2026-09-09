@@ -1,0 +1,28 @@
+{
+  "status_id": "FSAVERAGE_OFFICIAL_ASSET_SET_V1",
+  "verdict": "CORTICAL_FSAVERAGE_COMPLETE_SOURCE_ASSET_BLOCKED",
+  "asset_set_status": "INCOMPLETE",
+  "required_missing": [
+    "transforms/talairach.xfm"
+  ],
+  "release_identity": "PARTIALLY_RESOLVED",
+  "surface_topology": "CONSISTENT",
+  "source_internal_geometry": "RESOLVED",
+  "sixty_two_target_crosscheck": "PASS",
+  "present_required": [
+    "label/lh.aparc.annot",
+    "label/rh.aparc.annot",
+    "surf/lh.white",
+    "surf/rh.white",
+    "surf/lh.pial",
+    "surf/rh.pial",
+    "mri/orig.mgz"
+  ],
+  "toolchain": "BLOCKED (unchanged from prior round: FREESURFER_TOOLCHAIN_MANUAL_INSTALL_REQUIRED + FREESURFER_LICENSE_REQUIRED)",
+  "target_mni2009c_route": "NOT_ADJUDICATED (separate later round)",
+  "effective_prerequisite_state": "CORTICAL_BRIDGE_SOURCE_AND_TOOLCHAIN_BLOCKED (source improved (pial+orig present) but incomplete: talairach.xfm absent; toolchain blocked) - NOT READY",
+  "geometry_generated": false,
+  "note": "existing partial set is superseded as the current official same-release asset set; prior prerequisite snapshot (commit 3f42149) is left unchanged",
+  "created_at": "2026-09-09T04:17:17+00:00",
+  "script_version": "phase17_v3_acquire_complete_fsaverage_assets.py v1"
+}

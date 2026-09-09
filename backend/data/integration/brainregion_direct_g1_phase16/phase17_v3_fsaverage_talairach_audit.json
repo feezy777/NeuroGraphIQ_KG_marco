@@ -1,0 +1,9 @@
+{
+  "present": false,
+  "sha256": null,
+  "source_status": "HTTP 404 on the official tutorial fsaverage base",
+  "semantics_note": "talairach.xfm (MNI305/Talairach space transform) is required for a COMPLETE official asset set but is NOT shipped on the tutorial mirror; obtaining it would require the full official FreeSurfer distribution (license/registration)",
+  "not_mni2009c_route": true,
+  "rule": "talairach.xfm != MNI152NLin2009cAsym transform; MNI305/Talairach != MNI152 2009c",
+  "used": false
+}

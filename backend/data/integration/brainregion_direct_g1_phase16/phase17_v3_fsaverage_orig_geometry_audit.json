@@ -1,0 +1,71 @@
+{
+  "present": true,
+  "path": "mri/orig.mgz",
+  "sha256": "97862f8adfa48ff0c22d1441a81554f35c562c2232b43d8738730dc9ceb2c0a1",
+  "shape": [
+    256,
+    256,
+    256
+  ],
+  "voxel_size_mm": [
+    1.0,
+    1.0,
+    1.0
+  ],
+  "dtype": "uint8",
+  "vox2ras": [
+    [
+      -1.0,
+      0.0,
+      0.0,
+      128.0
+    ],
+    [
+      0.0,
+      0.0,
+      1.0,
+      -128.0
+    ],
+    [
+      0.0,
+      -1.0,
+      0.0,
+      128.0
+    ],
+    [
+      0.0,
+      0.0,
+      0.0,
+      1.0
+    ]
+  ],
+  "vox2ras_tkr": [
+    [
+      -1.0,
+      0.0,
+      0.0,
+      128.0
+    ],
+    [
+      0.0,
+      0.0,
+      1.0,
+      -128.0
+    ],
+    [
+      0.0,
+      -1.0,
+      0.0,
+      128.0
+    ],
+    [
+      0.0,
+      0.0,
+      0.0,
+      1.0
+    ]
+  ],
+  "vox2ras_eq_vox2ras_tkr": true,
+  "note": "vox2ras == vox2ras_tkr for the fsaverage template volume (1mm 256^3, tkRAS-aligned internal geometry). This is the source-internal identity; it is NOT an MNI152 2009cAsym mapping.",
+  "orientation_center": "tkRAS origin ~ center (voxel 128) under the shared matrix"
+}

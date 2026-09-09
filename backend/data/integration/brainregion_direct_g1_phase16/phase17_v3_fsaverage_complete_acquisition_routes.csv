@@ -1,0 +1,4 @@
+﻿route_id,provider,url,access_state,requires_login,requires_license_acceptance,redistribution,asset_set,evidence
+R1,official FreeSurfer tutorial mirror (freesurfer.net),https://www.freesurfer.net/pub/dist/freesurfer/tutorial_versions_centos6/freesurfer/subjects/fsaverage,OPEN,no,n/a,LOCAL_USE_ONLY cache,fsaverage subject files,"lh/rh.aparc.annot, white, sphere acquired 2026-09-01; this round added lh/rh.pial (200) and mri/orig.mgz (200); transforms/talairach.xfm -> 404"
+R2,full official FreeSurfer distribution (needs license/registration),(official distribution download - license-gated),MANUAL_AUTHORIZED_ACCESS_REQUIRED,yes,yes,per FreeSurfer license,full subjects/fsaverage (incl. talairach.xfm),NOT accessed this round; would be required to obtain transforms/talairach.xfm from the same release without mixing sources
+R3,third-party / random GitHub mirrors,,NOT_USED,no,n/a,unverified,any,excluded by policy: no mixing of asset sets from unknown sources
