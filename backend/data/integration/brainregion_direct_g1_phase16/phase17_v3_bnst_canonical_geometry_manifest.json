@@ -1,0 +1,191 @@
+{
+  "manifest_id": "BNST_CANONICAL_GEOMETRY_MANIFEST_V1",
+  "canonical_entities": {
+    "left": "PROP-BNST-L-V1",
+    "right": "PROP-BNST-R-V1",
+    "id_status": "PROPOSAL_IDS_ONLY_PENDING_CANONICAL_ALLOCATION"
+  },
+  "geometry_authority_decision": "commit f28ffbd (PRIMARY_ANATOMICAL_GEOMETRY_AUTHORITY = Julich-Brain v3.1 whole-BST L/R)",
+  "source": {
+    "dataset": "Julich-Brain",
+    "version": "3.1.0",
+    "dataset_doi": "10.25493/KNSN-XB4",
+    "provider": "EBRAINS / siibra",
+    "region_label": "BST (Basal Forebrain, Bed Nucleus)",
+    "reference_space": "MNI 152 ICBM 2009c Nonlinear Asymmetric"
+  },
+  "provenance_chain": [
+    {
+      "step": "canonical proposal",
+      "id": "BNST_CANONICAL_REGION_PROPOSAL_V1 (commit e04ed86)"
+    },
+    {
+      "step": "proposal entities",
+      "left": "PROP-BNST-L-V1",
+      "right": "PROP-BNST-R-V1"
+    },
+    {
+      "step": "geometry authority decision",
+      "id": "BNST_GEOMETRY_AUTHORITY_DECISION_V1 (commit f28ffbd)"
+    },
+    {
+      "step": "primary source",
+      "dataset": "Julich-Brain v3.1 whole-BST L/R",
+      "doi": "10.25493/KNSN-XB4"
+    },
+    {
+      "step": "source file",
+      "left": "data/atlases/julich/v3.1/spatial_raw/probability_maps/BST_BASAL_FOREBRAIN_BED_NUCLEUS_LEFT.nii.gz",
+      "right": "data/atlases/julich/v3.1/spatial_raw/probability_maps/BST_BASAL_FOREBRAIN_BED_NUCLEUS_RIGHT.nii.gz"
+    },
+    {
+      "step": "source SHA256",
+      "left": "b72a2396a977ebfbb3668a5fb5981ec43c676e7c497d688a788e0539f8537102",
+      "right": "8bacb4eab6c77d7bd3e3b1e02ab77f7654fe8e98c232cb2b238b53a4b3ef9d55"
+    },
+    {
+      "step": "source reference space",
+      "value": "MNI152NLin2009cAsym (canonical target grid)"
+    },
+    {
+      "step": "resampling",
+      "value": "NONE (source already on the frozen canonical 2009cAsym grid)"
+    },
+    {
+      "step": "final canonical geometry",
+      "left": "phase17_v3_bnst_canonical_geometry_qc.json.left",
+      "right": "phase17_v3_bnst_canonical_geometry_qc.json.right"
+    }
+  ],
+  "canonical_geometry_class": "CANONICAL_PROBABILITY_GEOMETRY",
+  "source_probability_geometry": "REGISTERED_DIRECTLY_FROM_ACQUIRED_JULICH_SOURCE",
+  "canonical_spatial_representation": "PROBABILITY_PRESERVED",
+  "derived_binary_geometry": "NOT_CONSTRUCTED",
+  "binary_geometry_policy": "UNRESOLVED",
+  "binary_policy_note": "the repository has no frozen probability->binary threshold rule for this source class; no threshold was chosen ad hoc (not 0.1/0.25/0.5/>0/max); the probability geometry is preserved",
+  "threshold_applied": false,
+  "binarization_applied": false,
+  "resampling_applied": false,
+  "nonlinear_registration_applied": false,
+  "morphology_edited": false,
+  "direct_overlap_grid_ready": true,
+  "direct_validation_executed": false,
+  "registration_applied": false,
+  "corroborating_mri_geometry": "Theiss/Blackford 2017 (corroborating only; not canonical source)",
+  "brandstetter_2026_note": "Brandstetter 2026 (DOI 10.1162/IMAG.a.1260) is reference-definitional / future subdivision source and is NOT silently substituted for the acquired Julich v3.1 whole-BST source; geometric equivalence between Julich v3.1 whole-BST and Brandstetter 2026 subdivisions is NOT assumed without source-level proof (caveat retained from commit f28ffbd)",
+  "left": {
+    "proposal_entity_id": "PROP-BNST-L-V1",
+    "hemisphere": "left",
+    "source_file": "data/atlases/julich/v3.1/spatial_raw/probability_maps/BST_BASAL_FOREBRAIN_BED_NUCLEUS_LEFT.nii.gz",
+    "source_sha256": "b72a2396a977ebfbb3668a5fb5981ec43c676e7c497d688a788e0539f8537102",
+    "source_region_label": "BST (Basal Forebrain, Bed Nucleus) left",
+    "source_region_id": "JULICH_BRAIN_CYTOARCHITECTONIC_ATLAS_V3_1_BST_BASAL_FOREBRAIN_BED_NUCLEUS",
+    "modality": "cytoarchitectonic probability/statistical map",
+    "reference_space": "MNI152NLin2009cAsym (Julich-Brain v3.1)",
+    "grid": [
+      193,
+      229,
+      193
+    ],
+    "voxel_spacing_mm": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "affine_matches_frozen_reference": true,
+    "qform_code": 4,
+    "sform_code": 4,
+    "datatype": "float32",
+    "value_min": 0.0,
+    "value_max": 0.892927,
+    "value_representation": "continuous probabilistic/statistical values in [0,1] (NOT integer subject counts; no binary threshold applied)",
+    "nonzero_support_voxels": 991,
+    "support_volume_mm3": 991.0,
+    "probability_mass": 141.6895,
+    "weighted_centroid_world_mm": [
+      -6.361,
+      1.229,
+      -2.82
+    ],
+    "bounding_box_world_mm": {
+      "x": [
+        -11.0,
+        -1.0
+      ],
+      "y": [
+        -4.0,
+        7.0
+      ],
+      "z": [
+        -9.0,
+        5.0
+      ]
+    },
+    "support_connected_components": 1,
+    "distinct_positive_values": 991,
+    "laterality_source": "source-native Left/Right Julich maps (world centroid as consistency check)",
+    "thresholded": false,
+    "binarized": false,
+    "morphology_edited": false,
+    "resampled": false
+  },
+  "right": {
+    "proposal_entity_id": "PROP-BNST-R-V1",
+    "hemisphere": "right",
+    "source_file": "data/atlases/julich/v3.1/spatial_raw/probability_maps/BST_BASAL_FOREBRAIN_BED_NUCLEUS_RIGHT.nii.gz",
+    "source_sha256": "8bacb4eab6c77d7bd3e3b1e02ab77f7654fe8e98c232cb2b238b53a4b3ef9d55",
+    "source_region_label": "BST (Basal Forebrain, Bed Nucleus) right",
+    "source_region_id": "JULICH_BRAIN_CYTOARCHITECTONIC_ATLAS_V3_1_BST_BASAL_FOREBRAIN_BED_NUCLEUS",
+    "modality": "cytoarchitectonic probability/statistical map",
+    "reference_space": "MNI152NLin2009cAsym (Julich-Brain v3.1)",
+    "grid": [
+      193,
+      229,
+      193
+    ],
+    "voxel_spacing_mm": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "affine_matches_frozen_reference": true,
+    "qform_code": 4,
+    "sform_code": 4,
+    "datatype": "float32",
+    "value_min": 0.0,
+    "value_max": 0.911041,
+    "value_representation": "continuous probabilistic/statistical values in [0,1] (NOT integer subject counts; no binary threshold applied)",
+    "nonzero_support_voxels": 791,
+    "support_volume_mm3": 791.0,
+    "probability_mass": 138.3197,
+    "weighted_centroid_world_mm": [
+      5.903,
+      2.335,
+      -2.363
+    ],
+    "bounding_box_world_mm": {
+      "x": [
+        2.0,
+        10.0
+      ],
+      "y": [
+        -3.0,
+        8.0
+      ],
+      "z": [
+        -8.0,
+        5.0
+      ]
+    },
+    "support_connected_components": 1,
+    "distinct_positive_values": 791,
+    "laterality_source": "source-native Left/Right Julich maps (world centroid as consistency check)",
+    "thresholded": false,
+    "binarized": false,
+    "morphology_edited": false,
+    "resampled": false
+  },
+  "qc_file": "data/integration/brainregion_direct_g1_phase16/phase17_v3_bnst_canonical_geometry_qc.json",
+  "created_at": "2026-09-09T03:07:38+00:00",
+  "script_version": "phase17_v3_construct_bnst_canonical_geometry.py v1"
+}

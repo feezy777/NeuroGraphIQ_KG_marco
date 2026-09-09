@@ -1,0 +1,123 @@
+{
+  "left": {
+    "proposal_entity_id": "PROP-BNST-L-V1",
+    "hemisphere": "left",
+    "source_file": "data/atlases/julich/v3.1/spatial_raw/probability_maps/BST_BASAL_FOREBRAIN_BED_NUCLEUS_LEFT.nii.gz",
+    "source_sha256": "b72a2396a977ebfbb3668a5fb5981ec43c676e7c497d688a788e0539f8537102",
+    "source_region_label": "BST (Basal Forebrain, Bed Nucleus) left",
+    "source_region_id": "JULICH_BRAIN_CYTOARCHITECTONIC_ATLAS_V3_1_BST_BASAL_FOREBRAIN_BED_NUCLEUS",
+    "modality": "cytoarchitectonic probability/statistical map",
+    "reference_space": "MNI152NLin2009cAsym (Julich-Brain v3.1)",
+    "grid": [
+      193,
+      229,
+      193
+    ],
+    "voxel_spacing_mm": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "affine_matches_frozen_reference": true,
+    "qform_code": 4,
+    "sform_code": 4,
+    "datatype": "float32",
+    "value_min": 0.0,
+    "value_max": 0.892927,
+    "value_representation": "continuous probabilistic/statistical values in [0,1] (NOT integer subject counts; no binary threshold applied)",
+    "nonzero_support_voxels": 991,
+    "support_volume_mm3": 991.0,
+    "probability_mass": 141.6895,
+    "weighted_centroid_world_mm": [
+      -6.361,
+      1.229,
+      -2.82
+    ],
+    "bounding_box_world_mm": {
+      "x": [
+        -11.0,
+        -1.0
+      ],
+      "y": [
+        -4.0,
+        7.0
+      ],
+      "z": [
+        -9.0,
+        5.0
+      ]
+    },
+    "support_connected_components": 1,
+    "distinct_positive_values": 991,
+    "laterality_source": "source-native Left/Right Julich maps (world centroid as consistency check)",
+    "thresholded": false,
+    "binarized": false,
+    "morphology_edited": false,
+    "resampled": false
+  },
+  "right": {
+    "proposal_entity_id": "PROP-BNST-R-V1",
+    "hemisphere": "right",
+    "source_file": "data/atlases/julich/v3.1/spatial_raw/probability_maps/BST_BASAL_FOREBRAIN_BED_NUCLEUS_RIGHT.nii.gz",
+    "source_sha256": "8bacb4eab6c77d7bd3e3b1e02ab77f7654fe8e98c232cb2b238b53a4b3ef9d55",
+    "source_region_label": "BST (Basal Forebrain, Bed Nucleus) right",
+    "source_region_id": "JULICH_BRAIN_CYTOARCHITECTONIC_ATLAS_V3_1_BST_BASAL_FOREBRAIN_BED_NUCLEUS",
+    "modality": "cytoarchitectonic probability/statistical map",
+    "reference_space": "MNI152NLin2009cAsym (Julich-Brain v3.1)",
+    "grid": [
+      193,
+      229,
+      193
+    ],
+    "voxel_spacing_mm": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "affine_matches_frozen_reference": true,
+    "qform_code": 4,
+    "sform_code": 4,
+    "datatype": "float32",
+    "value_min": 0.0,
+    "value_max": 0.911041,
+    "value_representation": "continuous probabilistic/statistical values in [0,1] (NOT integer subject counts; no binary threshold applied)",
+    "nonzero_support_voxels": 791,
+    "support_volume_mm3": 791.0,
+    "probability_mass": 138.3197,
+    "weighted_centroid_world_mm": [
+      5.903,
+      2.335,
+      -2.363
+    ],
+    "bounding_box_world_mm": {
+      "x": [
+        2.0,
+        10.0
+      ],
+      "y": [
+        -3.0,
+        8.0
+      ],
+      "z": [
+        -8.0,
+        5.0
+      ]
+    },
+    "support_connected_components": 1,
+    "distinct_positive_values": 791,
+    "laterality_source": "source-native Left/Right Julich maps (world centroid as consistency check)",
+    "thresholded": false,
+    "binarized": false,
+    "morphology_edited": false,
+    "resampled": false
+  },
+  "left_right": {
+    "volume_ratio_L_over_R": 1.2528,
+    "probability_mass_ratio_L_over_R": 1.0244,
+    "normalized_overlap_mass_fraction": 0.0,
+    "left_mass_on_right_side_fraction": 0.0,
+    "right_mass_on_left_side_fraction": 0.0,
+    "distinct_not_duplicated": true
+  },
+  "note": "diagnostics only; no anatomy modification"
+}
