@@ -1,0 +1,28 @@
+{
+  "runtime": "ANTs (SyN diffeomorphic) via ANTsPy 0.6.3",
+  "software": "ANTs/ANTsPy",
+  "ants_python_version": "0.6.3",
+  "elastix_available": false,
+  "itk_python_available": false,
+  "runtime_sanity_test": {
+    "performed": true,
+    "result": "PASS",
+    "evidence": "synthetic SyN: warp finite, nonzero displacement, forward != inverse, apply_transforms changes image; historical zero-warp anomaly NOT reproduced"
+  },
+  "sampling": "regular deterministic",
+  "random_seed": 17,
+  "flags": {
+    "runtime_registered": true,
+    "deformation_valid": true,
+    "finite": true,
+    "nonzero_disp": true,
+    "zero_frac_ok": true,
+    "max_disp_ok": true,
+    "coverage_min_ok": true,
+    "coverage_not_degraded_vs_affine": true,
+    "no_truncation_ok": true,
+    "laterality_ok": true
+  },
+  "created_at": "2026-09-09T05:49:48+00:00",
+  "script_version": "phase17_v3_execute_cortical_target_registration.py v1"
+}

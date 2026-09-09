@@ -1,0 +1,39 @@
+{
+  "moving": {
+    "identity": "official FreeSurfer fsaverage mri/orig.mgz",
+    "sha256": "97862f8adfa48ff0c22d1441a81554f35c562c2232b43d8738730dc9ceb2c0a1",
+    "shape": [
+      256,
+      256,
+      256
+    ],
+    "spacing": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "dtype": "uint8"
+  },
+  "fixed": {
+    "identity": "TemplateFlow tpl-MNI152NLin2009cAsym res-01 desc-brain T1w",
+    "sha256": "97cee2cf7f51388d76d7b3632c8375d688d0fa171e1bede81fcef23726bb3d73",
+    "shape": [
+      193,
+      229,
+      193
+    ],
+    "spacing": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "dtype": "float32"
+  },
+  "fixed_brain_mask": {
+    "derivation": "intensity-derived whole-brain support: max*0.02 + largest CC + close(2) + dilate(1); no labels",
+    "voxels": 1960755
+  },
+  "note": "moving whole-head avg used directly; metric restricted to fixed whole-brain mask (brain-to-brain). Raw templates never modified.",
+  "created_at": "2026-09-09T05:49:48+00:00",
+  "script_version": "phase17_v3_execute_cortical_target_registration.py v1"
+}

@@ -1,0 +1,5 @@
+﻿stage,ncc,mi_bits,coverage,note
+baseline_grid_resample,0.6005,0.493,0.9766,"pure grid resample, no transform"
+post_affine,0.6699,0.644,0.9975,affine stage only
+post_nonlinear_SyN,0.7604,1.086,0.9951,full SyN (affine + warp)
+inverse_roundtrip,0.895,3.765,0.613,warp -> inverse transform back to moving

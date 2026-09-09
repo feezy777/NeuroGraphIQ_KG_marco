@@ -1,0 +1,59 @@
+{
+  "run_id": "RUN-CORT-FSAVG-TO-MNI2009C-DIRECT-V1",
+  "verdict": "CORTICAL_TARGET_PROJECT_DERIVED_TRANSFORM_FROZEN",
+  "pass_flags": {
+    "runtime_registered": true,
+    "deformation_valid": true,
+    "finite": true,
+    "nonzero_disp": true,
+    "zero_frac_ok": true,
+    "max_disp_ok": true,
+    "coverage_min_ok": true,
+    "coverage_not_degraded_vs_affine": true,
+    "no_truncation_ok": true,
+    "laterality_ok": true
+  },
+  "laterality": {
+    "preserved": true,
+    "probes": {
+      "anatomical_left_LPSplusx": {
+        "preserved": true,
+        "correct_side_fraction": 1.0,
+        "n_points": 400,
+        "source_mean_x_mm": 42.3725,
+        "target_mean_x_mm": 40.68218994140625
+      },
+      "anatomical_right_LPSminusx": {
+        "preserved": true,
+        "correct_side_fraction": 1.0,
+        "n_points": 400,
+        "source_mean_x_mm": -43.0025,
+        "target_mean_x_mm": -42.96918487548828
+      }
+    },
+    "note": "physical-point laterality probe (ANTs point transform, no labels); side preserved = no left-right reflection"
+  },
+  "inverse_consistency": {
+    "inverse_status": "AVAILABLE",
+    "roundtrip_ncc": 0.8949683910474032,
+    "roundtrip_mi_bits": 3.764522755979397,
+    "roundtrip_coverage": 0.6129778056091939
+  },
+  "geometry": {
+    "moving_tissue_support_ml": 5729.7,
+    "fixed_brain_mask_ml": 1960.8,
+    "coverage_baseline": 0.9766,
+    "coverage_affine": 0.9975,
+    "coverage_nonlinear": 0.9951,
+    "com_disp_baseline_mm": 10.31,
+    "com_disp_affine_mm": 10.52,
+    "com_disp_nonlinear_mm": 7.75,
+    "fov_no_truncation": true,
+    "laterality_preserved": true
+  },
+  "route": "R_D_PROJECT_DERIVED_DIRECT",
+  "raw_templates_untouched": true,
+  "binaries_gitignored": true,
+  "created_at": "2026-09-09T05:49:48+00:00",
+  "script_version": "phase17_v3_execute_cortical_target_registration.py v1"
+}

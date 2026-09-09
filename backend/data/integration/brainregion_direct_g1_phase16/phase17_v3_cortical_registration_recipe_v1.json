@@ -1,0 +1,46 @@
+{
+  "recipe_id": "REGISTRATION_RECIPE_V1",
+  "route": "R_D_PROJECT_DERIVED_DIRECT",
+  "moving": "official FreeSurfer fsaverage mri/orig.mgz (whole-head avg; no skull-strip needed)",
+  "fixed": "TemplateFlow MNI152NLin2009cAsym res-01 desc-brain T1w",
+  "runtime": "ANTs (SyN) via ANTsPy 0.6.3",
+  "type_of_transform": "SyN",
+  "aff_metric": "mattes",
+  "syn_metric": "mattes",
+  "aff_sampling": 64,
+  "syn_sampling": 64,
+  "sampling_strategy": "regular deterministic (not random)",
+  "mask_usage": "FIXED whole-brain mask only (intensity-derived; max*0.02 + largest CC + close2 + dilate1); metric restricted to the fixed brain => brain-to-brain alignment. No label content; no moving brain extraction.",
+  "reg_iterations": [
+    40,
+    20,
+    10
+  ],
+  "reg_convergence": "[40x20x10,1e-7,8]",
+  "reg_smoothing": "2x1x0 (derived)",
+  "reg_shrink": "4x2x1 (derived)",
+  "aff_iterations": "ANTs SyN default low-dim schedule",
+  "random_seed": 17,
+  "histogram_matching": false,
+  "singleprecision": true,
+  "notes": [
+    "recipe frozen BEFORE any result review; no post-hoc tuning / recipe V2 this round.",
+    "masks derived only from whole-brain/intensity geometry, independent of all parcels."
+  ],
+  "QC_pass_thresholds": {
+    "coverage_nonlinear_min": 0.8,
+    "coverage_not_degraded_vs_affine_minus": 0.02,
+    "finite_required": true,
+    "max_displacement_mm_max": 45.0,
+    "zero_displacement_fraction_max": 0.9,
+    "negative_jacobian_fraction_max": 0.02,
+    "jacobian_median_range": [
+      0.4,
+      1.8
+    ],
+    "laterality_preserved_required": true,
+    "fov_no_truncation_required": true
+  },
+  "created_at": "2026-09-09T05:49:48+00:00",
+  "script_version": "phase17_v3_execute_cortical_target_registration.py v1"
+}

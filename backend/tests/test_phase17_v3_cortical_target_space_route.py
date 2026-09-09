@@ -219,14 +219,20 @@ def test_18_no_registration_executed():
     assert "deferred" in rc["R_D_PROJECT_DERIVED_DIRECT"]["evidence"]
 
 
-# ---- 19. no cortical geometry generation / route_v1 absent ----
+# ---- 19. no cortical geometry generation / route_v1 only-if-frozen (supercession-aware) ----
+# This round (641cd76, verdict D pending) did NOT generate route_v1. The following registration
+# round may legitimately freeze it (verdict A). Updated in the registration round to permit that
+# transition without weakening this round's "no cortical geometry" guarantees.
 def test_19_no_geometry_no_route_v1():
-    assert not ROUTE_V1.exists()
-    names = {p.name for p in OUTS}
-    assert "phase17_v3_cortical_target_route_v1.json" not in names
     assert not (DERIVED / "left_precentral_prob_mni2009casym.nii.gz").exists()
+    if ROUTE_V1.exists():
+        rv = json.load(open(ROUTE_V1, encoding="utf-8"))
+        assert rv["route_class"] == "PROJECT_DERIVED_TEMPLATE_REGISTRATION"
+        assert rv["route_id"] == "CORTICAL_FSAVERAGE_TO_MNI2009C_ROUTE_V1"
+    names = {p.name for p in OUTS}
+    assert "phase17_v3_cortical_target_route_v1.json" not in names  # this round's own outputs
     md = MD.read_text(encoding="utf-8")
-    assert "route_v1 NOT generated" in md
+    assert "route_v1 NOT generated" in md  # this round's diagnostics (unchanged history)
 
 
 # ---- 20. no Docker/license work ----

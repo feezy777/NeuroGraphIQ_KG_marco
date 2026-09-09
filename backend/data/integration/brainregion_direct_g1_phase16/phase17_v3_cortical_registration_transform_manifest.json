@@ -1,0 +1,27 @@
+{
+  "run_id": "RUN-CORT-FSAVG-TO-MNI2009C-DIRECT-V1",
+  "transform_id": "TRF-CORT-FSAVG-TO-MNI2009C-DIRECT-V1",
+  "direction": "fsaverage orig (moving) -> MNI152NLin2009cAsym (fixed)",
+  "affine": {
+    "path": "D:/Tool/Coding/IDE/PyCharm/NeuroGraphIQ_KG_marco/backend/data/atlases/derived_g1/cort_reg_run_v1/TRF-CORT-FSAVG-TO-MNI2009C-DIRECT-V1_affine.mat",
+    "sha256": "ff95a9fc7b8438065ff5b9dba557bacf92add8648abce36ccba93867196d6bb0",
+    "size_bytes": 132,
+    "format": "ANTs GenericAffine .mat"
+  },
+  "forward_warp": {
+    "path": "D:/Tool/Coding/IDE/PyCharm/NeuroGraphIQ_KG_marco/backend/data/atlases/derived_g1/cort_reg_run_v1/TRF-CORT-FSAVG-TO-MNI2009C-DIRECT-V1_forward_warp.nii.gz",
+    "sha256": "8bf90f3efdf7281bd2f059055c3715428be5e58f39df92cc04b75106ac0341f8",
+    "size_bytes": 72600346,
+    "format": "ANTs displacement field nii.gz"
+  },
+  "inverse_warp": {
+    "path": "D:/Tool/Coding/IDE/PyCharm/NeuroGraphIQ_KG_marco/backend/data/atlases/derived_g1/cort_reg_run_v1/TRF-CORT-FSAVG-TO-MNI2009C-DIRECT-V1_inverse_warp.nii.gz",
+    "sha256": "46366de37776c59918064950447bea524752405f455a3ea406f58cff2a40e2eb",
+    "size_bytes": 72592760,
+    "format": "ANTs inverse displacement field nii.gz"
+  },
+  "warped_moving_anatomical": "D:/Tool/Coding/IDE/PyCharm/NeuroGraphIQ_KG_marco/backend/data/atlases/derived_g1/cort_reg_run_v1/TRF-CORT-FSAVG-TO-MNI2009C-DIRECT-V1_warped_moving_brain.nii.gz",
+  "software_convention": "ANTs transforms; fwd list [warp, affine] moving->fixed; inv list [affine, inverseWarp]",
+  "created_at": "2026-09-09T05:49:48+00:00",
+  "script_version": "phase17_v3_execute_cortical_target_registration.py v1"
+}

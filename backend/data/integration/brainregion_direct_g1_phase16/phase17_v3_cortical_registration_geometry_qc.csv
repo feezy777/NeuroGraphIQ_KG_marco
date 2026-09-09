@@ -1,0 +1,11 @@
+﻿metric,value
+moving_tissue_support_ml,5729.7
+fixed_brain_mask_ml,1960.8
+coverage_baseline,0.9766
+coverage_affine,0.9975
+coverage_nonlinear,0.9951
+com_disp_baseline_mm,10.31
+com_disp_affine_mm,10.52
+com_disp_nonlinear_mm,7.75
+fov_no_truncation,True
+laterality_preserved,True
