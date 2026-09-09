@@ -1,0 +1,63 @@
+﻿canonical_region_id,g1_name_en,hemisphere,dk_label_name,dk_label_id,has_cortical_g3_relation
+NGIQ-BR-00000269,Left Caudal Anterior Cingulate Cortex,left,caudalanteriorcingulate,2,FALSE
+NGIQ-BR-00000270,Left Caudal Middle Frontal Gyrus,left,caudalmiddlefrontal,3,TRUE
+NGIQ-BR-00000271,Left Cuneus,left,cuneus,5,FALSE
+NGIQ-BR-00000272,Left Entorhinal Cortex,left,entorhinal,6,TRUE
+NGIQ-BR-00000273,Left Fusiform Gyrus,left,fusiform,7,TRUE
+NGIQ-BR-00000274,Left Inferior Parietal Lobule,left,inferiorparietal,8,TRUE
+NGIQ-BR-00000275,Left Inferior Temporal Gyrus,left,inferiortemporal,9,TRUE
+NGIQ-BR-00000276,Left Isthmus Of Cingulate Gyrus,left,isthmuscingulate,10,TRUE
+NGIQ-BR-00000277,Left Lateral Occipital Cortex,left,lateraloccipital,11,TRUE
+NGIQ-BR-00000278,Left Lateral Orbitofrontal Cortex,left,lateralorbitofrontal,12,TRUE
+NGIQ-BR-00000279,Left Lingual Gyrus,left,lingual,13,TRUE
+NGIQ-BR-00000280,Left Medial Orbitofrontal Cortex,left,medialorbitofrontal,14,TRUE
+NGIQ-BR-00000281,Left Middle Temporal Gyrus,left,middletemporal,15,TRUE
+NGIQ-BR-00000282,Left Parahippocampal Gyrus,left,parahippocampal,16,TRUE
+NGIQ-BR-00000283,Left Paracentral Lobule,left,paracentral,17,TRUE
+NGIQ-BR-00000284,"Left Inferior Frontal Gyrus, Pars Opercularis",left,parsopercularis,18,TRUE
+NGIQ-BR-00000285,"Left Inferior Frontal Gyrus, Pars Orbitalis",left,parsorbitalis,19,FALSE
+NGIQ-BR-00000286,"Left Inferior Frontal Gyrus, Pars Triangularis",left,parstriangularis,20,TRUE
+NGIQ-BR-00000287,Left Pericalcarine Cortex,left,pericalcarine,21,FALSE
+NGIQ-BR-00000288,Left Postcentral Gyrus,left,postcentral,22,TRUE
+NGIQ-BR-00000289,Left Posterior Cingulate Cortex,left,posteriorcingulate,23,TRUE
+NGIQ-BR-00000290,Left Precentral Gyrus,left,precentral,24,TRUE
+NGIQ-BR-00000291,Left Precuneus,left,precuneus,25,TRUE
+NGIQ-BR-00000292,Left Rostral Anterior Cingulate Cortex,left,rostralanteriorcingulate,26,TRUE
+NGIQ-BR-00000293,Left Rostral Middle Frontal Cortex,left,rostralmiddlefrontal,27,TRUE
+NGIQ-BR-00000294,Left Superior Frontal Gyrus,left,superiorfrontal,28,TRUE
+NGIQ-BR-00000295,Left Superior Parietal Lobule,left,superiorparietal,29,TRUE
+NGIQ-BR-00000296,Left Superior Temporal Gyrus,left,superiortemporal,30,TRUE
+NGIQ-BR-00000297,Left Supramarginal Gyrus,left,supramarginal,31,TRUE
+NGIQ-BR-00000298,Left Transverse Temporal Gyrus,left,transversetemporal,34,FALSE
+NGIQ-BR-00000299,Left Insula,left,insula,35,TRUE
+NGIQ-BR-00000300,Right Caudal Anterior Cingulate Cortex,right,caudalanteriorcingulate,2,FALSE
+NGIQ-BR-00000301,Right Caudal Middle Frontal Gyrus,right,caudalmiddlefrontal,3,TRUE
+NGIQ-BR-00000302,Right Cuneus,right,cuneus,5,FALSE
+NGIQ-BR-00000303,Right Entorhinal Cortex,right,entorhinal,6,TRUE
+NGIQ-BR-00000304,Right Fusiform Gyrus,right,fusiform,7,TRUE
+NGIQ-BR-00000305,Right Inferior Parietal Lobule,right,inferiorparietal,8,TRUE
+NGIQ-BR-00000306,Right Inferior Temporal Gyrus,right,inferiortemporal,9,TRUE
+NGIQ-BR-00000307,Right Isthmus Of Cingulate Gyrus,right,isthmuscingulate,10,TRUE
+NGIQ-BR-00000308,Right Lateral Occipital Cortex,right,lateraloccipital,11,TRUE
+NGIQ-BR-00000309,Right Lateral Orbitofrontal Cortex,right,lateralorbitofrontal,12,TRUE
+NGIQ-BR-00000310,Right Lingual Gyrus,right,lingual,13,TRUE
+NGIQ-BR-00000311,Right Medial Orbitofrontal Cortex,right,medialorbitofrontal,14,TRUE
+NGIQ-BR-00000312,Right Middle Temporal Gyrus,right,middletemporal,15,TRUE
+NGIQ-BR-00000313,Right Parahippocampal Gyrus,right,parahippocampal,16,TRUE
+NGIQ-BR-00000314,Right Paracentral Lobule,right,paracentral,17,TRUE
+NGIQ-BR-00000315,"Right Inferior Frontal Gyrus, Pars Opercularis",right,parsopercularis,18,TRUE
+NGIQ-BR-00000316,"Right Inferior Frontal Gyrus, Pars Orbitalis",right,parsorbitalis,19,FALSE
+NGIQ-BR-00000317,"Right Inferior Frontal Gyrus, Pars Triangularis",right,parstriangularis,20,TRUE
+NGIQ-BR-00000318,Right Pericalcarine Cortex,right,pericalcarine,21,FALSE
+NGIQ-BR-00000319,Right Postcentral Gyrus,right,postcentral,22,TRUE
+NGIQ-BR-00000320,Right Posterior Cingulate Cortex,right,posteriorcingulate,23,TRUE
+NGIQ-BR-00000321,Right Precentral Gyrus,right,precentral,24,TRUE
+NGIQ-BR-00000322,Right Precuneus,right,precuneus,25,TRUE
+NGIQ-BR-00000323,Right Rostral Anterior Cingulate Cortex,right,rostralanteriorcingulate,26,TRUE
+NGIQ-BR-00000324,Right Rostral Middle Frontal Cortex,right,rostralmiddlefrontal,27,TRUE
+NGIQ-BR-00000325,Right Superior Frontal Gyrus,right,superiorfrontal,28,TRUE
+NGIQ-BR-00000326,Right Superior Parietal Lobule,right,superiorparietal,29,TRUE
+NGIQ-BR-00000327,Right Superior Temporal Gyrus,right,superiortemporal,30,TRUE
+NGIQ-BR-00000328,Right Supramarginal Gyrus,right,supramarginal,31,TRUE
+NGIQ-BR-00000329,Right Transverse Temporal Gyrus,right,transversetemporal,34,FALSE
+NGIQ-BR-00000330,Right Insula,right,insula,35,TRUE

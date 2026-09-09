@@ -1,0 +1,37 @@
+{
+  "coordinate_systems": [
+    {
+      "id": "fsaverage_surface_xyz",
+      "meaning": "fsaverage surface vertex coordinates",
+      "present": "SURFACES_PRESENT",
+      "note": "surface (tk)RAS mm on fsaverage; NOT MNI152NLin2009cAsym world XYZ"
+    },
+    {
+      "id": "fsaverage_subject_volume",
+      "meaning": "fsaverage MRI/orig voxel&world",
+      "present": "VOLUME_ABSENT",
+      "note": "no fsaverage volume reference -> voxel/world anchoring unresolved"
+    },
+    {
+      "id": "tkRAS_world",
+      "meaning": "FreeSurfer tkRAS (surface-space world)",
+      "present": "SURFACES_PRESENT",
+      "note": "distinct from scanner/world RAS of MNI templates"
+    },
+    {
+      "id": "MNI305_Talairach",
+      "meaning": "FreeSurfer talairach/MNI305",
+      "present": "TRANSFORMS_ABSENT",
+      "note": "no talairach.xfm / MNI305 transforms present; must not be conflated with MNI152"
+    },
+    {
+      "id": "MNI152NLin2009cAsym",
+      "meaning": "target Julich reference volume space",
+      "present": "TARGET_ONLY",
+      "note": "target grid/affine exist (Julich reference) but no bridge from fsaverage here"
+    }
+  ],
+  "hard_rule": "no direct surface XYZ -> MNI2009cAsym XYZ; MNI305 and MNI152 must not be conflated",
+  "source_template_identity": "UNRESOLVED_NO_FSAVERAGE_VOLUME",
+  "created_at": "2026-09-09T03:48:59+00:00"
+}

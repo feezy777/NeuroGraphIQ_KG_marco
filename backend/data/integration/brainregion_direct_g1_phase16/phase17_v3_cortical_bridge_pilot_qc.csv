@@ -1,0 +1,2 @@
+﻿pilot_status,reason,pilot_families
+NOT_RUN,fsaverage DK annotation / fsaverage volume / FreeSurfer toolchain absent; pilot deferred to a round where the bridge is executable,"deferred (to be chosen by GEOMETRIC_COVERAGE_DIVERSITY, mapping-independent)"

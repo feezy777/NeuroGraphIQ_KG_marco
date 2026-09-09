@@ -1,0 +1,54 @@
+{
+  "fsaverage_surfaces": {
+    "present": true,
+    "n_files": 24,
+    "identity": "fsaverage surface meshes (BN_Atlas/FreeSurfer extraction; white/pial/midthickness/inflated)",
+    "files": [
+      {
+        "path": "data/atlases/brainnetome/bna246/surface_raw/extracted/BN_Atlas_freesurfer/fsaverage/164k/fsaverage.L.inflated.164k.surf.gii",
+        "sha256": "279d354786ce3784dda4eb96b47de730eadb918aa5d394c74d7a51e572a34d59",
+        "size": 4342085
+      },
+      {
+        "path": "data/atlases/brainnetome/bna246/surface_raw/extracted/BN_Atlas_freesurfer/fsaverage/164k/fsaverage.L.midthickness.164k.surf.gii",
+        "sha256": "11fbe03fa6c413063727574a5602deb5c9801037c4712fb70df0cbe63a63ae54",
+        "size": 4337801
+      },
+      {
+        "path": "data/atlases/brainnetome/bna246/surface_raw/extracted/BN_Atlas_freesurfer/fsaverage/164k/fsaverage.L.pial.164k.surf.gii",
+        "sha256": "550280a164e87aad370bfb254ba952c14d1209eb1e53783d56078050fb13eb9b",
+        "size": 4339333
+      },
+      {
+        "path": "data/atlases/brainnetome/bna246/surface_raw/extracted/BN_Atlas_freesurfer/fsaverage/164k/fsaverage.L.very_inflated.164k.surf.gii",
+        "sha256": "8b61ced5de20bb8530af363fc4168204dcdb1bbfd452c559f0f2e8b44d9f540f",
+        "size": 4340341
+      },
+      {
+        "path": "data/atlases/brainnetome/bna246/surface_raw/extracted/BN_Atlas_freesurfer/fsaverage/164k/fsaverage.L.white.164k.surf.gii",
+        "sha256": "2c906b4fc53084cdc6309888beb8749ec6f37e85c6a9f5ab609cf2bcafd009db",
+        "size": 4336848
+      },
+      {
+        "path": "data/atlases/brainnetome/bna246/surface_raw/extracted/BN_Atlas_freesurfer/fsaverage/164k/fsaverage.R.inflated.164k.surf.gii",
+        "sha256": "4b43ef4b4dbc1ab52c0a5825477e7ad1cf680fb4d321b08eb052a8241912c68b",
+        "size": 4340386
+      }
+    ],
+    "note": "surface meshes only; vertex coordinate space = fsaverage surface (tk)RAS; NO fsaverage volume reference anchored here"
+  },
+  "dk_aparc_annot": {
+    "present": false,
+    "note": "no fsaverage Desikan-Killiany lh.aparc.annot / rh.aparc.annot found"
+  },
+  "fsaverage_reference_volume": {
+    "present": false,
+    "note": "no fsaverage orig/brain/aseg.mgz volume reference found; only subject-001 aseg.mgz (not fsaverage)"
+  },
+  "talairach_or_mni305_transform": {
+    "present": false,
+    "note": "no talairach.xfm / MNI305 / fsaverage->template transform in repo"
+  },
+  "created_at": "2026-09-09T03:48:59+00:00",
+  "script_version": "phase17_v3_adjudicate_cortical_g1_spatial_bridge.py v1"
+}

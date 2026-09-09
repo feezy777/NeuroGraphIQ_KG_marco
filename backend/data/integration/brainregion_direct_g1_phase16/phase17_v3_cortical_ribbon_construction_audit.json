@@ -1,0 +1,11 @@
+{
+  "preferred_method": "official FreeSurfer Desikan-Killiany ribbon: DK lh/rh.aparc.annot on white+pial surfaces -> parcel cortical gray-matter ribbon volume (not a surface shell)",
+  "white_surface_authority": "fsaverage.L/R.white.164k.surf.gii (present)",
+  "pial_surface_authority": "fsaverage.L/R.pial.164k.surf.gii (present)",
+  "dk_annotation_authority": "lh/rh.aparc.annot (ABSENT on fsaverage)",
+  "surface_to_volume_tool": "FreeSurfer mri_surf2vol / mri_label2vol (not available in env)",
+  "note": "method is scientifically preferred but EXECUTION BLOCKED: no fsaverage DK annotation, no fsaverage volume reference, no FreeSurfer toolchain here",
+  "surface_shell_not_volume": true,
+  "execution_status": "NOT_RUN",
+  "created_at": "2026-09-09T03:48:59+00:00"
+}
