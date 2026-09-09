@@ -1,0 +1,24 @@
+{
+  "native_free_surfer_cli": false,
+  "freessurfer_home_present": false,
+  "mri_label2vol_present": false,
+  "mri_surf2vol_present": false,
+  "mri_vol2vol_present": false,
+  "wsl_present": true,
+  "wsl_distros": "docker-desktop (no general-purpose Linux distro confirmed)",
+  "docker_present": true,
+  "docker_version": "Docker 29.4.1 (build 055a478)",
+  "freeSurfer_container_image": "NOT_PRE_PULLED",
+  "freesurfer_version": "NOT_AVAILABLE (toolchain not installed)",
+  "execution_status": "NOT_EXECUTABLE",
+  "license": {
+    "required": true,
+    "present": false,
+    "env_present": false,
+    "note": "FreeSurfer requires a license (license.txt); none present; license files are never committed"
+  },
+  "verdict": "FREESURFER_TOOLCHAIN_MANUAL_INSTALL_REQUIRED + FREESURFER_LICENSE_REQUIRED",
+  "note": "no silent heavy install performed; a container route exists (docker) but requires a FreeSurfer license and an image to be provisioned by the user",
+  "created_at": "2026-09-09T04:00:39+00:00",
+  "script_version": "phase17_v3_acquire_cortical_bridge_prerequisites.py v1"
+}

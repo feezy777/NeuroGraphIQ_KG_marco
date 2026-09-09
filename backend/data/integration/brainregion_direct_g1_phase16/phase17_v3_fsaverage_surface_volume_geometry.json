@@ -1,0 +1,26 @@
+{
+  "surface_geometry": {
+    "lh": {
+      "white": "surf/lh.white",
+      "white_vertices": 163842,
+      "white_faces": 327680,
+      "white_sha256": "c80741da738b70bc0ab1e0dcd6e8eec3d3d9f22af5812c38120a8ce4fb9fa7d3",
+      "annot_vertices": 163842,
+      "annot_white_match": true,
+      "pial_present": false
+    },
+    "rh": {
+      "white": "surf/rh.white",
+      "white_vertices": 163842,
+      "white_faces": 327680,
+      "white_sha256": "4e6e74efbd851e3b23a943c28b062acb3395341ac02156a4d1078d735b55e295",
+      "annot_vertices": 163842,
+      "annot_white_match": true,
+      "pial_present": false
+    }
+  },
+  "reference_volume": {
+    "present": false,
+    "note": "fsaverage reference MRI volume absent; surface<->volume geometry cannot be anchored"
+  }
+}

@@ -1,0 +1,49 @@
+{
+  "status_id": "CORTICAL_BRIDGE_PREREQUISITE_STATUS_V1",
+  "verdict": "CORTICAL_BRIDGE_SOURCE_AND_TOOLCHAIN_BLOCKED",
+  "source_official": true,
+  "source_version": "UNVERIFIED_EXACT_RELEASE (FreeSurfer 'tutorial_versions_centos6' distribution)",
+  "annotation": {
+    "lh_present": true,
+    "rh_present": true,
+    "is_dk": true,
+    "sha_lh": "39b1acde9a32b4227631eb51cbcd8dff84e2138c57bf9f96d74026f2c17f1480",
+    "sha_rh": "6a326aed325d313e6e0d10f67630efcd8d3b8343c50d3e108e005f626614badb"
+  },
+  "surfaces": {
+    "white_lr_present": true,
+    "pial_lr_present": false,
+    "annotation_white_vertex_match": true,
+    "vertices_per_hemisphere": 163842
+  },
+  "reference_volume": {
+    "present": false,
+    "note": "mri/orig.mgz absent"
+  },
+  "talairach_xfm": {
+    "present": false
+  },
+  "dk_crosswalk": {
+    "aligned_checked": 62,
+    "mismatch_targets": []
+  },
+  "asset_set_status": "INCOMPLETE",
+  "missing_assets": [
+    "surf/lh.pial",
+    "surf/rh.pial",
+    "mri/orig.mgz",
+    "mri/brain.mgz",
+    "mri/aseg.mgz",
+    "mri/aparc+aseg.mgz",
+    "transforms/talairach.xfm"
+  ],
+  "toolchain": {
+    "executable": false,
+    "verdict": "FREESURFER_TOOLCHAIN_MANUAL_INSTALL_REQUIRED + FREESURFER_LICENSE_REQUIRED",
+    "license_present": false
+  },
+  "cortical_geometry_generated": false,
+  "mnI2009c_target_route": "NOT_RESOLVED (separate later round; talairach.xfm present != route resolved)",
+  "created_at": "2026-09-09T04:00:39+00:00",
+  "script_version": "phase17_v3_acquire_cortical_bridge_prerequisites.py v1"
+}

@@ -1,0 +1,11 @@
+{
+  "vox2ras": "NOT_DERIVABLE_NO_VOLUME",
+  "vox2ras_tkr": "NOT_DERIVABLE_NO_VOLUME",
+  "surface_space": "fsaverage surface (tk)RAS mm (surfaces present)",
+  "tkRAS_vs_world_separated": true,
+  "note": "no fsaverage reference volume present -> surface RAS/tkRAS vs volume voxel/world cannot be computed here; MNI305/MNI152 and tkRAS/world-RAS are kept as distinct coordinate systems and are never conflated.",
+  "talairach_xfm": {
+    "present": false,
+    "note": "TALAIRACH_XFM_PRESENT is NOT MNI2009C_TARGET_ROUTE_RESOLVED"
+  }
+}
