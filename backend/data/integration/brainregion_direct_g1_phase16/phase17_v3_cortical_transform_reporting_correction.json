@@ -1,0 +1,10 @@
+{
+  "reporting_correction_id": "REPORTING_CORRECTION_V1",
+  "deformation_mean_mm": 0.7715565392816398,
+  "deformation_median_mm": 0.01748558984068652,
+  "previous_summary_median_value": "INCORRECTLY_REPORTED_MEAN if any summary wrote median=0.77 mm",
+  "artifact_source_of_truth": "phase17_v3_cortical_registration_deformation_qc.json",
+  "note": "true median displacement is ~0.017 mm; 0.77 mm is the MEAN. History not edited.",
+  "created_at": "2026-09-09T06:04:25+00:00",
+  "script_version": "phase17_v3_reaudit_cortical_target_transform_integrity.py v1"
+}

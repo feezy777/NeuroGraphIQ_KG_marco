@@ -80,11 +80,11 @@ def _geom_map():
     return {r["metric"]: r["value"] for r in _rows(GEOM)}
 
 
-# ---- 1. current HEAD = 641cd76 ----
+# ---- 1. current HEAD (pin advanced to c6281e8 in the integrity re-audit round) ----
 def test_1_head():
     r = subprocess.run(["git", "rev-parse", "--short", "HEAD"], cwd=BACKEND.parent,
                        capture_output=True, text=True)
-    assert r.stdout.strip() == "641cd76"
+    assert r.stdout.strip() == "c6281e8"
 
 
 # ---- 2. R_D direct only ----

@@ -1,0 +1,3 @@
+﻿method,count,volume_mm3,connected_components,largest_component_size,centroid_mm,bbox_mm,inside_fixed_brain_mask,classification
+A_ANTs_grid,0,0.0,0,0,NA,NA,0,NONE
+B_application_sampled,0,n/a (sampled),n/a,n/a,n/a,n/a,0,NONE

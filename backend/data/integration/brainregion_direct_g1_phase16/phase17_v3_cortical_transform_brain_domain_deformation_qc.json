@@ -1,0 +1,86 @@
+{
+  "full_field": {
+    "displacement": {
+      "mean_mm": 0.7715565392816398,
+      "median_mm": 0.01748558984068652,
+      "p95_mm": 3.209405449145695,
+      "max_mm": 11.584011975037585,
+      "min_mm": 0.0,
+      "zero_vector_fraction": 0.256755,
+      "finite": true
+    },
+    "jacobian": {
+      "min": 0.14194320142269135,
+      "p001": 0.19531807363033296,
+      "p01": 0.4433786809444427,
+      "p05": 0.6835001111030579,
+      "median": 1.0,
+      "p95": 1.2209985256195068,
+      "p99": 1.6137495517730716,
+      "max": 3.6377992630004883,
+      "negative_fraction": 0.0,
+      "nonpositive_fraction": 0.0,
+      "finite": true,
+      "n": 8530021
+    }
+  },
+  "fixed_brain_mask": {
+    "displacement": {
+      "mean_mm": 2.5472176683086745,
+      "median_mm": 2.1207851445607004,
+      "p95_mm": 6.426571662010739,
+      "max_mm": 11.584011975037585,
+      "min_mm": 0.009680672140255525,
+      "zero_vector_fraction": 0.0,
+      "finite": true
+    },
+    "jacobian": {
+      "min": 0.14194320142269135,
+      "p001": 0.1655581559240818,
+      "p01": 0.2353778263926506,
+      "p05": 0.4695464462041855,
+      "median": 0.874474287033081,
+      "p95": 1.530333137512207,
+      "p99": 2.047928109169006,
+      "max": 3.6377992630004883,
+      "negative_fraction": 0.0,
+      "nonpositive_fraction": 0.0,
+      "finite": true,
+      "n": 1960755
+    },
+    "mask_voxels": 1960755
+  },
+  "cortical_surface_band": {
+    "displacement": {
+      "mean_mm": 2.6639263965390523,
+      "median_mm": 2.1936322323271416,
+      "p95_mm": 7.153514439918401,
+      "max_mm": 11.584011975037585,
+      "min_mm": 0.01880533044947356,
+      "zero_vector_fraction": 0.0,
+      "finite": true
+    },
+    "band_note": "annulus 10..3 vox inside fixed brain mask (future ribbon support band)"
+  },
+  "methodB_application": {
+    "jacobian": {
+      "min": 0.31758448481559753,
+      "p001": 0.34680286049842834,
+      "p01": 0.44746479392051697,
+      "p05": 0.5925407409667969,
+      "median": 1.0548334121704102,
+      "p95": 1.7859652042388916,
+      "p99": 2.5478732585906982,
+      "max": 7.389383792877197,
+      "negative_fraction": 0.0,
+      "nonpositive_fraction": 0.0,
+      "finite": true,
+      "n": 6000
+    },
+    "points": 6000,
+    "spacing_mm": 1.0
+  },
+  "raw_array_gradient_note": "a raw numpy-gradient reading of the warp ARRAY (axis/component convention mismatch) previously reported min Jacobian -2.51 and 0.13% negatives -> IMPLEMENTATION ARTIFACT (gate C), resolved: both the official ANTs Jacobian and the application-based finite-difference Jacobian are positive in the brain domain.",
+  "created_at": "2026-09-09T06:04:25+00:00",
+  "script_version": "phase17_v3_reaudit_cortical_target_transform_integrity.py v1"
+}

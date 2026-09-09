@@ -1,0 +1,3 @@
+﻿metric,domain,ncc,mi_bits,coverage,overlap_voxels
+moving->fixed->moving image,moving tissue support (valid overlap),0.9995,4.543,0.613,4627796
+fixed->moving->fixed image,fixed whole-brain mask (valid overlap),0.9899,3.159,0.9611,1960743

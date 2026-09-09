@@ -1,0 +1,53 @@
+{
+  "status_id": "CORTICAL_TARGET_TRANSFORM_INTEGRITY_STATUS_V1",
+  "verdict": "CORTICAL_TARGET_TRANSFORM_INTEGRITY_CONFIRMED",
+  "reporting_correction": "REPORTING_CORRECTION_V1",
+  "jacobian_methods": {
+    "A_ANTs_official": "create_jacobian_determinant_image geom=True",
+    "B_application_fd": "finite-difference through ants point transforms (h=1mm, fixed->moving map)",
+    "consistent": true
+  },
+  "full_field_jacobian_negative_fraction": 0.0,
+  "brain_domain_jacobian_negative_fraction": 0.0,
+  "methodB_brain_negative_fraction": 0.0,
+  "nonpositive_voxels": {
+    "methodA_grid": 0,
+    "in_brain": 0
+  },
+  "displacement": {
+    "full_mean_mm": 0.7715565392816398,
+    "full_median_mm": 0.01748558984068652,
+    "brain_mean_mm": 2.5472176683086745,
+    "brain_median_mm": 2.1207851445607004
+  },
+  "point_roundtrip": {
+    "moving_dir_p95_mm": 0.01357748541561625,
+    "fixed_dir_p95_mm": 0.023203507696852633
+  },
+  "nn_smoke": {
+    "forward_NN_moving_support": {
+      "nonempty": true,
+      "voxels": 4955295,
+      "volume_mm3": 4955295.0,
+      "source_support_volume_mm3": 5729736.0,
+      "volume_ratio": 0.8648,
+      "fixed_brain_coverage": 1.0
+    },
+    "inverse_NN_fixed_brain_mask": {
+      "nonempty": true,
+      "voxels": 1693953,
+      "volume_mm3": 1693953.0,
+      "source_mask_volume_mm3": 1960755.0,
+      "volume_ratio": 0.8639
+    }
+  },
+  "no_global_reflection": true,
+  "future_binary_ribbon_application": "ALLOWED (NearestNeighbor)",
+  "route_status": {
+    "previous": "CORTICAL_TARGET_PROJECT_DERIVED_TRANSFORM_FROZEN (c6281e8, kept)",
+    "this_round": "CORTICAL_TARGET_PROJECT_DERIVED_TRANSFORM_FROZEN + INTEGRITY_REAUDIT_PASS"
+  },
+  "history_untouched": "transform files byte-identical (SHA verified); no registration rerun; no recipe change; no rewrite/smoothing",
+  "created_at": "2026-09-09T06:04:25+00:00",
+  "script_version": "phase17_v3_reaudit_cortical_target_transform_integrity.py v1"
+}
