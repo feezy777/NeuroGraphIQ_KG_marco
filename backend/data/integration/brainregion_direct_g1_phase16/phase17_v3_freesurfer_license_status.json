@@ -1,0 +1,27 @@
+{
+  "license_status": "AVAILABLE_LOCAL",
+  "license_path": "C:/Users/Administrator/freesurfer_license/license.txt",
+  "license_path_policy": "LOCAL_ONLY",
+  "license_contents_logged": false,
+  "format_check": {
+    "nonempty_lines": 5,
+    "first_line_looks_email": true,
+    "values_never_printed": true
+  },
+  "git_safety": {
+    "tracked_in_repo": false,
+    "staged": false,
+    "repo_temp_copy_removed": true,
+    "docs_txt_dir_empty": true,
+    "any_freesurfer_license_in_index": false
+  },
+  "mount_policy": {
+    "host_license_to": "/opt/freesurfer/license.txt:ro",
+    "fs_license_env": "/opt/freesurfer/license.txt",
+    "no_copy_into_image": true,
+    "no_license_in_dockerfile": true
+  },
+  "never_commit": true,
+  "created_at": "2026-09-09T06:56:42+00:00",
+  "script_version": "phase17_v3_execute_fsaverage_cortical_ribbon_pilot.py v1"
+}

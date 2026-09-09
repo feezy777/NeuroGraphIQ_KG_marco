@@ -1,0 +1,57 @@
+{
+  "recipe_id": "RIBBON_RECIPE_V1",
+  "executed": false,
+  "not_executed_reason": "CORTICAL_FSAVERAGE_RIBBON_METHOD_BLOCKED_TOOLCHAIN",
+  "source_atlas": "DESIKAN_KILLIANY",
+  "source_subject": "fsaverage (official assets)",
+  "source_assets": {
+    "annot_lr_sha": "frozen 60d81cd manifest",
+    "white_lr_sha": "frozen 60d81cd manifest",
+    "pial_lr_sha": "frozen 60d81cd manifest",
+    "orig_sha": "97862f8adfa48ff0c22d1441a81554f35c562c2232b43d8738730dc9ceb2c0a1"
+  },
+  "planned_official_route": {
+    "authority": "FreeSurfer 7.4.1 official surface->volume machinery only (no Python rasterizer)",
+    "candidate_chain": [
+      "mri_annotation2label --subject fsaverage --hemi lh/rh --outdir ... (annotation -> per-DK-label surface label files)",
+      "label->ribbon rasterization between white and pial surfaces into the fsaverage orig.mgz voxel grid via official mri_label2vol / mri_surf2vol projection semantics",
+      "no recon-all / no aseg (template already has surfaces + annotation)"
+    ],
+    "finalize_note": "exact command + projection parameters are pinned against the real container CLI --help output in the execution round (this round no CLI is available -> not pinned, not fabricated)"
+  },
+  "projection_strategy": {
+    "semantics": "fractional projection covering the FULL white->pial cortical thickness (not sparse 0/0.5/1 layers)",
+    "planned": "start 0.0 stop 1.0 with an explicit small step across the thickness; exact start/stop/step pinned to real label2vol/surf2vol parameters at execution",
+    "repair_policy": "NO morphological repair (no dilation/closing/fill) - output is QC'd as FreeSurfer produced it"
+  },
+  "pilots": {
+    "F1_LARGE_LATERAL": {
+      "canonical": "NGIQ-BR-00000290",
+      "name": "Left Precentral Gyrus",
+      "dk": "precentral",
+      "hemisphere": "left",
+      "annot_vertices": 10740
+    },
+    "F2_MEDIAL": {
+      "canonical": "NGIQ-BR-00000289",
+      "name": "Left Posterior Cingulate Cortex",
+      "dk": "posteriorcingulate",
+      "hemisphere": "left",
+      "annot_vertices": 3266
+    },
+    "F3_INFERIOR_TEMPORAL": {
+      "canonical": "NGIQ-BR-00000273",
+      "name": "Left Fusiform Gyrus",
+      "dk": "fusiform",
+      "hemisphere": "left",
+      "annot_vertices": 4714
+    },
+    "selection_basis": "GEOMETRIC_COVERAGE_DIVERSITY (frozen daecb63); no G4/mapping viewed"
+  },
+  "output_semantics": "DK_CORTICAL_GRAY_MATTER_RIBBON (white->pial parcel gray matter volume)",
+  "output_grid": "FSAVERAGE_ORIG_VOLUME_SPACE (shape/spacing/geometry == fsaverage orig.mgz)",
+  "mapping_independent": true,
+  "circularity_risk": "NONE",
+  "created_at": "2026-09-09T06:56:42+00:00",
+  "script_version": "phase17_v3_execute_fsaverage_cortical_ribbon_pilot.py v1"
+}

@@ -1,0 +1,33 @@
+{
+  "verdict": "CORTICAL_FSAVERAGE_RIBBON_METHOD_BLOCKED_TOOLCHAIN",
+  "stop_code": "FREESURFER_OFFICIAL_IMAGE_REGISTRY_UNREACHABLE",
+  "official_image": "freesurfer/freesurfer:7.4.1",
+  "image_digest": "NOT_RESOLVED_IMAGE_NOT_PULLED",
+  "docker_engine": {
+    "daemon_started_this_session": true,
+    "server": "29.4.1",
+    "os": "linux"
+  },
+  "registry_probe": {
+    "auth_docker_io": "HTTP 000 (timeout)",
+    "registry_1_docker_io": "HTTP 000 (timeout)",
+    "production_cloudflare_docker_com": "HTTP 000 (timeout)"
+  },
+  "pull_attempts": [
+    {
+      "attempt": 1,
+      "duration_s": "600+",
+      "bytes_captured": 0,
+      "note": "stalled, no progress"
+    },
+    {
+      "attempt": 2,
+      "duration_s": "600+",
+      "bytes_captured": 0,
+      "note": "stalled, no progress"
+    }
+  ],
+  "evidence": "official image cannot be obtained from Docker Hub on this host/network; non-official mirrors are disallowed; no image was produced -> toolchain not executable; FreeSurfer runtime version NOT_RUN (image absent)",
+  "created_at": "2026-09-09T06:56:42+00:00",
+  "script_version": "phase17_v3_execute_fsaverage_cortical_ribbon_pilot.py v1"
+}

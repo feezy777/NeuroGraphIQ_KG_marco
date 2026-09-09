@@ -1,0 +1,40 @@
+{
+  "status_id": "CORTICAL_G1_BRIDGE_EFFECTIVE_STATUS_V1",
+  "overall_verdict": "CORTICAL_FSAVERAGE_RIBBON_METHOD_BLOCKED_TOOLCHAIN",
+  "components": {
+    "ribbon_method": {
+      "CORTICAL_G1_FSAVERAGE_RIBBON_METHOD_V1": "NOT_CREATED",
+      "blocker": "CORTICAL_FSAVERAGE_RIBBON_METHOD_BLOCKED_TOOLCHAIN",
+      "license": {
+        "status": "AVAILABLE_LOCAL (outside repo)",
+        "contents_never_logged": true
+      }
+    },
+    "target_route": {
+      "CORTICAL_FSAVERAGE_TO_MNI2009C_ROUTE_V1": "FROZEN (unchanged)",
+      "integrity": "INTEGRITY_REAUDIT_PASS (unchanged)",
+      "transform_id": "TRF-CORT-FSAVG-TO-MNI2009C-DIRECT-V1",
+      "byte_identical": true
+    }
+  },
+  "CORTICAL_G1_BRIDGE_COMPONENTS_READY_FOR_BATCH_CONSTRUCTION": false,
+  "target_transform": {
+    "available": true,
+    "apply_this_round": false,
+    "future_application": "NearestNeighbor"
+  },
+  "guards": {
+    "no_python_rasterizer": true,
+    "no_morphology_repair": true,
+    "no_g4_overlap": true,
+    "no_mni2009c_application": true,
+    "no_batch_62": true,
+    "no_db": true,
+    "no_reclassification": true,
+    "no_promotion": true,
+    "bf_blocker_unchanged": true,
+    "classification_unchanged": true
+  },
+  "created_at": "2026-09-09T06:56:42+00:00",
+  "script_version": "phase17_v3_execute_fsaverage_cortical_ribbon_pilot.py v1"
+}
