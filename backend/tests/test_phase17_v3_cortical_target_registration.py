@@ -84,7 +84,7 @@ def _geom_map():
 def test_1_head():
     r = subprocess.run(["git", "rev-parse", "--short", "HEAD"], cwd=BACKEND.parent,
                        capture_output=True, text=True)
-    assert r.stdout.strip() == "3f74c23"
+    assert r.stdout.strip() == "5fc3efd"
 
 
 # ---- 2. R_D direct only ----

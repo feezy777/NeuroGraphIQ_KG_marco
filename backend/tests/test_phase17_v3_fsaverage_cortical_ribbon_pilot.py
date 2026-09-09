@@ -68,7 +68,7 @@ def _sha(p):
 
 # ---- 1. HEAD ----
 def test_1_head():
-    assert _git("rev-parse", "--short", "HEAD").strip() == "3f74c23"
+    assert _git("rev-parse", "--short", "HEAD").strip() == "5fc3efd"
 
 
 # ---- 2. license available (outside repo) ----

@@ -1,0 +1,30 @@
+{
+  "batch_id": "BATCH_CORTICAL_G1_62_V1",
+  "verdict": "CORTICAL_G1_62_REFERENCE_GEOMETRIES_FROZEN",
+  "source_chain": {
+    "aparc_aseg_sha256": "4c7db4478ccc171f7c891378f2974d0e140ae96131a5acd202bf7f44098f56b5",
+    "lut_crosswalk": "phase17_v3_aparc_aseg_62target_coverage.csv",
+    "selected_labelmap_sha256": "c97f9bb5f999daea7b0fcbdd2565f25e0aa423777adf610bf553ab79787bef8e",
+    "geometry": "62 official FS DK integer IDs; no remap"
+  },
+  "transform_chain": {
+    "transform_id": "TRF-CORT-FSAVG-TO-MNI2009C-DIRECT-V1",
+    "affine_sha256": "ff95a9fc7b8438065ff5b9dba557bacf92add8648abce36ccba93867196d6bb0",
+    "forward_warp_sha256": "8bf90f3efdf7281bd2f059055c3715428be5e58f39df92cc04b75106ac0341f8",
+    "inverse_sha256": "46366de37776c59918064950447bea524752405f455a3ea406f58cff2a40e2eb",
+    "integrity": "INTEGRITY_REAUDIT_PASS",
+    "application": "single multiclass NN (count=1)"
+  },
+  "target": {
+    "labelmap_sha256": "07235e25bace8ffb83c303b093b4eeb49660c3a755d829cfb31030c756442271",
+    "grid": "MNI152NLin2009cAsym 193x229x193 @1mm"
+  },
+  "geometry_manifest": "phase17_v3_cortical_g1_62_reference_geometry_manifest.csv",
+  "direct_overlap_grid_ready": true,
+  "direct_validation_executed": false,
+  "independent_from_g4_mapping": true,
+  "circularity_risk": "NONE",
+  "binaries_gitignored": true,
+  "created_at": "2026-09-09T07:31:58+00:00",
+  "script_version": "phase17_v3_construct_batch_cortical_g1_geometries.py v1"
+}

@@ -1,0 +1,29 @@
+{
+  "labelmap_id": "CORTICAL_G1_SELECTED_LABELMAP_FSAVG_V1",
+  "path": "D:/Tool/Coding/IDE/PyCharm/NeuroGraphIQ_KG_marco/backend/data/atlases/derived_g1/cort_g1_62/CORTICAL_G1_SELECTED_LABELMAP_FSAVG_V1.nii.gz",
+  "sha256": "c97f9bb5f999daea7b0fcbdd2565f25e0aa423777adf610bf553ab79787bef8e",
+  "grid": "FSAVERAGE_ORIG_VOLUME_SPACE",
+  "shape": [
+    256,
+    256,
+    256
+  ],
+  "spacing": [
+    1.0,
+    1.0,
+    1.0
+  ],
+  "unique_labels": 62,
+  "unexpected": [],
+  "conservation": {
+    "unique_labels": 62,
+    "unexpected_labels": [],
+    "union_voxels": 320337,
+    "sum_individual": 320337,
+    "residual": 0,
+    "per_id_mismatch": []
+  },
+  "aparc_aseg_sha256": "4c7db4478ccc171f7c891378f2974d0e140ae96131a5acd202bf7f44098f56b5",
+  "created_at": "2026-09-09T07:31:58+00:00",
+  "script_version": "phase17_v3_construct_batch_cortical_g1_geometries.py v1"
+}

@@ -1,0 +1,47 @@
+{
+  "source_labelmap_sha256": "c97f9bb5f999daea7b0fcbdd2565f25e0aa423777adf610bf553ab79787bef8e",
+  "target_labelmap_sha256": "07235e25bace8ffb83c303b093b4eeb49660c3a755d829cfb31030c756442271",
+  "transform_application_count_for_canonical_labelmap": 1,
+  "interpolation": "NearestNeighbor",
+  "target_grid": {
+    "shape": [
+      193,
+      229,
+      193
+    ],
+    "spacing": [
+      1.0,
+      1.0,
+      1.0
+    ]
+  },
+  "target_unique_labels": 62,
+  "unexpected_labels": [],
+  "labels_identity_preserved": true,
+  "nonempty_62_62": true,
+  "total_source_voxels": 320337,
+  "total_target_voxels": 409083,
+  "total_volume_ratio": 1.27704,
+  "left_right_source": [
+    160134,
+    160203
+  ],
+  "left_right_target": [
+    205377,
+    203706
+  ],
+  "per_region_ratio": {
+    "min": 1.0431,
+    "median": 1.2754,
+    "max": 1.5201
+  },
+  "volume_outliers": [],
+  "fragmentation_review": [],
+  "laterality_abnormal": [],
+  "centroid_application_residual_max_mm": 10.0545,
+  "centroid_residual_note": "residuals (<=~10 mm) reflect genuine parcel centroid shift under the nonlinear deformation + NN discretization; they are bounded by the warp scale (max 11.6 mm) and are NOT a transform order/direction/convention bug (authoritative physical-point roundtrip P95 = 0.014 mm; laterality preserved). Reported as diagnostic only.",
+  "pairwise_overlap": "IMPOSSIBLE_BY_SINGLE_LABELMAP",
+  "morphology_applied": false,
+  "created_at": "2026-09-09T07:31:58+00:00",
+  "script_version": "phase17_v3_construct_batch_cortical_g1_geometries.py v1"
+}
