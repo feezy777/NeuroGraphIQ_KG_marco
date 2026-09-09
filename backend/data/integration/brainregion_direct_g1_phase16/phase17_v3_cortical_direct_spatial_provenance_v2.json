@@ -1,0 +1,20 @@
+{
+  "provenance_id": "DIRECT_SPATIAL_EVIDENCE_V2_PROVENANCE",
+  "universe": 170,
+  "left": 85,
+  "right": 85,
+  "non_laterality_field_unexpected_diffs": 0,
+  "laterality_corrected_right_rows": 85,
+  "left_rows_semantic_equivalent": true,
+  "right_correct_side_equals_right_fraction": true,
+  "correct_plus_contralateral_eq_1": true,
+  "laterality_failures_after_correction": [],
+  "laterality_qc": "LATERALITY_QC_CONFIRMED_AFTER_SEMANTIC_CORRECTION",
+  "containment_unchanged": "170/170 byte-identical (copied from V1; 0 diffs)",
+  "ranking_unchanged": "170/170 identical",
+  "geometry_unchanged": true,
+  "mapping_unchanged": true,
+  "v1_history_preserved": true,
+  "created_at": "2026-09-09T08:04:20+00:00",
+  "script_version": "phase17_v3_correct_cortical_direct_spatial_laterality_v2.py v1"
+}

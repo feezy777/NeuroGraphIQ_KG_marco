@@ -1,0 +1,19 @@
+{
+  "correction_id": "REPORTING_SEMANTICS_CORRECTION_V1",
+  "schema": "DIRECT_SPATIAL_EVIDENCE_SCHEMA_V2",
+  "v1_bug": "correct_side_fraction column stored LEFT_HEMISPHERE_FRACTION (side_ok) for all rows; hemisphere-unaware for right parcels",
+  "root_cause": "side_ok = |fine & left_grid|/|fine| reused as correct_side for both sides",
+  "containment_rank_unaffected": true,
+  "definition": {
+    "left_fraction": "|fine & {RAS x<0}| / |fine|",
+    "right_fraction": "1 - left_fraction (no exact-midline voxel centres on this grid)",
+    "correct_side_fraction": "left_fraction if hemisphere==left else right_fraction",
+    "contralateral_fraction": "1 - correct_side_fraction"
+  },
+  "laterality_gate_kept": "correct_side_fraction >= 0.90",
+  "method_algorithm_unchanged": true,
+  "method_id": "DIRECT_CORTICAL_SPATIAL_VALIDATION_METHOD_V1 (schema V2 reporting fix)",
+  "v1_history_preserved": "phase17_v3_cortical_170_direct_spatial_evidence.csv (a32e20e)",
+  "created_at": "2026-09-09T08:04:20+00:00",
+  "script_version": "phase17_v3_correct_cortical_direct_spatial_laterality_v2.py v1"
+}
