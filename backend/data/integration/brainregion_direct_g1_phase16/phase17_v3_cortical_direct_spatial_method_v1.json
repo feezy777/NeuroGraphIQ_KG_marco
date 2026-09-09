@@ -1,0 +1,45 @@
+{
+  "method_id": "DIRECT_CORTICAL_SPATIAL_VALIDATION_METHOD_V1",
+  "reference_grid": "MNI152NLin2009cAsym 193x229x193 @1mm",
+  "fine_geometry": {
+    "atlas": "Brainnetome (246)",
+    "granularity": "G3_MESO_FINE",
+    "volume": "D:/Tool/Coding/IDE/PyCharm/NeuroGraphIQ_KG_marco/backend/data/atlases/brainnetome/bna246/transformed_label_to_julich2009c/BN_Atlas_246_1mm_NLin6to2009c_labels.nii.gz",
+    "volume_sha256": "9c0185c7c0b9a2bf03a9e72d296d4fc8caed0e1318a59723a52ada8f06f1e19f",
+    "raw_asset": "BN_Atlas_246_1mm.nii.gz (NLin6Asym)",
+    "raw_sha256": "0d90d084952bdbddf417abb457f4eec016cbb95dfd53a4801713806da5646ba3",
+    "transform_sha256": "2e3869a07b96aec406e0419ca2e434afc54882d37cc212b933b139d1b63a4dfe",
+    "interpolation": "NearestNeighbor",
+    "discrete": true
+  },
+  "g1_geometry": {
+    "source": "62 frozen DK cortical G1 references (c97d7d8)",
+    "count": 62
+  },
+  "metrics": {
+    "primary": "source_in_target_containment = |Fine INTERSECT G1| / |Fine|",
+    "secondary": [
+      "Dice",
+      "Jaccard",
+      "target_covered_by_source",
+      "centroid_distance_mm"
+    ],
+    "probability_semantics": "not applicable - all 170 relations are discrete G3 in this frozen universe (G4 subset = 0)"
+  },
+  "competition": {
+    "scope": "same-hemisphere 31 G1 (left fine vs 31 left G1; right vs 31 right)",
+    "ranking": "containment descending; rank = 1 + count(strictly greater)",
+    "no_winner_takes_all": true,
+    "margin": "proposed containment - best non-proposed containment"
+  },
+  "outside_union": {
+    "definition": "fraction of fine voxels outside the same-hemisphere union of all 31 cortical G1 references; kept as real evidence, never renormalised to sum 1"
+  },
+  "laterality": "RAS x<0 = left (frozen coordinate handling); LATERALITY_FAILURE if a fine region's dominant side contradicts its label side",
+  "blind_before_join": true,
+  "historical_status_joined_posthoc": true,
+  "tie_handling": "stable; ties share scores and margins use strict best-non-proposed",
+  "numerical_precision": "integer voxel counts on shared 1 mm grid",
+  "created_at": "2026-09-09T07:56:31+00:00",
+  "script_version": "phase17_v3_validate_170_cortical_relations_direct_spatial.py v1"
+}

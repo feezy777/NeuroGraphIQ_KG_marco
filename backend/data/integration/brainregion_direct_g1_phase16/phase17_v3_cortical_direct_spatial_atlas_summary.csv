@@ -1,0 +1,3 @@
+﻿granularity,atlas,relations,unique_fine,geometry_ready,median_containment,p25,p75,rank1_fraction,rank_gt1_count,median_outside_union,blocked
+G3_MESO_FINE,Brainnetome,170,170,170,0.32166,0.27025,0.40555,1.0,0,0.6485,0
+G4_MICROSTRUCTURAL_FINE,(none in frozen universe),0,0,0,,,,,0,,0
