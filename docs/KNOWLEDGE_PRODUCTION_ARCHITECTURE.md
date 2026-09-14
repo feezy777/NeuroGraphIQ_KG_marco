@@ -1308,12 +1308,89 @@ provider 端强制** —— Phase 3A parser 仍是它唯一的门禁。这一点
 
 ### 17.4 结论与后续
 
-* 该路线**没有被证伪**，但**需要一次独立的 schema projection**：
-  把所有 `properties` 补进 `required`，可选性改用 `["<type>", "null"]` 表达，
-  同时保留 `additionalProperties: false`（这一条我们已经正确）。
-  该转换**只改可选性的表达方式，不删任何科学约束**。
-* **本阶段不实现**该 transformer（§14 明确要求）。
+* 该路线**没有被证伪**，但**需要一次独立的 schema projection**（见 §18）。
 * Responses API **不得**被标为正式生产权威，除非后续迁移阶段真正完成。
 * 三个版本标识各司其职，**不得混淆**：
   `schema_version 1.0`（科学契约）· `prompt_version 1.2.0`（提示词文本）·
   `neurographiq_llm_discovery_v1`（provider schema 标识符）。
+
+---
+
+## 18. Strict Schema Projection（Phase 3B.6）
+
+**状态：可行性层，仍未迁移。** 正式 LLM Discovery 执行路径**继续走 Chat
+Completions**；本节记录的是「projection 之后 provider 端强制能力到底有多强」。
+
+### 18.1 唯一规则：`required := 全部 properties`
+
+`app/services/deepseek_schema_projection.py`（纯函数，只 import `copy`/`typing`）
+对 schema 中每个 object：
+
+```
+required = list(properties.keys())     # 与 canonical 的 required 取并集
+additionalProperties = false
+```
+
+**只改「哪些字段被标记为必需」这一件事。**
+
+### 18.2 OMITTABLE ≠ NULLABLE（关键设计约束）
+
+看起来最自然的做法——把每个可选字段改写成 `type: [<原类型>, "null"]`——
+在本项目里是**错的**，因为它会让 provider 接受 **canonical 契约拒绝**的答案：
+
+```
+"regions": null      provider：满足 schema
+                     Pydantic：ValidationError（regions 是 list[...]，不是 Optional）
+```
+
+正确规则：
+
+| 情况 | 处理 |
+|---|---|
+| canonical **本来允许** null | 保持 `anyOf: [..., {"type":"null"}]` 不变 |
+| canonical **不允许** null | **不新增** null；只是把它移入 `required` |
+| 因 `default` 而可省略（如 `warnings: list = []`） | 进入 `required`，**类型保持 array** |
+
+由此得到的不变量：
+
+> **provider 接受的一切，都必然是 canonical-Pydantic 合法的。**
+
+实现上有测试逐字段断言「projected property schema == canonical property schema」
+（`test_7_no_field_gains_a_null_it_did_not_have`），因此 null 不可能被悄悄加进来。
+
+### 18.3 真实结果
+
+| 项 | 值 |
+|---|---|
+| canonical objects | 8（**8** 个违反 strict 规则） |
+| projected objects | 8（**0** 个违反） |
+| `additionalProperties` 未闭合 | **0** |
+| HTTP | **200**，`status: completed` |
+| parser | **PASS** |
+| 候选 | regions 18 · connections 26 · functions 9 · circuits 11 · source_hints 5 |
+| 验收 7 项 | confidence missing / invalid enum / extra fields / missing species_context / invalid local id / duplicate local id / dangling ref **全部 = 0** |
+
+> 注意 `prompt_tokens`：2994 → **5622**。strict schema 要求模型显式产出每一个字段
+> （包括 `"rationale": null`、`"warnings": []`），这是 strict 模式的固有代价。
+
+### 18.4 Coverage Matrix（据真实 schema 填写，非推测）
+
+| Constraint | Provider strict | Parser |
+|---|---|---|
+| required fields | **YES** | YES |
+| confidence min/max | **YES** | YES |
+| enum | **YES** | YES |
+| extra fields | **YES** | YES |
+| local-id shape | **NO** | YES |
+| species representation sanity | **NO** | YES |
+| cross-reference integrity | **NO** | YES |
+| duplicate local IDs | **NO** | YES |
+
+**下四行是 JSON Schema 的表达能力上限，不是本轮没做完**：
+local-ID 规则在 `@field_validator`，
+`SpeciesContext._representation_sanity` 在 `@model_validator`，
+cross-reference / duplicate 检查在 parser 的 `validate_cross_references`——
+**三者都无法投影成 JSON Schema**。
+
+因此：**即使将来迁移到 Responses API，local-ID 命名与引用完整性仍由
+Prompt 1.2.0 + Phase 3A parser 把关。** 不得因为「上了 json_schema」就取消 parser。
