@@ -1,0 +1,5 @@
+﻿relation_id,source_canonical_id,source_name,source_macro_gyrus,target_canonical_id,target_name,hemisphere,review_reason_codes,review_reason_detail,correct_side_fraction,spatial_gm_margin,proposed_status
+NGIQ-BR-00000065,NGIQ-BR-00000065,OrG_L_6_5,Orbital gyrus,NGIQ-BR-00000280,Left Medial Orbitofrontal Cortex,left,SPATIAL_WEAK_DISCRIMINATION,margin 0.0664 < 0.1 (competitor: Left Lateral Orbitofrontal Cortex),1.0,0.06645,C
+NGIQ-BR-00000083,NGIQ-BR-00000083,PCL_L_2_2,Paracentral lobule,NGIQ-BR-00000283,Left Paracentral Lobule,left,LAT_MIDLINE_PARTIAL_CROSSING,correct_side_fraction 0.9546 < 0.96,0.95456,0.50252,C
+NGIQ-BR-00000107,NGIQ-BR-00000107,ITG_L_7_4,Inferior temporal gyrus,NGIQ-BR-00000275,Left Inferior Temporal Gyrus,left,SPATIAL_WEAK_DISCRIMINATION,margin 0.0102 < 0.1 (competitor: Left Middle Temporal Gyrus),1.0,0.01016,C
+NGIQ-BR-00000155,NGIQ-BR-00000155,PCun_L_4_1,Precuneus,NGIQ-BR-00000291,Left Precuneus,left,LAT_MIDLINE_PARTIAL_CROSSING,correct_side_fraction 0.9068 < 0.96,0.90684,0.22244,C

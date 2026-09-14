@@ -1,0 +1,21 @@
+﻿bna_macro_gyrus,allowed_dk_labels,dk_labels_used_in_universe,used_count,all_used_labels_allowed,documented_basis
+Superior frontal gyrus,superiorfrontal,superiorfrontal,14,True,same structure; DK 'superiorfrontal' is the whole SFG (Fan2016 Table1 macro gyrus SFG)
+Middle frontal gyrus,caudalmiddlefrontal|rostralmiddlefrontal,caudalmiddlefrontal|rostralmiddlefrontal,12,True,DK splits the MFG into rostral and caudal parts; BNA MFG subregions distribute across both
+Inferior frontal gyrus,parsopercularis|parsorbitalis|parstriangularis,parsopercularis|parstriangularis,6,True,DK represents the IFG by its pars; BNA IFG subregions map to the pars labels present in the selected-62 set
+Precentral gyrus,precentral,precentral,12,True,same structure; direct name equivalence
+Postcentral gyrus,postcentral,postcentral,8,True,same structure; direct name equivalence
+Cingulate gyrus,caudalanteriorcingulate|isthmuscingulate|posteriorcingulate|rostralanteriorcingulate,isthmuscingulate|posteriorcingulate|rostralanteriorcingulate,6,True,DK splits the cingulate gyrus into anterior-caudal / anterior-rostral / posterior / isthmus parts
+Orbital gyrus,lateralorbitofrontal|medialorbitofrontal,lateralorbitofrontal|medialorbitofrontal,6,True,BNA orbital-gyrus subregions lie in the DK lateral / medial orbitofrontal cortex
+Insular gyrus,insula,insula,12,True,same structure; DK 'insula' is the insular cortex
+Superior temporal gyrus,superiortemporal,superiortemporal,8,True,same structure; direct name equivalence
+Middle temporal gyrus,middletemporal,middletemporal,8,True,same structure; direct name equivalence
+Inferior temporal gyrus,inferiortemporal,inferiortemporal,14,True,same structure; direct name equivalence
+Fusiform gyrus,fusiform,fusiform,6,True,same structure; direct name equivalence
+Parahippocampal gyrus,entorhinal|parahippocampal,entorhinal|parahippocampal,12,True,the DK entorhinal cortex is the anterior part of the parahippocampal gyrus; BNA PHG subregions cover both
+Superior parietal lobule,superiorparietal,superiorparietal,10,True,same structure; direct name equivalence
+Inferior parietal lobule,inferiorparietal|supramarginal,inferiorparietal|supramarginal,12,True,DK splits the IPL into inferior parietal and supramarginal parts
+Precuneus,precuneus,precuneus,8,True,same structure; direct name equivalence
+Paracentral lobule,paracentral,paracentral,4,True,same structure; direct name equivalence
+Lateral occipital cortex,lateraloccipital,lateraloccipital,8,True,same structure; direct name equivalence
+MedioVentral occipital cortex,lingual,lingual,4,True,the DK lingual gyrus lies within the medioventral occipital cortex
+Posterior superior temporal sulcus,,,0,True,no selected-62 DK target exists; not present in the frozen 170 universe
