@@ -10,6 +10,8 @@ import type {
   BrainRegionSeedListResponse,
   BrainRegionSeedQuery,
   BrainRegionSummary,
+  DiscoveryRunListResponse,
+  DiscoveryRunQuery,
 } from './types'
 
 const BASE = '/api/knowledge-production'
@@ -35,4 +37,26 @@ export function fetchBrainRegionSeed(identifier: string): Promise<BrainRegionSee
 /** One aggregate request backing the Production Index summary row. */
 export function fetchBrainRegionSummary(): Promise<BrainRegionSummary> {
   return getJson<BrainRegionSummary>(`${BASE}/brain-regions/summary`)
+}
+
+/**
+ * Phase 2A — Discovery Runs recorded for one BrainRegion, newest first.
+ *
+ * Read-only: Discovery RUN EXECUTION does not exist yet, so there is deliberately
+ * no create/start/cancel function here (those arrive in a later phase, with the
+ * lifecycle endpoints).
+ */
+export function fetchDiscoveryRuns(
+  entityId: string,
+  q: DiscoveryRunQuery = {},
+): Promise<DiscoveryRunListResponse> {
+  return getJson<DiscoveryRunListResponse>(
+    `${BASE}/brain-regions/${encodeURIComponent(entityId)}/discovery-runs`,
+    {
+      discovery_type: q.discoveryType ?? undefined,
+      status: q.status ?? undefined,
+      limit: q.limit,
+      offset: q.offset,
+    },
+  )
 }

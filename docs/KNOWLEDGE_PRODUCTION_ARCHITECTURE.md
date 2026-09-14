@@ -549,3 +549,79 @@ Validation、Promotion、任何 Discovery Run 表、任何 Discovery 状态字�
 **已拒绝的越界建议**（记录以备后续判断，Phase 1C 未采纳）：
 为汇总卡引入多色分类、把 Production 占位改成进度条、为未来 Tab 预置假数据或伪计数、
 将 Workspace 拆成独立布局或引入 UI 组件库（Tailwind / Ant Design / MUI / Bootstrap）。
+
+---
+
+## 13. Discovery Run Contract（Phase 2A 冻结）
+
+**Discovery Run = 对**一个** canonical BrainRegion seed 发起**一次**候选知识发现尝试的记录。**
+
+它是**工作流 / 溯源（workflow / provenance）**，**不是知识**。
+它本身**永远不代表** Circuit / Connection / Function / Evidence / Knowledge Assertion。
+
+### 13.1 单一运行模型（两条路线共用）
+
+```
+        BrainRegion Seed
+              ↓
+         Discovery Run          ← knowledge_discovery_runs（唯一一张表）
+           /        \
+  LLM_DISCOVERY   LITERATURE_DISCOVERY
+```
+
+**禁止**建立 `llm_discovery_runs` / `literature_discovery_runs` 等按路线分表的模型。
+两条路线共用同一生命周期与同一状态机，差异只体现在**可空的路线溯源列**上。
+
+### 13.2 冻结词表
+
+| 维度 | 冻结取值 | 说明 |
+|---|---|---|
+| `discovery_type` | `LLM_DISCOVERY` / `LITERATURE_DISCOVERY` | 发现路线 |
+| `status` | `QUEUED` / `RUNNING` / `COMPLETED` / `FAILED` / `CANCELLED` | **执行**生命周期，默认 `QUEUED` |
+| `outcome`（可空） | `CANDIDATES_FOUND` / `NO_CANDIDATES_FOUND` / `NO_EVIDENCE_FOUND` | **科学**结果，仅对已结束的 run 有意义 |
+
+### 13.3 `status != outcome`（必须区分）
+
+`status` 描述**执行**，`outcome` 描述**科学结果**。二者语义正交：
+
+| 记录 | 含义 |
+|---|---|
+| `status=COMPLETED`, `outcome=NO_EVIDENCE_FOUND` | 跑完了，且“没有证据”**本身就是一个有效答案** |
+| 从未处理（无 run） | 该脑区尚未进入发现流程 |
+| `status=FAILED` | 执行失败——**不是**科学结论 |
+
+把 `NO_EVIDENCE_FOUND` 与 “未处理” / “执行失败” 混为一谈是**科学错误**。
+
+### 13.4 与其他状态机隔离
+
+Discovery 的 `status` / `outcome` **不得**与后续阶段的
+`CandidateStatus` / `ValidationStatus` / `PromotionStatus` 混用、复用或相互赋值。
+它们属于不同的层，各有自己的词表。
+
+### 13.5 三层分离（不得混淆）
+
+| 层 | 载体 | 性质 |
+|---|---|---|
+| 工作流 / 溯源 | **Discovery Run** | 一次尝试的记录，非知识 |
+| 待审知识 | 未来 Candidate | 抽取出的**提议**知识 |
+| 正式知识 | Gate7B canonical Entity | 已接受的**权威**知识 |
+
+### 13.6 身份约定（Phase 2A 实测 schema 决定）
+
+`knowledge_discovery_runs.run_id` 使用 **UUID**（`gen_random_uuid()`），**不是** `NGIQ-*` id：
+
+- 本仓库**工作流层**（`import_batches` / `raw_parse_runs`）使用 UUID；
+  **科学层**（`kg_entities` / `brain_regions` / `connections`）使用 `BIGSERIAL` + `NGIQ-*` 公开 id。
+  Discovery Run 属于**工作流层**。
+- `infra.next_ngiq_id()` 是**冻结的 29 类实体登记表**（fail-closed）。
+  把 run 加进该表等于把工作流层并入 canonical 知识层——**禁止**。
+- 因此 run 的公开身份在结构上**不可能**被误认为一个 canonical 实体 id。
+
+内部身份仍遵循 Gate7B 的 `*_pk` / `*_id` 命名：`run_pk`（BIGINT 主键）/ `run_id`（UUID 公开 id）。
+FK 一律引用内部 `*_pk`，绝不引用 `*_id`。
+
+### 13.7 Phase 2A 边界
+
+本阶段**只**建立持久化与只读查询：建表、只读 service、只读端点。
+**不**执行任何发现路线，**不**调用 LLM，**不**检索文献，**不**产生候选。
+`create / start / complete / fail / cancel` 等受控状态迁移属于 **Phase 2B**。

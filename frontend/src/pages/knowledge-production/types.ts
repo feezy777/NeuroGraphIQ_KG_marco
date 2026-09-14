@@ -115,3 +115,81 @@ export const WORKSPACE_WORKFLOW_STEPS: WorkflowStepDef[] = [
   { id: 'validate', label: 'Validate' },
   { id: 'promote', label: 'Promote' },
 ]
+
+/**
+ * Phase 2A — Discovery Run (workflow / provenance).
+ *
+ * A run records ONE attempt to discover candidate knowledge around ONE
+ * BrainRegion seed. It is NOT knowledge: it never represents a circuit /
+ * connection / function / evidence / assertion.
+ *
+ * Frozen vocabulary, mirroring the CHECK constraints on
+ * knowledge_discovery_runs. `status` (execution) and `outcome` (scientific
+ * result) are independent — see docs/KNOWLEDGE_PRODUCTION_ARCHITECTURE.md §13.
+ */
+export type DiscoveryType = 'LLM_DISCOVERY' | 'LITERATURE_DISCOVERY'
+
+export type DiscoveryRunStatus =
+  | 'QUEUED'
+  | 'RUNNING'
+  | 'COMPLETED'
+  | 'FAILED'
+  | 'CANCELLED'
+
+export type DiscoveryRunOutcome =
+  | 'CANDIDATES_FOUND'
+  | 'NO_CANDIDATES_FOUND'
+  | 'NO_EVIDENCE_FOUND'
+
+export interface DiscoveryRun {
+  run_id: string
+  seed_entity_id: string
+  discovery_type: DiscoveryType
+  status: DiscoveryRunStatus
+  outcome: DiscoveryRunOutcome | null
+  provider: string | null
+  model_name: string | null
+  prompt_key: string | null
+  prompt_version: string | null
+  query_strategy_version: string | null
+  created_by: string | null
+  created_at: string
+  started_at: string | null
+  finished_at: string | null
+  error_code: string | null
+  error_message: string | null
+}
+
+export interface DiscoveryRunListResponse {
+  items: DiscoveryRun[]
+  total: number
+}
+
+export interface DiscoveryRunQuery {
+  discoveryType?: DiscoveryType | null
+  status?: DiscoveryRunStatus | null
+  limit?: number
+  offset?: number
+}
+
+/** Human label for a run status. Display only — never persist this. */
+export const DISCOVERY_STATUS_LABELS: Record<DiscoveryRunStatus, string> = {
+  QUEUED: 'Queued',
+  RUNNING: 'Running',
+  COMPLETED: 'Completed',
+  FAILED: 'Failed',
+  CANCELLED: 'Cancelled',
+}
+
+/**
+ * Neutral badge tone per status. Deliberately restrained: a run's status is a
+ * lifecycle fact, not a scientific judgement, so only failure/cancellation get
+ * a non-neutral tone.
+ */
+export const DISCOVERY_STATUS_TONES: Record<DiscoveryRunStatus, string> = {
+  QUEUED: 'badge-gray',
+  RUNNING: 'badge-blue',
+  COMPLETED: 'badge-green',
+  FAILED: 'badge-red',
+  CANCELLED: 'badge-gray',
+}

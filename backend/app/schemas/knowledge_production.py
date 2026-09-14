@@ -11,6 +11,7 @@ No candidate_* / mirror_* / final_* entity is represented here.
 """
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Literal
 
 from pydantic import BaseModel, Field
@@ -74,3 +75,77 @@ class BrainRegionSeedDetail(BrainRegionSeedItem):
     external_region_ids: list[str] = Field(default_factory=list)
     mapping_types: list[str] = Field(default_factory=list)
     mapping_review_statuses: list[str] = Field(default_factory=list)
+
+
+# ===========================================================================
+# Phase 2A — Discovery Run (workflow / provenance, NOT knowledge)
+# ===========================================================================
+# Frozen vocabulary, mirrored by the CHECK constraints on
+# knowledge_discovery_runs (migration gate7b_011). These are EXECUTION
+# lifecycle + scientific-outcome vocabularies, deliberately separate from any
+# future CandidateStatus / ValidationStatus / PromotionStatus.
+
+DiscoveryType = Literal["LLM_DISCOVERY", "LITERATURE_DISCOVERY"]
+
+DiscoveryRunStatus = Literal["QUEUED", "RUNNING", "COMPLETED", "FAILED", "CANCELLED"]
+
+DiscoveryRunOutcome = Literal[
+    "CANDIDATES_FOUND",
+    "NO_CANDIDATES_FOUND",
+    "NO_EVIDENCE_FOUND",
+]
+
+DISCOVERY_TYPES: tuple[str, ...] = ("LLM_DISCOVERY", "LITERATURE_DISCOVERY")
+DISCOVERY_RUN_STATUSES: tuple[str, ...] = (
+    "QUEUED",
+    "RUNNING",
+    "COMPLETED",
+    "FAILED",
+    "CANCELLED",
+)
+DISCOVERY_RUN_OUTCOMES: tuple[str, ...] = (
+    "CANDIDATES_FOUND",
+    "NO_CANDIDATES_FOUND",
+    "NO_EVIDENCE_FOUND",
+)
+
+
+class DiscoveryRunItem(BaseModel):
+    """One Discovery Run, read-only.
+
+    Exposes the run's identity, seed, lifecycle and route provenance.
+
+    Deliberately NOT exposed here:
+      * ``parameters_json`` / ``provenance_json`` — internal run config, not a
+        list-row concern (and never raw candidate entities).
+      * ``seed_region_pk`` — the public API is entity_id based; the internal
+        shared PK never leaves the backend.
+      * any credential — the table has no secret column and none may be added.
+    """
+
+    run_id: str
+    seed_entity_id: str
+
+    discovery_type: DiscoveryType
+    status: DiscoveryRunStatus
+    outcome: DiscoveryRunOutcome | None = None
+
+    provider: str | None = None
+    model_name: str | None = None
+    prompt_key: str | None = None
+    prompt_version: str | None = None
+    query_strategy_version: str | None = None
+
+    created_by: str | None = None
+
+    created_at: datetime
+    started_at: datetime | None = None
+    finished_at: datetime | None = None
+
+    error_code: str | None = None
+    error_message: str | None = None
+
+
+class DiscoveryRunListResponse(BaseModel):
+    items: list[DiscoveryRunItem]
+    total: int

@@ -586,5 +586,15 @@
   overflow-x: auto;
 }
 
+/* ── Phase 2A: Discovery run history (read-only) ────────────────────────── */
+.kp-run-history { margin-bottom: 14px; }
+/* Rows are not clickable: keep the subtle hover, drop the pointer cursor so
+   the table never claims an affordance it does not have. */
+.kp-run-history tbody tr:hover td { cursor: default; background: #fafbfc; }
+.kp-run-history td { white-space: nowrap; }
+
+/* Operation cards sit below the empty state / history in the Discovery tab. */
+.kp-op-grid { margin-top: 14px; }
+
 /* ── Inline states ──────────────────────────────────────────────────────── */
 .kp-muted { font-size: 12px; color: var(--text-muted); }

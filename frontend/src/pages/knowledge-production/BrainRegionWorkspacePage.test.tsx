@@ -1,23 +1,49 @@
 /**
- * BrainRegion Workspace tests (Phase 1B).
+ * BrainRegion Workspace tests (Phase 1B, extended in Phase 2A).
  *
  * One canonical BrainRegion is the operational root. Seven top-level tabs; the
  * candidate subtypes live INSIDE Candidates, not at the same level as
- * Discovery/Validation. No Discovery Run exists, so no step may be active.
+ * Discovery/Validation. Discovery steps are never active: Phase 2A records runs,
+ * it does not execute them.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { I18nProvider } from '../../i18n-context'
 import { BrainRegionWorkspacePage } from './BrainRegionWorkspacePage'
-import type { BrainRegionSeedDetail } from './types'
+import type { BrainRegionSeedDetail, DiscoveryRun } from './types'
 
 const getSeed = vi.fn()
+const getRuns = vi.fn()
 
 vi.mock('./kpApi', () => ({
   fetchBrainRegionSeed: (...args: unknown[]) => getSeed(...args),
+  fetchDiscoveryRuns: (...args: unknown[]) => getRuns(...args),
   fetchBrainRegionSeeds: vi.fn(),
   fetchBrainRegionSummary: vi.fn(),
 }))
+
+/** One persisted Discovery Run row, as the Phase 2A API returns it. */
+function run(over: Partial<DiscoveryRun> = {}): DiscoveryRun {
+  return {
+    run_id: '11111111-2222-3333-4444-555555555555',
+    seed_entity_id: 'NGIQ-BR-00000001',
+    discovery_type: 'LLM_DISCOVERY',
+    status: 'QUEUED',
+    outcome: null,
+    provider: null,
+    model_name: null,
+    prompt_key: null,
+    prompt_version: null,
+    query_strategy_version: null,
+    created_by: null,
+    created_at: '2026-09-14T10:00:00Z',
+    started_at: null,
+    finished_at: null,
+    error_code: null,
+    error_message: null,
+    ...over,
+  }
+}
 
 const DETAIL: BrainRegionSeedDetail = {
   entity_pk: 3,
@@ -51,6 +77,9 @@ function renderWorkspace(entityId = 'NGIQ-BR-00000001') {
 beforeEach(() => {
   getSeed.mockReset()
   getSeed.mockResolvedValue(DETAIL)
+  getRuns.mockReset()
+  // Default: a real BrainRegion with no runs yet (accepted Phase 2A state).
+  getRuns.mockResolvedValue({ items: [], total: 0 })
   window.location.hash = ''
 })
 
@@ -76,11 +105,146 @@ describe('BrainRegionWorkspacePage', () => {
   it('shows production summary placeholders without fabricating zeros', async () => {
     renderWorkspace()
     await waitFor(() => expect(screen.getByTestId('kp-workspace-summary')).toBeTruthy())
-    expect(screen.getByTestId('kp-ws-summary-discovery').textContent).toContain('Not initialized')
+    // Discovery settles to "Not initialized" once the run history is known.
+    await waitFor(() =>
+      expect(screen.getByTestId('kp-ws-summary-discovery').textContent).toContain(
+        'Not initialized',
+      ),
+    )
     for (const k of ['candidates', 'evidence', 'review']) {
       expect(screen.getByTestId(`kp-ws-summary-${k}`).textContent).toContain('—')
       expect(screen.getByTestId(`kp-ws-summary-${k}`).textContent).not.toContain('0')
     }
+  })
+
+  // ---- Phase 2A: Discovery summary card is driven by persisted runs ----
+  it('shows — for Discovery while the run history is still unknown', async () => {
+    let resolveRuns: (v: unknown) => void = () => {}
+    getRuns.mockReturnValue(new Promise(r => (resolveRuns = r)))
+    renderWorkspace()
+    const card = await screen.findByTestId('kp-ws-summary-discovery')
+    // Claiming "Not initialized" before the answer arrives would be a
+    // fabricated fact, so the unknown state renders as —.
+    expect(card.textContent).toContain('—')
+    expect(card.textContent).not.toContain('Not initialized')
+    resolveRuns({ items: [], total: 0 })
+  })
+
+  it.each([
+    ['QUEUED', 'Queued'],
+    ['RUNNING', 'Running'],
+    ['COMPLETED', 'Completed'],
+    ['FAILED', 'Failed'],
+    ['CANCELLED', 'Cancelled'],
+  ] as const)('shows the latest run status %s as "%s"', async (status, label) => {
+    getRuns.mockResolvedValue({ items: [run({ status })], total: 1 })
+    renderWorkspace()
+    await waitFor(() =>
+      expect(screen.getByTestId('kp-ws-summary-discovery').textContent).toContain(label),
+    )
+    expect(screen.getByTestId('kp-ws-summary-discovery').textContent).not.toContain(
+      'Not initialized',
+    )
+  })
+
+  it('does not derive candidate or evidence counts from runs', async () => {
+    getRuns.mockResolvedValue({
+      items: [run({ status: 'COMPLETED', outcome: 'CANDIDATES_FOUND' })],
+      total: 7,
+    })
+    renderWorkspace()
+    await waitFor(() =>
+      expect(screen.getByTestId('kp-ws-summary-discovery').textContent).toContain('Completed'),
+    )
+    for (const k of ['candidates', 'evidence', 'review']) {
+      expect(screen.getByTestId(`kp-ws-summary-${k}`).textContent).toContain('—')
+    }
+  })
+
+  // ---- Phase 2A: Discovery tab ----
+  it('shows an intentional empty state when no runs exist', async () => {
+    renderWorkspace()
+    fireEvent.click(await screen.findByTestId('kp-tab-discovery'))
+    const panel = within(screen.getByTestId('kp-discovery-tab'))
+    expect(panel.getByText('No Discovery Runs yet')).toBeTruthy()
+    expect(
+      panel.getByText(/This BrainRegion has not entered a discovery run/),
+    ).toBeTruthy()
+    expect(screen.queryByTestId('kp-run-history')).toBeNull()
+  })
+
+  it('shows an error state when the run history cannot be read', async () => {
+    getRuns.mockRejectedValue(new Error('503 unavailable'))
+    renderWorkspace()
+    fireEvent.click(await screen.findByTestId('kp-tab-discovery'))
+    expect(await screen.findByTestId('kp-discovery-error')).toBeTruthy()
+    expect(screen.queryByTestId('kp-run-history')).toBeNull()
+  })
+
+  it('renders the run history with type, status, outcome, provider/model and timestamps', async () => {
+    getRuns.mockResolvedValue({
+      items: [
+        run({
+          discovery_type: 'LLM_DISCOVERY',
+          status: 'COMPLETED',
+          outcome: 'CANDIDATES_FOUND',
+          provider: 'deepseek',
+          model_name: 'deepseek-v4-pro',
+          created_at: '2026-09-14T10:00:00Z',
+          started_at: '2026-09-14T10:01:00Z',
+          finished_at: '2026-09-14T10:04:00Z',
+        }),
+      ],
+      total: 1,
+    })
+    renderWorkspace()
+    fireEvent.click(await screen.findByTestId('kp-tab-discovery'))
+    const history = within(await screen.findByTestId('kp-run-history'))
+    for (const header of ['Type', 'Status', 'Outcome', 'Provider / Model', 'Created', 'Started', 'Finished']) {
+      expect(history.getByText(header)).toBeTruthy()
+    }
+    expect(history.getByText('LLM Discovery')).toBeTruthy()
+    expect(history.getByText('Completed')).toBeTruthy()
+    expect(history.getByText('Candidates found')).toBeTruthy()
+    expect(history.getByText('deepseek · deepseek-v4-pro')).toBeTruthy()
+    // every timestamp renders as YYYY-MM-DD HH:mm, not a raw ISO string
+    expect(history.getAllByText(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/)).toHaveLength(3)
+  })
+
+  it('handles a literature run that has no provider/model cleanly', async () => {
+    getRuns.mockResolvedValue({
+      items: [
+        run({
+          discovery_type: 'LITERATURE_DISCOVERY',
+          status: 'COMPLETED',
+          outcome: 'NO_EVIDENCE_FOUND',
+          query_strategy_version: 'v1',
+          created_at: '2026-09-14T10:00:00Z',
+          started_at: null,
+          finished_at: null,
+        }),
+      ],
+      total: 1,
+    })
+    renderWorkspace()
+    fireEvent.click(await screen.findByTestId('kp-tab-discovery'))
+    const history = within(await screen.findByTestId('kp-run-history'))
+    expect(history.getByText('Literature Discovery')).toBeTruthy()
+    expect(history.queryByText(/null/)).toBeNull()
+    // status != outcome: finished, and "no evidence" is a real answer
+    expect(history.getByText('No evidence found')).toBeTruthy()
+    // provider/model is absent for this route -> em dash, never blank or "null";
+    // started/finished are also unset on this row.
+    expect(history.getAllByText('—')).toHaveLength(3)
+  })
+
+  it('never queries runs with a candidate, mirror or final identifier', async () => {
+    getRuns.mockResolvedValue({ items: [], total: 0 })
+    renderWorkspace()
+    await waitFor(() => expect(getRuns).toHaveBeenCalled())
+    const arg = String(getRuns.mock.calls[0][0])
+    expect(arg).toBe('NGIQ-BR-00000001')
+    expect(arg).not.toMatch(/candidate|mirror|final/i)
   })
 
   it('has exactly the seven top-level workspace tabs', async () => {
@@ -192,7 +356,49 @@ describe('BrainRegionWorkspacePage', () => {
     const { readFileSync } = await import('node:fs')
     const { join } = await import('node:path')
     const forbidden = ['candidate_id', 'mirror', 'final_kg', 'finalkg', 'ranking_id', 'task_type']
-    for (const f of ['BrainRegionWorkspacePage.tsx', 'workspaceTabs.tsx', 'routes.ts']) {
+    for (const f of [
+      'BrainRegionWorkspacePage.tsx',
+      'workspaceTabs.tsx',
+      'routes.ts',
+      // Phase 2A additions
+      'types.ts',
+      'kpApi.ts',
+    ]) {
+      const code = readFileSync(join(__dirname, f), 'utf8')
+        .replace(/\/\*[\s\S]*?\*\//g, '')
+        .replace(/\/\/[^\n]*/g, '')
+        .toLowerCase()
+      for (const term of forbidden) {
+        expect(code, `${f} must not reference "${term}"`).not.toContain(term)
+      }
+    }
+  })
+
+  it('does not execute discovery: no provider or literature-search coupling', async () => {
+    const { readFileSync } = await import('node:fs')
+    const { join } = await import('node:path')
+    // Phase 2A is persistence/read only. Nothing on this path may reach an LLM
+    // provider or a paper-search client.
+    const forbidden = [
+      'llmprovider',
+      'llm_provider',
+      'deepseek',
+      'kimi',
+      'openai',
+      'pubmed',
+      'europepmc',
+      'openalex',
+      'semanticscholar',
+      'paper_search',
+      'paper_search_multi',
+    ]
+    for (const f of [
+      'BrainRegionWorkspacePage.tsx',
+      'workspaceTabs.tsx',
+      'kpApi.ts',
+      'types.ts',
+      'routes.ts',
+    ]) {
       const code = readFileSync(join(__dirname, f), 'utf8')
         .replace(/\/\*[\s\S]*?\*\//g, '')
         .replace(/\/\/[^\n]*/g, '')

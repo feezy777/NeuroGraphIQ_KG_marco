@@ -1,22 +1,35 @@
-"""Phase 1 Knowledge Production - read-only HTTP surface.
+"""Knowledge Production - read-only HTTP surface.
 
-Endpoints (both strictly read-only):
+BrainRegion endpoints:
 
     GET /api/knowledge-production/brain-regions
+    GET /api/knowledge-production/brain-regions/summary
     GET /api/knowledge-production/brain-regions/{identifier}
 
-Design boundary for Phase 1:
-  * Discovery is NOT implemented - there is no Discovery Run table and none is
-    created here. Nothing in this module returns a discovery status.
-  * No Candidate / Mirror / Final dependency. Reads only Gate7B formal tables.
-  * No LLM Discovery / Literature Discovery endpoint exists (they are disabled
-    placeholders in the UI and must not be faked by an endpoint).
+Discovery Run endpoints (Phase 2A — READ ONLY, no lifecycle):
+
+    GET /api/knowledge-production/brain-regions/{entity_id}/discovery-runs
+    GET /api/knowledge-production/discovery-runs/{run_id}
+
+Design boundary:
+  * Everything here is READ-ONLY. There is NO POST/PATCH/DELETE endpoint. Run
+    lifecycle transitions (create / start / complete / fail / cancel) belong to
+    Phase 2B and are deliberately absent.
+  * A Discovery Run is workflow/provenance, NOT knowledge: nothing here returns
+    a circuit / connection / function / evidence / assertion.
+  * No Candidate / Mirror / Final dependency. Reads only Gate7B formal tables
+    plus the knowledge_discovery_runs management table.
+  * Discovery EXECUTION does not exist yet: no LLM call, no literature search,
+    and no endpoint here triggers one. The UI buttons stay disabled.
 
 The router performs HTTP concerns only; query construction lives in
-``app.services.knowledge_production_brain_region_service``.
+``app.services.knowledge_production_brain_region_service`` and
+``app.services.knowledge_discovery_run_service``.
 """
 
 from __future__ import annotations
+
+import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -26,8 +39,13 @@ from app.schemas.knowledge_production import (
     BrainRegionSeedDetail,
     BrainRegionSeedListResponse,
     BrainRegionSummary,
+    DiscoveryRunItem,
+    DiscoveryRunListResponse,
+    DiscoveryRunStatus,
+    DiscoveryType,
     GranularityLevel,
 )
+from app.services import knowledge_discovery_run_service as run_svc
 from app.services import knowledge_production_brain_region_service as svc
 
 router = APIRouter(prefix="/api/knowledge-production", tags=["Knowledge Production"])
@@ -74,3 +92,63 @@ async def get_brain_region(
     if detail is None:
         raise HTTPException(status_code=404, detail=f"BrainRegion '{identifier}' not found")
     return detail
+
+
+# ---------------------------------------------------------------------------
+# Phase 2A — Discovery Runs (read-only)
+# ---------------------------------------------------------------------------
+
+
+@router.get(
+    "/brain-regions/{entity_id}/discovery-runs",
+    response_model=DiscoveryRunListResponse,
+)
+async def list_brain_region_discovery_runs(
+    entity_id: str,
+    discovery_type: DiscoveryType | None = Query(
+        None, description="LLM_DISCOVERY | LITERATURE_DISCOVERY"
+    ),
+    status: DiscoveryRunStatus | None = Query(
+        None, description="QUEUED | RUNNING | COMPLETED | FAILED | CANCELLED"
+    ),
+    limit: int = Query(50, ge=1, le=run_svc._MAX_LIMIT),
+    offset: int = Query(0, ge=0),
+    db: AsyncSession = Depends(get_db),
+) -> DiscoveryRunListResponse:
+    """Discovery Runs recorded for one BrainRegion, newest first.
+
+    404 when the BrainRegion itself does not exist: 'no such region' and 'no runs
+    for this region' are different facts and must not be conflated.
+    """
+    runs = await run_svc.list_discovery_runs_for_region(
+        db,
+        entity_id=entity_id,
+        discovery_type=discovery_type,
+        status=status,
+        limit=limit,
+        offset=offset,
+    )
+    if runs is None:
+        raise HTTPException(status_code=404, detail=f"BrainRegion '{entity_id}' not found")
+    return runs
+
+
+@router.get("/discovery-runs/{run_id}", response_model=DiscoveryRunItem)
+async def get_discovery_run(
+    run_id: str, db: AsyncSession = Depends(get_db)
+) -> DiscoveryRunItem:
+    """One Discovery Run by its public run_id (UUID).
+
+    A malformed run_id is reported as 404 (not 422 or 500): it cannot identify
+    any run, so 'not found' is the honest answer. Validating here also keeps the
+    UUID column comparison from raising a database DataError.
+    """
+    try:
+        uuid.UUID(run_id)
+    except ValueError:
+        raise HTTPException(status_code=404, detail=f"Discovery Run '{run_id}' not found")
+
+    run = await run_svc.get_discovery_run(db, run_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail=f"Discovery Run '{run_id}' not found")
+    return run

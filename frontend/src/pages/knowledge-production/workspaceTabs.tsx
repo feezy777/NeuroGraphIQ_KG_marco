@@ -7,7 +7,14 @@
  * visual contract in §12.
  */
 import type { ReactNode } from 'react'
-import type { BrainRegionSeedDetail } from './types'
+import { DataTable, type Column } from '../../components/DataTable'
+import {
+  DISCOVERY_STATUS_LABELS,
+  DISCOVERY_STATUS_TONES,
+  type BrainRegionSeedDetail,
+  type DiscoveryRun,
+  type DiscoveryRunOutcome,
+} from './types'
 
 function Field({ label, value }: { label: string; value: string | number | null }) {
   return (
@@ -167,18 +174,110 @@ function DiscoveryCard({
           </span>
         ))}
       </div>
-      <button type="button" className="btn btn-sm" disabled title="Phase 2/3 开放" data-testid={testId}>
+      <button type="button" className="btn btn-sm" disabled title="Phase 2B/3 开放" data-testid={testId}>
         {buttonLabel}
       </button>
-      <p className="kp-card-hint">Discovery Run will be enabled in Phase 2/3.</p>
+      <p className="kp-card-hint">
+        Discovery Run persistence is available. Execution will be enabled in a later phase.
+      </p>
     </div>
   )
 }
 
-export function DiscoveryTab() {
+/** Display-only labels for the frozen outcome vocabulary. Never persisted. */
+const OUTCOME_LABELS: Record<DiscoveryRunOutcome, string> = {
+  CANDIDATES_FOUND: 'Candidates found',
+  NO_CANDIDATES_FOUND: 'No candidates found',
+  NO_EVIDENCE_FOUND: 'No evidence found',
+}
+
+/** `YYYY-MM-DD HH:mm` in local time, or `—` when the run has no such stamp. */
+function formatTimestamp(value: string | null): string {
+  if (!value) return '—'
+  const d = new Date(value)
+  if (Number.isNaN(d.getTime())) return '—'
+  const p = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`
+}
+
+function StatusBadge({ status }: { status: DiscoveryRun['status'] }) {
+  return (
+    <span className={`badge ${DISCOVERY_STATUS_TONES[status]}`}>
+      {DISCOVERY_STATUS_LABELS[status]}
+    </span>
+  )
+}
+
+/** Read-only run history. No candidate counts, no evidence counts. */
+function RunHistory({ runs }: { runs: DiscoveryRun[] }) {
+  const columns: Column<DiscoveryRun>[] = [
+    {
+      key: 'discovery_type',
+      header: 'Type',
+      render: r => (r.discovery_type === 'LLM_DISCOVERY' ? 'LLM Discovery' : 'Literature Discovery'),
+    },
+    { key: 'status', header: 'Status', render: r => <StatusBadge status={r.status} /> },
+    {
+      key: 'outcome',
+      header: 'Outcome',
+      // status != outcome: a finished run reports its scientific result here,
+      // independently of how the execution went.
+      render: r => (r.outcome ? OUTCOME_LABELS[r.outcome] : '—'),
+    },
+    {
+      key: 'provider',
+      header: 'Provider / Model',
+      // Literature runs carry no provider/model — they show —.
+      render: r => [r.provider, r.model_name].filter(Boolean).join(' · ') || '—',
+    },
+    { key: 'created_at', header: 'Created', render: r => formatTimestamp(r.created_at) },
+    { key: 'started_at', header: 'Started', render: r => formatTimestamp(r.started_at) },
+    { key: 'finished_at', header: 'Finished', render: r => formatTimestamp(r.finished_at) },
+  ]
+
+  return (
+    <section className="kp-section kp-run-history" data-testid="kp-run-history">
+      <h3 className="kp-section-title">Run History</h3>
+      <DataTable columns={columns} rows={runs} getKey={r => r.run_id} />
+    </section>
+  )
+}
+
+export function DiscoveryTab({
+  runs,
+  error,
+}: {
+  /** null while the first request is in flight; [] once known to be empty. */
+  runs: DiscoveryRun[] | null
+  error?: string | null
+}) {
   return (
     <div data-testid="kp-discovery-tab">
-      <div className="kp-card-grid">
+      {error && (
+        <div className="state-box state-err" data-testid="kp-discovery-error">
+          <p>{error}</p>
+        </div>
+      )}
+      {!error && runs === null && (
+        <div className="state-box" data-testid="kp-discovery-loading">
+          <p>载入中…</p>
+        </div>
+      )}
+      {!error && runs !== null && runs.length === 0 && (
+        <TabPlaceholder
+          icon="◎"
+          title="No Discovery Runs yet"
+          description="This BrainRegion has not entered a discovery run. Both routes below write into the same run record, so the first run of either type will appear here."
+          blockTitle="Recorded per run"
+        >
+          <FutureList
+            items={['Type and status', 'Outcome', 'Provider / model', 'Created / started / finished']}
+          />
+        </TabPlaceholder>
+      )}
+      {!error && runs !== null && runs.length > 0 && <RunHistory runs={runs} />}
+
+      <div className="kp-card-grid kp-op-grid">
         <DiscoveryCard
           glyph="✦"
           title="LLM Discovery"
