@@ -744,3 +744,99 @@ QUEUED ──start──→ RUNNING ──complete──→ COMPLETED
 必须由后续阶段的执行层推进。因此 UI 的
 `Start LLM Discovery` / `Start Literature Discovery` **保持禁用** ——
 否则会产生无人执行的 `QUEUED` run。
+
+---
+
+## 15. LLM Discovery Structured Contract（Phase 3A 冻结）
+
+LLM Discovery 是**高召回假设生成**，**不是**证据核实、**不是**归一化、
+**不是**正式知识创建。本阶段只定义**契约与解析器**，**不调用任何模型**。
+
+构件：`app/schemas/llm_discovery.py`（契约）、
+`app/prompts/llm_discovery_prompt.py`（版本化 prompt）、
+`app/services/llm_discovery_parser.py`（解析 + 结构校验）。
+
+### 15.1 本地候选 ID（local_id）
+
+- 形如 `<type>_<n>`：`region_1` / `connection_2` / `function_1` / `circuit_3`。
+- **仅在一次响应内有效**，是**引用**，不是 canonical ID。
+- 模型**绝不**可以编造 `NGIQ-*` 或数据库主键；它收到的唯一 canonical id 是
+  `seed_entity_id`。该模式被**确定性拒绝**（大写与连字符都不合法）。
+- 同一响应内 local_id **全局唯一**（跨类型复用同样拒绝，避免引用歧义）。
+
+### 15.2 SEED 引用
+
+已知种子用保留引用 `SEED` 表示，**不需要**为它伪造一个 RegionCandidate。
+非 `SEED` 的区域引用**必须**命中已声明的 `RegionCandidate.local_id`。
+
+### 15.3 Circuit-first
+
+`CircuitCandidate` 是**主要发现对象**：具有功能一致性的多区域通路/网络。
+
+**神经回路不要求是闭合环**。`LOOP` 只是若干 `topology_hint` 之一；
+Gate7B 把闭合性建模为 `circuits.is_closed_loop` **属性**，而非必要条件。
+
+### 15.4 候选与证据分离
+
+| 概念 | 含义 |
+|---|---|
+| LLM 候选 | **提议**的知识（本阶段产物，纯内存） |
+| SourceHint | 模型**记得**的来源线索，**未核实** |
+| Evidence | 经确定性文献核实后的证据（未来阶段） |
+| Canonical Entity | 正式 Gate7B 知识（未来阶段） |
+
+**`source_hint != Evidence`**。模型给出的 PMID / DOI / 标题**不得**直接写入
+`publications` / `evidence` / `evidence_links`。
+
+LLM Discovery **不**要求模型提供引文、原文段落或偏移量 —— 它不读任何文档；
+这些属于 Literature Discovery。若模型意外产出引文类字段，**不视为证据**。
+
+### 15.5 候选语义默认值（冻结，但本阶段**不落库**）
+
+    source_type      = LLM_GENERATED
+    evidence_status  = UNVERIFIED
+    knowledge_status = CANDIDATE
+
+### 15.6 LLM Discovery Candidate Semantics
+
+- **Connection ≠ Projection**：`connection_type` 与 Gate7B
+  `connections.connection_class` 一一对应
+  （`STRUCTURAL` / `PROJECTION` / `FUNCTIONAL` / `EFFECTIVE`），
+  外加**仅用于发现**的 `UNKNOWN`（“来源没有说明”），
+  `UNKNOWN` **不得**被静默映射为任何正式类别。
+  **绝不**把所有连接一律标成 `PROJECTION`，也**绝不**把投影降级为泛化连接。
+- **confidence** 是模型**自评的发现置信度**（`0.0–1.0`），
+  **不是**证据质量、**不是**归一化置信度、**不是**验证置信度。
+- **跨物种**：种子为人类（`9606`）。非人类知识必须**显式保留物种限定**，
+  **绝不**静默转换为人类事实；校验发出 `CROSS_SPECIES_UNCERTAINTY`。
+- **`summary` 不是权威**：机器逻辑只读结构化数组。
+- **解析器不放行科学修补**：只允许表层修复（BOM、code fence、空白、
+  在一个明确 JSON 对象周围包裹的散文）。**禁止**补齐缺失连接、
+  **禁止**推断方向、**禁止**补造区域/成员/来源线索、
+  **禁止**改写科学枚举值。结构不合法即**失败**，绝不“修”成合法。
+- **回路完整性**：`region_refs` 少于 2 个 → **拒绝**；
+  `connection_refs` 为空 → **保留**候选并发出
+  `CIRCUIT_WITHOUT_CONNECTION`（**绝不**伪造缺失的连接）。
+- **种子一致性**：响应中的 `seed_entity_id` 必须与请求的种子**完全一致**，
+  否则**拒绝**（防 prompt/model 漂移），不静默覆盖。
+- **空结果合法**：`regions=connections=functions=circuits=[]` 是**有效的**
+  结构化结果（“无候选”），不是解析失败。
+
+### 15.7 Prompt 契约
+
+| | |
+|---|---|
+| key | `knowledge_production.llm_discovery` |
+| version | `1.0.0` |
+
+输出 schema 描述**由类型契约派生**（`compact_output_schema`），不手工维护第二份。
+
+**provider 侧无严格 schema 强制**：当前 provider 仅启用 JSON 模式
+（`response_format=json_object`），其 `response_schema` 形参**未被使用**。
+因此**解析器是权威**，不得假装存在 provider 侧强校验。
+
+### 15.8 Phase 3A 边界
+
+**零**迁移、**零**新表、**零**候选落库、**零**新端点、**零**前端改动、
+**零** provider 调用。产物止于**类型化的内存结构**。
+候选持久化属于更晚的独立阶段（Phase 3C）。
