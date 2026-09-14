@@ -843,7 +843,7 @@ def test_rp_8_metrics_report_the_profile_so_truncation_can_be_read(env):
 def test_rp_9_run_provenance_names_the_hardened_prompt_version(env):
     """§25.9: the persisted run must identify the prompt text that produced it."""
     _execute(env)
-    assert env.db.runs[0]["prompt_version"] == "1.1.0"
+    assert env.db.runs[0]["prompt_version"] == "1.2.0"
     assert env.db.runs[0]["prompt_key"] == "knowledge_production.llm_discovery"
 
 

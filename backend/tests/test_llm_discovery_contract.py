@@ -21,6 +21,7 @@ from app.schemas.llm_discovery import (
     CANDIDATE_KNOWLEDGE_STATUS,
     CANDIDATE_SOURCE_TYPE,
     DISCOVERY_WARNING_CODES,
+    LOCAL_ID_PATTERN,
     REGION_RELATIONS_TO_SEED,
     SCHEMA_VERSION,
     SEED_REF,
@@ -609,7 +610,7 @@ def test_prompt_identity_is_frozen():
     # 1.1.0 — Phase 3B.2 root-shape hardened text. 1.0.0 identified the OLD
     # prompt that embedded the `top_level` schema description.
     assert prompt_mod.PROMPT_VERSION != "1.0.0"
-    assert prompt_mod.PROMPT_VERSION == "1.1.0"
+    assert prompt_mod.PROMPT_VERSION == "1.2.0"
 
 
 def test_prompt_parts_and_seed_context():
@@ -1155,7 +1156,201 @@ def test_b14_the_root_skeleton_is_rendered_not_hand_written():
         for name, label in prompt_mod.compact_output_schema(model).items():
             assert f"  {name}: {label}" in definitions, (model.__name__, name)
 
-    # A hand-written skeleton in the source would not track the contract.
+    # A hand-written root skeleton would not track the contract. Scan the
+    # skeleton FUNCTION only: the format example legitimately contains empty
+    # arrays, because that is part of a complete valid response.
     source = Path(prompt_mod.__file__).read_text(encoding="utf-8")
-    for literal in ('"regions": []', '"schema_version": "1.0"', '"source_hints": []'):
-        assert literal not in source, literal
+    fn = next(
+        node
+        for node in ast.walk(ast.parse(source))
+        if isinstance(node, ast.FunctionDef) and node.name == "build_response_root_skeleton"
+    )
+    body = ast.get_source_segment(source, fn) or ""
+    assert "model_fields" in body, "the skeleton must be rendered from the contract"
+    for literal in ('"regions"', '"schema_version": "1.0"', '"source_hints"'):
+        assert literal not in body, literal
+
+
+# ---------------------------------------------------------------------------
+# Phase 3B.4 — LOCAL ID compliance hardening
+# ---------------------------------------------------------------------------
+# A real deepseek-flash run with an ample budget finished normally (`stop`,
+# 23K of 64K used) and still returned `conn_1` where the contract requires
+# `connection_1`. The contract is NOT relaxed to match: the prompt is made
+# unambiguous, and one validated example is added.
+def _example() -> dict[str, Any]:
+    return prompt_mod.build_format_example(SEED_ID)
+
+
+def test_c1_prompt_version_is_the_local_id_hardened_text():
+    assert prompt_mod.PROMPT_VERSION == "1.2.0"
+    built = prompt_mod.build_llm_discovery_prompt(seed())
+    assert built["prompt_version"] == "1.2.0"
+
+
+def test_c2_every_exact_prefix_is_stated_in_the_prompt():
+    user = _collapsed()
+    for prefix in (
+        "region_<integer>",
+        "connection_<integer>",
+        "function_<integer>",
+        "circuit_<integer>",
+    ):
+        assert prefix in user, prefix
+
+
+def test_c3_the_abbreviations_a_real_model_produced_are_named_as_forbidden():
+    user = _collapsed()
+    for bad in ("conn_1", "func_1", "circ_1", "edge_1", "pathway_1", "region1"):
+        assert bad in user, bad
+    assert "NEVER write" in user
+
+
+def test_c4_prompt_forbids_abbreviating_local_id_prefixes():
+    assert "Do not abbreviate local-ID prefixes." in _collapsed()
+
+
+def test_c5_references_must_reuse_the_declared_id_exactly():
+    user = _collapsed()
+    assert "References MUST reuse a declared local_id EXACTLY" in user
+    assert 'never "conn_1"' in user
+
+
+def test_c6_the_seed_is_still_the_only_reserved_reference():
+    user = _collapsed()
+    assert "SEED is the one reserved reference" in user
+    assert "region_seed" in user  # named as forbidden
+
+
+def test_c7_the_field_reference_states_the_local_id_pattern():
+    """The bare `local_id: string` is what a model read while writing `conn_1`."""
+    definitions = prompt_mod.build_field_definitions()
+    assert "local_id: string - MUST match " in definitions
+    # the shape is DERIVED from the contract's own regex, not re-typed
+    assert prompt_mod.local_id_shape() == "region_<n>|connection_<n>|function_<n>|circuit_<n>"
+    assert prompt_mod.local_id_prefixes() == ("region", "connection", "function", "circuit")
+    for prefix in prompt_mod.local_id_prefixes():
+        assert prefix in LOCAL_ID_PATTERN.pattern, prefix
+
+
+def test_c8_the_optional_warning_local_id_is_not_given_the_candidate_rule():
+    """DiscoveryWarning.local_id is optional; the MUST rule is for candidates."""
+    definitions = prompt_mod.build_field_definitions()
+    assert "local_id: string|null" in definitions
+
+
+def test_c9_the_format_example_is_a_json_object_that_passes_the_contract():
+    example = _example()
+    assert isinstance(example, dict)
+    parsed = LlmDiscoveryResponse.model_validate(example)
+    assert parsed.seed_entity_id == SEED_ID
+
+
+def test_c10_every_example_local_id_is_contract_legal():
+    example = _example()
+    ids = [
+        *(r["local_id"] for r in example["regions"]),
+        *(c["local_id"] for c in example["connections"]),
+        *(f["local_id"] for f in example["functions"]),
+        *(c["local_id"] for c in example["circuits"]),
+    ]
+    assert len(ids) == len(set(ids)), "example ids must be unique"
+    for local_id in ids:
+        assert is_local_candidate_id(local_id), local_id
+    # all four id kinds actually appear, so the example teaches every prefix
+    assert {i.split("_")[0] for i in ids} == {"region", "connection", "function", "circuit"}
+
+
+def test_c11_every_example_reference_resolves():
+    result = prompt_mod.build_format_example(SEED_ID)
+    parsed = LlmDiscoveryResponse.model_validate(result)
+    errors, _warnings = parser.validate_cross_references(parsed)
+    assert errors == [], errors
+    # the example is only useful if the PARSER accepts it, not just pydantic
+    round_trip = parse_text(json.dumps(result))
+    assert round_trip.ok, round_trip.error
+
+
+def test_c12_the_example_uses_the_seed_id_actually_passed():
+    assert (
+        prompt_mod.build_format_example("NGIQ-BR-99999999")["seed_entity_id"]
+        == "NGIQ-BR-99999999"
+    )
+    assert SEED_ID in json.dumps(_example())
+    # and it demonstrates SEED as a reference, so no fake seed region is invented
+    assert SEED_REF in _example()["connections"][0].values()
+    assert SEED_REF in _example()["circuits"][0]["region_refs"]
+
+
+def test_c13_the_example_carries_no_real_brain_region_name():
+    """A format example must not inject scientific bias into this seed."""
+    blob = json.dumps(_example(), ensure_ascii=False).lower()
+    for real in (
+        "hippocampus",
+        "amygdala",
+        "cortex",
+        "thalamus",
+        "cerebellum",
+        "striatum",
+        "putamen",
+        "insula",
+        "brainstem",
+        "midbrain",
+    ):
+        assert real not in blob, real
+    assert "example region" in blob and "example circuit" in blob
+
+
+def test_c14_the_example_declares_no_human_species_basis():
+    """A placeholder has no species identity; absence must not read as HUMAN."""
+    example = _example()
+    assert example["regions"][0]["species_taxon_id"] is None
+    for key in ("connections", "functions", "circuits"):
+        assert example[key][0]["species_context"] == {"scope": "UNKNOWN", "taxon_ids": []}
+    assert "9606" not in json.dumps(example)
+
+
+def test_c15_the_example_is_labelled_format_only():
+    user = _collapsed()
+    assert "FORMAT ONLY" in user
+    assert "Do not copy its names or its scientific content" in user
+    assert "a human seed does not make a candidate human-established" in user
+
+
+def test_c16_scientific_guardrails_survive_the_hardening():
+    system = " ".join(prompt_mod.SYSTEM_PROMPT.lower().split())
+    for needle in (
+        "discovery assistant",
+        "never invent a canonical id",
+        "not required to be closed loops",
+        "[0.0, 1.0]",
+        "unverified",
+        "do not provide quotations",
+        "never silently convert animal knowledge into human",
+        "do not fabricate evidence",
+        "json only",
+        "no markdown",
+    ):
+        assert needle in system, needle
+
+
+def test_c17_the_contract_and_parser_semantics_are_untouched():
+    """3B.4 must not have relaxed anything to make the model comply."""
+    assert LOCAL_ID_PATTERN.pattern == r"^(region|connection|function|circuit)_[0-9]+$"
+    for rejected in ("conn_1", "func_1", "circ_1", "r1", "region1", "connection1", "edge_1"):
+        assert not is_local_candidate_id(rejected), rejected
+    # no alias normalisation was added anywhere on the parse path
+    parser_src = PARSER_PATH.read_text(encoding="utf-8").lower()
+    for forbidden in ("conn_1", "func_1", "circ_1", "normalize_local_id", "remap"):
+        assert forbidden not in parser_src, forbidden
+
+
+def test_c18_the_example_reaches_the_rendered_prompt():
+    user = prompt_mod.build_user_prompt(seed())
+    assert "FORMAT-ONLY EXAMPLE" in user
+    blocks = _json_blocks(user)
+    identified = [b for b in blocks if isinstance(b, dict) and b.get("regions")]
+    assert identified, "the rendered prompt must contain the populated example"
+    example = identified[0]
+    assert example["seed_entity_id"] == SEED_ID
+    assert example["connections"][0]["local_id"] == "connection_1"

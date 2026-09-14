@@ -827,7 +827,10 @@ LLM Discovery **不**要求模型提供引文、原文段落或偏移量 —— 
 | | |
 |---|---|
 | key | `knowledge_production.llm_discovery` |
-| version | `1.1.0`（Phase 3B.2 root-shape hardened；`1.0.0` 代表旧的 `top_level` 版本文本） |
+| version | `1.2.0`（Phase 3B.4 local-ID hardened） |
+
+版本沿革：`1.0.0` = 旧的 `top_level` 版本文本 · `1.1.0` = Phase 3B.2 root-shape
+hardened · `1.2.0` = Phase 3B.4 增加 local-ID 规则与**已验证的格式示例**。
 
 **Prompt version ≠ schema version**：`prompt_version` 标识**描述方式**，
 `schema_version = 1.0` 标识**科学契约**。Phase 3B.2 只改了前者。
@@ -1142,3 +1145,85 @@ Pass 4  Local candidate graph consolidation
 调用，换取更稳定的结构、更完整的候选、更低的单次 JSON 复杂度与更容易的错误隔离。
 成本不作为阻止该设计的主要因素。**但 Multi-pass 只有在单次架构被真正证伪后
 才启动**——不得以 8K 耗尽为据直接跳入。
+
+### 16.11 Local-ID Compliance（Phase 3B.4）
+
+Phase 3B.3 用充足预算拿到了**第一个公平的真实模型契约失败**：
+
+```
+finish_reason = stop        （正常收尾，非截断）
+completion_tokens = 23061   （65536 中只用了 23K）
+→ 失败原因不是架构、不是预算，而是 LOCAL_ID_DRIFT
+```
+
+具体：契约要求 `connection_1`，模型写了 `conn_1`。
+
+**根因**：`local_id` 在 FIELD CONTRACT 里只渲染成
+
+```
+local_id: string          ← 零约束
+```
+
+而 SYSTEM 规则只说"形如 `<type>_<number>`"——`<type>` 太抽象，
+在一个**天生大量使用缩写**的领域里不足以抵抗 `conn` / `func` / `circ`。
+
+**修复（未放宽契约）**：
+
+1. FIELD CONTRACT 中 `local_id` 直接写明别名形状
+   `MUST match region_<n>|connection_<n>|function_<n>|circuit_<n>`；
+   该形状由 `LOCAL_ID_PATTERN` **推导**得出，不手写第二份权威。
+2. 新增 **LOCAL ID RULES** 段：逐类型给出 `MUST be <type>_<integer>`，
+   并**显式列出禁止的缩写**（`conn_1` / `func_1` / `circ_1` / `edge_1` / `pathway_1` …）。
+3. 新增 **reference identity** 规则：引用必须**逐字符复用**已声明的 local_id。
+4. 新增 **一个格式示例**（`build_format_example(seed_entity_id)`）。
+
+**格式示例的两条不变量**（由代码保证，非注释声明）：
+
+* 它先构造成 dict，**必须通过 `LlmDiscoveryResponse.model_validate(...)`**
+  才返回——因此是**已验证的插图**，不是第二套 schema；
+* 内容**刻意非科学**：只用 `Example Region / Example Function / Example Circuit`
+  等占位词，且**不含真实脑区名**（防止给当前 seed 注入内容偏置）；
+  其 `species_context` 为 `UNKNOWN` / `[]`，**不声明人类**——
+  占位对象没有物种身份，而契约明确要求"缺失信息不得渲染为 HUMAN"。
+
+`SEED` 在示例的 connection 与 circuit 中**都出现**，强化"不要为 seed 伪造
+`region_0` / `region_seed`"。
+
+**仍然拒绝的做法**：parser 侧自动把 `conn_1` 改写成 `connection_1`。
+local id 同时承担声明身份与引用身份，自动改名必须同时重写 7 个引用字段，
+那会把 parser 从 *validator* 变成 *model-output repair engine*。模型必须遵循冻结契约。
+
+**契约未动**：`LOCAL_ID_PATTERN`、`schema_version = 1.0`、parser 语义**零改动**。
+schema 1.0 不变，只有 prompt 从 1.1.0 升到 1.2.0。
+
+**真实结果（prompt 1.2.0，1 次请求，`NGIQ-BR-00000247`）**：
+
+| 项 | 3B.3（prompt 1.1.0） | **3B.4（prompt 1.2.0）** |
+|---|---|---|
+| prompt_tokens | 2079 | 2994 |
+| completion / reasoning | 23061 / 11013 | 14698 / 4461 |
+| finish_reason | `stop` | `stop` |
+| latency_ms | 75746 | 55201 |
+| content_chars | 40401 | 37093 |
+| **local-id 违规数** | **42** | **0** ✅ |
+| 失败类别 | `LOCAL_ID_DRIFT` | `INVALID_ENUM`（22 条） |
+
+**local-ID 合规问题已解决**：42 → 0。模型这次写的是 `region_1`。
+
+**但 parse 仍未通过，失败点移到了别处**——这正是"修好一道门才能看见下一道门"：
+
+```
+pydantic_types = { "missing": 21, "literal_error": 1 }    共 22 条
+第一条：regions.0.confidence  Field required [type=missing]
+```
+
+即：模型在 **21 个候选上漏掉了 `confidence`**（外加 1 处枚举值错误）。
+`confidence` 在契约里是**必填**，但在 FIELD CONTRACT 中只渲染成
+`confidence: number`——没有"必填"标记，也没有 `[0.0, 1.0]` 区间提示
+（区间只在 SYSTEM 规则 5 的散文里）。
+
+⚠️ 因为 schema 校验先失败，`validate_cross_references` **再次未执行**：
+所以「local id 声明正确」已证明，但**引用完整性仍未被验证过**。
+
+> 注：该轮**未**修改任何东西——§23/§24 明确要求只分类、不自动修契约。
+> `confidence` 问题属于下一轮的课题。

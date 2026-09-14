@@ -10,6 +10,7 @@ drift away from what the parser actually accepts.
 from __future__ import annotations
 
 import json
+import re
 import types as _types
 from typing import Any, Literal, Union, get_args, get_origin
 
@@ -20,6 +21,7 @@ from app.schemas.llm_discovery import (
     CONNECTION_DIRECTIONALITIES,
     CONNECTION_TYPES,
     HUMAN_TAXON_ID,
+    LOCAL_ID_PATTERN,
     REGION_RELATIONS_TO_SEED,
     SCHEMA_VERSION,
     SEED_REF,
@@ -45,11 +47,17 @@ from app.schemas.llm_discovery import (
 #           description is split into a root skeleton plus a plain-text field
 #           reference. Two different prompt TEXTS must never share a version,
 #           or a stored run's provenance stops identifying what produced it.
+#   1.2.0 — Phase 3B.4. A real model with an ample budget returned `conn_1`
+#           where the contract requires `connection_1`: the field reference said
+#           only `local_id: string`, and `<type>_<number>` was too abstract to
+#           survive contact with a domain that abbreviates constantly. Adds
+#           explicit per-type prefixes, a prohibition on abbreviation, and one
+#           validated format-only example.
 #
 # The contract's own `schema_version` (1.0) is a SEPARATE thing: the science did
 # not change, only how it is described to the model.
 PROMPT_KEY = "knowledge_production.llm_discovery"
-PROMPT_VERSION = "1.1.0"
+PROMPT_VERSION = "1.2.0"
 
 _SCALARS = {str: "string", int: "integer", float: "number", bool: "boolean"}
 
@@ -88,6 +96,24 @@ def compact_output_schema(model: type[BaseModel]) -> dict[str, str]:
     }
 
 
+def local_id_prefixes() -> tuple[str, ...]:
+    """The accepted local-id prefixes, READ FROM the contract's own regex.
+
+    Restating them by hand would create a second authority that can silently
+    disagree with the validator that actually decides.
+    """
+    seen: list[str] = []
+    for prefix in re.findall(r"[a-z]+", LOCAL_ID_PATTERN.pattern):
+        if prefix not in seen:
+            seen.append(prefix)
+    return tuple(seen)
+
+
+def local_id_shape() -> str:
+    """`region_<n>|connection_<n>|function_<n>|circuit_<n>` for the prompt."""
+    return "|".join(f"{prefix}_<n>" for prefix in local_id_prefixes())
+
+
 #: The ONE object the model must return. Every key comes from the typed
 #: contract, so a new top-level field appears here automatically.
 def build_response_root_skeleton() -> dict[str, Any]:
@@ -121,6 +147,76 @@ _FIELD_DEFINITION_MODELS: tuple[tuple[type[BaseModel], str], ...] = (
 )
 
 
+def build_format_example(seed_entity_id: str) -> dict[str, Any]:
+    """A COMPLETE, contract-valid illustration of the response format.
+
+    Two invariants, both enforced below rather than asserted in a comment:
+
+      * it is a VALIDATED ILLUSTRATION, never a second schema — it is built as
+        a plain dict and returned only after ``LlmDiscoveryResponse`` accepts
+        it, so the typed contract stays the single authority;
+      * its content is deliberately NON-SCIENTIFIC. Placeholder names only, so
+        the example cannot bias what the model proposes for the real seed. In
+        particular it declares no human taxon: a placeholder region has no
+        species identity, and the contract is explicit that absent information
+        must never be rendered as HUMAN.
+    """
+    unknown = {"scope": "UNKNOWN", "taxon_ids": []}
+    example: dict[str, Any] = {
+        "schema_version": SCHEMA_VERSION,
+        "seed_entity_id": seed_entity_id,
+        "summary": "Format example only.",
+        "regions": [
+            {
+                "local_id": "region_1",
+                "name": "Example Region",
+                "species_taxon_id": None,
+                "relation_to_seed": "UNKNOWN",
+                "confidence": 0.5,
+            }
+        ],
+        "connections": [
+            {
+                "local_id": "connection_1",
+                "source_ref": SEED_REF,
+                "target_ref": "region_1",
+                "connection_type": "UNKNOWN",
+                "directionality": "UNKNOWN",
+                "confidence": 0.5,
+                "species_context": dict(unknown),
+            }
+        ],
+        "functions": [
+            {
+                "local_id": "function_1",
+                "label": "Example Function",
+                "related_region_refs": ["region_1"],
+                "confidence": 0.5,
+                "species_context": dict(unknown),
+            }
+        ],
+        "circuits": [
+            {
+                "local_id": "circuit_1",
+                "name": "Example Circuit",
+                # SEED appears in a circuit too, so the model never invents a
+                # region candidate for the seed it was already given.
+                "region_refs": [SEED_REF, "region_1"],
+                "connection_refs": ["connection_1"],
+                "function_refs": ["function_1"],
+                "topology_hint": "UNKNOWN",
+                "confidence": 0.5,
+                "species_context": dict(unknown),
+            }
+        ],
+        "source_hints": [],
+        "warnings": [],
+    }
+    # Fail loudly here rather than teach the model a shape the parser rejects.
+    LlmDiscoveryResponse.model_validate(example)
+    return example
+
+
 def build_field_definitions() -> str:
     """Plain-text field reference, rendered from the typed contract.
 
@@ -132,6 +228,11 @@ def build_field_definitions() -> str:
         lines = [f"{model.__name__}  ({used_by})"]
         for name, field in model.model_fields.items():
             label = _json_type_label(field.annotation)
+            if name == "local_id" and field.is_required():
+                # The annotation alone renders as a bare `string`, which is
+                # what a real model read while writing `conn_1`. State the
+                # constraint where the value is actually written.
+                label = f"{label} - MUST match {local_id_shape()}"
             default = field.default
             suffix = (
                 f"  default={default}"
@@ -255,6 +356,33 @@ def build_user_prompt(seed: LlmDiscoveryInput) -> str:
             "and say so in a warning.",
             "",
             "=" * 68,
+            "LOCAL ID RULES — read before writing any candidate",
+            "=" * 68,
+            "",
+            "Every candidate declares a local_id. Its prefix is the FULL type "
+            "name, lowercased, then `_`, then an integer starting at 1:",
+            "",
+            "  regions      local_id MUST be  region_<integer>      e.g. region_1",
+            "  connections  local_id MUST be  connection_<integer>  e.g. connection_1",
+            "  functions    local_id MUST be  function_<integer>    e.g. function_1",
+            "  circuits     local_id MUST be  circuit_<integer>     e.g. circuit_1",
+            "",
+            "Do not abbreviate local-ID prefixes. NEVER write:",
+            "  conn_1  edge_1  projection_1  conn1  (for a connection)",
+            "  func_1  fn_1                  function1  (for a function)",
+            "  circ_1  pathway_1             circuit1   (for a circuit)",
+            "  reg_1   r1  region1                      (for a region)",
+            "",
+            "References MUST reuse a declared local_id EXACTLY, character for "
+            "character: no abbreviation, no case change, no dropped underscore, "
+            "and no new prefix. If you declare \"local_id\": \"connection_1\", "
+            "then a circuit refers to it as \"connection_1\" — never \"conn_1\".",
+            "",
+            f"SEED is the one reserved reference. Do NOT invent region_0 or "
+            f"region_seed for the seed: it is already known, and connections and "
+            f"circuits point at it with {SEED_REF!r} directly.",
+            "",
+            "=" * 68,
             "A. EXPECTED RESPONSE ROOT — the ONLY acceptable output",
             "=" * 68,
             "",
@@ -279,6 +407,26 @@ def build_user_prompt(seed: LlmDiscoveryInput) -> str:
             "They are not the response and must not be returned on their own.",
             "",
             build_field_definitions(),
+            "",
+            "=" * 68,
+            "C. FORMAT-ONLY EXAMPLE — structure and ID rules, NOT knowledge",
+            "=" * 68,
+            "",
+            "This example demonstrates FORMAT ONLY. Do not copy its names or its "
+            "scientific content, and do not treat it as a finding: generate "
+            "candidates from the actual seed above.",
+            "",
+            "Its species values are placeholders. Decide the real species basis "
+            "for each candidate you find — a human seed does not make a candidate "
+            "human-established.",
+            "",
+            "```json",
+            json.dumps(
+                build_format_example(seed.seed_entity_id),
+                ensure_ascii=False,
+                indent=2,
+            ),
+            "```",
         ]
     )
 
