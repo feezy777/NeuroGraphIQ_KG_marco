@@ -7,6 +7,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { I18nProvider } from '../../i18n-context'
+import { LANGUAGE_STORAGE_KEY } from '../../i18n'
 import { KnowledgeProductionPage } from './KnowledgeProductionPage'
 import type { BrainRegionSeed } from './types'
 
@@ -43,6 +44,10 @@ function renderIndex() {
 }
 
 beforeEach(() => {
+  // These assertions were written against the English UI. Language is a
+  // presentation concern, so the suite pins en-US and the zh-CN labels are
+  // covered separately in i18nKnowledgeProduction.test.tsx.
+  window.localStorage.setItem(LANGUAGE_STORAGE_KEY, 'en-US')
   listSeeds.mockReset()
   fetchSummary.mockReset()
   listSeeds.mockResolvedValue({ items: [SEED], total: 770 })

@@ -9,6 +9,7 @@
  * Four lifecycle states are supported (pending / active / done / failed).
  * Phase 1 renders `pending` only, because no Discovery Run exists yet.
  */
+import { useI18n } from '../../i18n-context'
 import type { WorkflowStepDef } from './types'
 
 export interface WorkflowStepsProps {
@@ -33,6 +34,7 @@ export function WorkflowSteps({
   failedStepId,
   className,
 }: WorkflowStepsProps) {
+  const { t } = useI18n()
   const activeIndex = currentStepId ? steps.findIndex(s => s.id === currentStepId) : -1
   const doneThroughIndex = completedThroughId
     ? steps.findIndex(s => s.id === completedThroughId)
@@ -64,7 +66,7 @@ export function WorkflowSteps({
             <span className="kp-step-index" aria-hidden="true">
               {index + 1}
             </span>
-            <span className="kp-step-label">{step.label}</span>
+            <span className="kp-step-label">{t(step.labelKey)}</span>
           </li>
         )
       })}

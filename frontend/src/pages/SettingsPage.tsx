@@ -19,6 +19,16 @@ import { useI18n } from '../i18n-context'
 
 type TabKey = 'language' | 'api' | 'basic'
 
+/**
+ * The two supported UI languages. Labels are endonyms — a language names
+ * itself in its own script — so they stay identical in both modes and are
+ * never translated.
+ */
+const SUPPORTED_LANGUAGES: { value: Language; label: string }[] = [
+  { value: 'zh-CN', label: '简体中文' },
+  { value: 'en-US', label: 'English' },
+]
+
 interface FormState {
   enabled: boolean
   baseUrl: string
@@ -204,10 +214,11 @@ export function SettingsPage() {
                     value={language}
                     onChange={e => setLanguage(e.target.value as Language)}
                   >
-                    {(options?.languages ?? [
-                      { value: 'zh-CN', label: '中文' },
-                      { value: 'en-US', label: 'English' },
-                    ]).map(item => (
+                    {/* Language self-names are locale-independent: 简体中文 is
+                        shown as 简体中文 in both languages, as is English. So
+                        this list is deliberately NOT translated and NOT taken
+                        from the API (whose label is '中文'). */}
+                    {SUPPORTED_LANGUAGES.map(item => (
                       <option key={item.value} value={item.value}>{item.label}</option>
                     ))}
                   </select>

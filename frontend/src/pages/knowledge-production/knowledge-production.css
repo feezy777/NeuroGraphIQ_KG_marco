@@ -145,6 +145,22 @@
   white-space: nowrap;
 }
 
+/* Locale-aware BrainRegion name: the active language leads, the other name
+   stays visible as a subtle second line (§11). */
+.kp-name-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+.kp-name-primary {
+  color: var(--text);
+}
+.kp-name-secondary {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
 /* Chips: one compact vocabulary shared by table cells and the workspace
    header. `--accent` marks the defining classification (granularity). */
 .kp-chip {

@@ -9,6 +9,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { I18nProvider } from '../../i18n-context'
+import { LANGUAGE_STORAGE_KEY } from '../../i18n'
 import { BrainRegionWorkspacePage } from './BrainRegionWorkspacePage'
 import type { BrainRegionSeedDetail, DiscoveryRun } from './types'
 
@@ -75,6 +76,9 @@ function renderWorkspace(entityId = 'NGIQ-BR-00000001') {
 }
 
 beforeEach(() => {
+  // Assertions here were written against the English UI; the zh-CN labels are
+  // covered in i18nKnowledgeProduction.test.tsx.
+  window.localStorage.setItem(LANGUAGE_STORAGE_KEY, 'en-US')
   getSeed.mockReset()
   getSeed.mockResolvedValue(DETAIL)
   getRuns.mockReset()

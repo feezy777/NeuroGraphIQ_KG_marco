@@ -7,14 +7,22 @@
  * visual contract in §12.
  */
 import type { ReactNode } from 'react'
+import { useI18n } from '../../i18n-context'
 import { DataTable, type Column } from '../../components/DataTable'
 import {
-  DISCOVERY_STATUS_LABELS,
+  DISCOVERY_STATUS_LABEL_KEYS,
   DISCOVERY_STATUS_TONES,
   type BrainRegionSeedDetail,
   type DiscoveryRun,
   type DiscoveryRunOutcome,
 } from './types'
+
+/** `key` is stable (never translated) so React keys survive a language switch. */
+interface FieldDef {
+  key: string
+  label: string
+  value: string | number | null
+}
 
 function Field({ label, value }: { label: string; value: string | number | null }) {
   return (
@@ -25,13 +33,7 @@ function Field({ label, value }: { label: string; value: string | number | null 
   )
 }
 
-function FieldSection({
-  title,
-  fields,
-}: {
-  title: string
-  fields: { label: string; value: string | number | null }[]
-}) {
+function FieldSection({ title, fields }: { title: string; fields: FieldDef[] }) {
   const shown = fields.filter(f => f.value !== null && f.value !== '')
   // a section with nothing authoritative to show is omitted rather than padded
   if (shown.length === 0) return null
@@ -40,7 +42,7 @@ function FieldSection({
       <h3 className="kp-section-title">{title}</h3>
       <div className="kp-field-grid">
         {shown.map(f => (
-          <Field key={f.label} label={f.label} value={f.value} />
+          <Field key={f.key} label={f.label} value={f.value} />
         ))}
       </div>
     </section>
@@ -48,51 +50,64 @@ function FieldSection({
 }
 
 export function OverviewTab({ detail }: { detail: BrainRegionSeedDetail }) {
+  const { t } = useI18n()
+  const f = (name: string) => t(`knowledgeProduction.field.${name}`)
   return (
     <div className="kp-overview" data-testid="kp-overview">
       <FieldSection
-        title="Identity"
+        title={t('knowledgeProduction.section.identity')}
         fields={[
-          { label: 'entity_id', value: detail.entity_id },
-          { label: 'English name', value: detail.name_en },
-          { label: '中文名', value: detail.name_zh },
-          { label: 'abbreviation', value: detail.abbreviation },
+          // Labels are localized; the VALUES stay raw Gate7B identifiers.
+          { key: 'entity_id', label: 'entity_id', value: detail.entity_id },
+          { key: 'name_en', label: f('nameEn'), value: detail.name_en },
+          { key: 'name_zh', label: f('nameZh'), value: detail.name_zh },
+          { key: 'abbreviation', label: f('abbreviation'), value: detail.abbreviation },
         ]}
       />
       <FieldSection
-        title="Anatomy"
+        title={t('knowledgeProduction.section.anatomy')}
         fields={[
-          { label: 'granularity', value: detail.granularity_level },
-          { label: 'region category', value: detail.region_category },
-          { label: 'hemisphere', value: detail.hemisphere },
-          { label: 'species (NCBI taxon)', value: detail.species_taxon_id },
+          { key: 'granularity', label: f('granularity'), value: detail.granularity_level },
+          { key: 'region_category', label: f('regionCategory'), value: detail.region_category },
+          { key: 'hemisphere', label: f('hemisphere'), value: detail.hemisphere },
+          { key: 'species', label: f('species'), value: detail.species_taxon_id },
         ]}
       />
       <FieldSection
-        title="Hierarchy"
+        title={t('knowledgeProduction.section.hierarchy')}
         fields={[
           // only identifiers the API actually exposes — no invented labels
-          { label: 'parent region', value: detail.parent_region_pk },
-          { label: 'hierarchy depth', value: detail.hierarchy_depth },
+          { key: 'parent_region', label: f('parentRegion'), value: detail.parent_region_pk },
+          { key: 'hierarchy_depth', label: f('hierarchyDepth'), value: detail.hierarchy_depth },
         ]}
       />
       <FieldSection
-        title="Source / Mapping"
+        title={t('knowledgeProduction.section.sourceMapping')}
         fields={[
-          { label: 'source Atlas', value: detail.atlas_names.join(', ') || null },
-          { label: 'external region mapping', value: detail.external_region_ids.join(', ') || null },
-          { label: 'mapping type', value: detail.mapping_types.join(', ') || null },
+          { key: 'atlas', label: f('sourceAtlas'), value: detail.atlas_names.join(', ') || null },
           {
-            label: 'mapping review status',
+            key: 'external_region',
+            label: f('externalRegion'),
+            value: detail.external_region_ids.join(', ') || null,
+          },
+          {
+            key: 'mapping_type',
+            label: f('mappingType'),
+            value: detail.mapping_types.join(', ') || null,
+          },
+          {
+            key: 'mapping_review',
+            label: f('mappingReview'),
             value: detail.mapping_review_statuses.join(', ') || null,
           },
         ]}
       />
       <FieldSection
-        title="Governance"
+        title={t('knowledgeProduction.section.governance')}
         fields={[
-          { label: 'record_status', value: detail.record_status },
-          { label: 'review_status', value: detail.review_status },
+          // DB field names stay literal: they are the column names themselves.
+          { key: 'record_status', label: 'record_status', value: detail.record_status },
+          { key: 'review_status', label: 'review_status', value: detail.review_status },
         ]}
       />
     </div>
@@ -158,6 +173,7 @@ function DiscoveryCard({
   buttonLabel: string
   testId: string
 }) {
+  const { t } = useI18n()
   return (
     <div className="kp-card kp-op-card">
       <h3 className="kp-card-title">
@@ -178,23 +194,24 @@ function DiscoveryCard({
         type="button"
         className="btn btn-sm"
         disabled
-        title="需要发现执行引擎（后续阶段）"
+        title={t('knowledgeProduction.discovery.executionTooltip')}
         data-testid={testId}
       >
         {buttonLabel}
       </button>
-      <p className="kp-card-hint">
-        Discovery lifecycle is ready. Execution will be enabled with the discovery engine.
-      </p>
+      <p className="kp-card-hint">{t('knowledgeProduction.discovery.executionHint')}</p>
     </div>
   )
 }
 
-/** Display-only labels for the frozen outcome vocabulary. Never persisted. */
-const OUTCOME_LABELS: Record<DiscoveryRunOutcome, string> = {
-  CANDIDATES_FOUND: 'Candidates found',
-  NO_CANDIDATES_FOUND: 'No candidates found',
-  NO_EVIDENCE_FOUND: 'No evidence found',
+/**
+ * Display-only i18n keys for the frozen outcome vocabulary. Never persisted,
+ * and never compared: logic always compares the raw enum value.
+ */
+const OUTCOME_LABEL_KEYS: Record<DiscoveryRunOutcome, string> = {
+  CANDIDATES_FOUND: 'knowledgeProduction.outcome.CANDIDATES_FOUND',
+  NO_CANDIDATES_FOUND: 'knowledgeProduction.outcome.NO_CANDIDATES_FOUND',
+  NO_EVIDENCE_FOUND: 'knowledgeProduction.outcome.NO_EVIDENCE_FOUND',
 }
 
 /** `YYYY-MM-DD HH:mm` in local time, or `—` when the run has no such stamp. */
@@ -207,43 +224,67 @@ function formatTimestamp(value: string | null): string {
 }
 
 function StatusBadge({ status }: { status: DiscoveryRun['status'] }) {
+  const { t } = useI18n()
+  // The badge tone keys off the RAW enum; only the caption is translated.
   return (
     <span className={`badge ${DISCOVERY_STATUS_TONES[status]}`}>
-      {DISCOVERY_STATUS_LABELS[status]}
+      {t(DISCOVERY_STATUS_LABEL_KEYS[status])}
     </span>
   )
 }
 
 /** Read-only run history. No candidate counts, no evidence counts. */
 function RunHistory({ runs }: { runs: DiscoveryRun[] }) {
+  const { t } = useI18n()
   const columns: Column<DiscoveryRun>[] = [
     {
       key: 'discovery_type',
-      header: 'Type',
-      render: r => (r.discovery_type === 'LLM_DISCOVERY' ? 'LLM Discovery' : 'Literature Discovery'),
+      header: t('knowledgeProduction.discovery.colType'),
+      // The comparison uses the raw API enum; only the caption is localized.
+      render: r =>
+        r.discovery_type === 'LLM_DISCOVERY'
+          ? t('knowledgeProduction.discovery.llmTitle')
+          : t('knowledgeProduction.discovery.literatureTitle'),
     },
-    { key: 'status', header: 'Status', render: r => <StatusBadge status={r.status} /> },
+    {
+      key: 'status',
+      header: t('knowledgeProduction.discovery.colStatus'),
+      render: r => <StatusBadge status={r.status} />,
+    },
     {
       key: 'outcome',
-      header: 'Outcome',
+      header: t('knowledgeProduction.discovery.colOutcome'),
       // status != outcome: a finished run reports its scientific result here,
       // independently of how the execution went.
-      render: r => (r.outcome ? OUTCOME_LABELS[r.outcome] : '—'),
+      render: r => (r.outcome ? t(OUTCOME_LABEL_KEYS[r.outcome]) : '—'),
     },
     {
       key: 'provider',
-      header: 'Provider / Model',
-      // Literature runs carry no provider/model — they show —.
+      header: t('knowledgeProduction.discovery.colProvider'),
+      // Literature runs carry no provider/model — they show —. A model name is
+      // a technical identifier and is never translated.
       render: r => [r.provider, r.model_name].filter(Boolean).join(' · ') || '—',
     },
-    { key: 'created_at', header: 'Created', render: r => formatTimestamp(r.created_at) },
-    { key: 'started_at', header: 'Started', render: r => formatTimestamp(r.started_at) },
-    { key: 'finished_at', header: 'Finished', render: r => formatTimestamp(r.finished_at) },
+    {
+      key: 'created_at',
+      header: t('knowledgeProduction.discovery.colCreated'),
+      render: r => formatTimestamp(r.created_at),
+    },
+    {
+      key: 'started_at',
+      header: t('knowledgeProduction.discovery.colStarted'),
+      render: r => formatTimestamp(r.started_at),
+    },
+    {
+      key: 'finished_at',
+      header: t('knowledgeProduction.discovery.colFinished'),
+      render: r => formatTimestamp(r.finished_at),
+    },
   ]
 
   return (
     <section className="kp-section kp-run-history" data-testid="kp-run-history">
-      <h3 className="kp-section-title">Run History</h3>
+      <h3 className="kp-section-title">{t('knowledgeProduction.discovery.historyTitle')}</h3>
       <DataTable columns={columns} rows={runs} getKey={r => r.run_id} />
     </section>
   )
@@ -257,6 +298,7 @@ export function DiscoveryTab({
   runs: DiscoveryRun[] | null
   error?: string | null
 }) {
+  const { t } = useI18n()
   return (
     <div data-testid="kp-discovery-tab">
       {error && (
@@ -266,18 +308,18 @@ export function DiscoveryTab({
       )}
       {!error && runs === null && (
         <div className="state-box" data-testid="kp-discovery-loading">
-          <p>载入中…</p>
+          <p>{t('knowledgeProduction.loading')}</p>
         </div>
       )}
       {!error && runs !== null && runs.length === 0 && (
         <TabPlaceholder
           icon="◎"
-          title="No Discovery Runs yet"
-          description="This BrainRegion has not entered a discovery run. Both routes below write into the same run record, so the first run of either type will appear here."
-          blockTitle="Recorded per run"
+          title={t('knowledgeProduction.discovery.emptyTitle')}
+          description={t('knowledgeProduction.discovery.emptyText')}
+          blockTitle={t('knowledgeProduction.discovery.emptyBlockTitle')}
         >
           <FutureList
-            items={['Type and status', 'Outcome', 'Provider / model', 'Created / started / finished']}
+            items={t('knowledgeProduction.discovery.emptyItems').split(',').map(s => s.trim())}
           />
         </TabPlaceholder>
       )}
@@ -286,18 +328,20 @@ export function DiscoveryTab({
       <div className="kp-card-grid kp-op-grid">
         <DiscoveryCard
           glyph="✦"
-          title="LLM Discovery"
-          description="Generate high-recall circuit / connection / function candidates from the current BrainRegion using an LLM."
-          produces={['Circuits', 'Connections', 'Functions']}
-          buttonLabel="Start LLM Discovery"
+          title={t('knowledgeProduction.discovery.llmTitle')}
+          description={t('knowledgeProduction.discovery.llmDescription')}
+          produces={t('knowledgeProduction.discovery.llmProduces').split(',').map(s => s.trim())}
+          buttonLabel={t('knowledgeProduction.discovery.llmButton')}
           testId="kp-llm-discovery"
         />
         <DiscoveryCard
           glyph="▤"
-          title="Literature Discovery"
-          description="Search literature and extract evidence-backed candidate knowledge."
-          produces={['Publications', 'Evidence passages']}
-          buttonLabel="Start Literature Discovery"
+          title={t('knowledgeProduction.discovery.literatureTitle')}
+          description={t('knowledgeProduction.discovery.literatureDescription')}
+          produces={t('knowledgeProduction.discovery.literatureProduces')
+            .split(',')
+            .map(s => s.trim())}
+          buttonLabel={t('knowledgeProduction.discovery.literatureButton')}
           testId="kp-literature-discovery"
         />
       </div>
@@ -306,56 +350,68 @@ export function DiscoveryTab({
 }
 
 export function CandidatesTab() {
+  const { t } = useI18n()
   return (
     <div data-testid="kp-candidates-tab">
       <TabPlaceholder
         icon="◇"
-        title="Candidate Knowledge"
-        description="Discovery writes candidates here, unreviewed and unmerged. Candidate subtypes stay inside this tab rather than becoming top-level tabs of their own."
-        blockTitle="Candidate subtypes"
+        title={t('knowledgeProduction.candidates.title')}
+        description={t('knowledgeProduction.candidates.text')}
+        blockTitle={t('knowledgeProduction.candidates.blockTitle')}
       >
-        <FutureList items={['Circuits', 'Connections', 'Functions', 'Related Regions']} />
+        <FutureList
+          items={[
+            t('knowledgeProduction.candidates.circuits'),
+            t('knowledgeProduction.candidates.connections'),
+            t('knowledgeProduction.candidates.functions'),
+            t('knowledgeProduction.candidates.relatedRegions'),
+          ]}
+        />
       </TabPlaceholder>
     </div>
   )
 }
 
 export function EvidenceTab() {
+  const { t } = useI18n()
+  // The traceability chain is a diagram of the four evidence levels; each node
+  // is localized, the arrows are structural.
+  const chain = [
+    t('knowledgeProduction.evidence.publication'),
+    t('knowledgeProduction.evidence.passage'),
+    t('knowledgeProduction.evidence.assertion'),
+    t('knowledgeProduction.evidence.canonical'),
+  ].join('\n   ↓\n')
   return (
     <div data-testid="kp-evidence-tab">
       <TabPlaceholder
         icon="≡"
-        title="Evidence"
-        description="Knowledge here must remain traceable to source text. Every assertion keeps a resolvable path back to the passage it came from."
-        blockTitle="Traceability chain"
+        title={t('knowledgeProduction.evidence.title')}
+        description={t('knowledgeProduction.evidence.text')}
+        blockTitle={t('knowledgeProduction.evidence.blockTitle')}
       >
-        <pre className="kp-chain">{`Publication
-   ↓
-Evidence Passage
-   ↓
-Knowledge Assertion
-   ↓
-Canonical Knowledge`}</pre>
+        <pre className="kp-chain">{chain}</pre>
       </TabPlaceholder>
     </div>
   )
 }
 
-const CANONICALIZATION_DECISIONS = ['MERGE', 'CREATE', 'REJECT', 'DEFER']
+const CANONICALIZATION_DECISION_KEYS = ['merge', 'create', 'reject', 'defer'] as const
 
 export function CanonicalizationTab() {
+  const { t } = useI18n()
   return (
     <div data-testid="kp-canonicalization-tab">
       <TabPlaceholder
         icon="⇄"
-        title="Canonicalization"
-        description="Every candidate resolves to exactly one decision before it can be validated. The decision set is fixed; no candidate may stay undecided."
-        blockTitle="Decisions"
+        title={t('knowledgeProduction.canonicalization.title')}
+        description={t('knowledgeProduction.canonicalization.text')}
+        blockTitle={t('knowledgeProduction.canonicalization.blockTitle')}
       >
         <div className="kp-chip-list">
-          {CANONICALIZATION_DECISIONS.map(d => (
+          {CANONICALIZATION_DECISION_KEYS.map(d => (
             <span className="kp-chip kp-chip--accent" key={d}>
-              {d}
+              {t(`knowledgeProduction.canonicalization.${d}`)}
             </span>
           ))}
         </div>
@@ -364,48 +420,37 @@ export function CanonicalizationTab() {
   )
 }
 
-const VALIDATION_CATEGORIES = [
-  'Rule Validation',
-  'Evidence Validation',
-  'Topology Validation',
-  'Human Review',
-]
+const VALIDATION_CATEGORY_KEYS = ['rule', 'evidence', 'topology', 'humanReview'] as const
 
 export function ValidationTab() {
+  const { t } = useI18n()
   return (
     <div data-testid="kp-validation-tab">
       <TabPlaceholder
         icon="✓"
-        title="Validation"
-        description="Each category below is an independent gate. A candidate must clear all of them before promotion is even offered."
-        blockTitle="Validation categories"
+        title={t('knowledgeProduction.validation.title')}
+        description={t('knowledgeProduction.validation.text')}
+        blockTitle={t('knowledgeProduction.validation.blockTitle')}
       >
-        <FutureList items={VALIDATION_CATEGORIES} />
+        <FutureList
+          items={VALIDATION_CATEGORY_KEYS.map(k => t(`knowledgeProduction.validation.${k}`))}
+        />
       </TabPlaceholder>
     </div>
   )
 }
 
-const HISTORY_SOURCES = [
-  'Discovery Runs',
-  'Candidate decisions',
-  'Evidence binding',
-  'Canonicalization decisions',
-  'Validation',
-  'Promotion',
-  'failures / retries',
-]
-
 export function HistoryTab() {
+  const { t } = useI18n()
   return (
     <div data-testid="kp-history-tab">
       <TabPlaceholder
         icon="↻"
-        title="History"
-        description="No production history exists yet — nothing has run for this BrainRegion. This tab will become the append-only audit trail of everything that did."
-        blockTitle="Recorded events"
+        title={t('knowledgeProduction.history.title')}
+        description={t('knowledgeProduction.history.text')}
+        blockTitle={t('knowledgeProduction.history.blockTitle')}
       >
-        <FutureList items={HISTORY_SOURCES} />
+        <FutureList items={t('knowledgeProduction.history.items').split(',').map(s => s.trim())} />
       </TabPlaceholder>
     </div>
   )

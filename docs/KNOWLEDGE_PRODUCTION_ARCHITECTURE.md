@@ -550,6 +550,32 @@ Validation、Promotion、任何 Discovery Run 表、任何 Discovery 状态字�
 为汇总卡引入多色分类、把 Production 占位改成进度条、为未来 Tab 预置假数据或伪计数、
 将 Workspace 拆成独立布局或引入 UI 组件库（Tailwind / Ant Design / MUI / Bootstrap）。
 
+### 12.1 界面语言（Phase 2B.1）
+
+**界面语言是呈现层关注点；canonical / API / DB 词表保持语言中立且稳定。**
+
+- 全局**唯一**语言权威是既有 i18n 模块（`i18n.ts` + `I18nProvider`）。
+  **禁止**再建第二套 i18n 系统或第二套 locale 状态。
+- 支持且仅支持 `zh-CN` / `en-US`，默认 `zh-CN`，持久化于
+  `localStorage['neurographiq.language']`（复用既有键，不新增键）；
+  非法值回退 `zh-CN`。
+- 组件的 `label` 一律改为 `labelKey` + `t(key)`；**禁止**在 JSX 内写
+  `locale === 'zh-CN' ? ... : ...`，**禁止**硬编码用户可见文案。
+- **业务逻辑永远比较原始枚举值**，绝不比较翻译后的文本：
+  `run.status === 'COMPLETED'`、`discovery_type === 'LLM_DISCOVERY'` 等。
+- 永不翻译：`NGIQ-*` id、`run_id`、UUID、PMID / DOI、NCBI taxon、
+  Gate7B 枚举值（`G1_MACRO`…）、canonical Atlas 名称、provider / model 名。
+  只翻译它们的**标签**。
+- 脑区名称按语言分主次（`name_zh` / `name_en`），另一方作为次级名称**始终保留**；
+  首选名为空时回退另一方。
+- 切换语言**不得**引起页面重载、路由变化、脑区切换或 Tab 复位。
+
+**已知遗留（I18N_DEBT，本轮未处理）**：全局顶栏的粒度切换仍使用
+Gen-1 词表（`Macro` / `Meso` / `Subregion` / `Cyto` / `Molecular`），
+它仍驱动旧业务逻辑（`granularityToFamily`），因此**不得**在本轮做全局粒度重构
+（`DEFERRED_GRANULARITY_MIGRATION`）。`validationCenter.*` 的 15 个 en-US 键缺失、
+以及 Knowledge Production 之外的历史页面文案未双语化，同样属于遗留债务。
+
 ---
 
 ## 13. Discovery Run Contract（Phase 2A 冻结）

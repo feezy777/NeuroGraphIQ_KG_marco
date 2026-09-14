@@ -10,11 +10,13 @@
  * (See docs/KNOWLEDGE_PRODUCTION_ARCHITECTURE.md §8.)
  */
 import { useEffect, useState } from 'react'
+import { useI18n } from '../../i18n-context'
 import { WorkflowSteps } from './WorkflowSteps'
 import { fetchBrainRegionSeed, fetchDiscoveryRuns } from './kpApi'
 import { KP_INDEX_PATH, navigate } from './routes'
 import {
-  DISCOVERY_STATUS_LABELS,
+  DISCOVERY_STATUS_LABEL_KEYS,
+  brainRegionNames,
   WORKSPACE_TABS,
   WORKSPACE_WORKFLOW_STEPS,
   type BrainRegionSeedDetail,
@@ -31,10 +33,20 @@ import {
   ValidationTab,
 } from './workspaceTabs'
 
-/** NCBI Taxonomy: 9606 is Homo sapiens. Unknown taxons render raw. */
-function formatSpecies(taxon: string | null): string | null {
+/**
+ * NCBI Taxonomy: 9606 is Homo sapiens. Unknown taxons render raw.
+ *
+ * The taxon ID is a scientific identifier and never translated; only the
+ * common-name word is localized.
+ */
+function formatSpecies(
+  taxon: string | null,
+  t: (key: string) => string,
+): string | null {
   if (!taxon) return null
-  return taxon === '9606' ? 'Human (NCBI:9606)' : `NCBI:${taxon}`
+  return taxon === '9606'
+    ? `${t('knowledgeProduction.species.human')} (NCBI:9606)`
+    : `NCBI:${taxon}`
 }
 
 /**
@@ -53,25 +65,33 @@ const NO_DATA = '—'
  *
  * `—` is deliberate while the request is in flight: claiming
  * "Not initialized" before the answer arrives would be a fabricated fact.
+ *
+ * The decision uses the RAW enum (`runs[0].status`); only the rendered text is
+ * translated.
  */
-function discoveryValue(runs: DiscoveryRun[] | null, error: string | null): string {
+function discoveryValue(
+  runs: DiscoveryRun[] | null,
+  error: string | null,
+  t: (key: string) => string,
+): string {
   if (error || runs === null) return NO_DATA
-  if (runs.length === 0) return 'Not initialized'
-  return DISCOVERY_STATUS_LABELS[runs[0].status]
+  if (runs.length === 0) return t('knowledgeProduction.status.notInitialized')
+  return t(DISCOVERY_STATUS_LABEL_KEYS[runs[0].status])
 }
 
 function WorkspaceSummary({ discovery }: { discovery: string }) {
+  const { t } = useI18n()
   const cells = [
-    { key: 'discovery', label: 'Discovery', value: discovery },
-    { key: 'candidates', label: 'Candidates', value: NO_DATA },
-    { key: 'evidence', label: 'Evidence', value: NO_DATA },
-    { key: 'review', label: 'Review', value: NO_DATA },
+    { key: 'discovery', labelKey: 'knowledgeProduction.summary.discovery', value: discovery },
+    { key: 'candidates', labelKey: 'knowledgeProduction.summary.candidates', value: NO_DATA },
+    { key: 'evidence', labelKey: 'knowledgeProduction.summary.evidence', value: NO_DATA },
+    { key: 'review', labelKey: 'knowledgeProduction.summary.review', value: NO_DATA },
   ]
   return (
     <section className="kp-summary-row" data-testid="kp-workspace-summary">
       {cells.map(c => (
         <div className="kp-summary-card" key={c.key} data-testid={`kp-ws-summary-${c.key}`}>
-          <span className="kp-summary-label">{c.label}</span>
+          <span className="kp-summary-label">{t(c.labelKey)}</span>
           {/* No count exists yet for any of these: a status word or an em dash,
               never a number that would read as an authoritative count. */}
           <span className="kp-summary-value kp-summary-value--muted">{c.value}</span>
@@ -82,6 +102,7 @@ function WorkspaceSummary({ discovery }: { discovery: string }) {
 }
 
 export function BrainRegionWorkspacePage({ entityId }: { entityId: string }) {
+  const { language, t } = useI18n()
   const [detail, setDetail] = useState<BrainRegionSeedDetail | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
@@ -128,11 +149,13 @@ export function BrainRegionWorkspacePage({ entityId }: { entityId: string }) {
     }
   }, [entityId])
 
+  // Metadata chips: raw identifiers (granularity enum, hemisphere, NCBI taxon,
+  // canonical atlas names) stay language-neutral; only "Human" is localized.
   const chips = detail
     ? [
         detail.granularity_level,
         detail.hemisphere,
-        formatSpecies(detail.species_taxon_id),
+        formatSpecies(detail.species_taxon_id, t),
         detail.atlas_names.join(', ') || null,
       ].filter((c): c is string => Boolean(c))
     : []
@@ -145,11 +168,11 @@ export function BrainRegionWorkspacePage({ entityId }: { entityId: string }) {
         data-testid="kp-back-to-index"
         onClick={() => navigate(KP_INDEX_PATH)}
       >
-        ← Back to Brain Regions
+        ← {t('knowledgeProduction.back')}
       </button>
 
       <header className="kp-ws-header">
-        {loading && <p className="kp-muted">载入中…</p>}
+        {loading && <p className="kp-muted">{t('knowledgeProduction.loading')}</p>}
         {error && (
           <div className="state-box state-err" data-testid="kp-workspace-error">
             <p>{error}</p>
@@ -157,12 +180,15 @@ export function BrainRegionWorkspacePage({ entityId }: { entityId: string }) {
         )}
         {detail && (
           <>
-            {/* Hierarchy: English name is the primary identity, the Chinese
-                name is its gloss, entity_id is the stable machine key. */}
+            {/* Hierarchy is locale-aware (§10): the active language leads as
+                the H1, the other name stays as its secondary gloss. entity_id
+                remains the stable machine key in its own mono line. */}
             <h1 className="kp-ws-name" data-testid="kp-ws-name">
-              {detail.name_en ?? detail.entity_id}
+              {brainRegionNames(detail, language).primary}
             </h1>
-            {detail.name_zh && <p className="kp-ws-name-zh">{detail.name_zh}</p>}
+            {brainRegionNames(detail, language).secondary && (
+              <p className="kp-ws-name-zh">{brainRegionNames(detail, language).secondary}</p>
+            )}
             <p className="kp-ws-id" data-testid="kp-ws-entity-id">
               {detail.entity_id}
             </p>
@@ -180,7 +206,7 @@ export function BrainRegionWorkspacePage({ entityId }: { entityId: string }) {
         )}
       </header>
 
-      <WorkspaceSummary discovery={discoveryValue(runs, runsError)} />
+      <WorkspaceSummary discovery={discoveryValue(runs, runsError, t)} />
 
       <div className="kp-workflow">
         {/* Phase 1B: no Discovery Run exists, so no step is active or completed. */}
@@ -188,17 +214,17 @@ export function BrainRegionWorkspacePage({ entityId }: { entityId: string }) {
       </div>
 
       <div className="tabs kp-tabs" role="tablist" data-testid="kp-tabs">
-        {WORKSPACE_TABS.map(t => (
+        {WORKSPACE_TABS.map(tabDef => (
           <button
-            key={t.id}
+            key={tabDef.id}
             type="button"
             role="tab"
-            aria-selected={tab === t.id}
-            className={`tab-btn${tab === t.id ? ' active' : ''}`}
-            data-testid={`kp-tab-${t.id}`}
-            onClick={() => setTab(t.id)}
+            aria-selected={tab === tabDef.id}
+            className={`tab-btn${tab === tabDef.id ? ' active' : ''}`}
+            data-testid={`kp-tab-${tabDef.id}`}
+            onClick={() => setTab(tabDef.id)}
           >
-            {t.label}
+            {t(tabDef.labelKey)}
           </button>
         ))}
       </div>
@@ -209,7 +235,11 @@ export function BrainRegionWorkspacePage({ entityId }: { entityId: string }) {
             <OverviewTab detail={detail} />
           ) : (
             <div className="state-box" data-testid="kp-overview-pending">
-              <p>{loading ? '载入中…' : '未找到该脑区。'}</p>
+              <p>
+                {loading
+                  ? t('knowledgeProduction.loading')
+                  : t('knowledgeProduction.notFound')}
+              </p>
             </div>
           ))}
         {tab === 'discovery' && <DiscoveryTab runs={runs} error={runsError} />}

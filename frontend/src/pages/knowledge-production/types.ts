@@ -7,6 +7,7 @@
  * (macro/meso/sub_connectivity/fine_cyto/molecular_attr) is being retired.
  * Do not add a third vocabulary.
  */
+import type { Language } from '../../i18n'
 
 export type KpGranularity =
   | 'G1_MACRO'
@@ -16,16 +17,53 @@ export type KpGranularity =
 
 export interface KpGranularityOption {
   value: KpGranularity
-  /** Short button label. Display only — never persist this. */
-  label: string
+  /**
+   * Stable short token (G1..G4). This — not the translated label — is what
+   * test ids and any logic key off, so localizing never changes behaviour.
+   */
+  key: string
+  /** i18n key for the display label. Never persist the resolved text. */
+  labelKey: string
 }
 
+// The authority vocabulary stays G1_MACRO..G4_MICROSTRUCTURAL_FINE. `key` is a
+// display-side abbreviation only.
 export const KP_GRANULARITY_OPTIONS: KpGranularityOption[] = [
-  { value: 'G1_MACRO', label: 'G1' },
-  { value: 'G2_MESO_ANATOMICAL', label: 'G2' },
-  { value: 'G3_MESO_FINE', label: 'G3' },
-  { value: 'G4_MICROSTRUCTURAL_FINE', label: 'G4' },
+  { value: 'G1_MACRO', key: 'G1', labelKey: 'knowledgeProduction.granularity.G1_MACRO' },
+  {
+    value: 'G2_MESO_ANATOMICAL',
+    key: 'G2',
+    labelKey: 'knowledgeProduction.granularity.G2_MESO_ANATOMICAL',
+  },
+  { value: 'G3_MESO_FINE', key: 'G3', labelKey: 'knowledgeProduction.granularity.G3_MESO_FINE' },
+  {
+    value: 'G4_MICROSTRUCTURAL_FINE',
+    key: 'G4',
+    labelKey: 'knowledgeProduction.granularity.G4_MICROSTRUCTURAL_FINE',
+  },
 ]
+
+/**
+ * Locale-aware BrainRegion naming (docs/KNOWLEDGE_PRODUCTION_ARCHITECTURE.md §16).
+ *
+ *   zh-CN: primary = name_zh, secondary = name_en
+ *   en-US: primary = name_en, secondary = name_zh
+ *
+ * If the preferred name is empty the OTHER name becomes primary, so a region is
+ * never shown nameless. The secondary scientific name is never dropped — it
+ * falls back to entity_id only when both names are missing.
+ */
+export function brainRegionNames(
+  region: { name_en: string | null; name_zh: string | null; entity_id: string },
+  language: Language,
+): { primary: string; secondary: string | null } {
+  const en = region.name_en?.trim() || null
+  const zh = region.name_zh?.trim() || null
+  const preferZh = language === 'zh-CN'
+  const primary = (preferZh ? zh : en) ?? (preferZh ? en : zh) ?? region.entity_id
+  const other = preferZh ? en : zh
+  return { primary, secondary: other && other !== primary ? other : null }
+}
 
 /** One canonical BrainRegion usable as a discovery seed (Gate7B authority). */
 export interface BrainRegionSeed {
@@ -67,7 +105,8 @@ export interface BrainRegionSeedQuery {
 
 export interface WorkflowStepDef {
   id: string
-  label: string
+  /** i18n key. The step's identity is `id`. */
+  labelKey: string
 }
 
 /** Read-only counts backing the Production Index summary row. */
@@ -95,25 +134,26 @@ export type WorkspaceTabId =
 
 export interface WorkspaceTabDef {
   id: WorkspaceTabId
-  label: string
+  /** i18n key. The tab's identity is `id`; only its caption is localizable. */
+  labelKey: string
 }
 
 export const WORKSPACE_TABS: WorkspaceTabDef[] = [
-  { id: 'overview', label: 'Overview' },
-  { id: 'discovery', label: 'Discovery' },
-  { id: 'candidates', label: 'Candidates' },
-  { id: 'evidence', label: 'Evidence' },
-  { id: 'canonicalization', label: 'Canonicalization' },
-  { id: 'validation', label: 'Validation' },
-  { id: 'history', label: 'History' },
+  { id: 'overview', labelKey: 'knowledgeProduction.tabs.overview' },
+  { id: 'discovery', labelKey: 'knowledgeProduction.tabs.discovery' },
+  { id: 'candidates', labelKey: 'knowledgeProduction.tabs.candidates' },
+  { id: 'evidence', labelKey: 'knowledgeProduction.tabs.evidence' },
+  { id: 'canonicalization', labelKey: 'knowledgeProduction.tabs.canonicalization' },
+  { id: 'validation', labelKey: 'knowledgeProduction.tabs.validation' },
+  { id: 'history', labelKey: 'knowledgeProduction.tabs.history' },
 ]
 
 /** High-level lifecycle shown in the workspace. Selection is no longer a step. */
 export const WORKSPACE_WORKFLOW_STEPS: WorkflowStepDef[] = [
-  { id: 'discover', label: 'Discover' },
-  { id: 'canonicalize', label: 'Canonicalize' },
-  { id: 'validate', label: 'Validate' },
-  { id: 'promote', label: 'Promote' },
+  { id: 'discover', labelKey: 'knowledgeProduction.workflow.discover' },
+  { id: 'canonicalize', labelKey: 'knowledgeProduction.workflow.canonicalize' },
+  { id: 'validate', labelKey: 'knowledgeProduction.workflow.validate' },
+  { id: 'promote', labelKey: 'knowledgeProduction.workflow.promote' },
 ]
 
 /**
@@ -172,13 +212,18 @@ export interface DiscoveryRunQuery {
   offset?: number
 }
 
-/** Human label for a run status. Display only — never persist this. */
-export const DISCOVERY_STATUS_LABELS: Record<DiscoveryRunStatus, string> = {
-  QUEUED: 'Queued',
-  RUNNING: 'Running',
-  COMPLETED: 'Completed',
-  FAILED: 'Failed',
-  CANCELLED: 'Cancelled',
+/**
+ * i18n key per run status. Display only — never persist the resolved text.
+ *
+ * The API/DB value (`status` itself) stays the raw enum: business logic must
+ * compare `run.status === 'COMPLETED'`, never the translated label.
+ */
+export const DISCOVERY_STATUS_LABEL_KEYS: Record<DiscoveryRunStatus, string> = {
+  QUEUED: 'knowledgeProduction.status.QUEUED',
+  RUNNING: 'knowledgeProduction.status.RUNNING',
+  COMPLETED: 'knowledgeProduction.status.COMPLETED',
+  FAILED: 'knowledgeProduction.status.FAILED',
+  CANCELLED: 'knowledgeProduction.status.CANCELLED',
 }
 
 /**
