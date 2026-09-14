@@ -1,8 +1,8 @@
 {
   "status_id": "CORTICAL_SUPPORT_DOMAIN_COMPATIBILITY_STATUS_V1",
-  "verdict": "CORTICAL_CROSS_ATLAS_TRANSFORM_COMPATIBILITY_FAILED",
-  "raw_containment_interpretability": "INVALID_FOR_ADJUDICATION",
-  "raw_outside_union_interpretability": "TRANSFORM_BIASED",
+  "verdict": "CORTICAL_CROSS_ATLAS_SUPPORT_DOMAIN_MISMATCH_CONFIRMED",
+  "raw_containment_interpretability": "DESCRIPTIVE_ONLY",
+  "raw_outside_union_interpretability": "SELECTED_G1_COVERAGE_BIASED + SUPPORT_DOMAIN_BIASED",
   "decomposition": {
     "outside_selected62_median": 0.6485,
     "inside_omitted_dk_median": 0.0,
@@ -56,6 +56,7 @@
       16.47
     ],
     "com_delta_mm": 6.282,
+    "com_note": "DESCRIPTIVE ONLY - not a spatial criterion; the two supports differ in thickness/extent so their COMs are not comparable (see cross_route_spatial_compatibility)",
     "extent_bna_vox": [
       147,
       182,
@@ -70,15 +71,53 @@
     "dk_ribbon_union_gm_frac": 0.68586,
     "gm_frac_delta": 0.04257,
     "selected62_gm_frac": 0.68289,
+    "cross_route_spatial_compatibility": {
+      "method": "support-domain-aware (FFT optimal translation + containment + excess-layer distance bound); COM difference is reported but NOT used as a criterion",
+      "optimal_shift_vox": [
+        0,
+        0,
+        0
+      ],
+      "optimal_shift_mm": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "max_abs_shift_mm": 0.0,
+      "dice_at_zero_shift": 0.51673,
+      "dice_at_optimal_shift": 0.51673,
+      "dk_in_bna_containment": 0.9372,
+      "bna_in_dk_containment": 0.3567,
+      "excess_layer_voxels": 712311,
+      "excess_layer_median_distance_mm": 1.732,
+      "excess_layer_p90_distance_mm": 3.742,
+      "support_thickness_offset_mm": 3,
+      "support_thickness_offset_dice": 0.8204,
+      "thresholds": {
+        "shift_tol_mm": 2.0,
+        "dk_containment_min": 0.9,
+        "excess_median_max_mm": 2.5,
+        "support_offset_min_mm": 2
+      },
+      "spatial_compatibility_ok": true,
+      "verdict": "SPATIALLY_COMPATIBLE"
+    },
     "note": "no registration/transform run; diagnostic of frozen routes only",
-    "created_at": "2026-09-09T08:21:54+00:00",
+    "created_at": "2026-09-14T05:39:27+00:00",
     "script_version": "phase17_v3_audit_cortical_crossatlas_support_domain.py v1"
   },
-  "systemic_cross_route_shift": true,
+  "cross_route_displacement_detected": false,
+  "cross_route_spatial_compatibility": "SPATIALLY_COMPATIBLE",
+  "adjudication": {
+    "spatial_compatibility": "CONFIRMED",
+    "raw_containment_absolute_level": "NOT_USABLE_FOR_ADJUDICATION",
+    "raw_containment_ranking": "USABLE (relative ranking is preserved; the support-domain offset depresses all parcels comparably, rank1 170/170 raw and GM-weighted)",
+    "resume_requires": "human review of the corrected criterion; this artifact is evidence classification only and does not by itself authorise adjudication"
+  },
   "v2_evidence_immutable": true,
   "no_mapping_change": true,
   "no_geometry_change": true,
   "no_transform_change": true,
-  "created_at": "2026-09-09T08:21:54+00:00",
+  "created_at": "2026-09-14T05:39:27+00:00",
   "script_version": "phase17_v3_audit_cortical_crossatlas_support_domain.py v1"
 }

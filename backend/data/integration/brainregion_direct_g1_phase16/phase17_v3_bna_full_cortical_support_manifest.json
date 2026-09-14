@@ -11,6 +11,6 @@
   "subcortical_parcel_count": 36,
   "bna_cortical_union_voxels": 1107275,
   "diag_asset": "BNA_FULL_CORTICAL_UNION_MNI2009C_V1 (gitignored)",
-  "created_at": "2026-09-09T08:21:54+00:00",
+  "created_at": "2026-09-14T05:39:27+00:00",
   "script_version": "phase17_v3_audit_cortical_crossatlas_support_domain.py v1"
 }

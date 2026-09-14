@@ -1,8 +1,11 @@
 """Phase1.7 V3 - Brainnetome <-> DK cortical support-domain compatibility audit tests.
 
-Validates the diagnostic audit (verdict B = CORTICAL_CROSS_ATLAS_TRANSFORM_COMPATIBILITY_FAILED:
-~6 mm AP cross-route shift between the two frozen cortical supports; omitted-DK ~0; outside
-voxels high-GM and ~2 mm from the DK ribbon; GM-weighting does not rescue containment).
+Validates the diagnostic audit (verdict CORTICAL_CROSS_ATLAS_SUPPORT_DOMAIN_MISMATCH_CONFIRMED:
+the two routes are spatially compatible - zero optimal relative shift, DK-in-BNA containment
+0.937, excess layer ~1.7 mm from the ribbon - and the depressed raw containment is caused by
+a ~3 mm cortical support-domain thickness/extent offset, not by transform displacement).
+The cortical COM difference is reported descriptively only and is NOT a criterion: the two
+supports carry different amounts of tissue, so their COMs are not comparable.
 V2 direct evidence immutable; no mapping/geometry/transform/registration/DB/classification
 change; independent official TemplateFlow tissue priors used.
 """
@@ -54,11 +57,14 @@ def _git_clean(*paths: Path) -> bool:
     return r.returncode == 0
 
 
-# ---- 1. HEAD ----
+# ---- 1. HEAD is at or after the frozen audit commit ----
+AUDIT_COMMIT = "4348693"
+
+
 def test_1_head():
-    r = subprocess.run(["git", "rev-parse", "--short", "HEAD"], cwd=BACKEND.parent,
-                       capture_output=True, text=True)
-    assert r.stdout.strip() == "08e4508"
+    r = subprocess.run(["git", "merge-base", "--is-ancestor", AUDIT_COMMIT, "HEAD"],
+                       cwd=BACKEND.parent, capture_output=True)
+    assert r.returncode == 0, f"HEAD is not at or after {AUDIT_COMMIT}"
 
 
 # ---- 2. V2 evidence immutable ----
@@ -198,11 +204,46 @@ def test_18_distance():
     assert s["outside_voxel_median_mm"] is not None and s["p95_mm"] is not None
 
 
-# ---- 19. cross-route compatibility assessed ----
+# ---- 19. cross-route compatibility assessed by support-domain-aware criteria ----
 def test_19_cross_route():
     cr = _j(CR)
+    # the COM difference is retained for description but must be explicitly flagged
     assert "com_delta_mm" in cr and cr["com_delta_mm"] > 4.0
-    assert abs(cr["bna_cortical_com_mm"][0] - cr["dk_ribbon_com_mm"][0]) < 3.0
+    assert "DESCRIPTIVE ONLY" in cr["com_note"]
+    c = cr["cross_route_spatial_compatibility"]
+    assert c["spatial_compatibility_ok"] is True
+    assert c["verdict"] == "SPATIALLY_COMPATIBLE"
+    assert "COM difference is reported but NOT used as a criterion" in c["method"]
+
+
+# ---- 19a. zero optimal relative shift on every axis ----
+def test_19a_no_relative_displacement():
+    c = _j(CR)["cross_route_spatial_compatibility"]
+    assert c["optimal_shift_mm"] == [0.0, 0.0, 0.0]
+    assert c["max_abs_shift_mm"] <= c["thresholds"]["shift_tol_mm"]
+    # the overlap optimum is at zero shift, i.e. no translation improves agreement
+    assert c["dice_at_optimal_shift"] == pytest.approx(c["dice_at_zero_shift"], abs=1e-9)
+
+
+# ---- 19b. thin support is contained in the thick one (thickness-insensitive test) ----
+def test_19b_containment_asymmetry():
+    c = _j(CR)["cross_route_spatial_compatibility"]
+    assert c["dk_in_bna_containment"] >= c["thresholds"]["dk_containment_min"]
+    assert c["bna_in_dk_containment"] < c["dk_in_bna_containment"]
+
+
+# ---- 19c. excess layer hugs the ribbon (bounds any displacement) ----
+def test_19c_excess_layer_distance():
+    c = _j(CR)["cross_route_spatial_compatibility"]
+    assert c["excess_layer_voxels"] > 0
+    assert c["excess_layer_median_distance_mm"] <= c["thresholds"]["excess_median_max_mm"]
+
+
+# ---- 19d. support-domain thickness offset drives the verdict, not a transform failure ----
+def test_19d_support_offset():
+    c = _j(CR)["cross_route_spatial_compatibility"]
+    assert c["support_thickness_offset_mm"] >= c["thresholds"]["support_offset_min_mm"]
+    assert c["support_thickness_offset_dice"] > c["dice_at_zero_shift"]
 
 
 # ---- 20/21/22. no registration / transform / geometry change ----
@@ -233,16 +274,35 @@ def test_26_classification():
     assert c["LIKELY_CONTAINED_NEEDS_SPATIAL_REVIEW"] == 93
 
 
-# ---- 27. provenance complete + verdict ----
+# ---- 27. provenance complete + corrected verdict ----
 def test_27_provenance():
     assert all(p.exists() for p in OUTS)
     s = _j(ST)
     assert s["status_id"] == "CORTICAL_SUPPORT_DOMAIN_COMPATIBILITY_STATUS_V1"
-    assert s["verdict"] == "CORTICAL_CROSS_ATLAS_TRANSFORM_COMPATIBILITY_FAILED"
-    assert s["systemic_cross_route_shift"] is True
-    assert s["raw_containment_interpretability"] == "INVALID_FOR_ADJUDICATION"
-    assert "TRANSFORM_BIASED" in s["raw_outside_union_interpretability"]
+    assert s["verdict"] == "CORTICAL_CROSS_ATLAS_SUPPORT_DOMAIN_MISMATCH_CONFIRMED"
+    assert s["cross_route_displacement_detected"] is False
+    assert s["cross_route_spatial_compatibility"] == "SPATIALLY_COMPATIBLE"
+    assert s["raw_containment_interpretability"] == "DESCRIPTIVE_ONLY"
+    assert "SUPPORT_DOMAIN_BIASED" in s["raw_outside_union_interpretability"]
+    assert "TRANSFORM_BIASED" not in s["raw_outside_union_interpretability"]
     assert s["created_at"] and s["script_version"]
+
+
+# ---- 27a. adjudication gate is explicit ----
+def test_27a_adjudication_gate():
+    a = _j(ST)["adjudication"]
+    assert a["spatial_compatibility"] == "CONFIRMED"
+    assert a["raw_containment_absolute_level"] == "NOT_USABLE_FOR_ADJUDICATION"
+    assert "human review" in a["resume_requires"]
+
+
+# ---- 27b. corrected verdict still reachable: no COM-based trigger remains ----
+def test_27b_no_com_criterion():
+    src = (BACKEND / "scripts" /
+           "phase17_v3_audit_cortical_crossatlas_support_domain.py").read_text(encoding="utf-8")
+    assert "com_shift > 4.0" not in src
+    assert "systemic_shift_evidence" not in src
+    assert "support_domain_compatibility(" in src
 
 
 # ---- 28. no prior-frozen-state edits ----

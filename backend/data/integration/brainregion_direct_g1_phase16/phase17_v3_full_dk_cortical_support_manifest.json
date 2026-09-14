@@ -268,6 +268,6 @@
     "right": 210159
   },
   "diag_assets": "FULL_DK_CORTICAL_LABELMAP_FSAVG/MNI2009C_DIAGNOSTIC + FULL_DK_CORTICAL_RIBBON_UNION (gitignored)",
-  "created_at": "2026-09-09T08:21:54+00:00",
+  "created_at": "2026-09-14T05:39:27+00:00",
   "script_version": "phase17_v3_audit_cortical_crossatlas_support_domain.py v1"
 }
