@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Optional
 from pydantic import BaseModel, Field
+from app.llm_model_policy import DEEPSEEK_MODEL
 
 
 # ── Blocked Reason Schema ─────────────────────────────────────────────────
@@ -73,7 +74,7 @@ class CircuitValidationCreateRequest(BaseModel):
     step_ids: list[str] = Field(default_factory=list)
     batch_ids: list[str] = Field(default_factory=list)
     reviewer_a_provider: str = "deepseek"
-    reviewer_a_model: str = "deepseek-chat"
+    reviewer_a_model: str = DEEPSEEK_MODEL
     reviewer_b_provider: str = "kimi"
     reviewer_b_model: str = "kimi"
     dry_run: bool = False

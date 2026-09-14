@@ -62,6 +62,7 @@ from app.services.molecular_circuit_datacenter_validator import (
     validate_datacenter_record,
 )
 from app.services.molecular_circuit_datacenter_writer import write_circuit_to_datacenter
+from app.llm_model_policy import DEEPSEEK_MODEL
 
 logger = logging.getLogger(__name__)
 
@@ -215,7 +216,7 @@ async def execute_molecular_circuit_extraction(
 
             system_prompt = build_system_prompt()
             provider = get_llm_provider(request.provider)
-            resolved_model = request.model_name or "deepseek-v4-pro"
+            resolved_model = request.model_name or DEEPSEEK_MODEL
 
             all_reviewed: list[dict[str, Any]] = []
             valid_predicates: set[str] = {"projection", "association", "commissural", "intrinsic"}

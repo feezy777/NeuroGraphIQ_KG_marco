@@ -30,6 +30,7 @@ from app.services.llm_prompt_defaults import DEFAULT_TEMPLATES
 from app.services.settings_service import get_deepseek_runtime_config, get_kimi_runtime_config
 from app.services.llm_workflow_cancel_registry import mark_cancelling, is_cancelling, clear as clear_cancel_registry
 from app.utils.json_safety import to_jsonable
+from app.llm_model_policy import DEEPSEEK_MODEL
 
 logger = logging.getLogger(__name__)
 
@@ -1087,7 +1088,7 @@ async def execute_circuit_extraction_background(
             elif provider_key == "kimi":
                 resolved_model = request.model_name or get_kimi_runtime_config().default_model
             else:
-                resolved_model = request.model_name or "deepseek-chat"
+                resolved_model = request.model_name or DEEPSEEK_MODEL
             tier_status, _ = _resolve_model_status(resolved_model)
             is_connection_mode = bool(request.connection_ids)
 

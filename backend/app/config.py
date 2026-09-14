@@ -4,6 +4,7 @@ from typing import List
 from urllib.parse import quote_plus
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from app.llm_model_policy import DEEPSEEK_MODEL
 
 # Resolve .env next to backend/ regardless of uvicorn cwd (fixes wrong DATABASE_URL).
 _BACKEND_ROOT = Path(__file__).resolve().parents[1]
@@ -24,7 +25,7 @@ class Settings(BaseSettings):
     app_port: int = 8000
     cors_origins: str = "http://localhost:5173,http://127.0.0.1:5173,http://localhost:3000"
     ontology_role: str = "ontology_admin"
-    ontology_residual_model: str = "deepseek-v4-flash"
+    ontology_residual_model: str = DEEPSEEK_MODEL
     ontology_residual_concurrency: int = 2
     ontology_residual_backoff_seconds: float = 20.0
     ontology_residual_batch_size: int = 20
@@ -75,7 +76,7 @@ class Settings(BaseSettings):
     # LLM - DeepSeek
     deepseek_api_key: str = ""
     deepseek_base_url: str = "https://api.deepseek.com/v1"
-    deepseek_default_model: str = "deepseek-v4-flash"
+    deepseek_default_model: str = DEEPSEEK_MODEL
 
     # LLM - Kimi (Moonshot)
     kimi_api_key: str = ""

@@ -13,6 +13,7 @@ from datetime import datetime
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
+from app.llm_model_policy import DEEPSEEK_MODEL
 
 # Bumped when the extraction prompt or expected JSON shape changes.
 PROMPT_VERSION = "v1"
@@ -651,7 +652,7 @@ class CircuitToFunctionsExtractionRequest(BaseModel):
     batch_id: uuid.UUID | None = None
     resource_id: uuid.UUID | None = None
     provider: str = LlmProviderName.deepseek
-    model_name: str | None = "deepseek-chat"
+    model_name: str | None = DEEPSEEK_MODEL
     dry_run: bool = True
     overwrite_policy: str = "fill_missing_only"
     include_related_steps: bool = True
@@ -771,7 +772,7 @@ class ConnectionParseReplayResponse(BaseModel):
 
 class ProviderRawDebugRequest(BaseModel):
     provider: str = "deepseek"
-    model_name: str = "deepseek-chat"
+    model_name: str = DEEPSEEK_MODEL
     prompt: str = Field(..., min_length=1)
     temperature: float = 0.0
     max_tokens: int = Field(default=256, ge=1, le=8192)

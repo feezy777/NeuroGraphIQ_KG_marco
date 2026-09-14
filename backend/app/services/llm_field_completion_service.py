@@ -16,6 +16,7 @@ from typing import Any
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.llm_model_policy import DEEPSEEK_MODEL
 from app.models.llm_field_completion import LlmFieldCompletionItem, LlmFieldCompletionRun
 from app.schemas.llm_field_completion import (
     FieldCompletionItemRead,
@@ -696,10 +697,10 @@ def _make_item(
 # Status MUST stay within MirrorStatus enum. Priority differentiates models for
 # fill/overwrite decisions; do NOT invent statuses like llm_v4_pro / llm_kimi.
 _MODEL_TIER_PRIORITY = {
-    "deepseek-reasoner": 40,
-    "deepseek-v4-pro": 30,
-    "deepseek-v4-flash": 25,
-    "deepseek-chat": 20,
+    # One DeepSeek model exists, so one DeepSeek tier exists. The priority is
+    # the one the old 'flash' tier had; unmatched values fall back to
+    # _DEFAULT_TIER_PRIORITY below.
+    DEEPSEEK_MODEL: 25,
     "kimi": 10,
 }
 _LEGACY_STATUS_PRIORITY = {

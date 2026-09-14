@@ -7,12 +7,13 @@ final_*, or kg_* data, and public response models never expose API keys.
 from __future__ import annotations
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
+from app.llm_model_policy import DEEPSEEK_MODEL
 
 
 class DeepSeekRuntimeSettings(BaseModel):
     enabled: bool = True
     base_url: str = "https://api.deepseek.com/v1"
-    default_model: str = "deepseek-v4-flash"
+    default_model: str = DEEPSEEK_MODEL
     api_key: str = ""
     timeout_seconds: int = Field(default=120, ge=5, le=300)
     max_batch_size: int = Field(default=20, ge=1, le=20)
@@ -53,7 +54,7 @@ class OntologyQueryRuntimeSettings(BaseModel):
 
     enabled: bool = True
     provider: str = "deepseek"
-    model: str = "deepseek-v4-flash"
+    model: str = DEEPSEEK_MODEL
     temperature: float = Field(default=0.1, ge=0.0, le=1.0)
 
 

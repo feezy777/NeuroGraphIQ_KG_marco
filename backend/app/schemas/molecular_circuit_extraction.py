@@ -12,6 +12,7 @@ from datetime import datetime
 from typing import Any
 
 from pydantic import BaseModel, Field
+from app.llm_model_policy import DEEPSEEK_MODEL
 
 
 # ---------------------------------------------------------------------------
@@ -23,7 +24,7 @@ class MolecularCircuitExtractionRequest(BaseModel):
     """Request to start a molecular circuit extraction run."""
 
     provider: str = "deepseek"
-    model_name: str = "deepseek-v4-pro"
+    model_name: str = DEEPSEEK_MODEL
     functional_modules: list[str] | None = Field(
         default=None,
         description="If set, only process candidates in these modules. None = all modules.",

@@ -17,7 +17,7 @@ def test_runtime_settings_defaults_do_not_expose_api_key(tmp_path, monkeypatch):
 
     runtime = settings_service.load_runtime_settings()
     assert runtime.api_providers.deepseek.enabled is True
-    assert runtime.api_providers.deepseek.default_model == "deepseek-v4-flash"
+    assert runtime.api_providers.deepseek.default_model == "deepseek-flash"
 
     public = settings_service.to_public_runtime_settings(runtime)
     deepseek = public.api_providers.deepseek
@@ -125,7 +125,8 @@ def test_settings_options_endpoint_does_not_return_api_key():
     assert resp.status_code == 200
     body = resp.json()
     assert {"value": "zh-CN", "label": "中文"} in body["languages"]
-    assert "deepseek-chat" in body["default_models"]["deepseek"]
+    # DeepSeek exposes exactly one model (see app/llm_model_policy.py)
+    assert body["default_models"]["deepseek"] == ["deepseek-flash"]
     assert "api_key" not in json.dumps(body).lower()
 
 

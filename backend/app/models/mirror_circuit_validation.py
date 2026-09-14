@@ -7,6 +7,7 @@ from sqlalchemy import Boolean, DateTime, Float, Integer, String, Text, func
 from sqlalchemy.dialects.postgresql import JSONB, UUID, ARRAY
 from sqlalchemy.orm import Mapped, mapped_column
 from app.models.base import Base
+from app.llm_model_policy import DEEPSEEK_MODEL
 
 
 class MirrorCircuitValidationRun(Base):
@@ -32,7 +33,7 @@ class MirrorCircuitValidationRun(Base):
     dual_review_low_evidence_count: Mapped[int] = mapped_column(Integer, default=0)
     adjudication_status: Mapped[str] = mapped_column(String(32), nullable=False, default="pending")
     reviewer_a_provider: Mapped[str] = mapped_column(String(64), nullable=False, default="deepseek")
-    reviewer_a_model: Mapped[str] = mapped_column(String(128), nullable=False, default="deepseek-chat")
+    reviewer_a_model: Mapped[str] = mapped_column(String(128), nullable=False, default=DEEPSEEK_MODEL)
     reviewer_b_provider: Mapped[str] = mapped_column(String(64), nullable=False, default="kimi")
     reviewer_b_model: Mapped[str] = mapped_column(String(128), nullable=False, default="kimi")
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="created")

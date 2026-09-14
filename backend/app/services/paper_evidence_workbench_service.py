@@ -47,6 +47,7 @@ from app.services.macro_connection_paper_import_service import (
 from app.services.paper_search_multi import multi_search
 from app.services.llm_providers import get_llm_provider
 from app.services.settings_service import get_deepseek_runtime_config
+from app.llm_model_policy import DEEPSEEK_MODEL
 
 # ── 常量 ─────────────────────────────────────────────────────────────────────────
 
@@ -832,7 +833,7 @@ async def get_or_create_translation(session: AsyncSession, segment_id: str,
     # 3) 调 LLM(生成后才写库)
     provider = get_llm_provider("deepseek")
     llm_cfg = get_deepseek_runtime_config()
-    model = llm_cfg.default_model or "deepseek-chat"
+    model = llm_cfg.default_model or DEEPSEEK_MODEL
     resp = await provider.complete_json(
         model=model,
         system_prompt=TRANSLATION_SYSTEM,
@@ -1036,7 +1037,7 @@ async def run_semantic_review(session: AsyncSession, ranking_id: str,
 
     provider = get_llm_provider("deepseek")  # 系统默认 DeepSeek(settings 源)
     llm_cfg = get_deepseek_runtime_config()
-    model = llm_cfg.default_model or "deepseek-chat"
+    model = llm_cfg.default_model or DEEPSEEK_MODEL
     temperature = llm_cfg.temperature if llm_cfg.temperature is not None else 0.1
     max_tokens = llm_cfg.max_tokens or 1500
     sem = asyncio.Semaphore(5)

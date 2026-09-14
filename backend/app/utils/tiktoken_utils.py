@@ -5,16 +5,16 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from app.llm_model_policy import DEEPSEEK_MODEL
+
 logger = logging.getLogger(__name__)
 
 #: Model → tiktoken encoding name mapping.
 #: DeepSeek models use the same tokenizer as OpenAI's gpt-4o (o200k_base).
 #: Kimi models use cl100k_base (GPT-4/GPT-3.5 tokenizer).
 MODEL_ENCODING_MAP: dict[str, str] = {
-    "deepseek-chat": "o200k_base",
-    "deepseek-reasoner": "o200k_base",
-    "deepseek-v4-pro": "o200k_base",
-    "deepseek-v4-flash": "o200k_base",
+    # The only DeepSeek model that can be called (see llm_providers/model_registry).
+    DEEPSEEK_MODEL: "o200k_base",
     "kimi-k2": "cl100k_base",
     "kimi-k2-thinking": "cl100k_base",
 }

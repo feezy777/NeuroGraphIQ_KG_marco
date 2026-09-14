@@ -15,14 +15,12 @@ import {
 } from '../../../api/endpoints'
 import { useData } from '../../../hooks/useData'
 import { shortId } from '../../data-center/fieldCompletionUtils'
+import { DEEPSEEK_MODEL, DEEPSEEK_MODEL_OPTIONS } from '../../../utils/llmModels'
 
 type Step = 0 | 1 | 2 | 3
 const STEP_LABELS = ['选择回路', '配置参数', 'Dry Run 预览', '执行提取']
 const DS_MODELS = [
-  { value: 'deepseek-v4-flash', label: 'deepseek-v4-flash（推荐，极速版）' },
-  { value: 'deepseek-chat', label: 'deepseek-chat（V3）' },
-  { value: 'deepseek-v4-pro', label: 'deepseek-v4-pro（高精度）' },
-  { value: 'deepseek-reasoner', label: 'deepseek-reasoner（推理模型）' },
+  ...DEEPSEEK_MODEL_OPTIONS,
 ]
 
 interface Props {
@@ -37,7 +35,7 @@ export function CircuitConnectionExtractionModal({ open, mode, preSelectedIds = 
   const [step, setStep] = useState<Step>(0)
   const [selectedIds, setSelectedIds] = useState<string[]>([])
   const [provider, setProvider] = useState('deepseek')
-  const [model, setModel] = useState('deepseek-v4-flash')
+  const [model, setModel] = useState(DEEPSEEK_MODEL)
   const [temperature, setTemperature] = useState(0.2)
   const [maxTokens, setMaxTokens] = useState(2000)
   const [createMirrorUpdates, setCreateMirrorUpdates] = useState(true)
@@ -71,7 +69,7 @@ export function CircuitConnectionExtractionModal({ open, mode, preSelectedIds = 
     setStep(0)
     setSelectedIds([...preSelectedIds])
     setProvider('deepseek')
-    setModel('deepseek-v4-flash')
+    setModel(DEEPSEEK_MODEL)
     setTemperature(0.2)
     setMaxTokens(2000)
     setCreateMirrorUpdates(true)
@@ -220,7 +218,7 @@ export function CircuitConnectionExtractionModal({ open, mode, preSelectedIds = 
               <div className="data-center-field-completion-options">
                 <div className="data-center-field-completion-options-row">
                   <label>Provider
-                    <select className="form-input" value={provider} onChange={e => { setProvider(e.target.value); setModel(e.target.value === 'kimi' ? 'moonshot-v1-auto' : 'deepseek-v4-flash') }}>
+                    <select className="form-input" value={provider} onChange={e => { setProvider(e.target.value); setModel(e.target.value === 'kimi' ? 'moonshot-v1-auto' : DEEPSEEK_MODEL) }}>
                       <option value="deepseek">deepseek</option>
                       <option value="kimi">kimi（未配置）</option>
                     </select>

@@ -18,6 +18,10 @@ from app.schemas.settings import (
     PublicRuntimeSettings,
 )
 from app.services import settings_service
+from app.llm_model_policy import (
+    DEEPSEEK_PROVIDER,
+    available_models,
+)
 
 router = APIRouter()
 
@@ -35,7 +39,9 @@ async def get_settings_options():
             SettingsProviderOption(value="anthropic", label="Claude", disabled=True),
             SettingsProviderOption(value="local", label="Local Model", disabled=True),
         ],
-        default_models={"deepseek": ["deepseek-chat", "deepseek-reasoner", "deepseek-v4-pro", "deepseek-v4-flash"]},
+        # DeepSeek exposes exactly ONE model; see model_registry for the frozen
+        # policy. Other providers' model lists are untouched.
+        default_models={"deepseek": available_models(DEEPSEEK_PROVIDER)},
     )
 
 

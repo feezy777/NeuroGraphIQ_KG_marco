@@ -15,6 +15,7 @@ from app.schemas.enhancement import (
 from app.services.mirror_circuit_validation_service import compute_quality_score
 from app.services.llm_providers import get_llm_provider
 import app.services.mirror_circuit_validation_service as vc
+from app.llm_model_policy import DEEPSEEK_MODEL
 
 _log = logging.getLogger(__name__)
 
@@ -156,7 +157,7 @@ async def _tier2_generate_evidence(
 
     async with sem:
         resp = await provider.complete_json(
-            model="deepseek-chat", system_prompt=system,
+            model=DEEPSEEK_MODEL, system_prompt=system,
             user_prompt=user, temperature=0.3, max_tokens=500,
         )
 
@@ -219,7 +220,7 @@ async def _tier2_generate_description(
 
     async with sem:
         resp = await provider.complete_json(
-            model="deepseek-chat", system_prompt=system,
+            model=DEEPSEEK_MODEL, system_prompt=system,
             user_prompt=user, temperature=0.3, max_tokens=300,
         )
 

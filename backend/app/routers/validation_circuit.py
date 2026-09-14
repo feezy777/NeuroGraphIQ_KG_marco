@@ -31,6 +31,7 @@ from app.schemas.mirror_circuit_validation import (
 )
 from app.services import mirror_circuit_validation_service as vc
 from app.services.llm_providers import get_llm_provider
+from app.llm_model_policy import DEEPSEEK_MODEL
 
 router = APIRouter(tags=["Circuit Validation"])
 
@@ -1018,7 +1019,7 @@ async def selection_deepseek_fix(
 
             async with sem:
                 resp = await provider.complete_json(
-                    model="deepseek-chat",
+                    model=DEEPSEEK_MODEL,
                     system_prompt=system,
                     user_prompt=user,
                     temperature=0.3,
@@ -1330,7 +1331,7 @@ async def selection_region_match(
 
             async with sem:
                 resp = await provider.complete_json(
-                    model="deepseek-chat", system_prompt=system,
+                    model=DEEPSEEK_MODEL, system_prompt=system,
                     user_prompt=user, temperature=0.1, max_tokens=2000,
                 )
 

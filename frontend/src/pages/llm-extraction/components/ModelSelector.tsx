@@ -1,3 +1,4 @@
+import { DEEPSEEK_MODEL } from '../../../utils/llmModels'
 import { useMemo } from 'react'
 
 export interface ModelPreset {
@@ -6,11 +7,10 @@ export interface ModelPreset {
   description?: string
 }
 
+// One DeepSeek model exists (see utils/llmModels). Do not re-add alternatives:
+// the backend provider normalizes every request to this model regardless.
 export const DEEPSEEK_MODELS: ModelPreset[] = [
-  { label: 'DeepSeek V4 Pro (deepseek-v4-pro)', value: 'deepseek-v4-pro', description: '最新旗舰版，高精度、强推理' },
-  { label: 'DeepSeek V4 Flash (deepseek-v4-flash)', value: 'deepseek-v4-flash', description: '极速版，成本低、速度快，适合大批量任务' },
-  { label: 'DeepSeek V3 (deepseek-chat)', value: 'deepseek-chat', description: '标准版对话模型，速度快、效果好' },
-  { label: 'DeepSeek R1 (deepseek-reasoner)', value: 'deepseek-reasoner', description: '增强推理模型，适合复杂逻辑任务' },
+  { label: `DeepSeek (${DEEPSEEK_MODEL})`, value: DEEPSEEK_MODEL, description: '统一模型' },
 ]
 
 export const KIMI_MODELS: ModelPreset[] = [

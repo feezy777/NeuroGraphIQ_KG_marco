@@ -13,6 +13,7 @@ from typing import Any
 
 import httpx
 
+from app.llm_model_policy import effective_deepseek_model
 from app.config import get_settings
 from app.schemas.settings import (
     DeepSeekConnectionTestRequest,
@@ -70,6 +71,18 @@ def _resolved_api_key(runtime_key: str, env_key: str = "") -> str:
     return (env_key or "").strip()
 
 
+def _normalize_deepseek_model(value: str | None) -> str:
+    """Resolve a stored/patched DeepSeek model to the one allowed model.
+
+    Settings must not DISPLAY or PERSIST a model that runtime will never call.
+    A value saved before the DeepSeek policy was frozen (or a stale selector in
+    a long-open form) is normalized here, so the UI, the saved config and the
+    actual API call all agree. This is the FIRST of two defences: the provider
+    normalizes again at the call site (see app/llm_model_policy.py).
+    """
+    return effective_deepseek_model(value)
+
+
 def to_public_runtime_settings(settings: RuntimeSettings) -> PublicRuntimeSettings:
     deepseek = settings.api_providers.deepseek
     kimi = settings.api_providers.kimi
@@ -81,7 +94,8 @@ def to_public_runtime_settings(settings: RuntimeSettings) -> PublicRuntimeSettin
             deepseek=PublicDeepSeekRuntimeSettings(
                 enabled=deepseek.enabled,
                 base_url=deepseek.base_url,
-                default_model=deepseek.default_model,
+                # Normalized on READ: a legacy stored value must never be shown.
+                default_model=_normalize_deepseek_model(deepseek.default_model),
                 api_key_configured=bool(resolved_deepseek),
                 api_key_masked=mask_api_key(resolved_deepseek),
                 timeout_seconds=deepseek.timeout_seconds,
@@ -147,6 +161,13 @@ def update_runtime_settings(payload: dict[str, Any] | RuntimeSettingsPatch) -> P
         ontology_query_data = patch.ontology_query.model_dump(exclude_none=True)
         data["ontology_query"].update(ontology_query_data)
 
+    # Normalize on EVERY write, not only when the patch mentions DeepSeek: a
+    # legacy value is then not merely hidden on read but actually healed, so any
+    # unrelated save converges the file onto the model runtime will really call.
+    data["api_providers"]["deepseek"]["default_model"] = _normalize_deepseek_model(
+        data["api_providers"]["deepseek"].get("default_model")
+    )
+
     updated = RuntimeSettings.model_validate(data)
     _write_runtime_settings(updated)
     return to_public_runtime_settings(updated)
@@ -158,7 +179,9 @@ def get_deepseek_runtime_config() -> DeepSeekRuntimeConfig:
     return DeepSeekRuntimeConfig(
         enabled=runtime.enabled,
         base_url=(runtime.base_url or settings.deepseek_base_url).rstrip("/"),
-        default_model=runtime.default_model or settings.deepseek_default_model,
+        default_model=_normalize_deepseek_model(
+            runtime.default_model or settings.deepseek_default_model
+        ),
         api_key=_resolved_api_key(runtime.api_key, settings.deepseek_api_key),
         timeout_seconds=runtime.timeout_seconds,
         max_batch_size=runtime.max_batch_size,

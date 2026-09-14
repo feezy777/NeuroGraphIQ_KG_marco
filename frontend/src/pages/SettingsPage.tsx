@@ -15,6 +15,7 @@ import {
 } from '../api/endpoints'
 import { ApiError } from '../api/client'
 import { type Language } from '../i18n'
+import { DEEPSEEK_MODEL } from '../utils/llmModels'
 import { useI18n } from '../i18n-context'
 
 type TabKey = 'language' | 'api' | 'basic'
@@ -270,7 +271,7 @@ export function SettingsPage() {
                 <label className="form-field">
                   <span className="form-label">{t('common.model')}</span>
                   <select className="form-select" value={form.defaultModel} onChange={e => updateForm({ defaultModel: e.target.value })}>
-                    {(options?.default_models.deepseek ?? ['deepseek-chat', 'deepseek-reasoner', 'deepseek-v4-pro', 'deepseek-v4-flash']).map(model => (
+                    {(options?.default_models.deepseek ?? [DEEPSEEK_MODEL]).map(model => (
                       <option key={model} value={model}>{model}</option>
                     ))}
                   </select>

@@ -47,6 +47,7 @@ from app.services.skip_existing_service import (
     query_existing_function_projection_ids,
 )
 from app.utils.tiktoken_utils import count_tokens_in_payload
+from app.llm_model_policy import DEEPSEEK_MODEL
 
 logger = logging.getLogger(__name__)
 
@@ -56,17 +57,17 @@ FALLBACK_ITEMS_PER_PAIR = 0.78
 # Default stage models per extraction mode
 DEFAULT_STAGE_MODELS: dict[str, dict[str, dict[str, str]]] = {
     "balanced": {
-        "connection_screening": {"provider": "deepseek", "model": "deepseek-v4-flash"},
-        "connection_detail":    {"provider": "deepseek", "model": "deepseek-v4-pro"},
-        "function_extraction":  {"provider": "deepseek", "model": "deepseek-v4-flash"},
+        "connection_screening": {"provider": "deepseek", "model": DEEPSEEK_MODEL},
+        "connection_detail":    {"provider": "deepseek", "model": DEEPSEEK_MODEL},
+        "function_extraction":  {"provider": "deepseek", "model": DEEPSEEK_MODEL},
     },
     "exhaustive": {
-        "extract_connections":          {"provider": "deepseek", "model": "deepseek-v4-pro"},
-        "extract_projection_functions":  {"provider": "deepseek", "model": "deepseek-v4-flash"},
+        "extract_connections":          {"provider": "deepseek", "model": DEEPSEEK_MODEL},
+        "extract_projection_functions":  {"provider": "deepseek", "model": DEEPSEEK_MODEL},
     },
     "region_centered": {
-        "connection_detail":    {"provider": "deepseek", "model": "deepseek-v4-pro"},
-        "function_extraction":  {"provider": "deepseek", "model": "deepseek-v4-flash"},
+        "connection_detail":    {"provider": "deepseek", "model": DEEPSEEK_MODEL},
+        "function_extraction":  {"provider": "deepseek", "model": DEEPSEEK_MODEL},
     },
 }
 

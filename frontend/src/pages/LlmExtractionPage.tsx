@@ -57,6 +57,7 @@ import {
   type CompositeProgressMeta,
   type CompositeExtractionTaskId,
 } from './llm-extraction/services/compositeExtractionRunner'
+import { DEEPSEEK_MODEL } from '../utils/llmModels'
 import {
   fetchCandidates,
   fetchLlmExtractionOptions,
@@ -1606,7 +1607,7 @@ function DualModelVerificationWorkbench() {
           </select>
         </label>
         <label>{t('mirror.dualModel.modelAProvider')}<select value={modelAProvider} onChange={e => setModelAProvider(e.target.value)}><option value="deepseek">DeepSeek</option></select></label>
-        <label>{t('mirror.dualModel.modelAName')}<input value={modelAName} onChange={e => setModelAName(e.target.value)} placeholder="deepseek-chat" /></label>
+        <label>{t('mirror.dualModel.modelAName')}<input value={modelAName} onChange={e => setModelAName(e.target.value)} placeholder={DEEPSEEK_MODEL} /></label>
         <label>{t('mirror.dualModel.modelBProvider')}<select value={modelBProvider} onChange={e => setModelBProvider(e.target.value)}><option value="kimi">Kimi</option></select></label>
         <label>{t('mirror.dualModel.modelBName')}<input value={modelBName} onChange={e => setModelBName(e.target.value)} placeholder="moonshot-v1-8k" /></label>
         <label>max_objects<input type="number" min={1} max={200} value={maxObjects} onChange={e => setMaxObjects(Number(e.target.value))} /></label>

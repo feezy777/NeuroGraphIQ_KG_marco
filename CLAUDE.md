@@ -196,6 +196,7 @@ Cross-granularity mapping uses explicit `mapping_type` (`exact_match`, `part_of`
 1. **`final_*` is the current main path for approved data** — `kg_*` is legacy only. New features must NOT default to writing `kg_*`.
 2. **LLM output must never write `final_*` directly** — all LLM output goes to `llm_extraction_*` → Mirror KG → Human Review → Promotion.
 3. **LLM calls must be provider-abstracted** via `llm_providers/factory.py`. Tests must mock providers.
+3a. **DeepSeek model policy (frozen)** — all NeuroGraphIQ DeepSeek runtime calls use **`deepseek-flash`**, and only that. The authority is `backend/app/llm_model_policy.py`; `DeepSeekProvider` normalizes every request to it, so a caller cannot select a DeepSeek model via request body, settings, env var or fallback. Callers choose the *provider*; the policy chooses the *model*. Do not re-add `deepseek-v4-flash` / `deepseek-v4-pro` / `deepseek-chat` / `deepseek-reasoner`, and do not put a model name into a scientific contract — this is runtime/provider policy.
 4. **Different granularities must NOT be merged** — macro, meso, micro, molecular, term are independently isolated.
 5. **Each Import Batch is the core tracking unit** — `import_tasks.id` = batch_id for provenance.
 6. **Always read relevant router + service + model + migration before modifying** — never assume table names or API paths.

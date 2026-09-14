@@ -7,6 +7,7 @@ import type {
   UniversalFieldCompletionRequest,
   UniversalFieldCompletionResponse,
 } from '../../api/endpoints'
+import { DEEPSEEK_MODEL } from '../../utils/llmModels'
 import {
   type FormalFieldMapping,
   type FormalObjectType,
@@ -124,7 +125,7 @@ export interface FieldCompletionFormOptions {
 
 export const DEFAULT_FIELD_COMPLETION_OPTIONS: FieldCompletionFormOptions = {
   provider: 'deepseek',
-  modelName: 'deepseek-chat',
+  modelName: DEEPSEEK_MODEL,
   fieldScope: 'all_enrichable_fields',
   selectedFieldKeys: [],
   dryRun: false,

@@ -31,6 +31,7 @@ import type {
 } from './circuitBundleTypes'
 import { FieldCompletionStatsCards } from './FieldCompletionStatsCards'
 import { translateBundleWarning } from './circuitBundleUtils'
+import { DEEPSEEK_MODEL, DEEPSEEK_MODEL_OPTIONS } from '../../utils/llmModels'
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -86,10 +87,7 @@ function formatValue(v: unknown): string {
 // ── Model presets ───────────────────────────────────────────────────────────
 
 const DS_MODELS = [
-  { value: 'deepseek-v4-flash', label: 'deepseek-v4-flash（推荐，速度快）' },
-  { value: 'deepseek-chat', label: 'deepseek-chat（V3）' },
-  { value: 'deepseek-v4-pro', label: 'deepseek-v4-pro（高精度）' },
-  { value: 'deepseek-reasoner', label: 'deepseek-reasoner（推理模型）' },
+  ...DEEPSEEK_MODEL_OPTIONS,
 ]
 const KIMI_MODELS = [
   { value: 'moonshot-v1-auto', label: 'moonshot-v1-auto' },
@@ -113,7 +111,7 @@ export function MultiTargetFieldCompletionModal({
   // ── Wizard state ──────────────────────────────────────────────────────────
   const [step, setStep] = useState<Step>(0)
   const [selProvider, setSelProvider] = useState('deepseek')
-  const [selModel, setSelModel] = useState('deepseek-v4-flash')
+  const [selModel, setSelModel] = useState(DEEPSEEK_MODEL)
   const [customModel, setCustomModel] = useState('')
   const [options, setOptions] = useState<FieldCompletionFormOptions>(DEFAULT_FIELD_COMPLETION_OPTIONS)
   const effectiveModel = customModel || selModel
@@ -122,7 +120,7 @@ export function MultiTargetFieldCompletionModal({
 
   const handleProviderChange = (p: string) => {
     setSelProvider(p)
-    setSelModel(p === 'kimi' ? 'moonshot-v1-auto' : 'deepseek-v4-flash')
+    setSelModel(p === 'kimi' ? 'moonshot-v1-auto' : DEEPSEEK_MODEL)
   }
 
   // ── Bundle state ──────────────────────────────────────────────────────────
@@ -181,7 +179,7 @@ export function MultiTargetFieldCompletionModal({
     if (!open || !bundle) return
     setStep(0)
     setSelProvider('deepseek')
-    setSelModel('deepseek-v4-flash')
+    setSelModel(DEEPSEEK_MODEL)
     setCustomModel('')
     setOptions(DEFAULT_FIELD_COMPLETION_OPTIONS)
     setBundleWarnings([])

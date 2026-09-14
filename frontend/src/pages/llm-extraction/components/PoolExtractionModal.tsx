@@ -37,6 +37,7 @@ import {
   type PackConfigPayload,
 } from '../packPlanUtils'
 import type { TaskPreset } from '../taskPresets'
+import { DEEPSEEK_MODEL, DEEPSEEK_MODEL_OPTIONS } from '../../../utils/llmModels'
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -1551,7 +1552,7 @@ export function PoolExtractionModal({
 
   // ── LLM config state (Step 2) — MUST be before early return ─────────────
   const [llmProvider, setLlmProvider] = useState('deepseek')
-  const [llmModel, setLlmModel] = useState('deepseek-v4-flash')
+  const [llmModel, setLlmModel] = useState(DEEPSEEK_MODEL)
   const [packConcurrency, setPackConcurrency] = useState(1)
   const [pairsPerPack, setPairsPerPack] = useState(40)
   const [skipExisting, setSkipExisting] = useState(false)
@@ -1565,10 +1566,7 @@ export function PoolExtractionModal({
 
   const LLM_MODELS: Record<string, Array<{ value: string; label: string }>> = {
     deepseek: [
-      { value: 'deepseek-v4-flash', label: 'deepseek-v4-flash (V4 Flash)' },
-      { value: 'deepseek-chat', label: 'deepseek-chat (V3)' },
-      { value: 'deepseek-v4-pro', label: 'deepseek-v4-pro (V4 Pro)' },
-      { value: 'deepseek-reasoner', label: 'deepseek-reasoner (R1)' },
+      ...DEEPSEEK_MODEL_OPTIONS,
     ],
     kimi: [
       { value: 'moonshot-v1-auto', label: 'moonshot-v1-auto' },
@@ -1579,7 +1577,7 @@ export function PoolExtractionModal({
 
   const handleProviderChange = (p: string) => {
     setLlmProvider(p)
-    setLlmModel(p === 'kimi' ? 'moonshot-v1-auto' : 'deepseek-v4-flash')
+    setLlmModel(p === 'kimi' ? 'moonshot-v1-auto' : DEEPSEEK_MODEL)
   }
 
   useEffect(() => {

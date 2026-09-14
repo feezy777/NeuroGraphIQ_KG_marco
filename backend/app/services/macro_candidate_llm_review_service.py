@@ -31,6 +31,7 @@ import re
 from typing import Any
 
 from app.services.llm_providers.factory import get_llm_provider
+from app.llm_model_policy import DEEPSEEK_MODEL
 from app.services.settings_service import (
     get_deepseek_runtime_config,
     get_kimi_runtime_config,
@@ -206,8 +207,7 @@ async def review_one_candidate(
     provider = get_llm_provider(provider_key)
     cfg = (get_deepseek_runtime_config() if provider_key == "deepseek"
            else get_kimi_runtime_config())
-    resolved_model = model or getattr(cfg, "default_model", None) or \
-        "deepseek-chat"
+    resolved_model = model or getattr(cfg, "default_model", None) or DEEPSEEK_MODEL
 
     system_prompt = SYSTEM_PROMPT
     user_prompt = build_user_prompt(

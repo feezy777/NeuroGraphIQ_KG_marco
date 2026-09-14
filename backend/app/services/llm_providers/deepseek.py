@@ -16,9 +16,15 @@ from app.services.llm_providers.base import (
     LlmProviderUsage,
     ProviderNotConfiguredError,
 )
+from app.llm_model_policy import effective_deepseek_model
 from app.services.settings_service import get_deepseek_runtime_config
 
 logger = logging.getLogger(__name__)
+
+
+#: Minimum timeout for the one allowed model. A single value is correct now
+#: that the model cannot vary; see app.llm_model_policy.
+_MODEL_MIN_TIMEOUT = 120
 
 
 def supports_json_object_mode() -> bool:
@@ -159,7 +165,19 @@ class DeepSeekProvider:
                 "DeepSeek API key is not configured; set it in Settings before extracting."
             )
 
-        use_model = model or config.default_model
+        # MODEL AUTHORITY. Whatever the caller (or config, or fallback) asked
+        # for, DeepSeek is called with the single allowed model. The request is
+        # normalized HERE and nowhere else, so no business layer can select a
+        # different DeepSeek model — and provenance below records what actually
+        # ran, not what was requested.
+        requested_model = model or config.default_model
+        use_model = effective_deepseek_model(requested_model)
+        if (requested_model or "") != use_model:
+            logger.info(
+                "[deepseek] model normalized requested_model=%s effective_model=%s",
+                requested_model,
+                use_model,
+            )
         base_url = config.base_url.rstrip("/")
         redacted = {
             "model": use_model,
@@ -194,10 +212,11 @@ class DeepSeekProvider:
                 headers=headers,
             )
 
-        # Unified timeout: all models >=120s, reasoning models >=180s
-        _MODEL_MIN_TIMEOUT = {'deepseek-v4-pro': 180, 'deepseek-reasoner': 180, 'deepseek-v4-flash': 120}
-        resolved_timeout = max(timeout_seconds or config.timeout_seconds or 120,
-                               _MODEL_MIN_TIMEOUT.get(use_model, 120))
+        # Unified timeout. Only DEEPSEEK_MODEL can reach here (see above), so a
+        # single floor is enough — the retired per-model table is gone.
+        resolved_timeout = max(
+            timeout_seconds or config.timeout_seconds or 120, _MODEL_MIN_TIMEOUT
+        )
         started = time.monotonic()
         logger.info(
             "[deepseek] POST chat/completions model=%s user_chars=%s json_mode=%s timeout=%ss",
