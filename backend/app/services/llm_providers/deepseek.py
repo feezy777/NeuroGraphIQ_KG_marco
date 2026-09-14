@@ -42,7 +42,16 @@ def _try_parse_json(raw: str) -> dict[str, Any] | None:
 
 
 def extract_raw_text_from_response(body: Any, *, http_text: str = "") -> tuple[str, bool]:
-    """Extract assistant text from DeepSeek/OpenAI-style chat completion payloads."""
+    """Extract assistant text from DeepSeek/OpenAI-style chat completion payloads.
+
+    ``message.content`` is the ONLY authoritative final answer. Some DeepSeek
+    models also return ``message.reasoning_content`` (the model's private
+    chain of thought); that is reasoning METADATA, never the answer, and it is
+    deliberately NOT promoted to content here. Returning it would feed
+    unstructured deliberation into a structured parser and let it be mistaken
+    for a result. If content is empty, the caller sees an empty response and
+    reports a failure instead.
+    """
     fallback_used = False
     if isinstance(body, dict):
         choices = body.get("choices")
@@ -54,10 +63,7 @@ def extract_raw_text_from_response(body: Any, *, http_text: str = "") -> tuple[s
                     content = message.get("content")
                     if isinstance(content, str) and content.strip():
                         return content, False
-                    # v4-pro reasoning model: answer may be in reasoning_content
-                    reasoning = message.get("reasoning_content")
-                    if isinstance(reasoning, str) and reasoning.strip():
-                        return reasoning, False
+                    # reasoning_content is intentionally ignored (see docstring)
                 delta = first.get("delta")
                 if isinstance(delta, dict):
                     content = delta.get("content")

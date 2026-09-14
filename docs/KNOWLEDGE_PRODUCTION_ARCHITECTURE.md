@@ -885,3 +885,97 @@ taxon_ids: [int]      # NCBI taxonomy：9606 人类 / 10090 小鼠 / 10116 大�
 **零**迁移、**零**新表、**零**候选落库、**零**新端点、**零**前端改动、
 **零** provider 调用。产物止于**类型化的内存结构**。
 候选持久化属于更晚的独立阶段（Phase 3C）。
+
+---
+
+## 16. LLM Discovery Execution（Phase 3B）
+
+Phase 3A 冻结了**契约**，Phase 3B 只做一件事：**把契约跑一遍**。
+
+```
+BrainRegion Seed → create LLM_DISCOVERY Run → QUEUED → RUNNING
+  → Phase 3A Prompt → DeepSeek Provider → raw text
+  → Phase 3A Parser → 类型化候选（内存）→ RUNNING → COMPLETED / FAILED
+```
+
+单一端点，**无 body**：
+
+```
+POST /api/knowledge-production/brain-regions/{entity_id}/llm-discovery/execute
+```
+
+响应 `{run, result, validation_warnings, metrics}`。`result` 是候选，
+**只存在于这一次响应中**。
+
+### 16.1 `content` 是唯一答案
+
+`message.content` 是**唯一**权威最终答案。`reasoning_content` 是推理**元数据**，
+**绝不**提升为答案——否则未经结构化的思考会被 parser 当作结果接受。
+content 为空即视为**空响应失败**，而不是退回原始 body。
+
+### 16.2 业务层只选 provider，不选 model
+
+执行层只声明 `provider = deepseek`；模型由 `app.llm_model_policy` 在 provider
+调用点决定。Run 上记录的 `model_name` 是**实际执行的模型**（取自全局策略，
+不是请求值、不是新写字面量）。provider 回报的模型与策略不一致时，
+run **失败**——策略被绕过必须暴露，不能被当成正常记录。
+
+### 16.3 可信内部调用方（唯一写 provenance 的地方）
+
+公开 Run Create API **不变**：body 仍然只有 `discovery_type`，
+`extra="forbid"` 继续拒绝客户端伪造的 provider / model / prompt。
+生命周期 service 的内部 create 路径接受 `provider` / `model_name` /
+`prompt_key` / `prompt_version`（默认 `None`，即公开行为），
+**只有执行服务**会写入它们。
+
+`prompt_key = knowledge_production.llm_discovery`，`prompt_version = 1.0.0`。
+
+### 16.4 结果映射（outcome）
+
+只有四类候选数组决定 outcome：任一非空 → `CANDIDATES_FOUND`，
+四类**全空** → `NO_CANDIDATES_FOUND`。
+仅有 `source_hints` 非空仍是 `NO_CANDIDATES_FOUND`——source hint 是线索，不是候选。
+LLM Discovery **永不**使用 `NO_EVIDENCE_FOUND`：它不是证据检索路线。
+
+### 16.5 失败词汇表（复用，不新造框架）
+
+| error_code | 含义 |
+|---|---|
+| `LLM_PROVIDER_TIMEOUT` | provider 超时 |
+| `LLM_PROVIDER_AUTH_ERROR` | 凭据被拒 / provider 未配置 |
+| `LLM_PROVIDER_ERROR` | 其他 provider 失败（含策略被绕过） |
+| `LLM_EMPTY_RESPONSE` | 没有可解析的 content |
+| `LLM_DISCOVERY_PARSE_FAILED` | 响应不满足 Phase 3A 契约 |
+
+解析失败时 `error_message` 只写**简短结构化摘要**，**不**写入完整响应。
+HTTP 上 provider / parser 失败统一为 **502**（上游没有给出可用答案）；
+run 在抛出之前**已经**是 FAILED。四类失败路径都不得留下永久 `RUNNING`。
+
+### 16.6 允许记录的 provenance
+
+只允许：response SHA-256、prompt SHA-256、`latency_ms`、token usage、
+`schema_version`、warning 数量、各数组计数、provider / effective model /
+prompt 版本。
+
+禁止进入 Gate7B 知识表与 `provenance_json`：raw response、`reasoning_content`、
+任何候选内容。日志中禁止：API key、auth header、完整 prompt、完整响应。
+
+### 16.7 Seed 装载是确定性的
+
+`name_en` / `name_zh` / `granularity_level` / `hemisphere` / `species_taxon_id` /
+`source_atlas_names` 直接取自 Gate7B 声明值；`known_aliases` 取自
+`entity_aliases`（`is_preferred` 降序、`alias_pk` 升序，与已声明名称重复的不计入）；
+`parent_region_name` 取自 `brain_regions.parent_region_pk`（**派生缓存**，
+声明为 NULL 即为 NULL）。
+
+**不猜别名、不推断父区、不从旧 Mirror 数据回填**。缺失的可选字段就是
+`None` / `[]`——缺失是模型**允许**不知道的事实，编造是模型**无法**察觉的缺陷。
+
+### 16.8 Phase 3B 边界
+
+**零**迁移、**零**新表、**零**候选落库、**零**前端改动、
+**零** Celery / Redis / BackgroundTasks / worker / 调度器 / 重试守护进程。
+执行是**同步**的：一次请求一次尝试。`species_context` **不**由执行层填充——
+缺失时由 parser 失败（§15.7a）。
+
+前端 Discovery 按钮**保持禁用**：候选尚不能持久化。

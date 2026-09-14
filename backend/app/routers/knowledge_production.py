@@ -15,18 +15,20 @@ Discovery Run endpoints:
     POST /api/knowledge-production/discovery-runs/{run_id}/complete
     POST /api/knowledge-production/discovery-runs/{run_id}/fail
     POST /api/knowledge-production/discovery-runs/{run_id}/cancel
+    POST /api/knowledge-production/brain-regions/{entity_id}/llm-discovery/execute
 
 Design boundary:
-  * Reads are read-only. The ONLY writes are the five lifecycle transitions
-    above, and they exist solely to move a run through the frozen state graph
+  * Reads are read-only. The ONLY writes are the lifecycle transitions, and
+    they exist solely to move a run through the frozen state graph
     (create / start / complete / fail / cancel).
   * A Discovery Run is workflow/provenance, NOT knowledge: nothing here returns
     or creates a circuit / connection / function / evidence / assertion.
   * No Candidate / Mirror / Final dependency. Touches only Gate7B formal tables
     plus the knowledge_discovery_runs management table.
-  * Discovery EXECUTION does not exist: no LLM call, no literature search, and
-    no endpoint triggers one. A created run stays QUEUED until a later
-    execution layer advances it, so the UI buttons remain disabled.
+  * LLM Discovery EXECUTION exists from Phase 3B, on its own endpoint. It drives
+    ONE run synchronously and returns typed candidates that live in the response
+    only — no candidate is persisted, and no literature search exists. The
+    generic Run Create API is unchanged, so the UI buttons stay disabled.
   * Errors: 404 missing, 409 lifecycle conflict / duplicate active run,
     422 malformed or scientifically invalid input. No SQL text is exposed.
 
@@ -59,9 +61,11 @@ from app.schemas.knowledge_production import (
     DiscoveryType,
     GranularityLevel,
 )
+from app.schemas.llm_discovery_execution import LlmDiscoveryExecutionResult
 from app.services import knowledge_discovery_run_lifecycle_service as lifecycle
 from app.services import knowledge_discovery_run_service as run_svc
 from app.services import knowledge_production_brain_region_service as svc
+from app.services import llm_discovery_execution_service as execution
 
 router = APIRouter(prefix="/api/knowledge-production", tags=["Knowledge Production"])
 
@@ -303,3 +307,55 @@ async def cancel_discovery_run(
     _require_uuid(run_id)
     with _mapped_lifecycle_errors():
         return await lifecycle.cancel_discovery_run(db, run_id)
+
+
+# ---------------------------------------------------------------------------
+# Phase 3B — LLM Discovery execution
+# ---------------------------------------------------------------------------
+# A separate path on purpose: the generic Run Create API above stays untouched
+# (§8), and this endpoint is the TRUSTED caller that owns the run it creates.
+# It takes NO body — the client supplies the seed, nothing else, so provider /
+# model / prompt provenance cannot be fabricated from the outside.
+
+
+@contextmanager
+def _mapped_execution_errors():
+    """Translate execution failures (502) without masking lifecycle errors.
+
+    A provider or parser failure means the upstream model did not produce a
+    usable answer: the run is already FAILED by the time this fires, and the
+    body names the failure code so the client can distinguish a bad model
+    response from a bad request.
+    """
+    try:
+        yield
+    except execution.LlmDiscoveryExecutionError as exc:
+        extra: dict[str, Any] = {}
+        if exc.run_id is not None:
+            # The run's PUBLIC uuid — the client needs it to inspect the
+            # failure, and it is not a database key.
+            extra["run_id"] = exc.run_id
+        raise HTTPException(
+            502, detail=_error_detail(exc.code, exc.message, **extra)
+        ) from None
+
+
+@router.post(
+    "/brain-regions/{entity_id}/llm-discovery/execute",
+    response_model=LlmDiscoveryExecutionResult,
+)
+async def execute_brain_region_llm_discovery(
+    entity_id: str, db: AsyncSession = Depends(get_db)
+) -> LlmDiscoveryExecutionResult:
+    """Run LLM Discovery synchronously for one BrainRegion seed.
+
+    Creates and drives one LLM_DISCOVERY run through the lifecycle service,
+    sends the frozen Phase 3A prompt to DeepSeek, and returns the typed
+    candidates the Phase 3A parser accepted. Nothing is persisted except the
+    run record: candidates exist for this response only.
+
+    404 unknown BrainRegion, 409 an active run already exists, 502 the model
+    response could not be used (timeout / auth / provider / empty / unparseable).
+    """
+    with _mapped_lifecycle_errors(), _mapped_execution_errors():
+        return await execution.execute_llm_discovery(db, entity_id=entity_id)

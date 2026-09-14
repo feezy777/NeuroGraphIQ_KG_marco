@@ -1,0 +1,1092 @@
+"""Phase 3B — LLM Discovery execution.
+
+No network and no live database. The provider is a stub, and ``get_db`` is
+overridden with an in-memory fake that models ``knowledge_discovery_runs``
+closely enough to prove the run really moves QUEUED -> RUNNING -> COMPLETED /
+FAILED (the authority table is never touched).
+
+The fake enforces the SAME invariants as the gate7b_012 constraints, so a
+failure path that forgot to terminate its run fails here too.
+"""
+from __future__ import annotations
+
+import ast
+import asyncio
+import hashlib
+import json
+import uuid
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+from typing import Any
+
+import httpx
+import pytest
+from fastapi.testclient import TestClient
+from sqlalchemy.exc import IntegrityError
+
+from app.database import get_db
+from app.llm_model_policy import effective_deepseek_model
+from app.main import app
+from app.prompts.llm_discovery_prompt import PROMPT_KEY, PROMPT_VERSION
+from app.schemas.knowledge_production import (
+    ACTIVE_DISCOVERY_RUN_STATUSES,
+    TERMINAL_DISCOVERY_RUN_STATUSES,
+)
+from app.schemas.llm_discovery import LlmDiscoveryInput
+from app.services import knowledge_discovery_run_lifecycle_service as lifecycle
+from app.services import llm_discovery_execution_service as execution
+from app.services import llm_discovery_seed_service as seed_svc
+from app.services.llm_providers.base import (
+    LlmProviderResponse,
+    LlmProviderUsage,
+    ProviderNotConfiguredError,
+)
+
+BASE = "/api/knowledge-production"
+SEED_ENTITY = "NGIQ-BR-00000247"
+UNKNOWN_ENTITY = "NGIQ-BR-99999999"
+SEED_PK = 740
+EXEC_PATH = Path(execution.__file__)
+SEED_PATH = Path(seed_svc.__file__)
+
+
+# ===========================================================================
+# In-memory authority stand-in
+# ===========================================================================
+class _FakeResult:
+    def __init__(self, rows: list[dict[str, Any]] | None = None, scalar: Any = None):
+        self._rows = list(rows or [])
+        self._scalar = scalar
+
+    def scalar_one(self) -> Any:
+        return self._scalar
+
+    def scalar_one_or_none(self) -> Any:
+        return self._scalar
+
+    def scalars(self) -> "_FakeResult":
+        return self
+
+    def mappings(self) -> "_FakeResult":
+        return self
+
+    def one(self) -> dict[str, Any]:
+        return self._rows[0]
+
+    def one_or_none(self) -> dict[str, Any] | None:
+        return self._rows[0] if self._rows else None
+
+    def first(self) -> dict[str, Any] | None:
+        return self._rows[0] if self._rows else None
+
+    def all(self) -> list[Any]:
+        return self._rows
+
+
+class _FakeDiscoveryDb:
+    """knowledge_discovery_runs + brain_regions, with the DB invariants."""
+
+    def __init__(self, seeds: dict[str, int] | None = None) -> None:
+        self.seeds = seeds if seeds is not None else {SEED_ENTITY: SEED_PK}
+        self.runs: list[dict[str, Any]] = []
+        self.other_writes: list[str] = []
+        self._t = datetime(2026, 9, 14, 12, 0, tzinfo=timezone.utc)
+
+    def tick(self) -> datetime:
+        self._t = self._t + timedelta(minutes=1)
+        return self._t
+
+    def seed_run(self, *, entity_id: str = SEED_ENTITY, status: str = "RUNNING") -> str:
+        run_id = str(uuid.uuid4())
+        self.runs.append(
+            {
+                "run_id": run_id,
+                "seed_entity_id": entity_id,
+                "seed_region_pk": self.seeds[entity_id],
+                "discovery_type": "LLM_DISCOVERY",
+                "status": status,
+                "outcome": None,
+                "provider": None,
+                "model_name": None,
+                "prompt_key": None,
+                "prompt_version": None,
+                "query_strategy_version": None,
+                "created_by": None,
+                "created_at": self.tick(),
+                "started_at": self.tick() if status != "QUEUED" else None,
+                "finished_at": None,
+                "error_code": None,
+                "error_message": None,
+            }
+        )
+        return run_id
+
+    def active_duplicate(self, seed_region_pk: int, discovery_type: str) -> dict | None:
+        for r in self.runs:
+            if (
+                r["seed_region_pk"] == seed_region_pk
+                and r["discovery_type"] == discovery_type
+                and r["status"] in ACTIVE_DISCOVERY_RUN_STATUSES
+            ):
+                return r
+        return None
+
+
+class _FakeSession:
+    def __init__(self, db: _FakeDiscoveryDb) -> None:
+        self.db = db
+        self.commits = 0
+        self.rollbacks = 0
+        self.statements: list[str] = []
+
+    async def execute(self, stmt: Any, params: dict[str, Any] | None = None) -> _FakeResult:
+        sql = " ".join(str(stmt).split())
+        p = dict(params or {})
+        self.statements.append(sql)
+
+        if sql.startswith("SELECT b.entity_pk FROM brain_regions"):
+            return _FakeResult(scalar=self.db.seeds.get(p.get("entity_id")))
+
+        if sql.startswith("INSERT INTO knowledge_discovery_runs"):
+            dup = self.db.active_duplicate(p["seed_region_pk"], p["discovery_type"])
+            if dup is not None:
+                raise IntegrityError(
+                    "INSERT", p, Exception("duplicate key value violates unique constraint")
+                )
+            row = {
+                "run_id": str(uuid.uuid4()),
+                "seed_entity_id": next(
+                    k for k, v in self.db.seeds.items() if v == p["seed_region_pk"]
+                ),
+                "seed_region_pk": p["seed_region_pk"],
+                "discovery_type": p["discovery_type"],
+                "status": "QUEUED",
+                "outcome": None,
+                "provider": p.get("provider"),
+                "model_name": p.get("model_name"),
+                "prompt_key": p.get("prompt_key"),
+                "prompt_version": p.get("prompt_version"),
+                "query_strategy_version": None,
+                "created_by": None,
+                "created_at": self.db.tick(),
+                "started_at": None,
+                "finished_at": None,
+                "error_code": None,
+                "error_message": None,
+            }
+            self.db.runs.append(row)
+            return _FakeResult(rows=[row])
+
+        if "knowledge_discovery_runs r" in sql and "r.run_id = :run_id" in sql:
+            return _FakeResult(
+                rows=[r for r in self.db.runs if r["run_id"] == p.get("run_id")]
+            )
+
+        if "status = ANY(" in sql:
+            dup = self.db.active_duplicate(p["seed_region_pk"], p["discovery_type"])
+            return _FakeResult(scalar=dup["run_id"] if dup else None)
+
+        if sql.startswith("UPDATE knowledge_discovery_runs SET"):
+            row = next(r for r in self.db.runs if r["run_id"] == p["run_id"])
+            if "status = 'RUNNING'" in sql:
+                row["status"] = "RUNNING"
+                row["started_at"] = self.db.tick()
+            elif "status = 'COMPLETED'" in sql:
+                row["status"] = "COMPLETED"
+                row["outcome"] = p["outcome"]
+                row["finished_at"] = self.db.tick()
+            elif "status = 'FAILED'" in sql:
+                row["status"] = "FAILED"
+                row["finished_at"] = self.db.tick()
+                row["error_code"] = p["error_code"]
+                row["error_message"] = p["error_message"]
+            elif "status = 'CANCELLED'" in sql:
+                row["status"] = "CANCELLED"
+                row["finished_at"] = self.db.tick()
+            else:  # pragma: no cover
+                raise AssertionError(f"unhandled SET clause: {sql}")
+            self._check_invariants(row)
+            return _FakeResult(rows=[row])
+
+        # Anything else is a write/read this phase must not perform.
+        self.db.other_writes.append(sql)
+        raise AssertionError(f"unexpected SQL: {sql}")
+
+    @staticmethod
+    def _check_invariants(row: dict[str, Any]) -> None:
+        status = row["status"]
+        if status == "COMPLETED":
+            assert row["outcome"] is not None and row["started_at"] and row["finished_at"]
+        else:
+            assert row["outcome"] is None, "non-COMPLETED must not carry an outcome"
+        if status in ("QUEUED", "RUNNING"):
+            assert row["finished_at"] is None
+        else:
+            assert row["finished_at"] is not None
+
+    async def commit(self) -> None:
+        self.commits += 1
+
+    async def rollback(self) -> None:
+        self.rollbacks += 1
+
+
+# ===========================================================================
+# Provider stub
+# ===========================================================================
+class _StubProvider:
+    """Records the call and returns (or raises) whatever the test arranged."""
+
+    def __init__(self, *, response=None, raises: BaseException | None = None) -> None:
+        self.response = response
+        self.raises = raises
+        self.calls: list[dict[str, Any]] = []
+
+    async def complete_json(self, **kwargs: Any) -> LlmProviderResponse:
+        self.calls.append(kwargs)
+        if self.raises is not None:
+            raise self.raises
+        assert self.response is not None, "no response arranged"
+        return self.response
+
+
+def _payload(**overrides: Any) -> dict[str, Any]:
+    """A structurally valid Phase 3A discovery response."""
+    data: dict[str, Any] = {
+        "schema_version": "1.0",
+        "seed_entity_id": SEED_ENTITY,
+        "summary": "hypothesis sketch",
+        "regions": [
+            {
+                "local_id": "region_1",
+                "name": "Medial dorsal nucleus",
+                "relation_to_seed": "RECIPROCAL",
+                "confidence": 0.6,
+            }
+        ],
+        "connections": [
+            {
+                "local_id": "connection_1",
+                "source_ref": "SEED",
+                "target_ref": "region_1",
+                "connection_type": "PROJECTION",
+                "directionality": "DIRECTED",
+                "confidence": 0.5,
+                "species_context": {"scope": "NON_HUMAN", "taxon_ids": [10090]},
+            }
+        ],
+        "functions": [],
+        "circuits": [],
+        "source_hints": [],
+        "warnings": [],
+    }
+    data.update(overrides)
+    return data
+
+
+def _response(**overrides: Any) -> LlmProviderResponse:
+    base: dict[str, Any] = {
+        "provider": "deepseek",
+        "model": "deepseek-flash",
+        "raw_text": json.dumps(_payload()),
+        "parsed_json": None,
+        "usage": LlmProviderUsage(prompt_tokens=10, completion_tokens=20, total_tokens=30),
+        "finish_reason": "stop",
+        "request_payload_redacted": {"model": "deepseek-flash"},
+        "response_payload": {"model": "deepseek-flash"},
+        "latency_ms": 1234,
+        "error_message": None,
+        "transport_ok": True,
+        "response_format": "json_object",
+    }
+    base.update(overrides)
+    return LlmProviderResponse(**base)
+
+
+def _seed_input(**overrides: Any) -> LlmDiscoveryInput:
+    base = dict(
+        seed_entity_id=SEED_ENTITY,
+        seed_name_en="Left Thalamus",
+        seed_name_zh="左侧丘脑",
+        seed_granularity_level="G1_MACRO",
+        seed_hemisphere="left",
+        species_taxon_id="9606",
+        source_atlas_names=["AAL3"],
+    )
+    base.update(overrides)
+    return LlmDiscoveryInput(**base)
+
+
+@pytest.fixture()
+def env(monkeypatch):
+    """A wired execution environment: fake DB + stub provider + fixed settings."""
+    db = _FakeDiscoveryDb()
+    session = _FakeSession(db)
+    provider = _StubProvider(response=_response())
+    config = type(
+        "Cfg",
+        (),
+        {"temperature": 0.2, "max_tokens": 2000, "timeout_seconds": 120, "default_model": "x"},
+    )()
+
+    async def fake_seed_input(_session, _entity_id):
+        return _seed_input()
+
+    monkeypatch.setattr(execution, "build_discovery_input", fake_seed_input)
+    monkeypatch.setattr(execution, "get_llm_provider", lambda name: provider)
+    monkeypatch.setattr(execution, "get_deepseek_runtime_config", lambda: config)
+
+    def run(coro):
+        return asyncio.run(coro)
+
+    return type(
+        "Env",
+        (),
+        {
+            "db": db,
+            "session": session,
+            "provider": provider,
+            "config": config,
+            "execute": lambda self=None: run(execution.execute_llm_discovery(session, entity_id=SEED_ENTITY)),
+        },
+    )()
+
+
+def _execute(env, entity_id: str = SEED_ENTITY):
+    return asyncio.run(execution.execute_llm_discovery(env.session, entity_id=entity_id))
+
+
+def _terminal(env) -> None:
+    """Every run this phase touched must be TERMINAL — never stuck RUNNING."""
+    for row in env.db.runs:
+        assert row["status"] in TERMINAL_DISCOVERY_RUN_STATUSES, row["status"]
+
+
+# ===========================================================================
+# §26 — success path
+# ===========================================================================
+def test_26_1_a_valid_response_completes_the_run_with_typed_candidates(env):
+    result = _execute(env)
+    assert result.run.status == "COMPLETED"
+    assert result.run.outcome == "CANDIDATES_FOUND"
+    assert result.run.discovery_type == "LLM_DISCOVERY"
+    assert [r.local_id for r in result.result.regions] == ["region_1"]
+
+
+def test_26_2_the_run_is_queued_then_running_before_the_provider_is_called(env):
+    calls: list[str] = []
+    original_create = lifecycle.create_discovery_run
+    original_start = lifecycle.start_discovery_run
+
+    async def spy_create(session, **kwargs):
+        item = await original_create(session, **kwargs)
+        calls.append(f"create:{item.status}")
+        return item
+
+    async def spy_start(session, run_id):
+        item = await original_start(session, run_id)
+        calls.append(f"start:{item.status}")
+        return item
+
+    execution.lifecycle.create_discovery_run = spy_create
+    execution.lifecycle.start_discovery_run = spy_start
+    try:
+        _execute(env)
+    finally:
+        execution.lifecycle.create_discovery_run = original_create
+        execution.lifecycle.start_discovery_run = original_start
+
+    assert calls == ["create:QUEUED", "start:RUNNING"]
+    assert len(env.provider.calls) == 1, "the provider is called exactly once"
+
+
+def test_26_3_the_provider_receives_the_frozen_phase_3a_prompt(env):
+    from app.prompts.llm_discovery_prompt import build_llm_discovery_prompt
+
+    _execute(env)
+    call = env.provider.calls[0]
+    expected = build_llm_discovery_prompt(_seed_input())
+    assert call["system_prompt"] == expected["system_prompt"]
+    assert call["user_prompt"] == expected["user_prompt"]
+
+
+def test_26_4_the_prompt_carries_the_seed_facts(env):
+    _execute(env)
+    user_prompt = " ".join(env.provider.calls[0]["user_prompt"].split())
+    assert SEED_ENTITY in user_prompt
+    assert "Left Thalamus" in user_prompt
+    assert "G1_MACRO" in user_prompt
+
+
+def test_26_5_no_response_schema_is_passed_to_the_provider(env):
+    """No provider-side enforcement is claimed (§20): the parser is the authority."""
+    _execute(env)
+    assert "response_schema" not in env.provider.calls[0]
+
+
+def test_26_6_the_provider_is_asked_for_the_policy_model(env):
+    _execute(env)
+    assert env.provider.calls[0]["model"] == effective_deepseek_model(None)
+
+
+def test_26_7_generation_settings_come_from_the_runtime_config(env):
+    _execute(env)
+    call = env.provider.calls[0]
+    assert call["temperature"] == env.config.temperature
+    assert call["max_tokens"] == env.config.max_tokens
+    assert call["timeout_seconds"] == env.config.timeout_seconds
+
+
+def test_26_8_validation_warnings_are_returned_not_swallowed(env):
+    """The stub declares NON_HUMAN scope, which the parser flags."""
+    result = _execute(env)
+    codes = {w.code for w in result.validation_warnings}
+    assert "CROSS_SPECIES_UNCERTAINTY" in codes
+    assert result.metrics.warning_count == len(result.validation_warnings)
+
+
+def test_26_9_only_the_four_candidate_arrays_decide_the_outcome(env):
+    """source_hints alone are NOT candidates (§12)."""
+    env.provider.response = _response(
+        raw_text=json.dumps(
+            _payload(
+                regions=[],
+                connections=[],
+                functions=[],
+                circuits=[],
+                source_hints=[{"title": "a remembered paper", "year": 1999}],
+            )
+        )
+    )
+    result = _execute(env)
+    assert result.run.outcome == "NO_CANDIDATES_FOUND"
+    assert result.result.source_hints, "the hint is still returned to the caller"
+
+
+def test_26_10_llm_discovery_never_reports_no_evidence_found(env):
+    env.provider.response = _response(
+        raw_text=json.dumps(
+            _payload(regions=[], connections=[], functions=[], circuits=[])
+        )
+    )
+    result = _execute(env)
+    assert result.run.outcome == "NO_CANDIDATES_FOUND"
+    assert result.run.outcome != "NO_EVIDENCE_FOUND"
+
+
+def test_26_11_metrics_report_provenance_without_content(env):
+    result = _execute(env)
+    metrics = result.metrics
+    assert metrics.provider == "deepseek"
+    assert metrics.effective_model == "deepseek-flash"
+    assert metrics.prompt_key == PROMPT_KEY
+    assert metrics.prompt_version == PROMPT_VERSION
+    assert metrics.latency_ms == 1234
+    assert metrics.total_tokens == 30
+    assert metrics.candidate_counts == {
+        "regions": 1,
+        "connections": 1,
+        "functions": 0,
+        "circuits": 0,
+        "source_hints": 0,
+    }
+    assert len(metrics.response_sha256) == 64
+    assert len(metrics.prompt_sha256) == 64
+
+
+def test_26_12_the_hashes_digest_what_was_actually_sent_and_received(env):
+    from app.prompts.llm_discovery_prompt import build_llm_discovery_prompt
+
+    result = _execute(env)
+    prompt = build_llm_discovery_prompt(_seed_input())
+    expected_prompt = hashlib.sha256(
+        (prompt["system_prompt"] + "\n" + prompt["user_prompt"]).encode("utf-8")
+    ).hexdigest()
+    expected_response = hashlib.sha256(env.provider.response.raw_text.encode("utf-8")).hexdigest()
+    assert result.metrics.prompt_sha256 == expected_prompt
+    assert result.metrics.response_sha256 == expected_response
+
+
+# ===========================================================================
+# §27 — failure paths (each one must also terminate the run)
+# ===========================================================================
+def test_27_1_a_provider_timeout_fails_the_run_with_the_timeout_code(env):
+    env.provider.raises = httpx.ReadTimeout("slow")
+    with pytest.raises(execution.LlmDiscoveryExecutionError) as exc:
+        _execute(env)
+    assert exc.value.code == execution.ERR_PROVIDER_TIMEOUT
+    assert env.db.runs[0]["error_code"] == execution.ERR_PROVIDER_TIMEOUT
+    _terminal(env)
+
+
+def test_27_2_a_generic_provider_exception_fails_the_run_as_a_provider_error(env):
+    env.provider.raises = RuntimeError("connection reset at https://api.deepseek.com/v1")
+    with pytest.raises(execution.LlmDiscoveryExecutionError) as exc:
+        _execute(env)
+    assert exc.value.code == execution.ERR_PROVIDER_ERROR
+    # the exception text never reaches the run: it can carry a URL or worse
+    assert "api.deepseek.com" not in env.db.runs[0]["error_message"]
+    _terminal(env)
+
+
+def test_27_3_an_unconfigured_provider_is_an_auth_error(env):
+    env.provider.raises = ProviderNotConfiguredError("DeepSeek API key is not configured")
+    with pytest.raises(execution.LlmDiscoveryExecutionError) as exc:
+        _execute(env)
+    assert exc.value.code == execution.ERR_PROVIDER_AUTH
+    _terminal(env)
+
+
+@pytest.mark.parametrize(
+    "status,expected",
+    [
+        (401, execution.ERR_PROVIDER_AUTH),
+        (403, execution.ERR_PROVIDER_AUTH),
+        (408, execution.ERR_PROVIDER_TIMEOUT),
+        (504, execution.ERR_PROVIDER_TIMEOUT),
+        (400, execution.ERR_PROVIDER_ERROR),
+        (500, execution.ERR_PROVIDER_ERROR),
+        (503, execution.ERR_PROVIDER_ERROR),
+    ],
+)
+def test_27_4_a_transport_failure_maps_by_structured_status_code(env, status, expected):
+    env.provider.response = _response(
+        raw_text="",
+        transport_ok=False,
+        error_message=f"DeepSeek returned HTTP {status}",
+        response_payload={"status_code": status},
+        usage=LlmProviderUsage(),
+    )
+    with pytest.raises(execution.LlmDiscoveryExecutionError) as exc:
+        _execute(env)
+    assert exc.value.code == expected
+    _terminal(env)
+
+
+def test_27_5_a_transport_timeout_without_a_status_code_is_still_a_timeout(env):
+    env.provider.response = _response(
+        raw_text="",
+        transport_ok=False,
+        error_message="DeepSeek request failed: timed out",
+        response_payload={},
+        usage=LlmProviderUsage(),
+    )
+    with pytest.raises(execution.LlmDiscoveryExecutionError) as exc:
+        _execute(env)
+    assert exc.value.code == execution.ERR_PROVIDER_TIMEOUT
+    _terminal(env)
+
+
+def test_27_6_no_content_is_an_empty_response_and_is_never_parsed(env):
+    env.provider.response = _response(raw_text="", parsed_json=None)
+    with pytest.raises(execution.LlmDiscoveryExecutionError) as exc:
+        _execute(env)
+    assert exc.value.code == execution.ERR_EMPTY_RESPONSE
+    _terminal(env)
+
+
+def test_27_7_a_salvaged_raw_body_is_treated_as_empty_not_as_an_answer(env):
+    """reasoning-only responses come back as a body dump; that is a failure."""
+    env.provider.response = _response(
+        raw_text='{"choices": [{"message": {"reasoning_content": "let me think..."}}]}',
+        response_payload={"model": "deepseek-flash", "fallback_raw_response_used": True},
+    )
+    with pytest.raises(execution.LlmDiscoveryExecutionError) as exc:
+        _execute(env)
+    assert exc.value.code == execution.ERR_EMPTY_RESPONSE
+    _terminal(env)
+
+
+def test_27_7b_a_truncated_answer_says_so_without_leaving_the_vocabulary(env):
+    env.provider.response = _response(
+        raw_text="",
+        finish_reason="length",
+        response_payload={"model": "deepseek-flash", "fallback_raw_response_used": True},
+    )
+    with pytest.raises(execution.LlmDiscoveryExecutionError) as exc:
+        _execute(env)
+    assert exc.value.code == execution.ERR_EMPTY_RESPONSE
+    assert "token budget" in exc.value.message
+    assert env.db.runs[0]["error_code"] == execution.ERR_EMPTY_RESPONSE
+    _terminal(env)
+
+
+@pytest.mark.parametrize(
+    "raw,label",
+    [
+        ("not json at all", "invalid json"),
+        (json.dumps(_payload(schema_version="2.0")), "wrong schema version"),
+        (json.dumps(_payload(seed_entity_id="NGIQ-BR-00000001")), "seed mismatch"),
+        (json.dumps(_payload(unexpected_field=True)), "undefined field"),
+        (
+            json.dumps(_payload(connections=[{"local_id": "c1", "source_ref": "SEED", "target_ref": "SEED", "confidence": 0.1, "species_context": {"scope": "UNKNOWN", "taxon_ids": []}}])),
+            "canonical-looking local id",
+        ),
+        (
+            json.dumps(_payload(connections=[{"local_id": "connection_1", "source_ref": "SEED", "target_ref": "region_404", "confidence": 0.1, "species_context": {"scope": "UNKNOWN", "taxon_ids": []}}])),
+            "dangling region reference",
+        ),
+        (
+            json.dumps(
+                _payload(
+                    connections=[
+                        {
+                            "local_id": "connection_1",
+                            "source_ref": "SEED",
+                            "target_ref": "SEED",
+                            "confidence": 0.1,
+                        }
+                    ]
+                )
+            ),
+            "missing species_context",
+        ),
+    ],
+)
+def test_27_8_an_unusable_response_fails_the_run_as_a_parse_failure(env, raw, label):
+    env.provider.response = _response(raw_text=raw)
+    with pytest.raises(execution.LlmDiscoveryExecutionError) as exc:
+        _execute(env)
+    assert exc.value.code == execution.ERR_PARSE_FAILED, label
+    assert env.db.runs[0]["error_code"] == execution.ERR_PARSE_FAILED
+    _terminal(env)
+
+
+def test_27_9_a_parse_failure_records_a_summary_not_the_response(env):
+    raw = json.dumps(_payload(summary="x" * 4000, unexpected_field="y" * 4000))
+    env.provider.response = _response(raw_text=raw)
+    with pytest.raises(execution.LlmDiscoveryExecutionError):
+        _execute(env)
+    message = env.db.runs[0]["error_message"]
+    assert len(message) <= execution._ERROR_MESSAGE_MAX
+    assert "x" * 100 not in message, "the response body must not be copied in"
+
+
+def test_27_10_a_model_that_ignores_the_policy_fails_the_run(env):
+    env.provider.response = _response(model="deepseek-v4-pro")
+    with pytest.raises(execution.LlmDiscoveryExecutionError) as exc:
+        _execute(env)
+    assert exc.value.code == execution.ERR_PROVIDER_ERROR
+    assert "deepseek-flash" in exc.value.message
+    _terminal(env)
+
+
+def test_27_11_no_failure_path_leaves_a_run_running(env):
+    """The whole §27 matrix, re-run as a single 'never stuck' sweep."""
+    scenarios = [
+        _response(raw_text="", transport_ok=False, response_payload={"status_code": 500}),
+        _response(raw_text=""),
+        _response(raw_text="{}"),
+        _response(model="deepseek-reasoner"),
+    ]
+    for scenario in scenarios:
+        db = _FakeDiscoveryDb()
+        session = _FakeSession(db)
+        env.db.runs = db.runs
+        env.session.db = db
+        env.session.statements = []
+        env.provider.response = scenario
+        env.provider.raises = None
+        try:
+            asyncio.run(execution.execute_llm_discovery(session, entity_id=SEED_ENTITY))
+            raise AssertionError("expected a failure")
+        except execution.LlmDiscoveryExecutionError:
+            pass
+        assert [r["status"] for r in db.runs] == ["FAILED"]
+
+
+def test_27_12_every_failed_run_records_both_an_error_code_and_a_message(env):
+    env.provider.raises = httpx.ConnectError("refused")
+    with pytest.raises(execution.LlmDiscoveryExecutionError):
+        _execute(env)
+    row = env.db.runs[0]
+    assert row["error_code"] and row["error_message"]
+    assert row["outcome"] is None, "a failure is not a scientific result"
+
+
+# ===========================================================================
+# §28 — provenance
+# ===========================================================================
+def test_28_1_the_execution_service_writes_the_provenance(env):
+    _execute(env)
+    row = env.db.runs[0]
+    assert row["provider"] == "deepseek"
+    assert row["model_name"] == effective_deepseek_model(None)
+    assert row["prompt_key"] == PROMPT_KEY
+    assert row["prompt_version"] == PROMPT_VERSION
+
+
+def test_28_2_the_model_name_is_not_a_literal_in_this_phase(env):
+    """§7: the value must come from the policy, never be re-typed here."""
+    strings = {
+        n.value
+        for n in ast.walk(ast.parse(EXEC_PATH.read_text(encoding="utf-8-sig")))
+        if isinstance(n, ast.Constant) and isinstance(n.value, str)
+    }
+    assert "deepseek-flash" not in strings
+    assert "effective_deepseek_model(" in EXEC_PATH.read_text(encoding="utf-8")
+
+
+def test_28_3_the_run_records_the_model_the_provider_reported(env):
+    _execute(env)
+    assert env.provider.response.model == env.db.runs[0]["model_name"]
+
+
+def test_28_4_no_raw_response_reaches_a_run_column(env):
+    _execute(env)
+    row = env.db.runs[0]
+    blob = json.dumps(row, default=str)
+    assert "Medial dorsal nucleus" not in blob, "candidate content leaked into the run"
+    assert "hypothesis sketch" not in blob, "the summary leaked into the run"
+    assert "reasoning" not in blob.lower()
+
+
+def test_28_5_the_client_cannot_supply_provenance_through_the_generic_api():
+    """§8: the public create endpoint still takes the route and nothing else."""
+    payload = {
+        "discovery_type": "LLM_DISCOVERY",
+        "provider": "kimi",
+        "model_name": "moonshot-v1-auto",
+        "prompt_key": "evil",
+        "prompt_version": "9.9.9",
+    }
+    client = TestClient(app)
+    response = client.post(f"{BASE}/brain-regions/{SEED_ENTITY}/discovery-runs", json=payload)
+    assert response.status_code == 422, "extra fields must be rejected before any DB work"
+
+
+# ===========================================================================
+# §29 — isolation
+# ===========================================================================
+def _exec_source() -> str:
+    return EXEC_PATH.read_text(encoding="utf-8")
+
+
+def test_29_1_the_execution_service_issues_no_sql_of_its_own(env):
+    source = _exec_source()
+    for forbidden in ("INSERT INTO", "UPDATE ", "DELETE FROM", "SELECT ", "FOR UPDATE"):
+        assert forbidden not in source, forbidden
+
+
+def test_29_2_the_only_table_the_execution_path_writes_is_the_run_table(env):
+    _execute(env)
+    writes = [
+        s for s in env.session.statements
+        if s.split(" ", 1)[0] in ("INSERT", "UPDATE", "DELETE")
+    ]
+    assert writes, "the lifecycle transitions must actually be executed"
+    for sql in writes:
+        assert "knowledge_discovery_runs" in sql, sql
+        for other in ("brain_regions", "kg_entities", "entity_aliases"):
+            assert other not in sql, sql
+
+
+def test_29_3_no_candidate_or_knowledge_table_is_ever_touched(env):
+    _execute(env)
+    forbidden = (
+        "candidate",
+        "mirror",
+        "final_",
+        "connections",
+        "circuits",
+        "functions",
+        "evidence",
+        "knowledge_assertions",
+    )
+    for sql in env.session.statements:
+        lowered = sql.lower()
+        for name in forbidden:
+            assert name not in lowered, f"{name} in {sql}"
+    assert env.db.other_writes == []
+
+
+def test_29_4_the_execution_layer_does_not_import_a_knowledge_writer():
+    tree = ast.parse(_exec_source())
+    imported: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom) and node.module:
+            imported.add(node.module)
+        elif isinstance(node, ast.Import):
+            imported.update(a.name for a in node.names)
+    for module in imported:
+        assert "mirror" not in module, module
+        assert "candidate" not in module, module
+        assert "final" not in module, module
+        assert "promotion" not in module, module
+
+
+def _identifiers(path: Path) -> set[str]:
+    """Every NAME and attribute the module actually uses (prose excluded)."""
+    tree = ast.parse(path.read_text(encoding="utf-8-sig"))
+    names = {n.id for n in ast.walk(tree) if isinstance(n, ast.Name)}
+    names |= {n.attr for n in ast.walk(tree) if isinstance(n, ast.Attribute)}
+    names |= {a.name for n in ast.walk(tree) if isinstance(n, ast.Import) for a in n.names}
+    names |= {
+        n.module or "" for n in ast.walk(tree) if isinstance(n, ast.ImportFrom)
+    }
+    return names
+
+
+def test_29_5_nothing_is_deferred_to_a_background_executor():
+    used = _identifiers(EXEC_PATH)
+    for forbidden in (
+        "BackgroundTasks",
+        "celery",
+        "Celery",
+        "redis",
+        "threading",
+        "multiprocessing",
+        "create_task",
+        "APScheduler",
+        "Task",
+    ):
+        assert forbidden not in used, forbidden
+
+
+def test_29_6_reasoning_content_is_never_fed_to_the_parser(env):
+    """A reasoning-only payload cannot become a candidate."""
+    env.provider.response = _response(
+        raw_text=json.dumps(
+            {
+                "choices": [
+                    {
+                        "message": {
+                            "content": "",
+                            "reasoning_content": json.dumps(_payload()),
+                        }
+                    }
+                ]
+            }
+        ),
+        response_payload={"fallback_raw_response_used": True},
+    )
+    with pytest.raises(execution.LlmDiscoveryExecutionError) as exc:
+        _execute(env)
+    assert exc.value.code == execution.ERR_EMPTY_RESPONSE
+    assert env.db.runs[0]["status"] == "FAILED"
+
+
+def test_29_7_no_secret_or_header_can_appear_in_the_result(env):
+    result = _execute(env)
+    blob = result.model_dump_json()
+    for forbidden in ("Authorization", "Bearer", "api_key", "sk-", "reasoning_content"):
+        assert forbidden not in blob, forbidden
+
+
+def test_29_8_the_seed_loader_reads_only_declared_gate7b_values():
+    """§5: no alias is invented, no parent guessed, no legacy table consulted."""
+    source = SEED_PATH.read_text(encoding="utf-8")
+    # The ONLY tables it may name are the Gate7B authority tables.
+    for legacy in (
+        "canonical_region_aliases",
+        "coarse_brain_region_aliases",
+        "candidate_",
+        "mirror_",
+        "final_",
+    ):
+        assert legacy not in source, legacy
+    for authority in ("brain_regions", "kg_entities", "entity_aliases"):
+        assert authority in source, authority
+    # No inference helper: nothing here resolves a parent or an alias by name.
+    used = _identifiers(SEED_PATH)
+    for forbidden in ("difflib", "SequenceMatcher", "fuzzy", "guess", "infer"):
+        assert forbidden not in used, forbidden
+
+
+# ===========================================================================
+# §5 — the seed loader itself
+# ===========================================================================
+class _FakeSeedSession:
+    """Answers the two deterministic seed queries, and nothing else."""
+
+    def __init__(self, *, parent_name: str | None, depth: int | None, aliases: list[str]):
+        self.parent_name = parent_name
+        self.depth = depth
+        self.aliases = aliases
+        self.statements: list[str] = []
+
+    async def execute(self, stmt: Any, params: dict[str, Any] | None = None) -> _FakeResult:
+        sql = " ".join(str(stmt).split())
+        self.statements.append(sql)
+        if sql.startswith("SELECT b.hierarchy_depth"):
+            return _FakeResult(
+                rows=[{"hierarchy_depth": self.depth, "parent_name_en": self.parent_name}]
+            )
+        if sql.startswith("SELECT a.alias_text"):
+            return _FakeResult(rows=list(self.aliases))
+        raise AssertionError(f"unexpected SQL: {sql}")  # pragma: no cover
+
+
+@pytest.fixture()
+def seed_env(monkeypatch):
+    from app.schemas.knowledge_production import BrainRegionSeedDetail
+
+    session = _FakeSeedSession(parent_name=None, depth=None, aliases=[])
+    detail = BrainRegionSeedDetail(
+        entity_pk=SEED_PK,
+        entity_id=SEED_ENTITY,
+        name_en="Left Thalamus",
+        name_zh="左侧丘脑",
+        granularity_level="G1_MACRO",
+        hemisphere="left",
+        species_taxon_id="9606",
+        atlas_names=["AAL3", "Brainnetome"],
+    )
+
+    async def fake_get_seed_region(_session, identifier):
+        return detail if identifier == SEED_ENTITY else None
+
+    monkeypatch.setattr(seed_svc, "get_seed_region", fake_get_seed_region)
+    return session
+
+
+def _load(seed_env, entity_id: str = SEED_ENTITY):
+    return asyncio.run(seed_svc.build_discovery_input(seed_env, entity_id))
+
+
+def test_5_1_a_declared_seed_maps_straight_through(seed_env):
+    seed_env.parent_name = "Right Thalamus"
+    seed_env.depth = 2
+    seed_env.aliases = ["Thalamus (left)", "TH-left"]
+    seed = _load(seed_env)
+    assert seed.seed_entity_id == SEED_ENTITY
+    assert seed.seed_name_en == "Left Thalamus"
+    assert seed.seed_name_zh == "左侧丘脑"
+    assert seed.seed_granularity_level == "G1_MACRO"
+    assert seed.seed_hemisphere == "left"
+    assert seed.species_taxon_id == "9606"
+    assert seed.source_atlas_names == ["AAL3", "Brainnetome"]
+    assert seed.parent_region_name == "Right Thalamus"
+    assert seed.known_aliases == ["Thalamus (left)", "TH-left"]
+
+
+def test_5_2_an_unknown_brain_region_loads_nothing(seed_env):
+    assert _load(seed_env, UNKNOWN_ENTITY) is None
+
+
+def test_5_3_an_absent_parent_stays_absent(seed_env):
+    seed = _load(seed_env)
+    assert seed.parent_region_name is None, "a missing parent must never be guessed"
+
+
+def test_5_4_an_absent_depth_is_not_rendered_as_zero(seed_env):
+    seed_env.parent_name = "Right Thalamus"
+    seed_env.depth = None
+    assert _load(seed_env).hierarchy_context == "granularity_level=G1_MACRO; hemisphere=left"
+
+
+def test_5_5_the_hierarchy_context_restates_only_declared_values(seed_env):
+    seed_env.depth = 3
+    assert (
+        _load(seed_env).hierarchy_context
+        == "granularity_level=G1_MACRO; hemisphere=left; hierarchy_depth=3"
+    )
+
+
+def test_5_6_no_aliases_yields_an_empty_list_not_a_substitute(seed_env):
+    assert _load(seed_env).known_aliases == []
+
+
+def test_5_7_alias_rows_are_deduplicated_against_the_declared_names(seed_env):
+    """The exclusion lives in SQL, so a name is never repeated as an 'alias'."""
+    _load(seed_env)
+    alias_sql = next(s for s in seed_env.statements if s.startswith("SELECT a.alias_text"))
+    assert "e.name_en" in alias_sql and "e.name_zh" in alias_sql
+    assert "ORDER BY a.is_preferred DESC, a.alias_pk" in alias_sql
+    assert "LIMIT :limit" in alias_sql
+
+
+def test_5_8_a_seed_with_no_name_is_rejected_before_anything_runs(monkeypatch):
+    from app.schemas.knowledge_production import BrainRegionSeedDetail
+
+    nameless = BrainRegionSeedDetail(entity_pk=1, entity_id="NGIQ-BR-00000009")
+    session = _FakeSeedSession(parent_name=None, depth=None, aliases=[])
+
+    async def fake_get_seed_region(_session, identifier):
+        return nameless
+
+    monkeypatch.setattr(seed_svc, "get_seed_region", fake_get_seed_region)
+    with pytest.raises(Exception) as exc:
+        _load(session, "NGIQ-BR-00000009")
+    assert "seed_name_en or seed_name_zh is required" in str(exc.value)
+
+
+# ===========================================================================
+# §30 — endpoint
+# ===========================================================================
+@pytest.fixture()
+def client(env, monkeypatch):
+    app.dependency_overrides[get_db] = lambda: env.session
+    yield TestClient(app)
+    app.dependency_overrides.clear()
+
+
+def test_30_1_execution_returns_200_with_run_result_and_warnings(client, env):
+    response = client.post(f"{BASE}/brain-regions/{SEED_ENTITY}/llm-discovery/execute")
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert set(body) == {"run", "result", "validation_warnings", "metrics"}
+    assert body["run"]["status"] == "COMPLETED"
+    assert body["run"]["outcome"] == "CANDIDATES_FOUND"
+    assert body["result"]["regions"][0]["local_id"] == "region_1"
+    assert body["metrics"]["effective_model"] == "deepseek-flash"
+
+
+def test_30_2_an_unknown_brain_region_is_404(client, env, monkeypatch):
+    async def missing(_session, _entity_id):
+        return None
+
+    monkeypatch.setattr(execution, "build_discovery_input", missing)
+    response = client.post(f"{BASE}/brain-regions/{UNKNOWN_ENTITY}/llm-discovery/execute")
+    assert response.status_code == 404
+    assert response.json()["detail"]["code"] == "NOT_FOUND"
+    assert env.db.runs == [], "no run may be created for a missing seed"
+
+
+def test_30_3_an_active_run_makes_execution_409(client, env):
+    env.db.seed_run(status="QUEUED")
+    response = client.post(f"{BASE}/brain-regions/{SEED_ENTITY}/llm-discovery/execute")
+    assert response.status_code == 409
+    detail = response.json()["detail"]
+    assert detail["code"] == "ACTIVE_RUN_EXISTS"
+    assert "active_run_id" in detail
+    assert len(env.db.runs) == 1, "the conflicting run is not duplicated"
+
+
+def test_30_4_a_parse_failure_is_502_and_names_the_failure(client, env):
+    env.provider.response = _response(raw_text="definitely not json")
+    response = client.post(f"{BASE}/brain-regions/{SEED_ENTITY}/llm-discovery/execute")
+    assert response.status_code == 502
+    detail = response.json()["detail"]
+    assert detail["code"] == execution.ERR_PARSE_FAILED
+    assert detail["run_id"] == env.db.runs[0]["run_id"]
+    assert "definitely not json" not in json.dumps(detail)
+
+
+def test_30_5_a_provider_failure_is_502_and_names_the_failure(client, env):
+    env.provider.raises = httpx.ReadTimeout("slow")
+    response = client.post(f"{BASE}/brain-regions/{SEED_ENTITY}/llm-discovery/execute")
+    assert response.status_code == 502
+    assert response.json()["detail"]["code"] == execution.ERR_PROVIDER_TIMEOUT
+
+
+def test_30_6_the_endpoint_takes_no_body(client, env):
+    response = client.post(f"{BASE}/brain-regions/{SEED_ENTITY}/llm-discovery/execute")
+    assert response.status_code == 200
+    assert len(env.provider.calls) == 1
+
+
+def test_30_7_a_client_supplied_body_cannot_change_the_execution(client, env):
+    """Extra fields are ignored by the signature, so they cannot steer anything."""
+    response = client.post(
+        f"{BASE}/brain-regions/{SEED_ENTITY}/llm-discovery/execute",
+        json={"provider": "kimi", "model_name": "moonshot-v1-auto"},
+    )
+    assert response.status_code == 200
+    assert env.db.runs[0]["provider"] == "deepseek"
+    assert env.provider.calls[0]["model"] == effective_deepseek_model(None)
+
+
+def test_30_8_the_endpoint_is_registered_once_on_its_own_path():
+    paths = [r.path for r in app.routes if "llm-discovery" in getattr(r, "path", "")]
+    assert paths == [f"{BASE}/brain-regions/{{entity_id}}/llm-discovery/execute"]

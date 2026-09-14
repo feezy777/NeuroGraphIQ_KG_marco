@@ -384,7 +384,14 @@ def test_new_modules_have_no_legacy_pipeline_dependency():
 
 
 def test_new_modules_do_not_import_discovery_execution():
-    """Phase 2A executes nothing: no LLM provider, no literature search client."""
+    """The READ path still executes nothing: no LLM provider, no literature client.
+
+    Phase 3B added an execution layer, and it did that WITHOUT moving execution
+    into the read path. The read service still only issues SELECTs and must not
+    even name a provider. The router is now allowed to route TO execution — so
+    its prose may describe DeepSeek — but its code must still reach no provider,
+    and its one execution dependency must be the execution service itself.
+    """
     forbidden = (
         "llm_provider",
         "deepseek",
@@ -396,14 +403,18 @@ def test_new_modules_do_not_import_discovery_execution():
         "semanticscholar",
         "paper_evidence",
     )
-    paths = [
-        SERVICE_PATH,
-        Path(__file__).resolve().parent.parent / "app" / "routers" / "knowledge_production.py",
-    ]
-    for path in paths:
-        src = path.read_text(encoding="utf-8").lower()
-        for term in forbidden:
-            assert term not in src, f"{path.name} must not reference {term!r}"
+    src = SERVICE_PATH.read_text(encoding="utf-8").lower()
+    for term in forbidden:
+        assert term not in src, f"{SERVICE_PATH.name} must not reference {term!r}"
+
+    router_path = (
+        Path(__file__).resolve().parent.parent / "app" / "routers" / "knowledge_production.py"
+    )
+    router_code = _code_only(router_path).lower()
+    for term in forbidden:
+        assert term not in router_code, f"router code must not reach {term!r}"
+    # The router delegates execution; it does not implement any.
+    assert "llm_discovery_execution_service" in router_code
 
 
 # ---------------------------------------------------------------------------

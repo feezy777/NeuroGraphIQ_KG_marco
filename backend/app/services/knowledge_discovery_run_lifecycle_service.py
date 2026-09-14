@@ -189,13 +189,25 @@ def _terminal_conflict(row: Mapping[str, Any], action: str) -> DiscoveryRunConfl
 # PUBLIC LIFECYCLE — create / start / complete / fail / cancel. Nothing else.
 # ---------------------------------------------------------------------------
 async def create_discovery_run(
-    session: AsyncSession, *, entity_id: str, discovery_type: str
+    session: AsyncSession,
+    *,
+    entity_id: str,
+    discovery_type: str,
+    provider: str | None = None,
+    model_name: str | None = None,
+    prompt_key: str | None = None,
+    prompt_version: str | None = None,
 ) -> DiscoveryRunItem:
     """Create a QUEUED run for one BrainRegion seed.
 
-    A run is created with NO execution provenance: provider / model / prompt /
-    query strategy / parameters / provenance / created_by stay empty until an
-    execution layer fills them. Only the route is client-supplied.
+    The PUBLIC API supplies only ``entity_id`` + ``discovery_type``: the HTTP
+    layer never forwards client-provided provider / model / prompt, so a
+    browser cannot fabricate execution provenance.
+
+    The provenance kwargs exist for the TRUSTED INTERNAL caller (the LLM
+    discovery execution service), which knows what it is about to run. They
+    default to None, which is exactly the public behaviour — a run created
+    without them keeps those columns empty.
 
     Raises DiscoveryRunNotFound (unknown BrainRegion) or DiscoveryRunConflict
     (an active run already exists for this seed + route).
@@ -209,11 +221,20 @@ async def create_discovery_run(
             await session.execute(
                 text(
                     "INSERT INTO knowledge_discovery_runs"
-                    " (seed_region_pk, discovery_type, status, outcome, started_at, finished_at)"
-                    " VALUES (:seed_region_pk, :discovery_type, 'QUEUED', NULL, NULL, NULL)"
+                    " (seed_region_pk, discovery_type, status, outcome, started_at,"
+                    "  finished_at, provider, model_name, prompt_key, prompt_version)"
+                    " VALUES (:seed_region_pk, :discovery_type, 'QUEUED', NULL, NULL, NULL,"
+                    "  :provider, :model_name, :prompt_key, :prompt_version)"
                     " RETURNING " + _RETURN_COLUMNS
                 ),
-                {"seed_region_pk": seed_region_pk, "discovery_type": discovery_type},
+                {
+                    "seed_region_pk": seed_region_pk,
+                    "discovery_type": discovery_type,
+                    "provider": provider,
+                    "model_name": model_name,
+                    "prompt_key": prompt_key,
+                    "prompt_version": prompt_version,
+                },
             )
         ).mappings().one()
     except IntegrityError:
