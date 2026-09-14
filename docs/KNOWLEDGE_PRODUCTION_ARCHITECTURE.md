@@ -835,6 +835,51 @@ LLM Discovery **不**要求模型提供引文、原文段落或偏移量 —— 
 （`response_format=json_object`），其 `response_schema` 形参**未被使用**。
 因此**解析器是权威**，不得假装存在 provider 侧强校验。
 
+### 15.7a Candidate Species Context（Phase 3A.1 冻结）
+
+`SpeciesContext` 描述**某个候选知识所依据的物种基础**，
+与 `RegionCandidate.species_taxon_id`（**命名结构自身**的物种身份）是**两个不同概念**：
+
+| 字段 | 含义 |
+|---|---|
+| `RegionCandidate.species_taxon_id` | 该**脑区实体**的物种身份 |
+| `Candidate.species_context` | 该**知识主张**的物种/研究语境 |
+
+一个脑区可以是人类结构，而联系它的证据来自啮齿类——两者必须能分别表达。
+`Connections` / `Functions` / `Circuits` **必须**显式给出 `species_context`
+（缺省即校验失败：模型必须**声明**其物种基础，哪怕声明为 `UNKNOWN`）。
+
+```
+scope:     HUMAN | NON_HUMAN | MIXED | UNKNOWN
+taxon_ids: [int]      # NCBI taxonomy：9606 人类 / 10090 小鼠 / 10116 大鼠
+```
+
+**默认值为 `UNKNOWN` + `[]`，绝不是 `HUMAN`。** 没有信息不等于人类适用。
+
+最简表示自洽校验（**不是**分类学判断，也**不**建 taxonomy 库）：
+
+- `HUMAN`：`taxon_ids` 非空时**必须**含 `9606`；
+- `NON_HUMAN`：`taxon_ids` **不得**只含 `9606`；
+- `MIXED` / `UNKNOWN`：不额外约束；`UNKNOWN` 允许 `[]`。
+
+**人类种子不蕴含人类知识**：脑区种子为人类，**不**意味着发现的连接/回路/功能
+都已在人类中确立。凡未明确声明 `HUMAN` 的候选（含 `UNKNOWN`）都会产生
+`CROSS_SPECIES_UNCERTAINTY` 结构 warning——让未声明的物种基础**可见**，
+而不是被当作人类。这些仍是**结构发现 warning**，不是正式知识验证。
+
+### 15.7b Unknown-field policy：拒绝，而非静默忽略
+
+结构模型的 `extra = "forbid"`：**未定义字段即校验错误**，解析器**失败**。
+
+理由不是某个具体字段危险，而是未定义字段是
+**prompt 漂移 / 模型漂移 / schema 漂移**最早的可检测信号；
+静默丢弃等于丢掉信号。因此模型返回 `quotation` / `evidence_text`
+之类的字段时，结果是**显式失败**，而不是「忽略后继续成功」。
+
+解析器**不得**：删除未知科学字段后继续成功、把 `quotation` 改写成
+`source_hint`、把 `evidence_text` 改写成 `note`、或猜测字段含义。
+格式修复规则不变（BOM / code fence / 空白 / 单一明确 JSON object 提取）。
+
 ### 15.8 Phase 3A 边界
 
 **零**迁移、**零**新表、**零**候选落库、**零**新端点、**零**前端改动、

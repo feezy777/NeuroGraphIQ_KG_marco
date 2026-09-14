@@ -24,7 +24,14 @@ from __future__ import annotations
 import re
 from typing import Literal
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+
+# Every structured model in this contract REJECTS unknown fields. This is not
+# about a particular stray field being dangerous: an unexpected field is the
+# earliest detectable signal of prompt drift, model drift or schema drift, and
+# a silently-ignored field is a signal lost. The parser therefore FAILS on an
+# undefined field rather than dropping it.
+_STRICT = ConfigDict(extra="forbid")
 
 # ===========================================================================
 # Frozen contract version
@@ -150,6 +157,8 @@ MIN_CIRCUIT_REGION_REFS = 2
 class _LocalIdMixin(BaseModel):
     """A candidate carrying an ephemeral, response-scoped local id."""
 
+    model_config = _STRICT
+
     local_id: str = Field(
         description="Ephemeral id, e.g. 'region_1'. Never a canonical NGIQ id."
     )
@@ -165,6 +174,65 @@ class _LocalIdMixin(BaseModel):
         return value
 
 
+# The species basis of a PIECE OF KNOWLEDGE, as opposed to the species of a
+# named structure. A human brain seed does not make every discovered
+# connection/circuit/function human-established: much of what a model recalls
+# may come from rodent work. Those two facts must be representable separately.
+SpeciesScope = Literal["HUMAN", "NON_HUMAN", "MIXED", "UNKNOWN"]
+
+SPECIES_SCOPES: tuple[str, ...] = ("HUMAN", "NON_HUMAN", "MIXED", "UNKNOWN")
+
+# NCBI Taxonomy: 9606 = Homo sapiens. The only taxon this contract treats
+# specially, and only for a representation sanity check — there is deliberately
+# no taxonomy database here.
+HUMAN_TAXON_ID = 9606
+
+
+class SpeciesContext(BaseModel):
+    """The species basis a knowledge candidate rests on.
+
+    Defaults are deliberately UNKNOWN and empty — NEVER HUMAN. Absence of
+    information is not evidence of human applicability, and silently promoting
+    animal findings to human facts is exactly what this type exists to prevent.
+    """
+
+    model_config = _STRICT
+
+    scope: SpeciesScope = "UNKNOWN"
+    taxon_ids: list[int] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _representation_sanity(self) -> "SpeciesContext":
+        """Minimal representation checks — not a taxonomy judgement.
+
+        Only contradictions between what the model DECLARED and what it LISTED
+        are rejected. Absence is always allowed: a model that does not know is
+        expected to say UNKNOWN with no taxa, not to guess.
+        """
+        taxa = set(self.taxon_ids)
+        if self.scope == "HUMAN" and taxa and HUMAN_TAXON_ID not in taxa:
+            raise ValueError(
+                "HUMAN scope requires taxon 9606 when taxon_ids is non-empty "
+                f"(got {sorted(taxa)})"
+            )
+        if self.scope == "NON_HUMAN" and taxa == {HUMAN_TAXON_ID}:
+            raise ValueError("NON_HUMAN scope cannot list only taxon 9606")
+        return self
+
+
+class _SpeciesContextMixin(BaseModel):
+    """A candidate carrying its own species basis.
+
+    Required, not defaulted: the model must STATE its species basis (even if
+    that statement is UNKNOWN), so an unstated basis is visible rather than
+    assumed.
+    """
+
+    model_config = _STRICT
+
+    species_context: SpeciesContext
+
+
 class _ConfidenceMixin(BaseModel):
     """Model self-assessed DISCOVERY confidence.
 
@@ -172,6 +240,8 @@ class _ConfidenceMixin(BaseModel):
     is NOT evidence quality, NOT canonicalization confidence and NOT validation
     confidence. Those are separate, later judgements made by other layers.
     """
+
+    model_config = _STRICT
 
     confidence: float = Field(
         ge=0.0,
@@ -227,12 +297,16 @@ class RegionCandidate(_LocalIdMixin, _ConfidenceMixin):
     name_en: str | None = None
     name_zh: str | None = None
     hemisphere: str | None = None
+    # The species IDENTITY of the named structure itself. Deliberately kept
+    # separate from SpeciesContext (the species basis of a knowledge claim):
+    # a region can be a human structure while the claim relating it is rodent
+    # work. Do not merge these two concepts.
     species_taxon_id: str | None = None
     relation_to_seed: RegionRelationToSeed = "UNKNOWN"
     rationale: str | None = None
 
 
-class ConnectionCandidate(_LocalIdMixin, _ConfidenceMixin):
+class ConnectionCandidate(_LocalIdMixin, _ConfidenceMixin, _SpeciesContextMixin):
     """A connection the model proposes between two regions.
 
     `source_ref` / `target_ref` are either `SEED` or a declared
@@ -246,7 +320,7 @@ class ConnectionCandidate(_LocalIdMixin, _ConfidenceMixin):
     rationale: str | None = None
 
 
-class FunctionCandidate(_LocalIdMixin, _ConfidenceMixin):
+class FunctionCandidate(_LocalIdMixin, _ConfidenceMixin, _SpeciesContextMixin):
     """A function the model proposes. NOT mapped to a formal Function term."""
 
     label: str
@@ -256,7 +330,7 @@ class FunctionCandidate(_LocalIdMixin, _ConfidenceMixin):
     rationale: str | None = None
 
 
-class CircuitCandidate(_LocalIdMixin, _ConfidenceMixin):
+class CircuitCandidate(_LocalIdMixin, _ConfidenceMixin, _SpeciesContextMixin):
     """The PRIMARY discovery object: an organized multi-region pathway.
 
     A circuit does NOT have to be a closed loop — `LOOP` is one topology hint
@@ -273,6 +347,8 @@ class CircuitCandidate(_LocalIdMixin, _ConfidenceMixin):
 
 
 class SourceHint(BaseModel):
+    model_config = _STRICT
+
     """A source the model *remembers*. UNVERIFIED — source_hint != Evidence.
 
     A model-produced PMID/DOI/title is a lead, never proof. It must not reach
@@ -291,6 +367,8 @@ class SourceHint(BaseModel):
 
 
 class DiscoveryWarning(BaseModel):
+    model_config = _STRICT
+
     """Informative only: a warning never creates formal knowledge."""
 
     code: DiscoveryWarningCode
@@ -299,6 +377,8 @@ class DiscoveryWarning(BaseModel):
 
 
 class LlmDiscoveryResponse(BaseModel):
+    model_config = _STRICT
+
     """Top-level model output contract.
 
     Raw discovery candidates — NOT canonical Gate7B entities.

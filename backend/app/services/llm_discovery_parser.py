@@ -24,6 +24,7 @@ A structurally invalid response FAILS. It is never patched into validity.
 from __future__ import annotations
 
 from app.schemas.llm_discovery import (
+    HUMAN_TAXON_ID,
     MIN_CIRCUIT_REGION_REFS,
     SEED_REF,
     DiscoveryWarning,
@@ -148,12 +149,33 @@ def validate_cross_references(
     # preserved explicitly and flagged — never silently treated as human fact.
     for region in response.regions:
         taxon = (region.species_taxon_id or "").strip()
-        if taxon and taxon != "9606":
+        if taxon and taxon != str(HUMAN_TAXON_ID):
             warnings.append(
                 _warn(
                     "CROSS_SPECIES_UNCERTAINTY",
                     f"region {region.local_id} carries non-human taxon {taxon}",
                     region.local_id,
+                )
+            )
+
+    # Candidate species BASIS: a human seed does not make a discovered claim
+    # human-established. Anything that does not positively declare HUMAN support
+    # is flagged — UNKNOWN included, because an unstated basis must stay visible
+    # instead of being read as human. These are structural discovery warnings,
+    # not knowledge validation.
+    candidates = (
+        *((c, "connection") for c in response.connections),
+        *((f, "function") for f in response.functions),
+        *((c, "circuit") for c in response.circuits),
+    )
+    for candidate, kind in candidates:
+        scope = candidate.species_context.scope
+        if scope != "HUMAN":
+            warnings.append(
+                _warn(
+                    "CROSS_SPECIES_UNCERTAINTY",
+                    f"{kind} {candidate.local_id} species scope is {scope}",
+                    candidate.local_id,
                 )
             )
 

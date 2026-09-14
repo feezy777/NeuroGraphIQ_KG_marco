@@ -16,9 +16,11 @@ from app.schemas.llm_discovery import (
     CIRCUIT_TOPOLOGY_HINTS,
     CONNECTION_DIRECTIONALITIES,
     CONNECTION_TYPES,
+    HUMAN_TAXON_ID,
     REGION_RELATIONS_TO_SEED,
     SCHEMA_VERSION,
     SEED_REF,
+    SPECIES_SCOPES,
     CircuitCandidate,
     ConnectionCandidate,
     FunctionCandidate,
@@ -26,6 +28,7 @@ from app.schemas.llm_discovery import (
     LlmDiscoveryResponse,
     RegionCandidate,
     SourceHint,
+    SpeciesContext,
 )
 
 # Frozen prompt identity. Bump PROMPT_VERSION whenever the instructions or the
@@ -65,6 +68,9 @@ def build_output_schema_description() -> dict[str, Any]:
         "FunctionCandidate": compact_output_schema(FunctionCandidate),
         "CircuitCandidate": compact_output_schema(CircuitCandidate),
         "SourceHint": compact_output_schema(SourceHint),
+        # Required by connection/function/circuit, so the model must be told
+        # its shape rather than left to guess.
+        "SpeciesContext": compact_output_schema(SpeciesContext),
     }
 
 
@@ -108,14 +114,29 @@ Rules you must obey:
    never evidence. Do not present them as proof. Do not provide quotations,
    page numbers or excerpts: you are not reading any document in this task.
 
-7. SPECIES. State knowledge from non-human species as such, explicitly. Never
-   present animal findings as if they were established human facts. Keep a
-   species qualifier on the candidate.
+7. SPECIES BASIS. Every connection, circuit and function MUST carry a
+   `species_context` with two parts: `scope` (exactly one of HUMAN, NON_HUMAN,
+   MIXED, UNKNOWN) and `taxon_ids` (NCBI taxonomy ids, e.g. 9606 human,
+   10090 mouse, 10116 rat).
+
+   A HUMAN BrainRegion seed does NOT imply that every discovered connection,
+   circuit or function is established in humans. Much of what you recall may
+   come from rodent or primate work, and saying so is correct, not a defect.
+
+   Use scope HUMAN only when the knowledge itself is human-established.
+   Use NON_HUMAN or MIXED when animal work is part of the basis.
+   Use UNKNOWN when the species basis is unclear. Never silently convert
+   animal knowledge into HUMAN, and never guess a taxon id.
 
 8. NO EVIDENCE CLAIMS. Do not claim that something is proven, and do not
    fabricate evidence, quotations or citations.
 
-9. OUTPUT JSON ONLY. Return exactly one JSON object and nothing else: no
+9. ONLY THE FIELDS IN THE SCHEMA. Return exactly the fields defined below and
+   nothing else. Do NOT add quotations, evidence passages, page numbers,
+   offsets, citation blocks, confidence explanations, or any other field of
+   your own invention. An undefined field is treated as an error, not ignored.
+
+10. OUTPUT JSON ONLY. Return exactly one JSON object and nothing else: no
    markdown, no code fences, no commentary before or after it.
 """
 
@@ -147,6 +168,13 @@ def build_user_prompt(seed: LlmDiscoveryInput) -> str:
             f"- directionality: {', '.join(CONNECTION_DIRECTIONALITIES)}",
             f"- relation_to_seed: {', '.join(REGION_RELATIONS_TO_SEED)}",
             f"- topology_hint: {', '.join(CIRCUIT_TOPOLOGY_HINTS)}",
+            f"- species_context.scope: {', '.join(SPECIES_SCOPES)}",
+            "",
+            "Every connection, circuit and function must state its species_context.",
+            f"Taxon ids use NCBI taxonomy ({HUMAN_TAXON_ID} = human, 10090 = mouse, "
+            "10116 = rat). A human seed does not prove that a candidate is "
+            "human-established: use UNKNOWN when the species basis is unclear "
+            "rather than assuming HUMAN.",
             "",
             f"Reference the seed with the reserved ref {SEED_REF!r}; reference any "
             "other region by the local_id you declared for it.",

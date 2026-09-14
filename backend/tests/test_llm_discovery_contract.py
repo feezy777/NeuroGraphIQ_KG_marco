@@ -24,12 +24,14 @@ from app.schemas.llm_discovery import (
     REGION_RELATIONS_TO_SEED,
     SCHEMA_VERSION,
     SEED_REF,
+    SPECIES_SCOPES,
     CircuitCandidate,
     ConnectionCandidate,
     FunctionCandidate,
     LlmDiscoveryInput,
     RegionCandidate,
     SourceHint,
+    SpeciesContext,
     is_local_candidate_id,
 )
 from app.services import llm_discovery_parser as parser
@@ -75,6 +77,11 @@ def parse_text(text: str, *, seed_id: str = SEED_ID) -> parser.LlmDiscoveryParse
     return parser.parse_llm_discovery_response(text, seed_entity_id=seed_id)
 
 
+def species(scope: str = "HUMAN", taxon_ids: list[int] | None = None) -> dict[str, Any]:
+    """A species_context block. Defaults to an explicit HUMAN declaration."""
+    return {"scope": scope, "taxon_ids": [9606] if taxon_ids is None else taxon_ids}
+
+
 def region(local_id: str = "region_1", **over: Any) -> dict[str, Any]:
     base = {"local_id": local_id, "name": "Medial dorsal nucleus", "confidence": 0.6}
     base.update(over)
@@ -89,6 +96,29 @@ def connection(local_id: str = "connection_1", **over: Any) -> dict[str, Any]:
         "connection_type": "PROJECTION",
         "directionality": "DIRECTED",
         "confidence": 0.5,
+        "species_context": species(),
+    }
+    base.update(over)
+    return base
+
+
+def function(local_id: str = "function_1", **over: Any) -> dict[str, Any]:
+    base = {
+        "local_id": local_id,
+        "label": "Thalamic gating",
+        "confidence": 0.4,
+        "species_context": species(),
+    }
+    base.update(over)
+    return base
+
+
+def circuit(local_id: str = "circuit_1", **over: Any) -> dict[str, Any]:
+    base = {
+        "local_id": local_id,
+        "name": "Thalamo-cortical pathway",
+        "confidence": 0.5,
+        "species_context": species(),
     }
     base.update(over)
     return base
@@ -145,6 +175,7 @@ def test_4_multi_region_circuit_with_multiple_connections():
                     "connection_refs": ["connection_1", "connection_2", "connection_3"],
                     "topology_hint": "FEEDFORWARD",
                     "confidence": 0.55,
+                    "species_context": species(),
                 }
             ],
         )
@@ -184,6 +215,7 @@ def test_5_reciprocal_pair():
                     "connection_refs": ["connection_1", "connection_2"],
                     "topology_hint": "RECIPROCAL",
                     "confidence": 0.4,
+                    "species_context": species(),
                 }
             ],
         )
@@ -204,6 +236,7 @@ def test_6_circuit_with_functions():
                     "related_region_refs": ["region_1", "region_2"],
                     "related_circuit_refs": ["circuit_1"],
                     "confidence": 0.35,
+                    "species_context": species(),
                 }
             ],
             circuits=[
@@ -215,6 +248,7 @@ def test_6_circuit_with_functions():
                     "function_refs": ["function_1"],
                     "topology_hint": "NETWORK",
                     "confidence": 0.45,
+                    "species_context": species(),
                 }
             ],
         )
@@ -329,6 +363,7 @@ def test_15_dangling_connection_ref_rejected():
                     "region_refs": ["region_1", "region_2"],
                     "connection_refs": ["connection_7"],
                     "confidence": 0.5,
+                    "species_context": species(),
                 }
             ],
         )
@@ -350,6 +385,7 @@ def test_16_dangling_function_ref_rejected():
                     "connection_refs": ["connection_1"],
                     "function_refs": ["function_9"],
                     "confidence": 0.5,
+                    "species_context": species(),
                 }
             ],
         )
@@ -411,6 +447,7 @@ def test_22_circuit_structure_rules():
                     "name": "One region is not a circuit",
                     "region_refs": ["region_1"],
                     "confidence": 0.5,
+                    "species_context": species(),
                 }
             ],
         )
@@ -427,6 +464,7 @@ def test_22_circuit_structure_rules():
                     "name": "Pathway without a declared connection",
                     "region_refs": [SEED_REF, "region_1", "region_2"],
                     "confidence": 0.5,
+                    "species_context": species(),
                 }
             ],
         )
@@ -479,6 +517,7 @@ def test_25_parser_invents_no_missing_scientific_fields():
                     "name": "No connections declared",
                     "region_refs": [SEED_REF, "region_1", "region_2"],
                     "confidence": 0.5,
+                    "species_context": species(),
                 }
             ],
         )
@@ -593,7 +632,7 @@ def test_prompt_states_every_frozen_semantic_rule():
         "confidence semantics": "[0.0, 1.0]",
         "unverified sources": "unverified",
         "no quotations": "do not provide quotations",
-        "species qualification": "non-human species",
+        "species qualification": "never silently convert animal knowledge into human",
         "no evidence claims": "do not fabricate evidence",
         "json only": "json only",
         "no markdown": "no markdown",
@@ -659,3 +698,252 @@ def test_summary_is_not_authority():
     assert result.ok, result.error
     assert result.data.regions == []
     assert result.data.circuits == []
+
+
+# ===========================================================================
+# Phase 3A.1 — Candidate species context
+# ===========================================================================
+def test_a1_human_species_context_is_valid():
+    result = parse(
+        payload(
+            regions=[region("region_1")],
+            connections=[connection("connection_1", species_context=species("HUMAN", [9606]))],
+        )
+    )
+    assert result.ok, result.error
+    ctx = result.data.connections[0].species_context
+    assert ctx.scope == "HUMAN" and ctx.taxon_ids == [9606]
+
+
+def test_a2_non_human_mouse_species_context_is_valid():
+    result = parse(
+        payload(
+            regions=[region("region_1")],
+            connections=[connection("connection_1", species_context=species("NON_HUMAN", [10090]))],
+        )
+    )
+    assert result.ok, result.error
+    assert result.data.connections[0].species_context.taxon_ids == [10090]
+
+
+def test_a3_mixed_species_context_is_valid():
+    result = parse(
+        payload(
+            regions=[region("region_1")],
+            circuits=[
+                circuit(
+                    region_refs=[SEED_REF, "region_1"],
+                    species_context=species("MIXED", [9606, 10090]),
+                )
+            ],
+        )
+    )
+    assert result.ok, result.error
+    assert result.data.circuits[0].species_context.scope == "MIXED"
+
+
+def test_a4_unknown_species_context_with_empty_taxa_is_valid():
+    result = parse(
+        payload(
+            regions=[region("region_1")],
+            functions=[function("function_1", species_context=species("UNKNOWN", []))],
+        )
+    )
+    assert result.ok, result.error
+    ctx = result.data.functions[0].species_context
+    assert ctx.scope == "UNKNOWN" and ctx.taxon_ids == []
+
+
+def test_a5_human_scope_with_only_non_human_taxon_is_rejected():
+    result = parse(
+        payload(
+            regions=[region("region_1")],
+            connections=[connection("connection_1", species_context=species("HUMAN", [10090]))],
+        )
+    )
+    assert not result.ok
+    assert parser.ERR_SCHEMA_INVALID in result.error
+    assert "9606" in result.error
+
+
+def test_a6_non_human_scope_with_only_human_taxon_is_rejected():
+    result = parse(
+        payload(
+            regions=[region("region_1")],
+            connections=[connection("connection_1", species_context=species("NON_HUMAN", [9606]))],
+        )
+    )
+    assert not result.ok
+    assert parser.ERR_SCHEMA_INVALID in result.error
+    assert "NON_HUMAN" in result.error
+
+
+def test_a6b_unknown_is_never_silently_promoted_to_human():
+    """The default is UNKNOWN, and it survives parsing as UNKNOWN."""
+    result = parse(
+        payload(
+            regions=[region("region_1")],
+            connections=[
+                connection("connection_1", species_context={"scope": "UNKNOWN", "taxon_ids": []})
+            ],
+        )
+    )
+    assert result.ok, result.error
+    assert result.data.connections[0].species_context.scope == "UNKNOWN"
+    # and a bare SpeciesContext() defaults to UNKNOWN, never HUMAN
+    assert SpeciesContext().scope == "UNKNOWN"
+    assert SpeciesContext().taxon_ids == []
+
+
+def test_a7_non_human_connection_warns_cross_species():
+    result = parse(
+        payload(
+            regions=[region("region_1")],
+            connections=[connection("connection_1", species_context=species("NON_HUMAN", [10090]))],
+        )
+    )
+    assert result.ok, result.error
+    warns = [w for w in result.validation_warnings if w.code == "CROSS_SPECIES_UNCERTAINTY"]
+    assert len(warns) == 1
+    assert warns[0].local_id == "connection_1"
+    assert "NON_HUMAN" in warns[0].message
+
+
+def test_a8_unknown_circuit_species_warns_cross_species():
+    result = parse(
+        payload(
+            regions=[region("region_1"), region("region_2")],
+            circuits=[
+                circuit(
+                    region_refs=[SEED_REF, "region_1", "region_2"],
+                    species_context=species("UNKNOWN", []),
+                )
+            ],
+        )
+    )
+    assert result.ok, result.error
+    warns = [w for w in result.validation_warnings if w.code == "CROSS_SPECIES_UNCERTAINTY"]
+    assert [w.local_id for w in warns] == ["circuit_1"]
+    assert "UNKNOWN" in warns[0].message
+
+
+def test_a8b_human_candidates_do_not_warn():
+    """A positive HUMAN declaration is the only case that stays quiet."""
+    result = parse(
+        payload(
+            regions=[region("region_1"), region("region_2")],
+            connections=[connection("connection_1")],
+            functions=[function("function_1")],
+            circuits=[
+                circuit(region_refs=[SEED_REF, "region_1"], connection_refs=["connection_1"])
+            ],
+        )
+    )
+    assert result.ok, result.error
+    assert [w for w in result.validation_warnings if w.code == "CROSS_SPECIES_UNCERTAINTY"] == []
+
+
+# ---------------------------------------------------------------------------
+# Phase 3A.1 — strict unknown-field policy
+# ---------------------------------------------------------------------------
+@pytest.mark.parametrize(
+    "field, value",
+    [("quotation", "the exact words"), ("evidence_text", "passage"), ("page", 12)],
+)
+def test_a11_quotation_like_candidate_fields_fail_explicitly(field, value):
+    """Not silently dropped: an undefined field is a schema error."""
+    body = region("region_1")
+    body[field] = value
+    result = parse(payload(regions=[body]))
+    assert not result.ok, f"{field} must not be silently ignored"
+    assert parser.ERR_SCHEMA_INVALID in result.error
+    assert field in result.error
+
+
+def test_a9_candidate_extra_field_is_rejected():
+    result = parse(payload(connections=[connection("connection_1", strength="strong")]))
+    assert not result.ok
+    assert parser.ERR_SCHEMA_INVALID in result.error
+    assert "strength" in result.error
+
+
+def test_a10_top_level_extra_field_is_rejected():
+    result = parse(payload(reasoning="a long chain of thought"))
+    assert not result.ok
+    assert parser.ERR_SCHEMA_INVALID in result.error
+    assert "reasoning" in result.error
+
+
+def test_a10b_extra_field_in_source_hint_and_warning_is_rejected():
+    assert not parse(payload(source_hints=[{"title": "t", "offset": 3}])).ok
+    assert not parse(
+        payload(warnings=[{"code": "OTHER", "message": "m", "severity": "high"}])
+    ).ok
+
+
+def test_a10c_extra_species_context_field_is_rejected():
+    result = parse(
+        payload(
+            regions=[region("region_1")],
+            connections=[
+                connection(
+                    "connection_1",
+                    species_context={
+                        "scope": "HUMAN",
+                        "taxon_ids": [9606],
+                        "strain": "C57BL/6",
+                    },
+                )
+            ],
+        )
+    )
+    assert not result.ok
+    assert "strain" in result.error
+
+
+def test_a15_a_valid_response_must_state_species_context_explicitly():
+    """Omitting it is an error — the model must state its basis, even as UNKNOWN."""
+    body = connection("connection_1")
+    del body["species_context"]
+    result = parse(payload(regions=[region("region_1")], connections=[body]))
+    assert not result.ok
+    assert "species_context" in result.error
+
+
+# ---------------------------------------------------------------------------
+# Phase 3A.1 — prompt synchronisation
+# ---------------------------------------------------------------------------
+def test_a12_prompt_explains_species_context():
+    system = " ".join(prompt_mod.SYSTEM_PROMPT.split())
+    assert "species_context" in system
+    for scope in SPECIES_SCOPES:
+        assert scope in system, scope
+    for taxon in ("9606", "10090"):
+        assert taxon in system
+
+
+def test_a13_prompt_states_that_a_human_seed_is_not_human_established_knowledge():
+    system = " ".join(prompt_mod.SYSTEM_PROMPT.split())
+    assert "seed does NOT imply that every discovered connection" in system
+    assert "Never silently convert animal knowledge into HUMAN" in system
+
+
+def test_a13b_prompt_requires_schema_only_fields():
+    system = " ".join(prompt_mod.SYSTEM_PROMPT.split())
+    assert "ONLY THE FIELDS IN THE SCHEMA" in system
+    assert "Do NOT add quotations" in system
+    assert "undefined field is treated as an error, not ignored" in system
+
+
+def test_a14_compact_schema_automatically_includes_species_context():
+    described = prompt_mod.build_output_schema_description()
+    for key in ("ConnectionCandidate", "FunctionCandidate", "CircuitCandidate"):
+        assert "species_context" in described[key], key
+    # the referenced type is described too, so the model can produce it
+    assert described["SpeciesContext"] == prompt_mod.compact_output_schema(SpeciesContext)
+    assert "scope" in described["SpeciesContext"]
+    assert "taxon_ids" in described["SpeciesContext"]
+    assert "SpeciesContext" in prompt_mod.build_user_prompt(seed())
+    user = prompt_mod.build_user_prompt(seed())
+    for scope in SPECIES_SCOPES:
+        assert scope in user, scope
