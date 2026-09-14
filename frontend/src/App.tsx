@@ -24,6 +24,7 @@ function EvidenceCenterRedirect() {
   return null
 }
 import { BackgroundTaskCenterPage } from './pages/BackgroundTaskCenter'
+import { KnowledgeProductionPage } from './pages/knowledge-production/KnowledgeProductionPage'
 import { GraphExplorerPage } from './pages/GraphExplorerPage'
 import './components/brain-3d/brain3d.css'
 import { TaskDetailModalProvider } from './components/TaskDetailModal'
@@ -36,6 +37,7 @@ const ROUTES: Record<string, ComponentType> = {
   '/files': FilesPage,
   '/import-batches': ImportBatchesPage,
   '/import-pipeline': ImportPipelinePage,
+  '/knowledge-production': KnowledgeProductionPage,
   '/data-center': DataCenterPage,
   '/evidence-center': EvidenceCenterRedirect,
   '/ontology-center': OntologyCenterPage,

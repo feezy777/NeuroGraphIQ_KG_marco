@@ -13,6 +13,7 @@ import {
   Search,
   Brain,
   BookOpen,
+  FlaskConical,
 } from 'lucide-react'
 import { useI18n } from '../i18n-context'
 import { useWorkbenchLog } from '../logging/useWorkbenchLog'
@@ -27,6 +28,7 @@ const NAV_ITEMS = [
   { path: '/files', labelKey: 'nav.files', icon: FileText },
   { path: '/import-batches', labelKey: 'nav.importBatches', icon: Package },
   { path: '/llm-extraction', labelKey: 'nav.llmExtraction', icon: Sparkles },
+  { path: '/knowledge-production', labelKey: 'nav.knowledgeProduction', icon: FlaskConical },
   { path: '/data-center', labelKey: 'nav.dataCenter', icon: Layers },
   { path: '/ontology-center', labelKey: 'nav.ontologyCenter', icon: BookOpen },
   { path: '/validation-center', labelKey: 'nav.validationCenter', icon: ShieldCheck },

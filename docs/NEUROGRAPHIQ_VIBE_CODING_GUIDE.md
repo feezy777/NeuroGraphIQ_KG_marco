@@ -6,6 +6,18 @@
 
 ---
 
+> ## ⚠️ 架构权威提示（2026-09，Phase 1 起）
+>
+> 新知识生产架构已冻结于 **[`docs/KNOWLEDGE_PRODUCTION_ARCHITECTURE.md`](./KNOWLEDGE_PRODUCTION_ARCHITECTURE.md)**。
+>
+> - 权威数据库 = **`neurographiq_human_brain_v1`（Gate7B 正式知识表）**，不再是 `NeuroGraphIQ_KG_V3`。
+> - Gen-1 的 `candidate_*` / `mirror_*` / `final_*` 生产架构**不再作为新系统必须保留的架构**；
+>   本指南中描述它们的章节属于**历史参考**，仅供理解既有代码。
+> - 粒度词表以新架构文档 §6 的 **G1_MACRO / G2_MESO_ANATOMICAL / G3_MESO_FINE / G4_MICROSTRUCTURAL_FINE** 为准。
+> - 两文档冲突时，以 `KNOWLEDGE_PRODUCTION_ARCHITECTURE.md` 为准。
+
+---
+
 ## 1. 项目定位
 
 ### 1.1 核心目标

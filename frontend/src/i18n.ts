@@ -73,6 +73,7 @@ export const messages: Record<Language, Record<string, string>> = {
     'nav.rawMacro96': 'Raw Macro96 行',
     'nav.candidates': '候选脑区',
     'nav.llmExtraction': 'LLM 提取',
+    'nav.knowledgeProduction': '知识生产',
     'nav.taskCenter': '任务中心',
     'nav.graphExplorer': '图谱探索',
     'nav.brain3D': '3D脑图',

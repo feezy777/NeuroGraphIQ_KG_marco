@@ -1,0 +1,51 @@
+/* Phase 1 Knowledge Production Workspace — page-scoped layout only.
+   Tables / pagination / states reuse existing global styles. */
+
+.kp-page { display: flex; flex-direction: column; gap: 12px; padding: 16px; height: 100%; box-sizing: border-box; }
+.kp-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 24px; flex-wrap: wrap; }
+.kp-title { margin: 0; font-size: 20px; font-weight: 600; }
+.kp-subtitle { margin: 4px 0 0; font-size: 12px; color: var(--text-secondary, #64748b); }
+
+/* Workflow steps */
+.kp-workflow-steps { display: flex; gap: 6px; list-style: none; margin: 0; padding: 0; }
+.kp-workflow-step {
+  display: flex; align-items: center; gap: 6px; padding: 4px 10px;
+  border: 1px solid var(--border-light, #e2e8f0); border-radius: 4px;
+  font-size: 12px; color: var(--text-secondary, #64748b);
+}
+.kp-workflow-step--active { border-color: var(--primary, #2563eb); color: var(--primary, #2563eb); font-weight: 600; }
+.kp-workflow-step-index {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 16px; height: 16px; border-radius: 50%;
+  background: var(--bg-subtle, #f1f5f9); font-size: 10px;
+}
+.kp-workflow-step--active .kp-workflow-step-index { background: var(--primary, #2563eb); color: #fff; }
+
+/* Discovery placeholders */
+.kp-discovery-actions {
+  display: flex; align-items: center; gap: 8px; padding: 8px 10px;
+  border: 1px dashed var(--border-light, #e2e8f0); border-radius: 6px;
+}
+.kp-discovery-state { margin-left: auto; font-size: 12px; color: var(--text-secondary, #64748b); }
+
+/* Body: seed list + workspace */
+.kp-body { display: grid; grid-template-columns: minmax(420px, 1fr) minmax(420px, 1.2fr); gap: 16px; align-items: start; min-height: 0; }
+.kp-seed-pane, .kp-workspace { border: 1px solid var(--border-light, #e2e8f0); border-radius: 6px; padding: 10px; min-width: 0; }
+.kp-filter-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-bottom: 10px; }
+.kp-granularity-group { display: flex; gap: 4px; }
+.kp-input { padding: 4px 8px; font-size: 12px; border: 1px solid var(--border-light, #e2e8f0); border-radius: 4px; min-width: 110px; }
+.kp-row-selected { background: var(--bg-selected, #eff6ff); }
+
+/* Workspace tabs */
+.kp-tabs { display: flex; flex-wrap: wrap; gap: 4px; border-bottom: 1px solid var(--border-light, #e2e8f0); padding-bottom: 6px; margin-bottom: 10px; }
+.kp-tab {
+  padding: 4px 10px; font-size: 12px; border: 1px solid transparent; border-radius: 4px;
+  background: transparent; cursor: pointer; color: var(--text-secondary, #64748b);
+}
+.kp-tab.active { border-color: var(--primary, #2563eb); background: var(--primary, #2563eb); color: #fff; font-weight: 600; }
+
+/* Overview field grid */
+.kp-overview { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 8px; }
+.kp-field { display: flex; flex-direction: column; gap: 2px; padding: 6px 8px; border: 1px solid var(--border-light, #e2e8f0); border-radius: 4px; }
+.kp-field-label { font-size: 11px; color: var(--text-secondary, #64748b); }
+.kp-field-value { font-size: 13px; word-break: break-word; }

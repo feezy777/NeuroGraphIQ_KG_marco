@@ -33,6 +33,7 @@ from app.routers import (
     final_db_query,
     human_review,
     import_batches,
+    knowledge_production,
     llm_extraction,
     llm_field_completion,
     llm_circuit_connection_extraction,
@@ -398,6 +399,9 @@ app.include_router(
     prefix="/api/validation/circuit",
     tags=["Circuit Validation"],
 )
+# Phase 1 Knowledge Production (read-only BrainRegion seed access, Gate7B authority).
+# The router already declares its own /api/knowledge-production prefix.
+app.include_router(knowledge_production.router)
 app.include_router(
     enhancement.router,
     prefix="/api/validation/circuit",
