@@ -164,48 +164,67 @@ async def log_startup_version() -> None:
     log.info(
         "[startup] registered llm_field_completion router prefix=/api/llm-extraction/field-completion"
     )
-    # Recover interrupted paper-evidence batch tasks (service restart resilience).
+    # Legacy Gen-1 paper-evidence recovery is SCHEMA-GATED.
+    #
+    # The authoritative Gate7B database has no Gen-1 paper_evidence_* tables
+    # (that subsystem lives in the retired workbench databases), so running the
+    # recovery here would raise UndefinedTable and log a traceback per missing
+    # table. Check availability first: an expected architectural absence is
+    # skipped once, with one explicit reason and no stack trace. Where the
+    # legacy schema genuinely exists, recovery still runs verbatim below.
+    from app.database import AsyncSessionLocal
+    from app.services import legacy_paper_evidence_compat as legacy_compat
+
+    availability: legacy_compat.LegacyRecoveryAvailability | None = None
+    if AsyncSessionLocal is not None:
+        async with AsyncSessionLocal() as session:
+            availability = await legacy_compat.legacy_paper_evidence_recovery_available(session)
+
+    if availability is None or not availability.available:
+        log.info(
+            "[startup] legacy paper evidence recovery skipped: %s",
+            availability.describe() if availability else "no database session",
+        )
+        return
+
+    # --- legacy schema present: existing recovery, unchanged ----------------
     try:
-        from app.database import AsyncSessionLocal
         from app.services import paper_evidence_service as pes
 
-        if AsyncSessionLocal is not None:
-            async with AsyncSessionLocal() as session:
-                recovered = await pes.recover_interrupted_batch_tasks(session)
-                task_ids = list(
-                    (
-                        await session.execute(
-                            text(
-                                "SELECT id::text FROM paper_evidence_tasks "
-                                "WHERE status IN ('pending','paused') AND finished_at IS NULL "
-                                "AND id IN (SELECT DISTINCT task_id FROM paper_evidence_task_items WHERE status='pending')"
-                            )
+        async with AsyncSessionLocal() as session:
+            recovered = await pes.recover_interrupted_batch_tasks(session)
+            task_ids = list(
+                (
+                    await session.execute(
+                        text(
+                            "SELECT id::text FROM paper_evidence_tasks "
+                            "WHERE status IN ('pending','paused') AND finished_at IS NULL "
+                            "AND id IN (SELECT DISTINCT task_id FROM paper_evidence_task_items WHERE status='pending')"
                         )
-                    ).scalars().all()
-                )
-            for task_id in task_ids:
-                asyncio.get_event_loop().create_task(pes.execute_paper_evidence_batch_background(task_id))
-            if recovered or task_ids:
-                log.info("[startup] paper-evidence batch recovery: reset=%s resumed_tasks=%s", recovered, len(task_ids))
+                    )
+                ).scalars().all()
+            )
+        for task_id in task_ids:
+            asyncio.get_event_loop().create_task(pes.execute_paper_evidence_batch_background(task_id))
+        if recovered or task_ids:
+            log.info("[startup] paper-evidence batch recovery: reset=%s resumed_tasks=%s", recovered, len(task_ids))
     except Exception:  # noqa: BLE001
         log.exception("[startup] paper-evidence batch recovery failed (non-fatal)")
 
     try:
-        from app.database import AsyncSessionLocal
         from app.services import paper_evidence_extraction_run_service as extraction_run_svc
 
-        if AsyncSessionLocal is not None:
-            async with AsyncSessionLocal() as session:
-                resume_ids = await extraction_run_svc.recover_interrupted_runs(session)
-            for run_id in resume_ids:
-                asyncio.get_event_loop().create_task(
-                    extraction_run_svc.execute_run_background(run_id)
-                )
-            if resume_ids:
-                log.info(
-                    "[startup] paper-evidence extraction-run recovery: resumed=%s",
-                    len(resume_ids),
-                )
+        async with AsyncSessionLocal() as session:
+            resume_ids = await extraction_run_svc.recover_interrupted_runs(session)
+        for run_id in resume_ids:
+            asyncio.get_event_loop().create_task(
+                extraction_run_svc.execute_run_background(run_id)
+            )
+        if resume_ids:
+            log.info(
+                "[startup] paper-evidence extraction-run recovery: resumed=%s",
+                len(resume_ids),
+            )
     except Exception:  # noqa: BLE001
         log.exception("[startup] paper-evidence extraction-run recovery failed (non-fatal)")
 
