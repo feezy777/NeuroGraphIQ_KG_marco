@@ -10,7 +10,10 @@ drift away from what the parser actually accepts.
 from __future__ import annotations
 
 import json
-from typing import Any
+import types as _types
+from typing import Any, Literal, Union, get_args, get_origin
+
+from pydantic import BaseModel
 
 from app.schemas.llm_discovery import (
     CIRCUIT_TOPOLOGY_HINTS,
@@ -23,6 +26,7 @@ from app.schemas.llm_discovery import (
     SPECIES_SCOPES,
     CircuitCandidate,
     ConnectionCandidate,
+    DiscoveryWarning,
     FunctionCandidate,
     LlmDiscoveryInput,
     LlmDiscoveryResponse,
@@ -34,44 +38,109 @@ from app.schemas.llm_discovery import (
 # Frozen prompt identity. Bump PROMPT_VERSION whenever the instructions or the
 # expected output shape change: the version is persisted on the Discovery Run
 # so a stored result can always be traced back to the contract that produced it.
+#
+#   1.0.0 — Phase 3A. The schema description was embedded AS a JSON object with
+#           a `top_level` wrapper, which a real model returned as its answer.
+#   1.1.0 — Phase 3B.2. The response root is stated explicitly and the schema
+#           description is split into a root skeleton plus a plain-text field
+#           reference. Two different prompt TEXTS must never share a version,
+#           or a stored run's provenance stops identifying what produced it.
+#
+# The contract's own `schema_version` (1.0) is a SEPARATE thing: the science did
+# not change, only how it is described to the model.
 PROMPT_KEY = "knowledge_production.llm_discovery"
-PROMPT_VERSION = "1.0.0"
+PROMPT_VERSION = "1.1.0"
 
-_JSON_TYPES = {
-    str: "string",
-    int: "integer",
-    float: "number",
-    bool: "boolean",
-}
+_SCALARS = {str: "string", int: "integer", float: "number", bool: "boolean"}
 
 
-def _field_type(annotation: Any) -> str:
-    """Compact, human-readable type label for one annotated field."""
-    text = str(annotation)
-    text = text.replace("typing.", "").replace("<class '", "").replace("'>", "")
-    text = text.replace("NoneType", "null")
-    return text
+def _json_type_label(annotation: Any) -> str:
+    """Render a Python annotation as a JSON-facing type label.
+
+    Python reprs leak module paths (`list[app.schemas...RegionCandidate]`) that a
+    model can neither act on nor cheaply tokenise. These labels say the same
+    thing in the language the model actually has to emit.
+    """
+    if annotation is type(None):
+        return "null"
+    origin = get_origin(annotation)
+    if origin in (Union, _types.UnionType):
+        parts = [_json_type_label(a) for a in get_args(annotation)]
+        return "|".join(p for p in parts if p != "null") + ("|null" if "null" in parts else "")
+    if origin is Literal:
+        return "enum(" + "|".join(str(a) for a in get_args(annotation)) + ")"
+    if origin is list:
+        args = get_args(annotation)
+        return "array<" + (_json_type_label(args[0]) if args else "any") + ">"
+    if isinstance(annotation, type):
+        if annotation in _SCALARS:
+            return _SCALARS[annotation]
+        if issubclass(annotation, BaseModel):
+            return annotation.__name__
+    return str(annotation).replace("typing.", "")
 
 
-def compact_output_schema(model: type) -> dict[str, str]:
-    """Field -> type map derived from a Pydantic model (single source of truth)."""
-    return {name: _field_type(f.annotation) for name, f in model.model_fields.items()}
-
-
-def build_output_schema_description() -> dict[str, Any]:
-    """The machine-readable shape of the expected JSON object."""
+def compact_output_schema(model: type[BaseModel]) -> dict[str, str]:
+    """Field -> JSON type label, derived from a Pydantic model (single authority)."""
     return {
-        "schema_version": SCHEMA_VERSION,
-        "top_level": compact_output_schema(LlmDiscoveryResponse),
-        "RegionCandidate": compact_output_schema(RegionCandidate),
-        "ConnectionCandidate": compact_output_schema(ConnectionCandidate),
-        "FunctionCandidate": compact_output_schema(FunctionCandidate),
-        "CircuitCandidate": compact_output_schema(CircuitCandidate),
-        "SourceHint": compact_output_schema(SourceHint),
-        # Required by connection/function/circuit, so the model must be told
-        # its shape rather than left to guess.
-        "SpeciesContext": compact_output_schema(SpeciesContext),
+        name: _json_type_label(field.annotation)
+        for name, field in model.model_fields.items()
     }
+
+
+#: The ONE object the model must return. Every key comes from the typed
+#: contract, so a new top-level field appears here automatically.
+def build_response_root_skeleton() -> dict[str, Any]:
+    """Literal shape of the response root: the contract's own top-level fields."""
+    skeleton: dict[str, Any] = {}
+    for name, field in LlmDiscoveryResponse.model_fields.items():
+        default = field.default
+        if isinstance(default, (str, int, float, bool)):
+            # A declared constant (schema_version) is shown as its real value.
+            skeleton[name] = default
+        elif get_origin(field.annotation) is list:
+            skeleton[name] = []
+        else:
+            skeleton[name] = f"<{name}>"
+    return skeleton
+
+
+#: Model -> how the model is reached from the response root. Ordered so the
+#: arrays are described before the shared sub-object they depend on.
+_FIELD_DEFINITION_MODELS: tuple[tuple[type[BaseModel], str], ...] = (
+    (RegionCandidate, 'items of "regions"'),
+    (ConnectionCandidate, 'items of "connections"'),
+    (FunctionCandidate, 'items of "functions"'),
+    (CircuitCandidate, 'items of "circuits"'),
+    (SourceHint, 'items of "source_hints"'),
+    (
+        SpeciesContext,
+        'the "species_context" object of every connection, function and circuit',
+    ),
+    (DiscoveryWarning, 'items of "warnings"'),
+)
+
+
+def build_field_definitions() -> str:
+    """Plain-text field reference, rendered from the typed contract.
+
+    Deliberately NOT a JSON object: a JSON envelope here is indistinguishable
+    from an example answer, and the model will return it as one.
+    """
+    blocks: list[str] = []
+    for model, used_by in _FIELD_DEFINITION_MODELS:
+        lines = [f"{model.__name__}  ({used_by})"]
+        for name, field in model.model_fields.items():
+            label = _json_type_label(field.annotation)
+            default = field.default
+            suffix = (
+                f"  default={default}"
+                if not field.is_required() and isinstance(default, (str, int, float))
+                else ""
+            )
+            lines.append(f"  {name}: {label}{suffix}")
+        blocks.append("\n".join(lines))
+    return "\n\n".join(blocks)
 
 
 SYSTEM_PROMPT = """\
@@ -138,6 +207,16 @@ Rules you must obey:
 
 10. OUTPUT JSON ONLY. Return exactly one JSON object and nothing else: no
    markdown, no code fences, no commentary before or after it.
+
+11. RESPONSE ROOT. The answer is ONE JSON object whose first-level keys are
+   exactly: schema_version, seed_entity_id, summary, regions, connections,
+   functions, circuits, source_hints, warnings.
+
+   The root is an OBJECT. Never return a JSON array at the root.
+   There is no "top_level" key and no envelope around the answer: do not wrap
+   the candidates in an outer object, and do not return a schema description,
+   a field reference, or JSON Schema metadata instead of the answer. A field
+   reference describes the ITEMS INSIDE the arrays; it is not the response.
 """
 
 
@@ -163,13 +242,6 @@ def build_user_prompt(seed: LlmDiscoveryInput) -> str:
             json.dumps(seed_block, ensure_ascii=False, indent=2),
             "```",
             "",
-            "Vocabulary (use these exact values):",
-            f"- connection_type: {', '.join(CONNECTION_TYPES)}",
-            f"- directionality: {', '.join(CONNECTION_DIRECTIONALITIES)}",
-            f"- relation_to_seed: {', '.join(REGION_RELATIONS_TO_SEED)}",
-            f"- topology_hint: {', '.join(CIRCUIT_TOPOLOGY_HINTS)}",
-            f"- species_context.scope: {', '.join(SPECIES_SCOPES)}",
-            "",
             "Every connection, circuit and function must state its species_context.",
             f"Taxon ids use NCBI taxonomy ({HUMAN_TAXON_ID} = human, 10090 = mouse, "
             "10116 = rat). A human seed does not prove that a candidate is "
@@ -182,11 +254,31 @@ def build_user_prompt(seed: LlmDiscoveryInput) -> str:
             "connection reference for it; if you cannot, still return the circuit "
             "and say so in a warning.",
             "",
-            f"Output exactly one JSON object with schema_version {SCHEMA_VERSION!r}:",
+            "=" * 68,
+            "A. EXPECTED RESPONSE ROOT — the ONLY acceptable output",
+            "=" * 68,
+            "",
+            "Return exactly ONE JSON object. It is the WHOLE answer.",
             "",
             "```json",
-            json.dumps(build_output_schema_description(), ensure_ascii=False, indent=2),
+            json.dumps(build_response_root_skeleton(), ensure_ascii=False, indent=2),
             "```",
+            "",
+            "- The root MUST be an object. NEVER return a JSON array at the root.",
+            "- The first-level keys MUST be exactly those above, and nothing else.",
+            '- There is NO "top_level" key and NO wrapper or envelope.',
+            "- Do NOT output a schema, a schema description, or JSON Schema "
+            "keywords ($schema, properties, type, required, $defs).",
+            "- Do NOT copy section B back. Section B is a reference, not the answer.",
+            "",
+            "=" * 68,
+            "B. FIELD DEFINITIONS — the shape of the ITEMS inside those arrays",
+            "=" * 68,
+            "",
+            "These describe the objects that go INSIDE the arrays of section A. "
+            "They are not the response and must not be returned on their own.",
+            "",
+            build_field_definitions(),
         ]
     )
 

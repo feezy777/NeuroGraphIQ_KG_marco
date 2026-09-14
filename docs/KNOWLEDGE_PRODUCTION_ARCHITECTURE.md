@@ -827,7 +827,10 @@ LLM Discovery **不**要求模型提供引文、原文段落或偏移量 —— 
 | | |
 |---|---|
 | key | `knowledge_production.llm_discovery` |
-| version | `1.0.0` |
+| version | `1.1.0`（Phase 3B.2 root-shape hardened；`1.0.0` 代表旧的 `top_level` 版本文本） |
+
+**Prompt version ≠ schema version**：`prompt_version` 标识**描述方式**，
+`schema_version = 1.0` 标识**科学契约**。Phase 3B.2 只改了前者。
 
 输出 schema 描述**由类型契约派生**（`compact_output_schema`），不手工维护第二份。
 
@@ -928,7 +931,9 @@ run **失败**——策略被绕过必须暴露，不能被当成正常记录。
 `prompt_key` / `prompt_version`（默认 `None`，即公开行为），
 **只有执行服务**会写入它们。
 
-`prompt_key = knowledge_production.llm_discovery`，`prompt_version = 1.0.0`。
+`prompt_key = knowledge_production.llm_discovery`，`prompt_version = 1.1.0`。
+版本号只有**一个**权威：`app/prompts/llm_discovery_prompt.py` 的
+`PROMPT_VERSION`；任何调用点都不得复制字面量。
 
 ### 16.4 结果映射（outcome）
 
@@ -1030,3 +1035,53 @@ Provider **不**做 clamp；业务层**不**传字面量。旧值 2000/2048/4096
 > **注意**：上述数值属于 **runtime configuration**，不是知识语义。
 > **不得**把 `max_tokens` / `8192` 写入科学 ontology、结构化契约或
 > `schema_version`。
+
+### 16.10 Response Root Shape（Phase 3B.2）
+
+真实 smoke 暴露过一类**结构性歧义**：Phase 3B 之前，prompt 把 schema 说明
+序列化成**一个 JSON object** 交给模型：
+
+```json
+{ "schema_version": "1.0", "top_level": {...}, "RegionCandidate": {...}, ... }
+```
+
+它看起来**就是一个答案**。模型于是把它当作输出形状，返回了含 `top_level`
+的对象；另一次直接返回顶层 JSON **数组**。
+
+现在 prompt 必须把两件事**物理分开**：
+
+```
+A. EXPECTED RESPONSE ROOT   ← 唯一的输出形状（root skeleton）
+B. FIELD DEFINITIONS        ← 只描述 A 中各数组里的 ITEM，纯文本，不是 JSON
+```
+
+约束：
+
+* root 必须是**一个 JSON object**，**不得**是顶层数组；
+* root 一级键**恰好**是契约的九个 top-level 字段，无包装、无 `top_level`、
+  无 JSON Schema 元数据；
+* **A 与 B 不得放在同一个 JSON object 里**；
+* root skeleton 由 `LlmDiscoveryResponse.model_fields` **渲染**得出，
+  field definitions 由 typed model **渲染**得出——不得手写第二套科学 schema
+  （有测试锁定：skeleton 键集合 == 契约 top-level 字段集合）。
+
+`schema_version` / 契约语义本阶段 **零改动**。
+
+**已知限制**：真实模型在 `max_tokens = 8192` 下仍然
+`finish_reason = "length"`、`completion_tokens = 8192`，且最新一次
+`content` 为空（预算全部消耗在推理阶段、未产出任何答案字符）。
+即：**单次调用完成「Regions + Connections + Functions + Circuits +
+SourceHints」对当前 deepseek-flash 推理行为而言负担过重。**
+
+因此下一步方向是 **Phase 3C — Multi-pass LLM Discovery**（本阶段**不**实现）：
+
+```
+Pass 1  Circuit hypotheses
+Pass 2  Participating regions / connections
+Pass 3  Functions
+Pass 4  Local candidate graph consolidation
+```
+
+项目策略是 quality-first，因此允许一次 BrainRegion 对应**多次** deepseek-flash
+调用，换取更稳定的结构、更完整的候选、更低的单次 JSON 复杂度与更容易的错误隔离。
+成本不作为阻止该设计的主要因素。

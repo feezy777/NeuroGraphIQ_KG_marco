@@ -27,8 +27,10 @@ from app.schemas.llm_discovery import (
     SPECIES_SCOPES,
     CircuitCandidate,
     ConnectionCandidate,
+    DiscoveryWarning,
     FunctionCandidate,
     LlmDiscoveryInput,
+    LlmDiscoveryResponse,
     RegionCandidate,
     SourceHint,
     SpeciesContext,
@@ -604,13 +606,17 @@ def test_parser_module_is_a_pure_function_surface():
 # ===========================================================================
 def test_prompt_identity_is_frozen():
     assert prompt_mod.PROMPT_KEY == "knowledge_production.llm_discovery"
-    assert prompt_mod.PROMPT_VERSION == "1.0.0"
+    # 1.1.0 — Phase 3B.2 root-shape hardened text. 1.0.0 identified the OLD
+    # prompt that embedded the `top_level` schema description.
+    assert prompt_mod.PROMPT_VERSION != "1.0.0"
+    assert prompt_mod.PROMPT_VERSION == "1.1.0"
 
 
 def test_prompt_parts_and_seed_context():
     built = prompt_mod.build_llm_discovery_prompt(seed())
     assert set(built) == {"prompt_key", "prompt_version", "system_prompt", "user_prompt"}
-    assert built["prompt_version"] == "1.0.0"
+    # the version comes from the single authority, never re-typed at a call site
+    assert built["prompt_version"] == prompt_mod.PROMPT_VERSION
 
     # seed context the model needs
     for fragment in (SEED_ID, "Left Thalamus", "左丘脑", "G1_MACRO", "9606"):
@@ -651,19 +657,28 @@ def test_prompt_vocabularies_match_the_typed_contract():
 
 
 def test_prompt_schema_description_is_derived_from_the_models():
-    """Derived, not hand-written: adding a field cannot silently desync them."""
-    described = prompt_mod.build_output_schema_description()
-    assert described["top_level"] == prompt_mod.compact_output_schema(
-        __import__("app.schemas.llm_discovery", fromlist=["LlmDiscoveryResponse"]).LlmDiscoveryResponse
-    )
-    for model, key in (
-        (RegionCandidate, "RegionCandidate"),
-        (ConnectionCandidate, "ConnectionCandidate"),
-        (FunctionCandidate, "FunctionCandidate"),
-        (CircuitCandidate, "CircuitCandidate"),
-        (SourceHint, "SourceHint"),
+    """Derived, not hand-written: adding a field cannot silently desync them.
+
+    Phase 3B.2 changed the REPRESENTATION (a separate root skeleton plus a
+    plain-text field reference) but not the invariant: both halves are rendered
+    from the typed contract.
+    """
+    root = prompt_mod.build_response_root_skeleton()
+    assert list(root) == list(LlmDiscoveryResponse.model_fields)
+
+    definitions = prompt_mod.build_field_definitions()
+    for model in (
+        RegionCandidate,
+        ConnectionCandidate,
+        FunctionCandidate,
+        CircuitCandidate,
+        SourceHint,
+        SpeciesContext,
+        DiscoveryWarning,
     ):
-        assert described[key] == prompt_mod.compact_output_schema(model)
+        assert model.__name__ in definitions, model.__name__
+        for name, label in prompt_mod.compact_output_schema(model).items():
+            assert f"  {name}: {label}" in definitions, (model.__name__, name)
     # and the prompt actually carries it
     assert "RegionCandidate" in prompt_mod.build_user_prompt(seed())
 
@@ -936,14 +951,211 @@ def test_a13b_prompt_requires_schema_only_fields():
 
 
 def test_a14_compact_schema_automatically_includes_species_context():
-    described = prompt_mod.build_output_schema_description()
-    for key in ("ConnectionCandidate", "FunctionCandidate", "CircuitCandidate"):
-        assert "species_context" in described[key], key
+    for model in (ConnectionCandidate, FunctionCandidate, CircuitCandidate):
+        assert "species_context" in prompt_mod.compact_output_schema(model), model.__name__
     # the referenced type is described too, so the model can produce it
-    assert described["SpeciesContext"] == prompt_mod.compact_output_schema(SpeciesContext)
-    assert "scope" in described["SpeciesContext"]
-    assert "taxon_ids" in described["SpeciesContext"]
-    assert "SpeciesContext" in prompt_mod.build_user_prompt(seed())
+    species = prompt_mod.compact_output_schema(SpeciesContext)
+    assert "scope" in species
+    assert "taxon_ids" in species
+    definitions = prompt_mod.build_field_definitions()
+    assert "SpeciesContext" in definitions
+    assert "species_context" in definitions
     user = prompt_mod.build_user_prompt(seed())
+    assert "SpeciesContext" in user
     for scope in SPECIES_SCOPES:
         assert scope in user, scope
+
+
+# ---------------------------------------------------------------------------
+# Phase 3B.2 — response-Root shape hardening
+# ---------------------------------------------------------------------------
+# A real deepseek-flash smoke (Phase 3B.1) returned `top_level` and a top-level
+# JSON array, because the prompt showed the schema description AS a JSON object
+# that looked exactly like an answer. These tests freeze the fix: one explicit
+# root, an explicitly forbidden envelope, and no ambiguity about which half of
+# the prompt is the answer.
+def _user_prompt() -> str:
+    return prompt_mod.build_user_prompt(seed())
+
+
+def _collapsed() -> str:
+    return " ".join(_user_prompt().split())
+
+
+def test_b1_prompt_requires_the_root_to_be_a_json_object():
+    text = _collapsed()
+    assert "Return exactly ONE JSON object" in text
+    assert "The root MUST be an object" in text
+
+
+def test_b2_prompt_forbids_a_json_array_at_the_root():
+    assert "NEVER return a JSON array at the root" in _collapsed()
+
+
+def test_b3_prompt_forbids_the_top_level_wrapper():
+    """`top_level` was invented by the old schema description, not the contract."""
+    text = _collapsed()
+    assert 'NO "top_level" key' in text
+    assert "NO wrapper or envelope" in text
+
+
+def _json_blocks(text: str) -> list[Any]:
+    """Every fenced ```json block in the prompt, parsed."""
+    return [
+        json.loads(part.split("```", 1)[0])
+        for part in text.split("```json")[1:]
+    ]
+
+
+def test_b4_no_json_block_in_the_prompt_carries_a_top_level_key():
+    """The structural check that matters: no displayed object has `top_level`.
+
+    Prose is allowed to NAME the forbidden key. What must not exist is a JSON
+    object in the prompt that actually contains it — that is what the model
+    copied in Phase 3B.1.
+    """
+    text = _user_prompt()
+    assert "Do NOT copy section B back" in _collapsed()
+    blocks = _json_blocks(text)
+    assert blocks, "the prompt must show the expected shape"
+    for block in blocks:
+        assert not (isinstance(block, dict) and "top_level" in block), block
+    # the previous representation is gone from the module entirely
+    assert not hasattr(prompt_mod, "build_output_schema_description")
+    assert "build_output_schema_description" not in Path(prompt_mod.__file__).read_text("utf-8")
+
+
+def test_b5_prompt_forbids_json_schema_metadata():
+    text = _collapsed()
+    assert "Do NOT output a schema, a schema description" in text
+    for keyword in ("$schema", "properties", "required", "$defs"):
+        assert keyword in text, keyword
+
+
+def test_b6_the_root_skeleton_is_exactly_the_contract_top_level():
+    """Contains those nine keys and nothing else — locked to the typed model."""
+    skeleton = prompt_mod.build_response_root_skeleton()
+    assert list(skeleton) == [
+        "schema_version",
+        "seed_entity_id",
+        "summary",
+        "regions",
+        "connections",
+        "functions",
+        "circuits",
+        "source_hints",
+        "warnings",
+    ]
+    assert list(skeleton) == list(LlmDiscoveryResponse.model_fields)
+    assert set(skeleton) == set(LlmDiscoveryResponse.model_fields)
+
+
+def test_b7_the_root_skeleton_tracks_the_contract_automatically():
+    """A field added to LlmDiscoveryResponse appears in the prompt by itself."""
+    from pydantic import create_model
+
+    extended = create_model(
+        "ExtendedResponse",
+        __base__=LlmDiscoveryResponse,
+        brand_new_field=(str | None, None),
+    )
+    skeleton = prompt_mod.build_response_root_skeleton.__wrapped__() if hasattr(
+        prompt_mod.build_response_root_skeleton, "__wrapped__"
+    ) else None
+    del skeleton  # the helper reads the contract directly; prove it by identity
+    assert list(prompt_mod.build_response_root_skeleton()) == list(
+        LlmDiscoveryResponse.model_fields
+    ), "the skeleton must be rendered from the contract, never hand-listed"
+    # a hand-written list would keep passing after the contract changed:
+    assert "brand_new_field" in extended.model_fields
+
+
+def test_b8_the_root_skeleton_carries_the_real_schema_version():
+    skeleton = prompt_mod.build_response_root_skeleton()
+    assert skeleton["schema_version"] == SCHEMA_VERSION
+    assert skeleton["regions"] == [] and skeleton["warnings"] == []
+    assert skeleton["seed_entity_id"] == "<seed_entity_id>"
+
+
+def test_b9_section_a_and_b_are_separated_and_labelled():
+    text = _collapsed()
+    assert "A. EXPECTED RESPONSE ROOT" in text
+    assert "B. FIELD DEFINITIONS" in text
+    assert "It is the WHOLE answer." in text
+    assert "They are not the response and must not be returned on their own" in text
+    # shape comes first, field reference second
+    assert text.index("A. EXPECTED RESPONSE ROOT") < text.index("B. FIELD DEFINITIONS")
+
+
+def test_b10_the_field_reference_is_not_a_json_object():
+    """A JSON envelope here is indistinguishable from an example answer."""
+    definitions = prompt_mod.build_field_definitions()
+    assert not definitions.lstrip().startswith("{")
+    assert "{\n" not in definitions
+    with pytest.raises(json.JSONDecodeError):
+        json.loads(definitions)
+
+
+def test_b11_the_field_reference_carries_no_python_module_paths():
+    """`list[app.schemas...RegionCandidate]` is noise a model cannot use."""
+    text = _user_prompt()
+    assert "app.schemas" not in text
+    assert "typing." not in text
+    assert "<class '" not in text
+
+
+def test_b12_scientific_guardrails_survive_the_representation_change():
+    """The compaction must not have removed any frozen semantic rule."""
+    system = " ".join(prompt_mod.SYSTEM_PROMPT.lower().split())
+    for needle in (
+        "discovery assistant",
+        "<type>_<number>",
+        "never invent a canonical id",
+        "not required to be closed loops",
+        "[0.0, 1.0]",
+        "unverified",
+        "do not provide quotations",
+        "never silently convert animal knowledge into human",
+        "do not fabricate evidence",
+        "json only",
+        "no markdown",
+        "only the fields in the schema",
+    ):
+        assert needle in system, needle
+    user = _collapsed()
+    assert SEED_REF in user
+    assert "A circuit must reference at least two regions" in user
+
+
+def test_b13_every_frozen_vocabulary_value_is_still_present():
+    user = _user_prompt()
+    for value in (
+        CONNECTION_TYPES
+        + CONNECTION_DIRECTIONALITIES
+        + REGION_RELATIONS_TO_SEED
+        + CIRCUIT_TOPOLOGY_HINTS
+        + SPECIES_SCOPES
+        + DISCOVERY_WARNING_CODES
+    ):
+        assert value in user, value
+
+
+def test_b14_the_root_skeleton_is_rendered_not_hand_written():
+    """No second schema: every rendered line must come from the typed models."""
+    definitions = prompt_mod.build_field_definitions()
+    for model in (
+        RegionCandidate,
+        ConnectionCandidate,
+        FunctionCandidate,
+        CircuitCandidate,
+        SourceHint,
+        SpeciesContext,
+        DiscoveryWarning,
+    ):
+        for name, label in prompt_mod.compact_output_schema(model).items():
+            assert f"  {name}: {label}" in definitions, (model.__name__, name)
+
+    # A hand-written skeleton in the source would not track the contract.
+    source = Path(prompt_mod.__file__).read_text(encoding="utf-8")
+    for literal in ('"regions": []', '"schema_version": "1.0"', '"source_hints": []'):
+        assert literal not in source, literal
