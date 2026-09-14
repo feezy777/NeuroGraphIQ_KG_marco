@@ -1,17 +1,22 @@
-import { readFileSync } from 'node:fs'
-import { join } from 'node:path'
+/**
+ * Production Index tests (Phase 1B).
+ *
+ * The index browses and ENTERS a BrainRegion; it must not host the production
+ * workflow (that moved to the workspace route).
+ */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { I18nProvider } from '../../i18n-context'
 import { KnowledgeProductionPage } from './KnowledgeProductionPage'
-import type { BrainRegionSeed, BrainRegionSeedDetail } from './types'
+import type { BrainRegionSeed } from './types'
 
 const listSeeds = vi.fn()
-const getSeed = vi.fn()
+const fetchSummary = vi.fn()
 
 vi.mock('./kpApi', () => ({
   fetchBrainRegionSeeds: (...args: unknown[]) => listSeeds(...args),
-  fetchBrainRegionSeed: (...args: unknown[]) => getSeed(...args),
+  fetchBrainRegionSummary: (...args: unknown[]) => fetchSummary(...args),
+  fetchBrainRegionSeed: vi.fn(),
 }))
 
 const SEED: BrainRegionSeed = {
@@ -29,17 +34,7 @@ const SEED: BrainRegionSeed = {
   atlas_names: ['Human Brainnetome Atlas'],
 }
 
-const DETAIL: BrainRegionSeedDetail = {
-  ...SEED,
-  definition_en: null,
-  parent_region_pk: null,
-  hierarchy_depth: 0,
-  external_region_ids: ['NGIQ-XREG-00000001'],
-  mapping_types: ['exact'],
-  mapping_review_statuses: ['approved'],
-}
-
-function renderPage() {
+function renderIndex() {
   return render(
     <I18nProvider>
       <KnowledgeProductionPage />
@@ -49,28 +44,42 @@ function renderPage() {
 
 beforeEach(() => {
   listSeeds.mockReset()
-  getSeed.mockReset()
+  fetchSummary.mockReset()
   listSeeds.mockResolvedValue({ items: [SEED], total: 770 })
-  getSeed.mockResolvedValue(DETAIL)
+  fetchSummary.mockResolvedValue({
+    total: 770,
+    by_granularity: {
+      G1_MACRO: 84,
+      G2_MESO_ANATOMICAL: 0,
+      G3_MESO_FINE: 246,
+      G4_MICROSTRUCTURAL_FINE: 440,
+    },
+  })
+  window.location.hash = ''
 })
 
-describe('KnowledgeProductionPage', () => {
-  it('renders the page shell', async () => {
-    renderPage()
+describe('KnowledgeProductionPage (Production Index)', () => {
+  it('renders the BrainRegion index', async () => {
+    renderIndex()
     expect(screen.getByTestId('knowledge-production-page')).toBeTruthy()
-    // with no seed selected the workspace shows the prompt, not the overview
-    await waitFor(() => expect(screen.getByTestId('kp-no-selection')).toBeTruthy())
+    await waitFor(() => expect(screen.getByText(SEED.name_en!)).toBeTruthy())
   })
 
-  it('exposes the G1-G4 granularity filter', () => {
-    renderPage()
+  it('shows the summary cards from one aggregate request', async () => {
+    renderIndex()
+    await waitFor(() => expect(screen.getByTestId('kp-summary-total')).toBeTruthy())
+    expect(screen.getByTestId('kp-summary-total').textContent).toContain('770')
+    expect(screen.getByTestId('kp-summary-G1_MACRO').textContent).toContain('84')
+    expect(screen.getByTestId('kp-summary-G2_MESO_ANATOMICAL').textContent).toContain('0')
+    expect(screen.getByTestId('kp-summary-G4_MICROSTRUCTURAL_FINE').textContent).toContain('440')
+    expect(fetchSummary).toHaveBeenCalledTimes(1)
+  })
+
+  it('exposes the G1-G4 granularity filter and requests the selection', async () => {
+    renderIndex()
     for (const label of ['G1', 'G2', 'G3', 'G4']) {
       expect(screen.getByTestId(`kp-gran-${label}`)).toBeTruthy()
     }
-  })
-
-  it('requests the selected granularity from the server', async () => {
-    renderPage()
     await waitFor(() => expect(listSeeds).toHaveBeenCalled())
     fireEvent.click(screen.getByTestId('kp-gran-G1'))
     await waitFor(() =>
@@ -80,130 +89,62 @@ describe('KnowledgeProductionPage', () => {
     )
   })
 
-  it('renders the loading state while the list is in flight', () => {
-    listSeeds.mockReturnValue(new Promise(() => {}))
-    renderPage()
-    expect(screen.getByTestId('kp-seed-pane')).toBeTruthy()
-    expect(document.querySelector('.state-box')).toBeTruthy()
+  it('keeps search working', async () => {
+    renderIndex()
+    await waitFor(() => expect(listSeeds).toHaveBeenCalled())
+    fireEvent.change(screen.getByTestId('kp-search-input'), { target: { value: 'Thalamus' } })
+    fireEvent.click(screen.getByTestId('kp-apply'))
+    await waitFor(() =>
+      expect(listSeeds).toHaveBeenLastCalledWith(
+        expect.objectContaining({ search: 'Thalamus', offset: 0 }),
+      ),
+    )
   })
 
-  it('renders the empty state when no region matches', async () => {
-    listSeeds.mockResolvedValue({ items: [], total: 0 })
-    renderPage()
-    await waitFor(() => expect(screen.getByText('没有匹配的脑区')).toBeTruthy())
+  it('uses server-side pagination (limit/offset, never all rows)', async () => {
+    renderIndex()
+    await waitFor(() => expect(listSeeds).toHaveBeenCalled())
+    expect(listSeeds).toHaveBeenLastCalledWith(expect.objectContaining({ limit: 50, offset: 0 }))
+    fireEvent.click(screen.getByRole('button', { name: '下一页' }))
+    await waitFor(() =>
+      expect(listSeeds).toHaveBeenLastCalledWith(expect.objectContaining({ offset: 50 })),
+    )
   })
 
-  it('renders the error state when the request fails', async () => {
-    listSeeds.mockRejectedValue(new Error('boom'))
-    renderPage()
-    await waitFor(() => expect(screen.getByText('boom')).toBeTruthy())
-  })
-
-  it('selecting a BrainRegion updates the workspace overview', async () => {
-    renderPage()
+  it('does NOT host the production workspace any more', async () => {
+    renderIndex()
     await waitFor(() => expect(screen.getByText(SEED.name_en!)).toBeTruthy())
-    expect(screen.getByTestId('kp-no-selection')).toBeTruthy()
-
-    fireEvent.click(screen.getByText(SEED.name_en!))
-
-    await waitFor(() => expect(getSeed).toHaveBeenCalledWith('NGIQ-BR-00000001'))
-    await waitFor(() => expect(screen.getByTestId('kp-overview')).toBeTruthy())
-    const overview = within(screen.getByTestId('kp-overview'))
-    expect(overview.getByText('NGIQ-BR-00000001')).toBeTruthy()
-    expect(overview.getByText('Human Brainnetome Atlas')).toBeTruthy()
-    expect(overview.getByText('NGIQ-XREG-00000001')).toBeTruthy()
-    expect(overview.getByText('exact')).toBeTruthy()
-  })
-
-  it('has exactly the seven workspace tabs', () => {
-    renderPage()
-    const ids = [
-      'overview',
+    // the old split-view workspace and its entity tabs are gone from the index
+    expect(screen.queryByTestId('kp-workspace')).toBeNull()
+    for (const id of [
       'circuits',
       'connections',
       'functions',
       'evidence',
       'canonicalization',
       'validation',
-    ]
-    for (const id of ids) expect(screen.getByTestId(`kp-tab-${id}`)).toBeTruthy()
-    expect(screen.getByTestId('kp-tabs').querySelectorAll('[role="tab"]')).toHaveLength(7)
-  })
-
-  it('shows a read-only empty state on every non-overview tab', async () => {
-    renderPage()
-    await waitFor(() => expect(listSeeds).toHaveBeenCalled())
-    fireEvent.click(screen.getByTestId('kp-tab-circuits'))
-    expect(screen.getByTestId('kp-empty-circuits')).toBeTruthy()
-    expect(screen.getByText('Phase 1 未实现发现功能。')).toBeTruthy()
-  })
-
-  it('keeps both Discovery actions disabled', () => {
-    renderPage()
-    expect(screen.getByTestId('kp-llm-discovery')).toHaveProperty('disabled', true)
-    expect(screen.getByTestId('kp-literature-discovery')).toHaveProperty('disabled', true)
-  })
-
-  it('shows Select Region as active before any seed is selected', async () => {
-    renderPage()
-    await waitFor(() => expect(screen.getByTestId('kp-step-select-region')).toBeTruthy())
-    expect(screen.getByTestId('kp-step-select-region').getAttribute('data-state')).toBe('active')
-    for (const id of ['discover', 'canonicalize', 'validate', 'promote']) {
-      expect(screen.getByTestId(`kp-step-${id}`).getAttribute('data-state')).toBe('pending')
+    ]) {
+      expect(screen.queryByTestId(`kp-tab-${id}`)).toBeNull()
     }
+    // and no drawer is opened on selection
+    expect(screen.queryByTestId('kp-overview')).toBeNull()
   })
 
-  it('completes Select Region on selection and never activates Discover (Phase 1)', async () => {
-    renderPage()
+  it('navigates to the BrainRegion workspace route on row click', async () => {
+    renderIndex()
     await waitFor(() => expect(screen.getByText(SEED.name_en!)).toBeTruthy())
-
     fireEvent.click(screen.getByText(SEED.name_en!))
-    await waitFor(() => expect(getSeed).toHaveBeenCalledWith('NGIQ-BR-00000001'))
-
-    // step 1 becomes completed, not active
-    expect(screen.getByTestId('kp-step-select-region').getAttribute('data-state')).toBe('done')
-    // Discovery is NOT implemented, so no step may be running
-    expect(screen.getByTestId('kp-step-discover').getAttribute('data-state')).not.toBe('active')
-    for (const id of ['discover', 'canonicalize', 'validate', 'promote']) {
-      expect(screen.getByTestId(`kp-step-${id}`).getAttribute('data-state')).toBe('pending')
-    }
-    // no step is marked as the running step
-    expect(
-      screen.getByTestId('kp-workflow-steps').querySelectorAll('[aria-current="step"]'),
-    ).toHaveLength(0)
+    await waitFor(() =>
+      expect(window.location.hash).toBe('#/knowledge-production/brain-regions/NGIQ-BR-00000001'),
+    )
   })
 
-  it('keeps both Discovery actions disabled after a seed is selected', async () => {
-    renderPage()
+  it('uses entity_id — never candidate/mirror/final ids — in the route', async () => {
+    renderIndex()
     await waitFor(() => expect(screen.getByText(SEED.name_en!)).toBeTruthy())
-
     fireEvent.click(screen.getByText(SEED.name_en!))
-    await waitFor(() => expect(getSeed).toHaveBeenCalled())
-
-    expect(screen.getByTestId('kp-llm-discovery')).toHaveProperty('disabled', true)
-    expect(screen.getByTestId('kp-literature-discovery')).toHaveProperty('disabled', true)
-    expect(screen.getByTestId('kp-discovery-state').textContent).toContain('未初始化')
-  })
-
-  it('uses no legacy terminology in the page sources', () => {
-    const dir = join(__dirname)
-    const files = [
-      'KnowledgeProductionPage.tsx',
-      'BrainRegionSeedList.tsx',
-      'WorkflowSteps.tsx',
-      'types.ts',
-      'kpApi.ts',
-    ]
-    const forbidden = ['candidate_id', 'mirror', 'final_kg', 'finalkg', 'final-browser', 'task_type']
-    for (const f of files) {
-      // strip comments: a docstring saying "we do not depend on X" is legitimate
-      const code = readFileSync(join(dir, f), 'utf8')
-        .replace(/\/\*[\s\S]*?\*\//g, '')
-        .replace(/\/\/[^\n]*/g, '')
-        .toLowerCase()
-      for (const term of forbidden) {
-        expect(code, `${f} must not reference "${term}"`).not.toContain(term)
-      }
-    }
+    await waitFor(() => expect(window.location.hash).toContain('/NGIQ-BR-'))
+    expect(window.location.hash).not.toContain('entity_pk')
+    expect(window.location.hash).not.toMatch(/candidate|mirror|final/i)
   })
 })

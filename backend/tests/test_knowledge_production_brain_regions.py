@@ -89,11 +89,18 @@ class _RecordingSession:
                 "review_status": "approved",
             }
         ]
+        self.summary_rows: list[dict[str, Any]] = [
+            {"granularity_level": "G1_MACRO", "n": 84},
+            {"granularity_level": "G3_MESO_FINE", "n": 246},
+            {"granularity_level": "G4_MICROSTRUCTURAL_FINE", "n": 440},
+        ]
         self.statements: list[tuple[str, dict[str, Any]]] = []
 
     async def execute(self, stmt: Any, params: dict[str, Any] | None = None) -> _FakeResult:
         sql = str(stmt)
         self.statements.append((sql, dict(params or {})))
+        if "GROUP BY" in sql:
+            return _FakeResult(self.summary_rows, 0)
         if "COUNT(*)" in sql:
             return _FakeResult([], self.total)
         if "mapping_type" in sql:
@@ -218,6 +225,28 @@ def test_invalid_granularity_rejected(client, session):
     res = client.get(ENDPOINT, params={"granularity_level": "macro"})
     assert res.status_code == 422
     assert session.statements == [], "invalid input must not reach the database"
+
+
+# ---- summary endpoint (Phase 1B Production Index) ----
+def test_summary_returns_total_and_all_granularities(client, session):
+    res = client.get(f"{ENDPOINT}/summary")
+    assert res.status_code == 200
+    body = res.json()
+    assert set(body) == {"total", "by_granularity"}
+    assert body["total"] == 84 + 246 + 440
+    # every Gate7B level is present, missing ones reported as 0 (never omitted)
+    assert set(body["by_granularity"]) == set(GATE7B_GRANULARITY_LEVELS)
+    assert body["by_granularity"]["G2_MESO_ANATOMICAL"] == 0
+    assert body["by_granularity"]["G4_MICROSTRUCTURAL_FINE"] == 440
+    # one aggregate query, not one request per granularity
+    assert len(session.statements) == 1
+
+
+def test_summary_route_is_not_swallowed_by_identifier(client, session):
+    """/brain-regions/summary must resolve to the summary route."""
+    res = client.get(f"{ENDPOINT}/summary")
+    assert res.status_code == 200
+    assert "total" in res.json()
 
 
 # ---- detail endpoint ----

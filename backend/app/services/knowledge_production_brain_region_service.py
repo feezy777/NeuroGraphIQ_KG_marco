@@ -20,6 +20,8 @@ from app.schemas.knowledge_production import (
     BrainRegionSeedDetail,
     BrainRegionSeedItem,
     BrainRegionSeedListResponse,
+    BrainRegionSummary,
+    GATE7B_GRANULARITY_LEVELS,
 )
 
 # Gate7B identity: entity_id (e.g. NGIQ-BR-00000001) is the stable public id.
@@ -164,6 +166,25 @@ async def list_seed_regions(
     ).mappings().all()
     return BrainRegionSeedListResponse(
         items=[row_to_item(r) for r in rows], total=total
+    )
+
+
+async def summarize_seed_regions(session: AsyncSession) -> BrainRegionSummary:
+    """Counts per Gate7B granularity level in ONE aggregate query. SELECT only."""
+    rows = (
+        await session.execute(
+            text(
+                "SELECT b.granularity_level, COUNT(*) AS n"
+                " FROM brain_regions b"
+                " JOIN kg_entities e ON e.entity_pk = b.entity_pk"
+                " GROUP BY b.granularity_level"
+            )
+        )
+    ).mappings().all()
+    counts = {r["granularity_level"]: int(r["n"]) for r in rows}
+    return BrainRegionSummary(
+        total=sum(counts.values()),
+        by_granularity={g: counts.get(g, 0) for g in GATE7B_GRANULARITY_LEVELS},
     )
 
 

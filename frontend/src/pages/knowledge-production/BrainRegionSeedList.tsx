@@ -12,12 +12,19 @@ import { KP_GRANULARITY_OPTIONS, type BrainRegionSeed, type KpGranularity } from
 
 const PAGE_SIZE = 50
 
+/**
+ * Phase 1B placeholder — no production-layer table exists yet, so every row
+ * shows the same non-persisted label. It is NOT read from, and NOT written to,
+ * any backend state.
+ */
+const PRODUCTION_PLACEHOLDER = '未初始化'
+
 export interface BrainRegionSeedListProps {
-  selectedId: string | null
-  onSelect: (seed: BrainRegionSeed) => void
+  /** Called when a row is activated (click or Enter) — opens the workspace. */
+  onOpen: (seed: BrainRegionSeed) => void
 }
 
-export function BrainRegionSeedList({ selectedId, onSelect }: BrainRegionSeedListProps) {
+export function BrainRegionSeedList({ onOpen }: BrainRegionSeedListProps) {
   const [granularity, setGranularity] = useState<KpGranularity | null>(null)
   const [atlas, setAtlas] = useState('')
   const [atlasApplied, setAtlasApplied] = useState('')
@@ -78,30 +85,59 @@ export function BrainRegionSeedList({ selectedId, onSelect }: BrainRegionSeedLis
 
   const columns: Column<BrainRegionSeed>[] = [
     { key: 'name_en', header: '名称 (EN)', render: r => r.name_en ?? '—' },
-    { key: 'entity_id', header: 'entity_id', render: r => r.entity_id },
+    { key: 'entity_id', header: 'entity_id', render: r => <span className="kp-mono">{r.entity_id}</span> },
     {
       key: 'granularity_level',
       header: '粒度',
-      render: r => r.granularity_level ?? '—',
+      render: r =>
+        r.granularity_level ? (
+          <span className="kp-chip kp-chip--accent" title={r.granularity_level}>
+            {r.granularity_level}
+          </span>
+        ) : (
+          '—'
+        ),
     },
     {
       key: 'atlas_names',
       header: '来源 Atlas',
       render: r => (r.atlas_names.length ? r.atlas_names.join(', ') : '—'),
     },
-    { key: 'hemisphere', header: '半球', render: r => r.hemisphere ?? '—' },
+    {
+      key: 'hemisphere',
+      header: '半球',
+      render: r => (r.hemisphere ? <span className="kp-hemi">{r.hemisphere}</span> : '—'),
+    },
+    {
+      key: 'production',
+      header: 'Production',
+      // A neutral resting state — deliberately not coloured as warning/error.
+      render: () => <span className="kp-prod">{PRODUCTION_PLACEHOLDER}</span>,
+    },
+    {
+      key: 'open',
+      header: '',
+      // Row affordance: reveals on hover, signalling the row opens a workspace.
+      render: () => (
+        <span className="kp-chevron" aria-hidden="true">
+          ›
+        </span>
+      ),
+    },
   ]
 
   return (
     <section className="kp-seed-pane" data-testid="kp-seed-pane">
-      <div className="kp-filter-bar" data-testid="kp-filter-bar">
-        <div className="kp-granularity-group" role="group" aria-label="G1-G4 粒度筛选">
+      <div className="kp-toolbar" data-testid="kp-filter-bar">
+        <span className="kp-toolbar-label">粒度</span>
+        <div className="kp-gran-group" role="group" aria-label="G1-G4 粒度筛选">
           {KP_GRANULARITY_OPTIONS.map(opt => (
             <button
               key={opt.value}
               type="button"
-              className={`btn btn-sm${granularity === opt.value ? ' active' : ''}`}
+              className="kp-gran-btn"
               aria-pressed={granularity === opt.value}
+              title={opt.value}
               data-testid={`kp-gran-${opt.label}`}
               onClick={() => {
                 setGranularity(prev => (prev === opt.value ? null : opt.value))
@@ -114,7 +150,7 @@ export function BrainRegionSeedList({ selectedId, onSelect }: BrainRegionSeedLis
         </div>
 
         <input
-          className="kp-input"
+          className="filter-input"
           placeholder="Atlas 名称"
           aria-label="Atlas 筛选"
           data-testid="kp-atlas-input"
@@ -123,7 +159,7 @@ export function BrainRegionSeedList({ selectedId, onSelect }: BrainRegionSeedLis
           onKeyDown={e => e.key === 'Enter' && applyFilters()}
         />
         <input
-          className="kp-input"
+          className="filter-input"
           placeholder="搜索脑区"
           aria-label="脑区搜索"
           data-testid="kp-search-input"
@@ -131,12 +167,13 @@ export function BrainRegionSeedList({ selectedId, onSelect }: BrainRegionSeedLis
           onChange={e => setSearch(e.target.value)}
           onKeyDown={e => e.key === 'Enter' && applyFilters()}
         />
-        <button type="button" className="btn btn-sm" data-testid="kp-apply" onClick={applyFilters}>
+        <button type="button" className="btn btn-sm btn-primary" data-testid="kp-apply" onClick={applyFilters}>
           筛选
         </button>
         <button type="button" className="btn btn-sm" data-testid="kp-reset" onClick={resetFilters}>
           重置
         </button>
+        <span className="kp-toolbar-spacer" />
         <button
           type="button"
           className="btn btn-sm"
@@ -155,8 +192,7 @@ export function BrainRegionSeedList({ selectedId, onSelect }: BrainRegionSeedLis
         total={total}
         emptyText="没有匹配的脑区"
         getKey={r => r.entity_id}
-        onRowClick={onSelect}
-        getRowClassName={r => (r.entity_id === selectedId ? 'kp-row-selected' : undefined)}
+        onRowClick={onOpen}
       />
 
       <DataCenterPagination

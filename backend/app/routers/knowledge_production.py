@@ -25,6 +25,7 @@ from app.database import get_db
 from app.schemas.knowledge_production import (
     BrainRegionSeedDetail,
     BrainRegionSeedListResponse,
+    BrainRegionSummary,
     GranularityLevel,
 )
 from app.services import knowledge_production_brain_region_service as svc
@@ -52,6 +53,16 @@ async def list_brain_regions(
         limit=limit,
         offset=offset,
     )
+
+
+@router.get("/brain-regions/summary", response_model=BrainRegionSummary)
+async def summarize_brain_regions(db: AsyncSession = Depends(get_db)) -> BrainRegionSummary:
+    """Counts for the Production Index summary row (one aggregate query).
+
+    Declared BEFORE /brain-regions/{identifier} so 'summary' is not captured
+    as an identifier.
+    """
+    return await svc.summarize_seed_regions(db)
 
 
 @router.get("/brain-regions/{identifier}", response_model=BrainRegionSeedDetail)

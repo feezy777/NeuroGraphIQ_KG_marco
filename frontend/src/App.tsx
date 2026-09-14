@@ -25,8 +25,14 @@ function EvidenceCenterRedirect() {
 }
 import { BackgroundTaskCenterPage } from './pages/BackgroundTaskCenter'
 import { KnowledgeProductionPage } from './pages/knowledge-production/KnowledgeProductionPage'
+import { BrainRegionWorkspacePage } from './pages/knowledge-production/BrainRegionWorkspacePage'
+import { entityIdFromWorkspacePath } from './pages/knowledge-production/routes'
 import { GraphExplorerPage } from './pages/GraphExplorerPage'
 import './components/brain-3d/brain3d.css'
+/* Single module-level import for the Knowledge Production stylesheet. Both
+   routes (index + BrainRegion workspace) are statically imported above, so
+   this one import covers both — do not re-import it in the page modules. */
+import './pages/knowledge-production/knowledge-production.css'
 import { TaskDetailModalProvider } from './components/TaskDetailModal'
 
 const Brain3DPage = lazy(() => import('./pages/Brain3DPage').then(m => ({ default: m.Brain3DPage })))
@@ -76,10 +82,14 @@ export default function App() {
   }, [])
 
   const basePath = path.split('?')[0] || '/'
+  // Dynamic BrainRegion workspace route (hash router; no routing library).
+  const workspaceEntityId = entityIdFromWorkspacePath(basePath)
   const legacyTarget = LEGACY_REDIRECTS[basePath]
-  const Page = legacyTarget
-    ? () => <LegacyDataCenterRedirect target={legacyTarget} />
-    : (ROUTES[basePath] ?? DashboardPage)
+  const Page = workspaceEntityId
+    ? () => <BrainRegionWorkspacePage entityId={workspaceEntityId} />
+    : legacyTarget
+      ? () => <LegacyDataCenterRedirect target={legacyTarget} />
+      : (ROUTES[basePath] ?? DashboardPage)
 
   return (
     <I18nProvider>

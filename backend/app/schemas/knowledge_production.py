@@ -54,6 +54,17 @@ class BrainRegionSeedListResponse(BaseModel):
     total: int
 
 
+class BrainRegionSummary(BaseModel):
+    """Read-only BrainRegion counts for the Production Index summary row.
+
+    One aggregate query instead of one list request per granularity.
+    Contains ONLY fields that exist in the Gate7B authority tables.
+    """
+
+    total: int
+    by_granularity: dict[str, int]
+
+
 class BrainRegionSeedDetail(BrainRegionSeedItem):
     """Detail view. Adds only fields that exist on brain_regions / kg_entities."""
 

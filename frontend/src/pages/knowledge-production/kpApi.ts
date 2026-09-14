@@ -9,6 +9,7 @@ import type {
   BrainRegionSeedDetail,
   BrainRegionSeedListResponse,
   BrainRegionSeedQuery,
+  BrainRegionSummary,
 } from './types'
 
 const BASE = '/api/knowledge-production'
@@ -29,4 +30,9 @@ export function fetchBrainRegionSeed(identifier: string): Promise<BrainRegionSee
   return getJson<BrainRegionSeedDetail>(
     `${BASE}/brain-regions/${encodeURIComponent(identifier)}`,
   )
+}
+
+/** One aggregate request backing the Production Index summary row. */
+export function fetchBrainRegionSummary(): Promise<BrainRegionSummary> {
+  return getJson<BrainRegionSummary>(`${BASE}/brain-regions/summary`)
 }

@@ -1,51 +1,590 @@
-/* Phase 1 Knowledge Production Workspace — page-scoped layout only.
-   Tables / pagination / states reuse existing global styles. */
+/* ============================================================================
+   Knowledge Production — BrainRegion Production Index + BrainRegion Workspace.
 
-.kp-page { display: flex; flex-direction: column; gap: 12px; padding: 16px; height: 100%; box-sizing: border-box; }
-.kp-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 24px; flex-wrap: wrap; }
-.kp-title { margin: 0; font-size: 20px; font-weight: 600; }
-.kp-subtitle { margin: 4px 0 0; font-size: 12px; color: var(--text-secondary, #64748b); }
+   Visual contract: docs/KNOWLEDGE_PRODUCTION_ARCHITECTURE.md §12.
+   Only the `.kp-*` namespace is owned here. Everything else (tables, badges,
+   buttons, tabs, filters, state boxes) reuses the Workbench design system in
+   styles.css. Tokens are referenced, never re-declared — no local palette.
+   ========================================================================== */
 
-/* Workflow steps */
-.kp-workflow-steps { display: flex; gap: 6px; list-style: none; margin: 0; padding: 0; }
-.kp-workflow-step {
-  display: flex; align-items: center; gap: 6px; padding: 4px 10px;
-  border: 1px solid var(--border-light, #e2e8f0); border-radius: 4px;
-  font-size: 12px; color: var(--text-secondary, #64748b);
+/* ── Page shell ─────────────────────────────────────────────────────────── */
+/* The global `.page` pins height:100%, which makes this a fixed-height flex
+   column. A BrainRegion workspace is taller than a 800px-tall viewport, and
+   flex would then SQUASH its children — collapsing the tab strip to ~1px and
+   making the tabs unclickable. Let the content set the height instead so
+   `.main` does the scrolling. (Height-triggered, not width-triggered.) */
+.kp-page {
+  min-width: 0;
+  height: auto;
+  min-height: 100%;
 }
-.kp-workflow-step--active { border-color: var(--primary, #2563eb); color: var(--primary, #2563eb); font-weight: 600; }
-.kp-workflow-step-index {
-  display: inline-flex; align-items: center; justify-content: center;
-  width: 16px; height: 16px; border-radius: 50%;
-  background: var(--bg-subtle, #f1f5f9); font-size: 10px;
+
+/* ── Page headers ───────────────────────────────────────────────────────── */
+/* Both routes use the global .page-header / .page-title / .page-desc scale,
+   so they read at the same weight as every other Workbench page. */
+
+/* ── Summary cards (Index: Total + G1..G4 · Workspace: 4 production counters) ─ */
+.kp-summary-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 10px;
 }
-.kp-workflow-step--active .kp-workflow-step-index { background: var(--primary, #2563eb); color: #fff; }
-
-/* Discovery placeholders */
-.kp-discovery-actions {
-  display: flex; align-items: center; gap: 8px; padding: 8px 10px;
-  border: 1px dashed var(--border-light, #e2e8f0); border-radius: 6px;
+.kp-summary-card {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 12px 14px;
+  background: var(--white);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow);
+  min-width: 0;
 }
-.kp-discovery-state { margin-left: auto; font-size: 12px; color: var(--text-secondary, #64748b); }
-
-/* Body: seed list + workspace */
-.kp-body { display: grid; grid-template-columns: minmax(420px, 1fr) minmax(420px, 1.2fr); gap: 16px; align-items: start; min-height: 0; }
-.kp-seed-pane, .kp-workspace { border: 1px solid var(--border-light, #e2e8f0); border-radius: 6px; padding: 10px; min-width: 0; }
-.kp-filter-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-bottom: 10px; }
-.kp-granularity-group { display: flex; gap: 4px; }
-.kp-input { padding: 4px 8px; font-size: 12px; border: 1px solid var(--border-light, #e2e8f0); border-radius: 4px; min-width: 110px; }
-.kp-row-selected { background: var(--bg-selected, #eff6ff); }
-
-/* Workspace tabs */
-.kp-tabs { display: flex; flex-wrap: wrap; gap: 4px; border-bottom: 1px solid var(--border-light, #e2e8f0); padding-bottom: 6px; margin-bottom: 10px; }
-.kp-tab {
-  padding: 4px 10px; font-size: 12px; border: 1px solid transparent; border-radius: 4px;
-  background: transparent; cursor: pointer; color: var(--text-secondary, #64748b);
+.kp-summary-label {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-muted);
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
-.kp-tab.active { border-color: var(--primary, #2563eb); background: var(--primary, #2563eb); color: #fff; font-weight: 600; }
+.kp-summary-value {
+  font-size: 22px;
+  font-weight: 600;
+  line-height: 1.25;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+/* The aggregate is the only emphasised card — one accent, not five colors. */
+.kp-summary-card--total {
+  background: var(--info-bg);
+  border-color: #91caff;
+}
+.kp-summary-card--total .kp-summary-value { color: var(--primary-active); }
 
-/* Overview field grid */
-.kp-overview { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 8px; }
-.kp-field { display: flex; flex-direction: column; gap: 2px; padding: 6px 8px; border: 1px solid var(--border-light, #e2e8f0); border-radius: 4px; }
-.kp-field-label { font-size: 11px; color: var(--text-secondary, #64748b); }
-.kp-field-value { font-size: 13px; word-break: break-word; }
+/* A non-numeric placeholder (—) or a status word must not read as a count. */
+.kp-summary-value--muted {
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--text-muted);
+  font-variant-numeric: normal;
+}
+
+/* ── Filter toolbar (Index) ─────────────────────────────────────────────── */
+.kp-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  background: var(--white);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow);
+}
+.kp-toolbar-spacer { flex: 1 1 auto; }
+
+/* Segmented G1–G4 control. */
+.kp-gran-group {
+  display: inline-flex;
+  padding: 2px;
+  background: var(--bg-soft);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.kp-gran-btn {
+  height: 26px;
+  padding: 0 12px;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-muted);
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+.kp-gran-btn:hover { color: var(--text); background: var(--muted-bg); }
+.kp-gran-btn[aria-pressed='true'] {
+  background: var(--primary);
+  color: var(--white);
+  box-shadow: var(--shadow);
+}
+
+.kp-toolbar .filter-input { min-width: 160px; }
+.kp-toolbar-label {
+  font-size: 12px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+/* ── Index table: scoped refinements over the global table ──────────────── */
+/* The global late `th` rule drops the header to --text-muted at weight 500,
+   and `tr:hover td` to #fafbfc — both too weak for a clickable index table.
+   These are scoped to the pane so no other Workbench table changes. */
+.kp-seed-pane .table-wrap { margin-top: 12px; }
+.kp-seed-pane th {
+  background: #eef1f5;
+  color: var(--text);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+.kp-seed-pane tbody tr:hover td { background: var(--table-hover); }
+.kp-seed-pane tbody tr.clickable-row:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: -2px;
+}
+
+/* entity_id is an identifier, not prose — read it in mono. */
+.kp-mono {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text);
+  white-space: nowrap;
+}
+
+/* Chips: one compact vocabulary shared by table cells and the workspace
+   header. `--accent` marks the defining classification (granularity). */
+.kp-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 8px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--bg-soft);
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.6;
+  white-space: nowrap;
+}
+.kp-chip--accent {
+  background: var(--info-bg);
+  border-color: #91caff;
+  color: var(--primary-active);
+}
+
+/* Hemisphere: neutral chip, no color coding — left/right is not a severity. */
+.kp-hemi {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  color: var(--text);
+}
+.kp-hemi::before {
+  content: '';
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--text-muted);
+}
+
+/* Production "未初始化" is a neutral resting state — never warning, never error. */
+.kp-prod {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 8px;
+  border-radius: 4px;
+  border: 1px dashed var(--border);
+  background: var(--bg-soft);
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.6;
+  white-space: nowrap;
+}
+
+/* Row affordance: a chevron that only materialises on row hover/focus. */
+.kp-seed-pane th:last-child,
+.kp-seed-pane td:last-child {
+  width: 30px;
+  padding-left: 0;
+  padding-right: 12px;
+  text-align: right;
+}
+.kp-chevron {
+  display: inline-block;
+  color: var(--primary);
+  font-size: 15px;
+  line-height: 1;
+  opacity: 0;
+  transform: translateX(-3px);
+  transition: opacity 0.12s, transform 0.12s;
+}
+.kp-seed-pane tbody tr:hover .kp-chevron,
+.kp-seed-pane tbody tr:focus-within .kp-chevron {
+  opacity: 1;
+  transform: translateX(0);
+}
+
+/* ── Workspace identity header ──────────────────────────────────────────── */
+.kp-back {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0;
+  margin-bottom: 2px;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-muted);
+  background: none;
+  border: none;
+  cursor: pointer;
+  transition: color 0.12s;
+}
+.kp-back:hover { color: var(--primary); }
+
+.kp-ws-header {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--border);
+  min-width: 0;
+}
+.kp-ws-name {
+  font-size: 21px;
+  font-weight: 700;
+  line-height: 1.3;
+  color: var(--text);
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.kp-ws-name-zh {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin: 0;
+}
+.kp-ws-id {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-muted);
+  margin: 0;
+  letter-spacing: 0.02em;
+}
+/* Metadata chips sit on one line and wrap as chips — never concatenate. */
+.kp-badge-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 2px;
+}
+
+/* ── Workflow indicator: numbered circles + connecting lines ────────────── */
+.kp-workflow {
+  padding: 16px 20px 14px;
+  background: var(--white);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow);
+}
+.kp-workflow-steps {
+  display: flex;
+  align-items: flex-start;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.kp-step {
+  position: relative;
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 7px;
+}
+/* Connector: drawn from the previous circle to this one. */
+.kp-step::before {
+  content: '';
+  position: absolute;
+  top: 13px;
+  right: 50%;
+  left: -50%;
+  height: 2px;
+  background: var(--border);
+  z-index: 0;
+}
+.kp-step:first-child::before { display: none; }
+
+.kp-step-index {
+  position: relative;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--muted-bg);
+  border: 2px solid var(--border);
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.kp-step-label {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-muted);
+  text-align: center;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* All four lifecycle states are defined; Phase 1 renders only `pending`. */
+.kp-step[data-state='done']::before { background: var(--primary); }
+.kp-step[data-state='done'] .kp-step-index {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: var(--white);
+}
+.kp-step[data-state='done'] .kp-step-label { color: var(--text); }
+
+.kp-step[data-state='active'] .kp-step-index {
+  background: var(--white);
+  border-color: var(--primary);
+  color: var(--primary);
+  box-shadow: 0 0 0 4px var(--info-bg);
+}
+.kp-step[data-state='active'] .kp-step-label { color: var(--primary); font-weight: 600; }
+
+.kp-step[data-state='failed'] .kp-step-index {
+  background: var(--danger-bg);
+  border-color: var(--danger);
+  color: var(--danger);
+}
+.kp-step[data-state='failed'] .kp-step-label { color: var(--danger); font-weight: 600; }
+
+/* ── Tabs ───────────────────────────────────────────────────────────────── */
+/* Reuses the global .tabs / .tab-btn segment indicator; this only stops the
+   strip from crushing or wrapping when the pane narrows. */
+.kp-tabs {
+  flex: 0 0 auto; /* never let the flex column squash the tab strip */
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  scrollbar-width: thin;
+  margin-bottom: 14px;
+}
+.kp-tabs .tab-btn {
+  flex: 0 0 auto;
+  white-space: nowrap;
+  border-radius: var(--radius) var(--radius) 0 0;
+}
+.kp-tabs .tab-btn.active { background: var(--info-bg); }
+
+/* Reserved height: switching tabs must not resize the page. */
+.kp-tab-panel { min-height: 340px; min-width: 0; }
+
+/* ── Overview: grouped identity cards ───────────────────────────────────── */
+.kp-overview {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  align-items: start;
+}
+@media (max-width: 1199px) {
+  .kp-overview { grid-template-columns: minmax(0, 1fr); }
+}
+.kp-section {
+  background: var(--white);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow);
+  padding: 14px 16px;
+  min-width: 0;
+}
+.kp-section-title {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 0 0 12px;
+  padding-bottom: 9px;
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+.kp-section-title::before {
+  content: '';
+  width: 3px;
+  height: 12px;
+  border-radius: 2px;
+  background: var(--primary);
+}
+/* Fields flow into columns so a wide identity card is not half empty. */
+.kp-field-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 9px 18px;
+}
+.kp-field {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 1px;
+  min-width: 0;
+}
+.kp-field-label {
+  font-size: 11px;
+  color: var(--text-muted);
+  letter-spacing: 0.01em;
+}
+.kp-field-value {
+  font-size: 13px;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+/* ── Cards (Discovery operations, future-tab panels) ────────────────────── */
+.kp-card {
+  background: var(--white);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow);
+  padding: 16px 18px;
+  min-width: 0;
+}
+.kp-card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 14px;
+  align-items: start;
+}
+.kp-card-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 8px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+}
+.kp-card-text {
+  margin: 0 0 10px;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text);
+}
+.kp-card-hint {
+  margin: 10px 0 0;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.kp-card-glyph {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: var(--radius);
+  background: var(--info-bg);
+  color: var(--primary);
+  font-size: 14px;
+  flex: 0 0 auto;
+}
+
+/* Discovery operations are deliberately differentiated by accent edge, not
+   by unrelated colors: both keep the same neutral surface. */
+.kp-op-card { display: flex; flex-direction: column; align-items: flex-start; }
+.kp-op-card .kp-card-text { flex: 1 1 auto; }
+.kp-op-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0 0 12px;
+}
+.kp-op-card .btn { margin-bottom: 2px; }
+
+/* ── Deliberate empty states for tabs that have no Phase 1 data ─────────── */
+.kp-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 10px;
+  padding: 34px 24px 30px;
+  background: var(--white);
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-md);
+  min-width: 0;
+}
+.kp-empty-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: var(--bg-soft);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  font-size: 19px;
+}
+.kp-empty-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+}
+.kp-empty-text {
+  margin: 0;
+  max-width: 560px;
+  font-size: 13px;
+  line-height: 1.65;
+  color: var(--text-muted);
+}
+.kp-empty-block {
+  width: 100%;
+  max-width: 560px;
+  margin-top: 6px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+  text-align: left;
+}
+.kp-empty-block-title {
+  margin: 0 0 8px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.kp-chip-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.kp-list {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 13px;
+  line-height: 1.8;
+  color: var(--text);
+}
+
+/* ── Evidence chain diagram ─────────────────────────────────────────────── */
+.kp-chain {
+  margin: 10px 0 0;
+  padding: 12px 14px;
+  background: var(--bg-soft);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.75;
+  color: var(--text);
+  white-space: pre;
+  overflow-x: auto;
+}
+
+/* ── Inline states ──────────────────────────────────────────────────────── */
+.kp-muted { font-size: 12px; color: var(--text-muted); }

@@ -290,11 +290,110 @@ Graph Explorer
 ```
 
 **Graph Explorer 不得成为生产工作流引擎。** 可复用的图组件可以共享，但职责边界
-不得跨越。
+不得跨越。工作区页面的具体信息架构见 §8。
 
 ---
 
-## 8. 复用 / 重建决策（Reuse / Rebuild Decisions）
+## 8. BrainRegion-centered Workspace Model（Phase 1B 冻结）
+
+Phase 1 把三个不同维度混在一页里：**A 脑区选择**、**B 知识对象类型**
+（Circuit / Connection / Function / Evidence）、**C 工作流阶段**（Discovery /
+Canonicalization / Validation / Promotion）。Phase 1B 将其拆分。
+
+```
+/knowledge-production
+        ↓
+BrainRegion Production Index
+        ↓  点击一个脑区
+/knowledge-production/brain-regions/{entity_id}
+        ↓
+BrainRegion Workspace
+```
+
+**一个 BrainRegion Workspace 代表一个 canonical Gate7B 脑区的完整生产生命周期。**
+「一脑区一页面」指的是**一个动态 React workspace 组件**，不是「一个脑区一个源文件」。
+
+### 8.1 Knowledge Production Index
+
+职责：
+
+- 浏览 BrainRegion
+- G1 / G2 / G3 / G4 过滤
+- Atlas 过滤
+- 搜索
+- （未来）生产状态总览
+- （未来）candidate / evidence / review 计数
+- 进入某个 BrainRegion workspace
+
+**Index 不得包含整个生产工作流。** 它只负责「选择与进入」。
+
+### 8.2 BrainRegion Workspace
+
+一个 canonical BrainRegion 是**操作根**。
+
+路由：
+
+```
+/knowledge-production/brain-regions/{entity_id}
+```
+
+顶层 workspace tabs（**恰好七个**）：
+
+```
+Overview
+Discovery
+Candidates
+Evidence
+Canonicalization
+Validation
+History
+```
+
+**Candidate 子类型属于 Candidates 内部**：
+
+```
+Candidates
+    ├── Circuits
+    ├── Connections
+    ├── Functions
+    └── Related Regions
+```
+
+**不得**把 Circuits / Connections / Functions 放在与 Discovery / Validation
+**同一层级**。
+
+**Promotion 不是常驻顶层 tab。** 它将来是「验证通过后的受治理动作」，
+其结果体现在 History / Overview 中。
+
+Graph Explorer 保持独立（见 §7）。
+
+### 8.3 路由身份
+
+公开路由身份 = **BrainRegion `entity_id`**（例：`NGIQ-BR-00000001`）。
+
+**禁止**在公开 URL 中使用：
+
+```
+candidate_id
+mirror id
+final id
+entity_pk
+```
+
+`entity_pk` 仅作为内部数据库标识。
+
+### 8.4 Phase 1B 状态占位
+
+生产层表尚不存在，因此：
+
+- Index 的 Production 列显示**非持久化**的中性占位（`未初始化`）
+- Workspace 的生产汇总区对无权威计数的项显示 `—`，**不显示 `0`**
+- 工作流步骤**全部为未激活**（没有 Discovery Run 存在）
+- **不得伪造** completed / pending / discovered 状态
+
+---
+
+## 9. 复用 / 重建决策（Reuse / Rebuild Decisions）
 
 ### KEEP AS FOUNDATION
 
@@ -339,7 +438,7 @@ Graph Explorer
 
 ---
 
-## 9. 计划中的生命周期状态（Planned Lifecycle Statuses）
+## 10. 计划中的生命周期状态（Planned Lifecycle Statuses）
 
 > 本节只冻结**状态语义**。**本阶段不创建任何 DB schema。**
 
@@ -397,7 +496,7 @@ NO_EVIDENCE_FOUND
 
 ---
 
-## 10. Phase 1 实现范围
+## 11. Phase 1 实现范围
 
 本阶段只落地**只读基础**：
 
@@ -429,3 +528,24 @@ Validation、Promotion、任何 Discovery Run 表、任何 Discovery 状态字�
    —— 任何 assertion 写入前必须先 seed 谓词注册表。
 2. 知识层（connections / circuits / functions / evidence）**表存在但无代码**，
    应用层目前只有 1 个未接线的 resolver。
+
+---
+
+## 12. BrainRegion Workspace Visual Contract（Phase 1C 冻结）
+
+本节只约束**呈现**，不改变任何信息架构。任何后续改动若违反下列 8 条，必须先修改本节。
+
+| # | 规则 | 理由 |
+|---|---|---|
+| 1 | Index 与 Workspace **必须**渲染在同一个 `WorkbenchLayout` 内（顶栏 / 左导航 / 内容区 / 全局间距）。**禁止**为 workspace 另建 app shell 或旁路布局。 | 两个路由是同一产品的两个层级，不是两个应用。 |
+| 2 | 样式只有**一处**模块级引入（`App.tsx` 引入 `pages/knowledge-production/knowledge-production.css`）。该文件只拥有 `.kp-*` 命名空间；表格 / 徽章 / 按钮 / Tab / 筛选 一律复用 `styles.css` 既有类。**禁止**新调色板、**禁止**第二个布局系统。 | 一次引入覆盖两个路由；颜色与控件语言保持一致。 |
+| 3 | Index 汇总区固定为 **Total + G1–G4 五张卡**。五张卡共用一套视觉族，**只有 Total 使用强调色**（表示聚合），G1–G4 保持中性。 | 层级来自对比，不来自五种无关颜色。 |
+| 4 | 生产状态一律**中性呈现**：`未初始化` 与 `Not initialized` 用中性灰徽章 / 文本，**不得**表达为 warning / error；无权威计数时显示 `—`，**永不显示 `0`**。 | 中性状态 ≠ 异常状态；`0` 会被误读为已确认的权威计数。 |
+| 5 | Workspace 身份头层级固定：**英文名 = 主 H1** → 中文名 = 次级 → `entity_id` = 小号等宽 → 其余元数据 = **离散 chips**。元数据**禁止**拼接成单一字符串（如 `G3_MESO_FINEleftHuman…`）。 | 每个字段必须可单独识别、单独复制的权威值。 |
+| 6 | 生命周期固定为 **4 个工作流步骤 × 7 个 Tab**。Discovery Run 尚不存在时，**不得有任何步骤处于 active / done**；Circuits / Connections / Functions 只能作为 Candidates 的**内部**子类，**不得**提升为顶层 Tab；Promotion 不得成为 Tab。 | 步骤与 Tab 是冻结的信息架构，不是装饰。 |
+| 7 | 除 Overview 外的每个 Tab 必须是**有意的空状态**：图标 + 标题 + 说明 + 未来内容。**禁止**只写 “Phase 1 未实现”。 | 空状态要解释该 Tab 的用途，而不是宣告缺失。 |
+| 8 | 1280–1920px 桌面为基准：**不得**出现横向溢出、Tab 挤压、卡片出界或元数据拼接；切换 Tab **不得**引起布局跳动（面板预留高度）。页面高度由**内容**决定并交给 `.main` 滚动——**禁止**让 flex 压缩子元素（曾导致 Tab 条塌陷为 ~1px 而无法点击）。 | 由视口高度触发的 flex 压缩是隐蔽缺陷；内容必须能滚动，不能被压扁。 |
+
+**已拒绝的越界建议**（记录以备后续判断，Phase 1C 未采纳）：
+为汇总卡引入多色分类、把 Production 占位改成进度条、为未来 Tab 预置假数据或伪计数、
+将 Workspace 拆成独立布局或引入 UI 组件库（Tailwind / Ant Design / MUI / Bootstrap）。
