@@ -102,6 +102,8 @@ def to_public_runtime_settings(settings: RuntimeSettings) -> PublicRuntimeSettin
                 max_batch_size=deepseek.max_batch_size,
                 temperature=deepseek.temperature,
                 max_tokens=deepseek.max_tokens,
+                thinking_enabled=deepseek.thinking_enabled,
+                reasoning_effort=deepseek.reasoning_effort,
             ),
             kimi=PublicKimiRuntimeSettings(
                 enabled=kimi.enabled,
@@ -187,6 +189,11 @@ def get_deepseek_runtime_config() -> DeepSeekRuntimeConfig:
         max_batch_size=runtime.max_batch_size,
         temperature=runtime.temperature,
         max_tokens=runtime.max_tokens,
+        # The reasoning profile travels with the rest of the runtime config, so
+        # a caller that wants explicit thinking semantics has exactly one place
+        # to read them from.
+        thinking_enabled=runtime.thinking_enabled,
+        reasoning_effort=runtime.reasoning_effort,
     )
 
 

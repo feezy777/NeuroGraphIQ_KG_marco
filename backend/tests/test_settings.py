@@ -97,7 +97,10 @@ def test_explicit_clear_api_key_removes_saved_key(tmp_path, monkeypatch):
     [
         ({"api_providers": {"deepseek": {"max_batch_size": 21}}}, "max_batch_size"),
         ({"api_providers": {"deepseek": {"timeout_seconds": 4}}}, "timeout_seconds"),
-        ({"api_providers": {"deepseek": {"timeout_seconds": 121}}}, "timeout_seconds"),
+        # Phase 3B.3 raised the DeepSeek ceiling to 600s (64K thinking needs it);
+        # the bound still exists, it just moved.
+        ({"api_providers": {"deepseek": {"timeout_seconds": 601}}}, "timeout_seconds"),
+        ({"api_providers": {"deepseek": {"max_tokens": 131073}}}, "max_tokens"),
         ({"basic": {"default_page_size": 9}}, "default_page_size"),
         ({"basic": {"max_page_size": 501}}, "max_page_size"),
     ],

@@ -121,7 +121,17 @@ class DeepSeekProvider:
         max_tokens: int = 2000,
         response_schema: dict[str, Any] | None = None,
         timeout_seconds: int = 60,
+        thinking_enabled: bool | None = None,
+        reasoning_effort: str | None = None,
     ) -> LlmProviderResponse:
+        """DeepSeek completion. ``thinking_enabled`` / ``reasoning_effort`` are
+        DeepSeek-specific runtime controls.
+
+        They default to None, and None means "send nothing" — the server's own
+        default then applies, exactly as before. Only a caller that states its
+        reasoning profile gets one sent, so adopting an explicit profile for
+        knowledge production cannot silently change legacy workloads.
+        """
         text_result, parsed_json = await self._complete_chat(
             model=model,
             system_prompt=system_prompt,
@@ -131,6 +141,8 @@ class DeepSeekProvider:
             timeout_seconds=timeout_seconds,
             json_mode=supports_json_object_mode(),
             parse_json=True,
+            thinking_enabled=thinking_enabled,
+            reasoning_effort=reasoning_effort,
         )
         return LlmProviderResponse(
             provider=text_result.provider,
@@ -161,6 +173,8 @@ class DeepSeekProvider:
         timeout_seconds: int,
         json_mode: bool,
         parse_json: bool,
+        thinking_enabled: bool | None = None,
+        reasoning_effort: str | None = None,
     ) -> tuple[LlmProviderTextResult, dict[str, Any] | None]:
         config = get_deepseek_runtime_config()
         if not config.enabled:
@@ -190,6 +204,8 @@ class DeepSeekProvider:
             "temperature": temperature,
             "max_tokens": max_tokens,
             "message_roles": ["system", "user"],
+            "thinking_enabled": thinking_enabled,
+            "reasoning_effort": reasoning_effort,
         }
         headers = {
             "Authorization": f"Bearer {api_key}",
@@ -212,6 +228,15 @@ class DeepSeekProvider:
             }
             if use_json_mode:
                 payload["response_format"] = {"type": "json_object"}
+            # REASONING PROFILE. Sent only when the caller asked for one, so
+            # relying on the server default and stating the profile explicitly
+            # are distinguishable — and the payload records which was chosen.
+            if thinking_enabled is not None:
+                payload["thinking"] = {
+                    "type": "enabled" if thinking_enabled else "disabled"
+                }
+            if reasoning_effort is not None:
+                payload["reasoning_effort"] = reasoning_effort
             return await client.post(
                 f"{base_url}/chat/completions",
                 json=payload,
@@ -312,16 +337,26 @@ class DeepSeekProvider:
             finish = choices[0].get("finish_reason")
 
         usage_raw = body.get("usage") or {} if isinstance(body, dict) else {}
+        # Reasoning is reported as a COUNT where the provider reports it at all.
+        # The reasoning TEXT is never read here: `message.content` remains the
+        # only answer, and deliberation never becomes a candidate.
+        details = usage_raw.get("completion_tokens_details")
+        reasoning_tokens = (
+            details.get("reasoning_tokens") if isinstance(details, dict) else None
+        )
         usage = LlmProviderUsage(
             prompt_tokens=usage_raw.get("prompt_tokens"),
             completion_tokens=usage_raw.get("completion_tokens"),
             total_tokens=usage_raw.get("total_tokens"),
+            reasoning_tokens=reasoning_tokens,
         )
         response_payload: dict[str, Any] = {
             "model": body.get("model") if isinstance(body, dict) else None,
             "usage": usage.as_dict(),
             "json_mode_enabled": json_mode_enabled,
         }
+        if isinstance(usage_raw, dict) and usage_raw.get("reasoning_tokens") is not None:
+            response_payload["usage_reasoning_tokens"] = usage_raw.get("reasoning_tokens")
         if isinstance(body, dict):
             response_payload["raw_response_keys"] = list(body.keys())
         if json_mode_warning:

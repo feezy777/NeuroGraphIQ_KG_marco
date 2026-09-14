@@ -38,14 +38,20 @@ class LlmDiscoveryExecutionMetrics(BaseModel):
     #: The budget that was actually REQUESTED. Without it a truncated answer is
     #: indistinguishable from a model that simply had nothing to say.
     max_tokens: int
-    #: ``stop`` = the model finished; ``length`` = it ran out of budget.
+    #: ``stop`` = the model finished; ``length`` = it ran out of budget. A
+    #: truncated run must be read WITH the reasoning profile below: under
+    #: thinking mode the reasoning consumes the very same generation budget.
     finish_reason: str | None = None
+    thinking_enabled: bool | None = None
+    reasoning_effort: str | None = None
 
     latency_ms: int
 
     prompt_tokens: int | None = None
     completion_tokens: int | None = None
     total_tokens: int | None = None
+    #: A COUNT only, and only when the provider reports one. Never the text.
+    reasoning_tokens: int | None = None
 
     #: SHA-256 of the prompt actually sent / the raw text actually received.
     #: Lets a later phase prove which response was parsed without keeping it.

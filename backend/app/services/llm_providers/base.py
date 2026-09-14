@@ -21,12 +21,16 @@ class LlmProviderUsage:
     prompt_tokens: int | None = None
     completion_tokens: int | None = None
     total_tokens: int | None = None
+    #: Reasoning tokens the provider reported, when it reports them at all.
+    #: This is a COUNT, never the reasoning text — deliberation is not a result.
+    reasoning_tokens: int | None = None
 
     def as_dict(self) -> dict[str, Any]:
         return {
             "prompt_tokens": self.prompt_tokens,
             "completion_tokens": self.completion_tokens,
             "total_tokens": self.total_tokens,
+            "reasoning_tokens": self.reasoning_tokens,
         }
 
 

@@ -326,7 +326,14 @@ def env(monkeypatch):
     config = type(
         "Cfg",
         (),
-        {"temperature": 0.2, "max_tokens": 8192, "timeout_seconds": 120, "default_model": "x"},
+        {
+            "temperature": 0.2,
+            "max_tokens": 65536,
+            "timeout_seconds": 300,
+            "default_model": "x",
+            "thinking_enabled": True,
+            "reasoning_effort": "high",
+        },
     )()
 
     async def fake_seed_input(_session, _entity_id):
@@ -512,16 +519,49 @@ def test_26_12_the_hashes_digest_what_was_actually_sent_and_received(env):
 # ===========================================================================
 # §3 / §4 / §5 — the QUALITY-FIRST output budget (Phase 3B.1)
 # ===========================================================================
-def test_qf_1_the_deepseek_default_budget_is_the_full_allowance():
-    """§3 / §4: the default IS the ceiling, so nothing can raise it silently."""
+def test_qf_1_the_deepseek_default_budget_is_the_thinking_mode_default():
+    """§4: 64K is the thinking-mode default; the old 8K cap was ours, not the model's."""
+    from app.schemas.settings import DeepSeekRuntimeSettings
+
+    assert DeepSeekRuntimeSettings().max_tokens == 65536
+    assert DeepSeekRuntimeSettings().timeout_seconds == 300
+
+
+def test_qf_1b_the_schema_accepts_far_more_than_the_old_8k_cap():
+    """§7: 8192 was a project-imposed limit that no longer matches the API."""
     from pydantic import ValidationError
 
     from app.schemas.settings import DeepSeekRuntimeSettings
 
-    assert DeepSeekRuntimeSettings().max_tokens == 8192
-    assert DeepSeekRuntimeSettings(max_tokens=8192).max_tokens == 8192
+    assert DeepSeekRuntimeSettings(max_tokens=131072).max_tokens == 131072
+    # the diagnostic headroom is bounded on purpose: 384K is NOT opened here
     with pytest.raises(ValidationError):
-        DeepSeekRuntimeSettings(max_tokens=8193)
+        DeepSeekRuntimeSettings(max_tokens=131073)
+    with pytest.raises(ValidationError):
+        DeepSeekRuntimeSettings(max_tokens=393216)
+
+
+def test_qf_1c_timeout_can_be_raised_but_stays_bounded():
+    from pydantic import ValidationError
+
+    from app.schemas.settings import DeepSeekRuntimeSettings, DeepSeekRuntimeSettingsPatch
+
+    assert DeepSeekRuntimeSettings(timeout_seconds=600).timeout_seconds == 600
+    with pytest.raises(ValidationError):
+        DeepSeekRuntimeSettings(timeout_seconds=601)
+    # the PATCH schema must be able to express the same value, or Settings
+    # could not persist what the runtime is allowed to hold
+    assert DeepSeekRuntimeSettingsPatch(timeout_seconds=300).timeout_seconds == 300
+    assert DeepSeekRuntimeSettingsPatch(max_tokens=131072).max_tokens == 131072
+
+
+def test_qf_1d_the_default_reasoning_profile_is_explicit_and_quality_first():
+    """§4 / §5: thinking ON at high effort — stated, not inherited."""
+    from app.schemas.settings import DeepSeekRuntimeSettings
+
+    settings = DeepSeekRuntimeSettings()
+    assert settings.thinking_enabled is True
+    assert settings.reasoning_effort == "high"
 
 
 def test_qf_2_kimi_keeps_its_own_budget():
@@ -538,13 +578,22 @@ def test_qf_3_a_clean_install_resolves_to_the_full_budget(tmp_path, monkeypatch)
     monkeypatch.setattr(
         settings_service, "RUNTIME_SETTINGS_PATH", tmp_path / "absent.json"
     )
-    assert settings_service.get_deepseek_runtime_config().max_tokens == 8192
+    assert settings_service.get_deepseek_runtime_config().max_tokens == 65536
 
 
 def test_qf_4_the_execution_path_forwards_the_budget_unclamped(env):
     """The value that reaches the provider is the configured one, untouched."""
     _execute(env)
-    assert env.provider.calls[0]["max_tokens"] == 8192
+    assert env.provider.calls[0]["max_tokens"] == 65536
+
+
+def test_qf_4b_the_execution_path_states_the_reasoning_profile(env):
+    """§5: the profile is sent, not left to the server's default."""
+    _execute(env)
+    call = env.provider.calls[0]
+    assert call["thinking_enabled"] is True
+    assert call["reasoning_effort"] == "high"
+    assert call["timeout_seconds"] == 300
 
 
 def test_qf_5_no_business_layer_hardcodes_a_deepseek_token_budget():
@@ -583,7 +632,7 @@ def test_qf_6_the_budget_is_reported_so_truncation_is_diagnosable(env):
     """§12: without max_tokens + finish_reason, 'length' is invisible."""
     env.provider.response = _response(raw_text=json.dumps(_payload()), finish_reason="length")
     result = _execute(env)
-    assert result.metrics.max_tokens == 8192
+    assert result.metrics.max_tokens == 65536
     assert result.metrics.finish_reason == "length"
 
 
@@ -594,7 +643,7 @@ def test_qf_7_a_provider_failure_is_never_retried_with_a_smaller_budget(env):
         _execute(env)
     assert exc.value.code == execution.ERR_PROVIDER_AUTH
     assert len(env.provider.calls) == 1, "one attempt, no retry loop"
-    assert env.provider.calls[0]["max_tokens"] == 8192, "the budget is not renegotiated"
+    assert env.provider.calls[0]["max_tokens"] == 65536, "the budget is not renegotiated"
 
 
 def test_qf_8_the_real_http_payload_carries_the_quality_first_budget(monkeypatch):
@@ -656,11 +705,146 @@ def test_qf_8_the_real_http_payload_carries_the_quality_first_budget(monkeypatch
     )
 
     assert sent["body"]["model"] == "deepseek-flash"
-    assert sent["body"]["max_tokens"] == 8192
+    assert sent["body"]["max_tokens"] == 65536
     assert sent["body"]["response_format"] == {"type": "json_object"}
     assert sent["url"].endswith("/chat/completions")
     # headers are asserted by NAME only — a value would be a secret
     assert sent["headers"] == ["Authorization", "Content-Type"]
+
+
+# ===========================================================================
+# §5 / §6 / §14 — the knowledge-production REASONING profile, at the wire
+# ===========================================================================
+def _capture_payload(monkeypatch, *, thinking, effort, max_tokens=65536, timeout=300):
+    """Run the REAL provider against a stubbed HTTP boundary; return the body."""
+    from app.services.llm_providers import deepseek as deepseek_mod
+    from app.services.llm_providers.factory import get_llm_provider
+
+    sent: dict[str, Any] = {}
+
+    class _Response:
+        status_code = 200
+        text = json.dumps(
+            {
+                "choices": [{"message": {"content": "{}"}}],
+                "usage": {
+                    "prompt_tokens": 10,
+                    "completion_tokens": 20,
+                    "total_tokens": 30,
+                    "completion_tokens_details": {"reasoning_tokens": 7},
+                },
+            }
+        )
+
+        def json(self) -> dict[str, Any]:
+            return json.loads(self.text)
+
+    class _Client:
+        async def __aenter__(self) -> "_Client":
+            return self
+
+        async def __aexit__(self, *exc: object) -> bool:
+            return False
+
+        async def post(self, url: str, *, json: dict[str, Any], headers: dict) -> Any:
+            sent["body"] = json
+            return _Response()
+
+    monkeypatch.setattr(deepseek_mod.httpx, "AsyncClient", lambda **kw: _Client())
+    cfg = type(
+        "Cfg",
+        (),
+        {
+            "enabled": True,
+            "api_key": "test-key-not-a-secret",
+            "base_url": "https://api.deepseek.com/v1",
+            "default_model": "deepseek-flash",
+            "timeout_seconds": timeout,
+            "max_tokens": max_tokens,
+            "thinking_enabled": thinking,
+            "reasoning_effort": effort,
+        },
+    )()
+    monkeypatch.setattr(deepseek_mod, "get_deepseek_runtime_config", lambda: cfg)
+
+    response = asyncio.run(
+        get_llm_provider("deepseek").complete_json(
+            model=effective_deepseek_model(None),
+            system_prompt="s",
+            user_prompt="u",
+            max_tokens=max_tokens,
+            timeout_seconds=timeout,
+            thinking_enabled=thinking,
+            reasoning_effort=effort,
+        )
+    )
+    return sent["body"], response
+
+
+def test_rp_1_the_wire_payload_enables_thinking(monkeypatch):
+    body, _ = _capture_payload(monkeypatch, thinking=True, effort="high")
+    assert body["thinking"] == {"type": "enabled"}
+
+
+def test_rp_2_the_wire_payload_states_high_reasoning_effort(monkeypatch):
+    body, _ = _capture_payload(monkeypatch, thinking=True, effort="high")
+    assert body["reasoning_effort"] == "high"
+
+
+def test_rp_3_the_wire_payload_carries_the_64k_budget(monkeypatch):
+    body, _ = _capture_payload(monkeypatch, thinking=True, effort="high")
+    assert body["max_tokens"] == 65536
+    assert body["model"] == "deepseek-flash"
+    assert body["response_format"] == {"type": "json_object"}
+
+
+def test_rp_4_no_retired_model_name_reaches_the_wire(monkeypatch):
+    from app.llm_model_policy import LEGACY_DEEPSEEK_MODELS
+
+    body, _ = _capture_payload(monkeypatch, thinking=True, effort="high")
+    for legacy in LEGACY_DEEPSEEK_MODELS:
+        assert legacy not in json.dumps(body)
+
+
+def test_rp_5_low_effort_is_expressible_for_the_diagnostic(monkeypatch):
+    """§19/§20: the control exists without becoming the production default."""
+    body, _ = _capture_payload(monkeypatch, thinking=True, effort="low")
+    assert body["reasoning_effort"] == "low"
+    assert body["thinking"] == {"type": "enabled"}
+    assert body["max_tokens"] == 65536
+
+
+def test_rp_6_a_caller_that_states_no_profile_sends_none(monkeypatch):
+    """§6: legacy DeepSeek workloads must be untouched by this profile."""
+    body, _ = _capture_payload(monkeypatch, thinking=None, effort=None, max_tokens=2000, timeout=120)
+    assert "thinking" not in body
+    assert "reasoning_effort" not in body
+
+
+def test_rp_7_reasoning_tokens_are_recorded_as_a_count_only(monkeypatch):
+    """§11: a number if the provider reports one; never the reasoning text."""
+    _, response = _capture_payload(monkeypatch, thinking=True, effort="high")
+    assert response.usage.reasoning_tokens == 7
+    assert response.raw_text == "{}", "content is still the only answer"
+
+
+def test_rp_8_metrics_report_the_profile_so_truncation_can_be_read(env):
+    """§12: `length` is only interpretable WITH the effort that consumed it."""
+    env.provider.response = _response(
+        raw_text=json.dumps(_payload()), finish_reason="length"
+    )
+    result = _execute(env)
+    assert result.metrics.thinking_enabled is True
+    assert result.metrics.reasoning_effort == "high"
+    assert result.metrics.max_tokens == 65536
+    assert result.metrics.finish_reason == "length"
+
+
+def test_rp_9_run_provenance_names_the_hardened_prompt_version(env):
+    """§25.9: the persisted run must identify the prompt text that produced it."""
+    _execute(env)
+    assert env.db.runs[0]["prompt_version"] == "1.1.0"
+    assert env.db.runs[0]["prompt_key"] == "knowledge_production.llm_discovery"
 
 
 # ===========================================================================

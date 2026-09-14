@@ -1030,11 +1030,62 @@ Provider **不**做 clamp；业务层**不**传字面量。旧值 2000/2048/4096
 它们会让推理型模型在产出答案之前耗尽预算，实测即 `finish_reason = "length"`
 且 `content` 为空。
 
-`timeout` 保持 120s（provider 下限即 120s），不做本轮调整。
+`timeout`：Phase 3B.3 由 120s 提高到 **300s**（上限 600s）。120s 是为旧的 2K
+预算设定的；64K 生成在合法情况下可能明显更久。仍**有界**，挂死请求不会长期占用 worker。
 
 > **注意**：上述数值属于 **runtime configuration**，不是知识语义。
-> **不得**把 `max_tokens` / `8192` 写入科学 ontology、结构化契约或
+> **不得**把 `max_tokens` / 数值上限写入科学 ontology、结构化契约或
 > `schema_version`。
+
+### 16.9a Thinking / reasoning runtime（Phase 3B.3）
+
+DeepSeek 的 **thinking mode 默认开启**，`reasoning_effort` 默认 **high**——即
+在没有显式设置时，推理过程会**先消耗同一份生成预算**，然后才轮到最终答案。
+Phase 3B.1 / 3B.2 的 `max_tokens = 8192` 是**项目自身**的限制，
+**不是** deepseek-flash 的模型能力上限（官方 Chat Completions 允许远高于此）。
+
+Knowledge Production 采用的显式 runtime profile：
+
+| 项 | 值 | 说明 |
+|---|---|---|
+| provider / model | `deepseek` / `deepseek-flash` | 全局固定政策，未变 |
+| `thinking` | `{"type": "enabled"}` | **显式发送**，不再依赖服务端默认 |
+| `reasoning_effort` | `high` | 显式发送 |
+| `max_tokens` | `65536` | thinking 模式的默认量级；上限 131072 作为诊断余量 |
+| `timeout_seconds` | `300` | |
+
+**只在 caller 显式传入时才发送** `thinking` / `reasoning_effort`。
+因此这套 profile **只作用于声明了它的调用方**（当前是 LLM Discovery），
+legacy DeepSeek 任务的行为逐字节不变——这是 §6「不要机械改动所有任务」的实现方式。
+
+`max_tokens` 的语义：它控制**本次生成的预算**，thinking 的推理会从中扣除。
+因此：
+
+```
+completion_tokens ≈ max_tokens  +  finish_reason = length
+```
+
+必须读作 **generation budget exhausted**，并且要**连同 reasoning effort 一起解读**；
+它本身**不构成**「单次架构不可行」的证明。
+
+**历史诊断（保留原始实验数据）**：
+
+| 阶段 | 预算 | thinking | 结果 |
+|---|---|---|---|
+| 3B.1 | 8192 | 隐式 high（未声明） | 3/3 `length`，parser 0/3 |
+| 3B.2 | 8192 | 隐式 high（未声明） | 1/1 `length`，`content` 为空 |
+| **3B.3** | **65536** | **显式 high** | **`finish_reason = "stop"`；`completion_tokens = 23061`（其中 `reasoning_tokens = 11013`）；`content_chars = 40401`；parser **FAIL**（`LOCAL_ID_DRIFT`）** |
+
+Phase 3B.3 结论：**预算不是瓶颈**——模型在 65536 中只用了 23061 就正常收尾
+（`stop`），首次给出了**完整可评价**的结构化响应。因此：
+
+* 8K 时代的 `SINGLE_RESPONSE_ARCHITECTURE_EXHAUSTED` **已被推翻**；
+  真正的问题是**契约漂移**，不是架构耗尽。
+* 新的、也是首个由真实模型产生的失败类别是 **`LOCAL_ID_DRIFT`**：
+  模型把 local id 写成缩写形式（实测 `conn_1`），
+  违反契约的 `^(region|connection|function|circuit)_[0-9]+$`。
+* 依既定规则（Phase 3A §23 / Phase 3B §23）：**不得**为了让模型通过而放宽
+  `local_id`。这是 `MODEL_CONTRACT_DRIFT`，契约保持不动。
 
 ### 16.10 Response Root Shape（Phase 3B.2）
 
@@ -1067,13 +1118,18 @@ B. FIELD DEFINITIONS        ← 只描述 A 中各数组里的 ITEM，纯文本�
 
 `schema_version` / 契约语义本阶段 **零改动**。
 
-**已知限制**：真实模型在 `max_tokens = 8192` 下仍然
-`finish_reason = "length"`、`completion_tokens = 8192`，且最新一次
-`content` 为空（预算全部消耗在推理阶段、未产出任何答案字符）。
-即：**单次调用完成「Regions + Connections + Functions + Circuits +
-SourceHints」对当前 deepseek-flash 推理行为而言负担过重。**
+**观察记录（非结论）**：在 **8192** 预算下，真实模型仍然
+`finish_reason = "length"`、`completion_tokens = 8192`；其中一次
+`content` 完全为空（预算全部消耗在推理阶段、未产出任何答案字符）。
 
-因此下一步方向是 **Phase 3C — Multi-pass LLM Discovery**（本阶段**不**实现）：
+该现象**当时**被记为 `SINGLE_RESPONSE_ARCHITECTURE_EXHAUSTED`。Phase 3B.3
+修正了这一读法：那是在**项目自设的 8K 生成上限**且 **thinking mode 隐式
+high** 的组合下发生的，因此它证明的是「8K 不够」，
+**不是**「单次架构不可行」。判定单次架构是否可行，需要先给足预算、
+并把 reasoning profile 显式化（见 §16.9a）。
+
+**Phase 3C 候选方向**（本阶段**不**实现）：若在充足预算与显式
+reasoning profile 下单次调用仍不可行，再考虑 **Multi-pass LLM Discovery**：
 
 ```
 Pass 1  Circuit hypotheses
@@ -1084,4 +1140,5 @@ Pass 4  Local candidate graph consolidation
 
 项目策略是 quality-first，因此允许一次 BrainRegion 对应**多次** deepseek-flash
 调用，换取更稳定的结构、更完整的候选、更低的单次 JSON 复杂度与更容易的错误隔离。
-成本不作为阻止该设计的主要因素。
+成本不作为阻止该设计的主要因素。**但 Multi-pass 只有在单次架构被真正证伪后
+才启动**——不得以 8K 耗尽为据直接跳入。

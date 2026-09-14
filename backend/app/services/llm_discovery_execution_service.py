@@ -249,6 +249,11 @@ async def execute_llm_discovery(
             temperature=config.temperature,
             max_tokens=config.max_tokens,
             timeout_seconds=config.timeout_seconds,
+            # The reasoning profile is stated explicitly rather than inherited
+            # from the server, so the budget is spent as a DECISION. It comes
+            # from the one runtime authority; nothing is re-typed here.
+            thinking_enabled=config.thinking_enabled,
+            reasoning_effort=config.reasoning_effort,
         )
     except Exception as exc:  # noqa: BLE001 - classified, then re-raised typed
         code, message = classify_provider_exception(exc)
@@ -318,10 +323,13 @@ async def execute_llm_discovery(
         schema_version=SCHEMA_VERSION,
         max_tokens=config.max_tokens,
         finish_reason=response.finish_reason,
+        thinking_enabled=config.thinking_enabled,
+        reasoning_effort=config.reasoning_effort,
         latency_ms=response.latency_ms,
         prompt_tokens=response.usage.prompt_tokens,
         completion_tokens=response.usage.completion_tokens,
         total_tokens=response.usage.total_tokens,
+        reasoning_tokens=response.usage.reasoning_tokens,
         prompt_sha256=_sha256(prompt["system_prompt"] + "\n" + prompt["user_prompt"]),
         response_sha256=_sha256(response.raw_text),
         warning_count=len(parsed.validation_warnings),
