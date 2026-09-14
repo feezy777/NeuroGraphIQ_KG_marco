@@ -188,13 +188,16 @@ def _log_success(run: DiscoveryRunItem, metrics: LlmDiscoveryExecutionMetrics) -
     """
     logger.info(
         "[llm-discovery] run completed run_id=%s seed_entity_id=%s provider=%s"
-        " effective_model=%s prompt=%s@%s latency_ms=%s outcome=%s counts=%s warnings=%s",
+        " effective_model=%s prompt=%s@%s max_tokens=%s finish_reason=%s"
+        " latency_ms=%s outcome=%s counts=%s warnings=%s",
         run.run_id,
         run.seed_entity_id,
         metrics.provider,
         metrics.effective_model,
         PROMPT_KEY,
         PROMPT_VERSION,
+        metrics.max_tokens,
+        metrics.finish_reason,
         metrics.latency_ms,
         run.outcome,
         metrics.candidate_counts,
@@ -313,6 +316,8 @@ async def execute_llm_discovery(
         prompt_key=PROMPT_KEY,
         prompt_version=PROMPT_VERSION,
         schema_version=SCHEMA_VERSION,
+        max_tokens=config.max_tokens,
+        finish_reason=response.finish_reason,
         latency_ms=response.latency_ms,
         prompt_tokens=response.usage.prompt_tokens,
         completion_tokens=response.usage.completion_tokens,

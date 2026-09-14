@@ -35,6 +35,12 @@ class LlmDiscoveryExecutionMetrics(BaseModel):
     prompt_version: str
     schema_version: str
 
+    #: The budget that was actually REQUESTED. Without it a truncated answer is
+    #: indistinguishable from a model that simply had nothing to say.
+    max_tokens: int
+    #: ``stop`` = the model finished; ``length`` = it ran out of budget.
+    finish_reason: str | None = None
+
     latency_ms: int
 
     prompt_tokens: int | None = None

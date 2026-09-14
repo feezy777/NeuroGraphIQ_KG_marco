@@ -979,3 +979,54 @@ prompt 版本。
 缺失时由 parser 失败（§15.7a）。
 
 前端 Discovery 按钮**保持禁用**：候选尚不能持久化。
+
+### 16.9 DeepSeek runtime policy（Phase 3B.1）
+
+```
+NeuroGraphIQ DeepSeek runtime policy:
+- model: deepseek-flash
+- knowledge-production workloads are quality-first
+- token budget must be sufficient for complete structured output
+- cost optimization must not silently reduce scientific output quality
+```
+
+知识生产阶段（LLM Discovery / Literature Discovery / Evidence extraction /
+Evidence judgment / Validation）的优先顺序：
+
+```
+1. scientific/structural quality
+2. contract compliance
+3. execution reliability
+4. latency
+5. cost
+```
+
+具体含义：
+
+* 不为了节省 API 成本降低必要的 **输出预算**（`max_tokens`）。
+* 不为了节省 token 删除 `species_context`、Circuit、Connection、Function、
+  `source_hints`，或简化科学 schema。
+* 不因为 prompt 较长而截断关键科学上下文。
+* 优先避免 `finish_reason = "length"` / 不完整 JSON / 被截断的结构化响应：
+  **截断是正确性失败，不是节省**。
+* token usage / latency 继续记录（见 `metrics`），但只用于诊断与后续性能优化，
+  **当前不作为主动降质依据**。
+
+**预算权威**（单一来源）：
+
+```
+DeepSeekRuntimeSettings.max_tokens          schemas/settings.py  ← 默认 = 上限
+  → settings_service.get_deepseek_runtime_config().max_tokens
+  → llm_discovery_execution_service          （透传，不裁决）
+  → DeepSeekProvider  →  payload["max_tokens"]  →  HTTP request
+```
+
+Provider **不**做 clamp；业务层**不**传字面量。旧值 2000/2048/4096 已废弃：
+它们会让推理型模型在产出答案之前耗尽预算，实测即 `finish_reason = "length"`
+且 `content` 为空。
+
+`timeout` 保持 120s（provider 下限即 120s），不做本轮调整。
+
+> **注意**：上述数值属于 **runtime configuration**，不是知识语义。
+> **不得**把 `max_tokens` / `8192` 写入科学 ontology、结构化契约或
+> `schema_version`。

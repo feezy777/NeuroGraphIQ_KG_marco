@@ -18,7 +18,15 @@ class DeepSeekRuntimeSettings(BaseModel):
     timeout_seconds: int = Field(default=120, ge=5, le=300)
     max_batch_size: int = Field(default=20, ge=1, le=20)
     temperature: float = Field(default=0.2, ge=0.0, le=2.0)
-    max_tokens: int = Field(default=2000, ge=256, le=8192)
+    # RUNTIME CONFIGURATION, not knowledge semantics. DeepSeek knowledge-
+    # production workloads are QUALITY-FIRST: a complete structured answer must
+    # be reachable, so the default budget is the provider's full allowance (the
+    # upper bound below). Truncation is a correctness failure, not a saving —
+    # `finish_reason = "length"` means the model never produced an answer.
+    # This is the ONLY authority for a DeepSeek request's max_tokens: no
+    # business layer may lower it to save tokens. See §16 of
+    # docs/KNOWLEDGE_PRODUCTION_ARCHITECTURE.md.
+    max_tokens: int = Field(default=8192, ge=256, le=8192)
 
 
 class KimiRuntimeSettings(BaseModel):
