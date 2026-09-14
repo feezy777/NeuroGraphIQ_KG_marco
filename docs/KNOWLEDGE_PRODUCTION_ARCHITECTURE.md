@@ -1227,3 +1227,93 @@ pydantic_types = { "missing": 21, "literal_error": 1 }    共 22 条
 
 > 注：该轮**未**修改任何东西——§23/§24 明确要求只分类、不自动修契约。
 > `confidence` 问题属于下一轮的课题。
+
+**Phase 3B.4a 复现性诊断（同一 prompt，同 seed，同 runtime，共 3 个样本）**：
+
+| | #1 | #2 | #3 |
+|---|---|---|---|
+| parser | **FAIL** | **PASS** | **PASS** |
+| 候选数 | 未采集 | 52 | 56 |
+| confidence missing | 21 | **0** | **0** |
+| local-id drift | 0 | **0** | **0** |
+
+结论：local-id 合规 **3/3 全清**；但 `json_object` 模式的 **schema 合规是间歇的
+（2/3）**。`response_format={"type":"json_object"}` 只保证**输出是合法 JSON**，
+**不保证符合我们的 schema** —— 间歇性不合规是这套模式的**预期行为**。
+
+唯一失败的 #1 恰是三次中输出最长的一次（completion 14698 / 37093 字符），
+而 #2/#3 的 108 个候选 `confidence` **一个都没漏**。指向「长输出下的合规衰减」
+而非「prompt 没讲清 confidence」——但 n=3，**只是假设，不是结论**。
+
+因此：**provider 端结构化输出进入可行性评估**（Phase 3B.5）。
+
+---
+
+## 17. Provider-side Structured Output 可行性（Phase 3B.5）
+
+> **状态：可行性门禁，未迁移。** 正式 LLM Discovery 执行路径
+> **仍然走 Chat Completions**。本节记录的是「是否值得迁移」的实测结论，
+> **不是**已生效的生产权威。
+
+### 17.1 门禁结果
+
+| 阶段 | 内容 | 结果 |
+|---|---|---|
+| Stage 1 | 最小 `json_schema` 探针（`deepseek-flash` + `/responses`） | **PASS** — HTTP 200，`status: completed`，输出满足最小 schema |
+| Stage 2 | 完整 Discovery schema smoke | **FAIL** — HTTP **400**，`invalid_request_error` |
+
+**`/responses` 接受 `deepseek-flash`：是。** `text.format.type = json_schema`
+本身也可用（Stage 1 证明）。失败点**不在模型、不在端点**，而在**我们的 schema 形状**。
+
+### 17.2 具体不兼容（`PROVIDER_SCHEMA_SUBSET_INCOMPATIBLE`）
+
+Provider 返回的原文错误：
+
+```
+Required properties must match all properties in the object
+```
+
+即：**strict 模式下 `required` 必须枚举该对象的全部 `properties`**。
+Pydantic 默认把「可选字段」表达为「不出现在 `required` 里」，这与该规则冲突。
+
+`LlmDiscoveryResponse.model_json_schema()` 中**违反该规则的对象共 8 个**：
+
+| 路径 | properties | required | 缺 |
+|---|---|---|---|
+| `$`（顶层） | 9 | 1 | 8 |
+| `$defs.RegionCandidate` | 9 | 3 | 6 |
+| `$defs.ConnectionCandidate` | 8 | 5 | 3 |
+| `$defs.FunctionCandidate` | 8 | 4 | 4 |
+| `$defs.CircuitCandidate` | 10 | 4 | 6 |
+| `$defs.SourceHint` | 8 | 1 | 7 |
+| `$defs.DiscoveryWarning` | 3 | 2 | 1 |
+| `$defs.SpeciesContext` | 2 | 0 | 2 |
+
+对照组：Stage 1 的最小 schema `required == properties`（`["ok"]`），
+所以**通过了**——这反证了上述诊断。
+
+### 17.3 已知的投影缺口（即使形状修好也无法强制）
+
+JSON Schema 只能表达**Pydantic 能投影的**约束。以下两条**不是** JSON Schema
+能表达的，因为它们是**自定义校验器**：
+
+| 契约约束 | 实现方式 | 能否投影 |
+|---|---|---|
+| `local_id ∈ region_<n>/connection_<n>/function_<n>/circuit_<n>` | `@field_validator` | **否** — schema 里只有 `{'type': 'string'}`，**无 `pattern`** |
+| `SpeciesContext` 表示一致性（HUMAN 必须含 9606 等） | `@model_validator` | **否** |
+
+即：**即使完成 provider-compatible schema projection，local-ID 命名仍不会被
+provider 端强制** —— Phase 3A parser 仍是它唯一的门禁。这一点必须在任何迁移
+决策里明确计入。
+
+### 17.4 结论与后续
+
+* 该路线**没有被证伪**，但**需要一次独立的 schema projection**：
+  把所有 `properties` 补进 `required`，可选性改用 `["<type>", "null"]` 表达，
+  同时保留 `additionalProperties: false`（这一条我们已经正确）。
+  该转换**只改可选性的表达方式，不删任何科学约束**。
+* **本阶段不实现**该 transformer（§14 明确要求）。
+* Responses API **不得**被标为正式生产权威，除非后续迁移阶段真正完成。
+* 三个版本标识各司其职，**不得混淆**：
+  `schema_version 1.0`（科学契约）· `prompt_version 1.2.0`（提示词文本）·
+  `neurographiq_llm_discovery_v1`（provider schema 标识符）。
