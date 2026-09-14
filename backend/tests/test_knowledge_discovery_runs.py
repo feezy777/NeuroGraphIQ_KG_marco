@@ -325,16 +325,21 @@ def test_run_dto_never_exposes_json_blobs_or_secrets(client, session):
 # ---------------------------------------------------------------------------
 # Phase 2A boundary: read-only, no lifecycle, no discovery execution
 # ---------------------------------------------------------------------------
-def test_no_write_endpoint_exists(client, session):
-    """Phase 2A ships no writer: every mutating verb must be refused."""
+def test_read_surface_accepts_no_mutation(client, session):
+    """Reads stay reads.
+
+    Phase 2A asserted that no writer existed at all. Phase 2B intentionally
+    added the five lifecycle POSTs (create/start/complete/fail/cancel), so that
+    assertion now lives in the lifecycle suite. What must remain true here is
+    that the READ surface itself accepts no mutation: the run-detail path is
+    GET-only, and there is no collection-level POST (a run is always created
+    against a BrainRegion, never standalone).
+    """
     run_id = "11111111-2222-3333-4444-555555555555"
-    # Path exists with GET only -> 405 Method Not Allowed.
-    assert client.post(RUNS_ENDPOINT, json={}).status_code == 405
     assert client.patch(f"{RUN_ENDPOINT}/{run_id}", json={}).status_code == 405
     assert client.delete(f"{RUN_ENDPOINT}/{run_id}").status_code == 405
-    # No collection POST route is defined at all -> 404 (still no writer).
-    assert client.post(RUN_ENDPOINT, json={}).status_code == 404
     assert client.put(f"{RUN_ENDPOINT}/{run_id}", json={}).status_code == 405
+    assert client.post(RUN_ENDPOINT, json={}).status_code == 404
 
 
 # 10 — the service layer contains no INSERT / UPDATE / DELETE

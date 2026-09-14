@@ -174,11 +174,17 @@ function DiscoveryCard({
           </span>
         ))}
       </div>
-      <button type="button" className="btn btn-sm" disabled title="Phase 2B/3 开放" data-testid={testId}>
+      <button
+        type="button"
+        className="btn btn-sm"
+        disabled
+        title="需要发现执行引擎（后续阶段）"
+        data-testid={testId}
+      >
         {buttonLabel}
       </button>
       <p className="kp-card-hint">
-        Discovery Run persistence is available. Execution will be enabled in a later phase.
+        Discovery lifecycle is ready. Execution will be enabled with the discovery engine.
       </p>
     </div>
   )

@@ -625,3 +625,96 @@ FK 一律引用内部 `*_pk`，绝不引用 `*_id`。
 本阶段**只**建立持久化与只读查询：建表、只读 service、只读端点。
 **不**执行任何发现路线，**不**调用 LLM，**不**检索文献，**不**产生候选。
 `create / start / complete / fail / cancel` 等受控状态迁移属于 **Phase 2B**。
+
+---
+
+## 14. Discovery Run Lifecycle（Phase 2B 冻结）
+
+本阶段**只**实现受控状态迁移。**不**执行发现：**不**调用 LLM、**不**检索文献、
+**不**产生候选、**不**绑定证据。
+
+### 14.1 冻结状态图
+
+```
+CREATE
+  ↓
+QUEUED ──start──→ RUNNING ──complete──→ COMPLETED
+   │                  ├──fail──────→ FAILED
+   │                  └──cancel────→ CANCELLED
+   ├──fail──────→ FAILED
+   └──cancel────→ CANCELLED
+```
+
+| 迁移 | 合法来源 | 结果 |
+|---|---|---|
+| `create` | — | `QUEUED` |
+| `start` | `QUEUED` | `RUNNING` |
+| `complete` | `RUNNING` | `COMPLETED` |
+| `fail` | `QUEUED` \| `RUNNING` | `FAILED` |
+| `cancel` | `QUEUED` \| `RUNNING` | `CANCELLED` |
+
+**终态**：`COMPLETED` / `FAILED` / `CANCELLED` —— **不可变**。
+终态**没有**任何出边；`COMPLETED → start`、`FAILED → complete`、
+`CANCELLED → cancel` 一律 **409**。
+
+**幂等**（不产生新写入，返回当前 run，HTTP 200）：
+`start` 于 `RUNNING`；`complete` 于 `COMPLETED` 且 outcome 相同；
+`fail` 于 `FAILED` 且 error_code/error_message 相同；`cancel` 于 `CANCELLED`。
+同终态但**载荷不同**（如 `COMPLETED` 换一个 outcome）→ **409**。
+
+**禁止**：从 `QUEUED` 直接 `complete`（必须先 `start`）；
+任何终态重开。**暂不实现 retry** —— 未来的重试创建**新 run**，而不是重开终态 run。
+
+### 14.2 status / outcome 语义（Phase 2A §13.3 的强化）
+
+| status | outcome |
+|---|---|
+| `COMPLETED` | **必须**非空 |
+| 非 `COMPLETED` | **必须**为 `NULL` |
+
+**路线兼容性**（属于 lifecycle service，**不**做成 SQL 约束）：
+`discovery_type` 与 `outcome` 的合法组合取决于发现路线：
+
+| discovery_type | 允许的 outcome |
+|---|---|
+| `LLM_DISCOVERY` | `CANDIDATES_FOUND` / `NO_CANDIDATES_FOUND` |
+| `LITERATURE_DISCOVERY` | `CANDIDATES_FOUND` / `NO_CANDIDATES_FOUND` / `NO_EVIDENCE_FOUND` |
+
+`LLM_DISCOVERY` **不得**以 `NO_EVIDENCE_FOUND` 完成 —— LLM Discovery
+本身**不是**证据检索路线，它无权断言“没有证据”。
+非法组合 → **422**（语义非法，不是状态冲突）。
+
+### 14.3 时间戳不变量
+
+| status | started_at | finished_at |
+|---|---|---|
+| `QUEUED` | 可空 | **必须** NULL |
+| `RUNNING` | **必须**非空 | **必须** NULL |
+| `COMPLETED` | **必须**非空 | **必须**非空 |
+| `FAILED` / `CANCELLED` | 可空 | **必须**非空 |
+
+`FAILED` / `CANCELLED` 的 `started_at` 可空，因为它们可能发生在执行开始**之前**
+（`QUEUED → FAILED`）或之后。失败若发生在 `QUEUED`，**不得**伪造 `started_at`。
+
+### 14.4 单活跃 run 不变量
+
+对同一个 `(seed_region_pk, discovery_type)`，**最多**存在 **一个**活跃 run
+（`status IN ('QUEUED','RUNNING')`）。终态历史**不**阻塞新 run。
+
+该不变量由 **PostgreSQL 部分唯一索引**保证
+（`uq_kdr_active_per_seed_type`，migration `gate7b_012`），
+**不是**应用层 `SELECT` 后再 `INSERT` —— 后者在并发下会双写。
+数据库是最终权威；lifecycle service 将 `IntegrityError` 转成 **409**。
+
+### 14.5 事务与并发
+
+每一次状态迁移是**一个事务**：`SELECT … FOR UPDATE` 锁定该 run 行，
+在锁内判定迁移合法性，再写入。**禁止**「先读状态，之后无条件 UPDATE」。
+
+### 14.6 Phase 2B 边界
+
+本阶段**只**提供生命周期写入与状态不变量。
+**没有**执行引擎：`create` 只会产生一个处于 `QUEUED` 的 run，
+必须由后续阶段的执行层推进。因此 UI 的
+`Start LLM Discovery` / `Start Literature Discovery` **保持禁用** ——
+否则会产生无人执行的 `QUEUED` run。

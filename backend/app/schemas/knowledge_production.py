@@ -14,7 +14,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 # The frozen Gate7B granularity vocabulary. This is the ONLY granularity
 # vocabulary used by the Knowledge Production module.
@@ -149,3 +149,70 @@ class DiscoveryRunItem(BaseModel):
 class DiscoveryRunListResponse(BaseModel):
     items: list[DiscoveryRunItem]
     total: int
+
+
+# ===========================================================================
+# Phase 2B — Discovery Run lifecycle request DTOs
+# ===========================================================================
+# A run is ACTIVE while it is QUEUED or RUNNING. At most one active run may
+# exist per (seed_region_pk, discovery_type) — enforced by the partial unique
+# index uq_kdr_active_per_seed_type (migration gate7b_012).
+ACTIVE_DISCOVERY_RUN_STATUSES: tuple[str, ...] = ("QUEUED", "RUNNING")
+
+TERMINAL_DISCOVERY_RUN_STATUSES: tuple[str, ...] = ("COMPLETED", "FAILED", "CANCELLED")
+
+# Which outcome may a finished run report, per route?
+#
+# LLM_DISCOVERY is NOT an evidence-search route: it proposes candidate
+# knowledge, so it may report that it found candidates or found none, but it
+# has no standing to assert NO_EVIDENCE_FOUND — that is a literature-search
+# conclusion. Enforced in the lifecycle service (it depends on discovery_type,
+# so it is not expressible as a column CHECK).
+COMPLETION_OUTCOMES_BY_TYPE: dict[str, tuple[str, ...]] = {
+    "LLM_DISCOVERY": ("CANDIDATES_FOUND", "NO_CANDIDATES_FOUND"),
+    "LITERATURE_DISCOVERY": (
+        "CANDIDATES_FOUND",
+        "NO_CANDIDATES_FOUND",
+        "NO_EVIDENCE_FOUND",
+    ),
+}
+
+
+class DiscoveryRunCreateRequest(BaseModel):
+    """POST body for creating a run. ONLY the route may be supplied.
+
+    ``extra="forbid"`` is deliberate: the client must not be able to fabricate
+    execution provenance (provider / model_name / prompt_key / prompt_version /
+    query_strategy_version), run config (parameters_json / provenance_json),
+    audit identity (created_by) or knowledge payloads (candidates / evidence).
+    Those are written by the execution layers that actually produce them.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    discovery_type: DiscoveryType
+
+
+class DiscoveryRunCompleteRequest(BaseModel):
+    """POST body for completing a run. A scientific outcome is required.
+
+    A completed run must state its result, so ``outcome`` has no default.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    outcome: DiscoveryRunOutcome
+
+
+class DiscoveryRunFailRequest(BaseModel):
+    """POST body for failing a run. The explanation is mandatory.
+
+    Lengths mirror the columns: ``error_message`` is TEXT (uncapped),
+    ``error_code`` is VARCHAR(64) — validated here rather than silently
+    truncated by the database.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    error_code: str | None = Field(default=None, max_length=64)
+    error_message: str = Field(min_length=1)
