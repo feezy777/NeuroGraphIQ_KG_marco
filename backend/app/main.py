@@ -34,6 +34,7 @@ from app.routers import (
     human_review,
     import_batches,
     knowledge_production,
+    llm_discovery_candidates,
     llm_extraction,
     llm_field_completion,
     llm_circuit_connection_extraction,
@@ -421,6 +422,11 @@ app.include_router(
 # Phase 1 Knowledge Production (read-only BrainRegion seed access, Gate7B authority).
 # The router already declares its own /api/knowledge-production prefix.
 app.include_router(knowledge_production.router)
+# P0-2B LLM Discovery candidate READ API. A separate router on purpose: the
+# Knowledge Production router above is a parked, uncommitted workstream, and two
+# independent phases must not share one file. It declares the same
+# /api/knowledge-production prefix, so the paths nest together.
+app.include_router(llm_discovery_candidates.router)
 app.include_router(
     enhancement.router,
     prefix="/api/validation/circuit",
