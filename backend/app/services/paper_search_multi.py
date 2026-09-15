@@ -18,6 +18,97 @@ SEMANTIC_SCHOLAR_BASE = "https://api.semanticscholar.org/graph/v1/paper/search"
 
 
 # ── Unified paper dict ───────────────────────────────────────────────────
+# ── Failure semantics ────────────────────────────────────────────────────
+# A FAILED REQUEST IS NOT AN EMPTY SCIENTIFIC RESULT.
+#
+# "The search ran and matched nothing" and "the search never completed" are
+# different facts, and only the first is evidence about the literature. The
+# functions below used to collapse both into `[]` (HTTP 429, 5xx, timeouts and
+# bare `except` all returned an empty list), which let rate limiting be read
+# downstream as "no papers exist for this circuit". Failures now RAISE.
+class LiteratureSearchError(Exception):
+    """A literature search REQUEST failed. Never raised for 'no matches'."""
+
+    def __init__(self, provider: str, message: str, *,
+                 status_code: int | None = None, retryable: bool = False) -> None:
+        super().__init__(f"[{provider}] {message}")
+        self.provider = provider
+        self.message = message
+        self.status_code = status_code
+        self.retryable = retryable
+
+    def as_diagnostic(self) -> dict:
+        return {"provider": self.provider, "status_code": self.status_code,
+                "retryable": self.retryable, "message": self.message}
+
+
+#: Bounded retry, matching EuropePmcClient / PubmedClient conventions.
+MAX_SEARCH_ATTEMPTS = 4          # 1 original + 3 retries
+SEARCH_BACKOFF = (1.0, 2.0, 4.0)
+_RETRYABLE_STATUS = (429, 500, 502, 503, 504)
+
+
+async def _backoff(seconds: float) -> None:
+    """Indirection so tests can make retry timing deterministic."""
+    await asyncio.sleep(seconds)
+
+
+async def _request(client: httpx.AsyncClient, url: str, params: dict, *,
+                   provider: str) -> httpx.Response:
+    """GET with bounded retry. Raises LiteratureSearchError; never returns a
+    response whose status is not 200."""
+    last: LiteratureSearchError | None = None
+    for attempt in range(MAX_SEARCH_ATTEMPTS):
+        try:
+            resp = await client.get(url, params=params)
+        except (httpx.TimeoutException, httpx.NetworkError, httpx.TransportError) as exc:
+            # TRANSPORT_ERROR: the request never produced an answer
+            last = LiteratureSearchError(provider, f"transport failure: {type(exc).__name__}",
+                                         retryable=True)
+        except httpx.HTTPError as exc:
+            last = LiteratureSearchError(provider, f"http client failure: {type(exc).__name__}",
+                                         retryable=True)
+        else:
+            if resp.status_code == 200:
+                return resp
+            if resp.status_code in _RETRYABLE_STATUS:
+                # 429 -> RATE_LIMITED (honour Retry-After when offered); 5xx -> UPSTREAM_ERROR
+                retry_after = resp.headers.get("Retry-After", "")
+                delay = None
+                try:
+                    delay = float(retry_after)
+                except (TypeError, ValueError):
+                    delay = None
+                last = LiteratureSearchError(provider,
+                                             "rate limited" if resp.status_code == 429
+                                             else "upstream error",
+                                             status_code=resp.status_code, retryable=True)
+                if attempt < MAX_SEARCH_ATTEMPTS - 1:
+                    await _backoff(delay if delay is not None
+                                   else SEARCH_BACKOFF[min(attempt, len(SEARCH_BACKOFF) - 1)])
+                    continue
+                raise last
+            # 400 / 401 / 403 / 404 ...: retrying cannot help
+            raise LiteratureSearchError(provider, "request rejected",
+                                        status_code=resp.status_code, retryable=False)
+        if attempt < MAX_SEARCH_ATTEMPTS - 1:
+            await _backoff(SEARCH_BACKOFF[min(attempt, len(SEARCH_BACKOFF) - 1)])
+    raise last or LiteratureSearchError(provider, "search failed")
+
+
+def _json_or_raise(resp: httpx.Response, *, provider: str) -> dict:
+    """A 200 is not automatically a valid answer."""
+    try:
+        payload = resp.json()
+    except ValueError:
+        raise LiteratureSearchError(provider, "invalid JSON in a 200 response",
+                                    status_code=200, retryable=False) from None
+    if not isinstance(payload, dict):
+        raise LiteratureSearchError(provider, "unexpected response shape",
+                                    status_code=200, retryable=False)
+    return payload
+
+
 def _unified(pmid="", doi="", title="", abstract="", journal="", year=None,
              source="", is_oa=False, fulltext_avail=False, **extra) -> dict:
     return {
@@ -33,24 +124,27 @@ async def _pubmed_search(query: str, limit: int = 20) -> list[dict]:
     """Search PubMed via E-utilities esearch + efetch."""
     async with httpx.AsyncClient(timeout=SEARCH_TIMEOUT) as client:
         # 1) Search
-        esearch_resp = await client.get(
-            f"{PUBMED_BASE}/esearch.fcgi",
-            params={"db": "pubmed", "term": query, "retmode": "json",
-                    "retmax": limit, "sort": "relevance"},
+        esearch_resp = await _request(
+            client, f"{PUBMED_BASE}/esearch.fcgi",
+            {"db": "pubmed", "term": query, "retmode": "json",
+             "retmax": limit, "sort": "relevance"},
+            provider="pubmed",
         )
-        if esearch_resp.status_code != 200:
-            return []
-        id_list = esearch_resp.json().get("esearchresult", {}).get("idlist", [])
+        payload = _json_or_raise(esearch_resp, provider="pubmed")
+        esearch = payload.get("esearchresult")
+        if not isinstance(esearch, dict):
+            raise LiteratureSearchError("pubmed", "missing esearchresult",
+                                        status_code=200, retryable=False)
+        id_list = esearch.get("idlist", [])
         if not id_list:
-            return []
+            return []          # a completed search that genuinely matched nothing
 
         # 2) Fetch metadata
-        efetch_resp = await client.get(
-            f"{PUBMED_BASE}/efetch.fcgi",
-            params={"db": "pubmed", "id": ",".join(id_list), "retmode": "xml", "rettype": "abstract"},
+        efetch_resp = await _request(
+            client, f"{PUBMED_BASE}/efetch.fcgi",
+            {"db": "pubmed", "id": ",".join(id_list), "retmode": "xml", "rettype": "abstract"},
+            provider="pubmed",
         )
-        if efetch_resp.status_code != 200:
-            return []
         return _parse_pubmed_xml(efetch_resp.text)
 
 
@@ -126,17 +220,15 @@ def _parse_pubmed_xml(xml_text: str) -> list[dict]:
 async def _openalex_search(query: str, limit: int = 20) -> list[dict]:
     """Search OpenAlex works API."""
     async with httpx.AsyncClient(timeout=SEARCH_TIMEOUT) as client:
-        try:
-            resp = await client.get(
-                OPENALEX_BASE,
-                params={"search": query, "per-page": min(limit, 50)},
-            )
-            if resp.status_code != 200:
-                return []
-            data = resp.json()
-        except Exception:
-            return []
-        return _parse_openalex(data.get("results", []))
+        resp = await _request(client, OPENALEX_BASE,
+                              {"search": query, "per-page": min(limit, 50)},
+                              provider="openalex")
+        data = _json_or_raise(resp, provider="openalex")
+        results = data.get("results")
+        if results is None:
+            raise LiteratureSearchError("openalex", "missing 'results' key",
+                                        status_code=200, retryable=False)
+        return _parse_openalex(results)
 
 
 def _parse_openalex(results: list[dict]) -> list[dict]:
@@ -174,19 +266,24 @@ def _parse_openalex(results: list[dict]) -> list[dict]:
 
 # ── Europe PMC (existing, minimal wrapper) ────────────────────────────────
 async def _europepmc_search(query: str, limit: int = 20) -> list[dict]:
-    """Search Europe PMC REST API — returns unified dicts."""
+    """Search Europe PMC REST API — returns unified dicts.
+
+    Returns ``[]`` ONLY for a completed search that matched nothing. A failed
+    request raises LiteratureSearchError instead: a rate-limited call must not
+    be readable downstream as "the literature has no such papers".
+    """
     async with httpx.AsyncClient(timeout=SEARCH_TIMEOUT) as client:
-        try:
-            resp = await client.get(
-                EUROPE_PMC_SEARCH,
-                params={"query": query, "format": "json", "pageSize": limit, "resultType": "core"},
-            )
-            if resp.status_code != 200:
-                return []
-            payload = resp.json()
-        except Exception:
-            return []
-    results = payload.get("resultList", {}).get("result", [])
+        resp = await _request(
+            client, EUROPE_PMC_SEARCH,
+            {"query": query, "format": "json", "pageSize": limit, "resultType": "core"},
+            provider="europepmc",
+        )
+        payload = _json_or_raise(resp, provider="europepmc")
+    result_list = payload.get("resultList")
+    if not isinstance(result_list, dict):
+        raise LiteratureSearchError("europepmc", "missing 'resultList' in a 200 response",
+                                    status_code=200, retryable=False)
+    results = result_list.get("result", [])
     papers = []
     for r in results:
         pmid = (r.get("pmid") or "").strip()
@@ -511,17 +608,15 @@ def _word_match(term: str, text: str) -> float:
 async def _semanticscholar_search(query: str, limit: int = 20) -> list[dict]:
     """Search Semantic Scholar Academic Graph API."""
     async with httpx.AsyncClient(timeout=SEARCH_TIMEOUT) as client:
-        try:
-            resp = await client.get(
-                SEMANTIC_SCHOLAR_BASE,
-                params={"query": query, "limit": min(limit, 50),
-                        "fields": "paperId,title,abstract,authors,year,venue,externalIds,openAccessPdf,citationCount"},
-            )
-            if resp.status_code != 200:
-                return []
-            data = resp.json()
-        except Exception:
-            return []
+        resp = await _request(client, SEMANTIC_SCHOLAR_BASE,
+                              {"query": query, "limit": min(limit, 50),
+                               "fields": "paperId,title,abstract,authors,year,venue,"
+                                         "externalIds,openAccessPdf,citationCount"},
+                              provider="semanticscholar")
+        data = _json_or_raise(resp, provider="semanticscholar")
+        if data.get("data") is None:
+            raise LiteratureSearchError("semanticscholar", "missing 'data' key",
+                                        status_code=200, retryable=False)
     papers = []
     for item in data.get("data", []):
         ext = item.get("externalIds") or {}
@@ -608,8 +703,16 @@ def _build_query_strategies(context: dict) -> list[tuple[str, str]]:
 
 
 # ── Main multi-source search ──────────────────────────────────────────────
-async def multi_search(context: dict, limit: int = 20) -> list[dict]:
-    """Multi-query, multi-source search with dedup and evidence-aware ranking."""
+async def multi_search(context: dict, limit: int = 20,
+                       diagnostics: dict | None = None) -> list[dict]:
+    """Multi-query, multi-source search with dedup and evidence-aware ranking.
+
+    Partial success is allowed -- one provider being down must not fail the
+    whole search. But it must not be SILENT either: pass ``diagnostics`` (any
+    dict; it is filled in place) to receive a ``provider_failures`` list, so a
+    caller can tell "these sources were unreachable" apart from "these sources
+    were searched and had nothing". Callers that pass nothing are unaffected.
+    """
     strategies = _build_query_strategies(context)
 
     # Build loose query fallback
@@ -642,12 +745,19 @@ async def multi_search(context: dict, limit: int = 20) -> list[dict]:
 
     results, tasks = await search_all()
 
-    # Merge with query metadata
+    # Merge with query metadata. A failed provider is recorded, never dropped:
+    # "unreachable" and "returned nothing" are different scientific facts.
     all_papers: list[dict] = []
+    failures: list[dict] = []
     for i, r in enumerate(results):
-        if isinstance(r, Exception):
-            continue
         _, source, strategy = tasks[i]
+        if isinstance(r, BaseException):
+            failure = (r.as_diagnostic() if isinstance(r, LiteratureSearchError)
+                       else {"provider": source, "status_code": None,
+                             "retryable": None, "message": type(r).__name__})
+            failure["query_strategy"] = strategy
+            failures.append(failure)
+            continue
         for p in r:
             p.setdefault("discovery_source", source)
             existing = p.get("matched_queries", [])
@@ -656,6 +766,13 @@ async def multi_search(context: dict, limit: int = 20) -> list[dict]:
             p["matched_queries"] = existing
             p.setdefault("query_strategy", strategy)
             all_papers.append(p)
+
+    if diagnostics is not None:
+        diagnostics["provider_failures"] = failures
+        # A caller must be able to tell "some sources were down" from "all
+        # sources were searched and found nothing".
+        diagnostics["partial"] = bool(failures) and bool(all_papers)
+        diagnostics["all_providers_failed"] = bool(failures) and not all_papers
 
     # Dedup
     papers = _dedup_papers(all_papers)
