@@ -85,7 +85,14 @@ class BrainRegionSeedDetail(BrainRegionSeedItem):
 # lifecycle + scientific-outcome vocabularies, deliberately separate from any
 # future CandidateStatus / ValidationStatus / PromotionStatus.
 
-DiscoveryType = Literal["LLM_DISCOVERY", "LITERATURE_DISCOVERY"]
+DiscoveryType = Literal[
+    "LLM_DISCOVERY",
+    "LITERATURE_DISCOVERY",
+    # gate7b_013 widened the database CHECK to these two; this vocabulary must
+    # match it or a stored run type becomes unrepresentable in the API.
+    "EVIDENCE_SEARCH",
+    "CITATION_CHAINING",
+]
 
 DiscoveryRunStatus = Literal["QUEUED", "RUNNING", "COMPLETED", "FAILED", "CANCELLED"]
 
@@ -171,6 +178,21 @@ TERMINAL_DISCOVERY_RUN_STATUSES: tuple[str, ...] = ("COMPLETED", "FAILED", "CANC
 COMPLETION_OUTCOMES_BY_TYPE: dict[str, tuple[str, ...]] = {
     "LLM_DISCOVERY": ("CANDIDATES_FOUND", "NO_CANDIDATES_FOUND"),
     "LITERATURE_DISCOVERY": (
+        "CANDIDATES_FOUND",
+        "NO_CANDIDATES_FOUND",
+        "NO_EVIDENCE_FOUND",
+    ),
+    # gate7b_013 added these two run types to the database CHECK; the mapping
+    # must cover them too, or completing such a run raises KeyError instead of
+    # returning a verdict. Both are literature/evidence SEARCH routes, so a
+    # completed search may legitimately report that it found no evidence --
+    # unlike LLM_DISCOVERY, which proposes candidates and has no standing to.
+    "EVIDENCE_SEARCH": (
+        "CANDIDATES_FOUND",
+        "NO_CANDIDATES_FOUND",
+        "NO_EVIDENCE_FOUND",
+    ),
+    "CITATION_CHAINING": (
         "CANDIDATES_FOUND",
         "NO_CANDIDATES_FOUND",
         "NO_EVIDENCE_FOUND",

@@ -236,14 +236,37 @@ def test_6_the_same_publication_can_be_found_by_different_sources(db):
 
 
 def test_7_different_query_families_can_share_one_publication(db):
+    """One publication may be reached by many queries; there is no
+    UNIQUE(publication_pk).
+
+    Each family issues its OWN query text. gate7b_014 made
+    (run, publication, source, query_text, rank) the identity of a hit, so
+    three rows that differ only by family label are -- correctly -- ONE
+    retrieval event recorded three times, not three facts.
+    """
     with _Tx(db) as cur:
         region, _s = _seed_ids(cur)
         pub = _make_publication(cur)
         for fam in ("A_general", "D_functional", "F_review"):
-            _make_hit(cur, pub, region_pk=region, family=fam)
+            _make_hit(cur, pub, region_pk=region, family=fam, text=f"query for {fam}")
         cur.execute("select count(distinct query_family) from publication_discovery_hits"
                     " where publication_pk=%s", (pub,))
         assert cur.fetchone()[0] == 3
+
+
+def test_7b_a_relabelled_duplicate_is_not_a_second_hit(db):
+    """The converse of test_7: the family label DESCRIBES the query, it does
+    not identify the retrieval. Relabelling the same query must not mint a
+    second row and inflate the provenance count."""
+    with _Tx(db) as cur:
+        region, src = _seed_ids(cur)
+        pub = _make_publication(cur)
+        _make_hit(cur, pub, region_pk=region, source_pk=src, family="A_general",
+                  text="identical query", rank=1)
+        with pytest.raises(Exception) as exc:
+            _make_hit(cur, pub, region_pk=region, source_pk=src, family="B_connectivity",
+                      text="identical query", rank=1)
+    assert "uq_pdh_hit_identity" in str(exc.value) or "duplicate" in str(exc.value).lower()
 
 
 def test_8_query_provenance_is_preserved_exactly(db):

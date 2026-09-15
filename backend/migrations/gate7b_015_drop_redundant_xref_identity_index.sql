@@ -1,0 +1,47 @@
+-- Gate 7B Phase 3E.1B — correct the external-identifier guard from gate7b_014
+--
+-- gate7b_014 is NOT modified: its SHA-256 is already in the migration ledger.
+-- This migration removes one index that gate7b_014 added, for two independent
+-- reasons -- it is REDUNDANT, and it is WRONG.
+--
+-- ===========================================================================
+-- 1. It is wrong: it re-imposes uniqueness on unresolved xrefs
+-- ===========================================================================
+-- gate7b_014 declared:
+--
+--   CREATE UNIQUE INDEX uq_entity_xrefs_identity
+--       ON entity_xrefs (entity_pk, lower(btrim(source_database)), btrim(external_id))
+--       WHERE source_database IS NOT NULL AND external_id IS NOT NULL;
+--
+-- The WHERE clause forgot the exemption the pre-existing index carries:
+--
+--   uq_entity_xrefs_resolved_external
+--       ON entity_xrefs (source_database, external_id)
+--       WHERE match_type <> 'unresolved'
+--
+-- 'unresolved' means "this entity was matched to a foreign identifier that we
+-- could not confirm". Several entities may legitimately point at the same
+-- unresolved id -- that is the whole reason the exemption exists. gate7b_014
+-- silently removed that allowance and made a previously valid insert fail with
+--
+--   UniqueViolation: duplicate key ... (9426, mondo, 99999)
+--
+-- observed in tests/test_gate7b_phase1_identity.py
+-- ::test_xref_duplicate_resolved_rejected_unresolved_allowed. The pre-existing
+-- constraint encodes a governance decision; this migration restores it.
+--
+-- ===========================================================================
+-- 2. It is redundant: resolved xrefs are already globally unique
+-- ===========================================================================
+-- uq_entity_xrefs_resolved_external is UNIQUE on (source_database, external_id)
+-- across the WHOLE table for every resolved xref. The runtime writer
+-- (app/services/publication_persistence_service._upsert_external_ids) inserts
+-- with match_type = 'exact', i.e. resolved, so it is already covered: a second
+-- claim on the same provider id cannot be inserted even without this index.
+--
+-- The index is therefore dropped rather than narrowed to
+-- `AND match_type <> 'unresolved'`: narrowing would leave two near-identical
+-- guards, and the surviving one is both stricter (raw column comparison, so a
+-- differently-cased duplicate is still caught) and already load-bearing.
+
+DROP INDEX IF EXISTS uq_entity_xrefs_identity;
