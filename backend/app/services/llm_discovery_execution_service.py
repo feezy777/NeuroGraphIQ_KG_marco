@@ -4,19 +4,22 @@ The chain this module implements, and nothing beyond it:
 
     BrainRegion seed -> create LLM_DISCOVERY run -> QUEUED -> RUNNING
     -> Phase 3A prompt -> DeepSeek provider -> newline-free raw text
-    -> Phase 3A parser -> typed candidates IN MEMORY
+    -> Phase 3A parser -> validated typed candidates
+    -> persist those candidates (P0-1)
     -> RUNNING -> COMPLETED / FAILED
 
-Frozen boundaries (phase brief §4 / §10 / §16 / §20):
+Frozen boundaries (phase brief §4 / §10 / §11 / §16 / §20):
 
   * SYNCHRONOUS. No Celery, no Redis, no BackgroundTasks, no scheduler, no
     retry daemon. One request performs one attempt and returns its result.
-  * NO NEW WRITE PATH. The ONLY rows this module writes are the lifecycle
-    transitions of one Discovery Run, and it reaches them solely through the
-    Phase 2B lifecycle service — never a raw INSERT, never a raw UPDATE.
-  * NO KNOWLEDGE. Candidates live in memory and in the HTTP response. Nothing
-    here creates a connection / circuit / function / evidence / assertion, and
-    nothing here persists a candidate.
+  * NO RUN-SIDE WRITE PATH. Only the run's lifecycle transitions are written,
+    and only through the Phase 2B lifecycle service — never a raw INSERT/UPDATE.
+  * NO KNOWLEDGE. Nothing here creates a connection / circuit / function /
+    evidence / assertion. Candidates go to the Knowledge Production PROPOSAL
+    staging table (``discovery_candidates``) and nowhere else.
+  * CANDIDATES BEFORE COMPLETION. Persistence runs BEFORE the completion
+    transition, so a COMPLETED/CANDIDATES_FOUND run always has its proposals
+    stored; a persistence failure ends the run FAILED.
   * NO PROVIDER-SIDE SCHEMA ENFORCEMENT IS ASSUMED. ``response_schema`` is not
     passed: the DeepSeek provider only sets ``response_format=json_object``,
     which shapes the output but does not enforce this contract. The Phase 3A
@@ -31,6 +34,7 @@ import hashlib
 import logging
 
 import httpx
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.llm_model_policy import effective_deepseek_model
@@ -46,6 +50,7 @@ from app.schemas.llm_discovery_execution import (
     LlmDiscoveryExecutionResult,
 )
 from app.services import knowledge_discovery_run_lifecycle_service as lifecycle
+from app.services import llm_candidate_persistence_service as candidate_persistence
 from app.services.llm_discovery_parser import parse_llm_discovery_response
 from app.services.llm_discovery_seed_service import build_discovery_input
 from app.services.llm_providers.base import ProviderNotConfiguredError
@@ -67,6 +72,10 @@ ERR_PROVIDER_AUTH = "LLM_PROVIDER_AUTH_ERROR"
 ERR_PROVIDER_ERROR = "LLM_PROVIDER_ERROR"
 ERR_EMPTY_RESPONSE = "LLM_EMPTY_RESPONSE"
 ERR_PARSE_FAILED = "LLM_DISCOVERY_PARSE_FAILED"
+#: The model produced usable candidates and they could not be stored. The
+#: DISCOVERY succeeded and the PERSISTENCE did not — conflating the two would
+#: make a storage defect look like a model defect.
+ERR_CANDIDATE_PERSISTENCE_FAILED = "LLM_CANDIDATE_PERSISTENCE_FAILED"
 
 #: error_message is an OPERATIONAL summary. A response never goes here, so the
 #: cap is a backstop against a long parser complaint, not a budget to spend.
@@ -205,10 +214,54 @@ def _log_success(run: DiscoveryRunItem, metrics: LlmDiscoveryExecutionMetrics) -
     )
 
 
+#: The run's OWN internal keys. Reading seed_region_pk back from the run (rather
+#: than re-resolving entity_id) means a candidate records the seed the RUN is
+#: anchored to, and the two cannot disagree.
+_RUN_KEYS_SQL = text(
+    """
+    SELECT run_pk, seed_region_pk
+    FROM knowledge_discovery_runs
+    WHERE run_id = :run_id
+    """
+)
+
+
+async def _resolve_run_keys(session: AsyncSession, run_id: str) -> tuple[int, int] | None:
+    """``(run_pk, seed_region_pk)`` for a run this module just created. SELECT only.
+
+    INTERNAL keys: handed to the persistence layer, never returned to a caller.
+
+    None means "candidate persistence cannot proceed" — the row is missing OR
+    the read failed. Both are one failure to the caller, so they share the
+    existing code path rather than growing a second vocabulary. On a failed read
+    the session is rolled back first, because a failed statement aborts the
+    transaction and the run could then not even be ended; a rollback failure is
+    logged, never raised.
+    """
+    try:
+        row = (
+            await session.execute(_RUN_KEYS_SQL, {"run_id": run_id})
+        ).mappings().one_or_none()
+    except Exception:  # noqa: BLE001 - classified by the caller as a prep failure
+        logger.exception("[llm-discovery] could not read run keys run_id=%s", run_id)
+        try:
+            await session.rollback()
+        except Exception:  # noqa: BLE001
+            logger.exception("[llm-discovery] session rollback failed")
+        return None
+    if row is None:
+        return None
+    return int(row["run_pk"]), int(row["seed_region_pk"])
+
+
 async def execute_llm_discovery(
     session: AsyncSession, *, entity_id: str
 ) -> LlmDiscoveryExecutionResult:
     """Run one synchronous LLM Discovery for a BrainRegion seed.
+
+    On success the parsed candidates are persisted BEFORE the run is declared
+    COMPLETED, so a COMPLETED/CANDIDATES_FOUND run always has its proposals
+    stored.
 
     Raises ``DiscoveryRunNotFound`` (unknown seed), ``DiscoveryRunConflict``
     (an active run already exists) or ``LlmDiscoveryExecutionError`` (the run
@@ -311,6 +364,49 @@ async def execute_llm_discovery(
         )
 
     data = parsed.data
+
+    # 7. PERSIST BEFORE COMPLETING (P0-1). A run must never read
+    #    COMPLETED/CANDIDATES_FOUND while its candidates are only in memory: the
+    #    response is gone once the request ends, so storing first is what makes
+    #    "completed" a promise the data can keep. Zero candidates is NOT an
+    #    error — "the model proposed nothing" is a scientific answer.
+    run_keys = await _resolve_run_keys(session, run.run_id)
+    if run_keys is None:
+        # Persistence PREPARATION failed (the read raised, or the run's own row
+        # vanished) — not a client error. Fail closed rather than guess a seed,
+        # and report it as the same failure the storage step would report.
+        raise await _abort(
+            session,
+            run.run_id,
+            ERR_CANDIDATE_PERSISTENCE_FAILED,
+            "the run's own identity could not be read back",
+        )
+    try:
+        summary = await candidate_persistence.persist_discovery_candidates(
+            session,
+            discovery_run_pk=run_keys[0],
+            seed_region_pk=run_keys[1],
+            data=data,
+        )
+    except Exception:  # noqa: BLE001 - every storage defect ends the run
+        # The persistence layer rolled its own transaction back, so the session
+        # is usable and the run can still be ended. The message stays bounded:
+        # exception text can carry SQL or a stack fragment, and neither belongs
+        # on a run row.
+        raise await _abort(
+            session,
+            run.run_id,
+            ERR_CANDIDATE_PERSISTENCE_FAILED,
+            "the discovery candidates could not be persisted",
+        ) from None
+
+    # Keyed by run_id (which the persistence layer's own log does not have), so
+    # "which run stored how many" is answerable from the execution log alone.
+    logger.info(
+        "[llm-discovery] candidates persisted run_id=%s created=%s existing=%s by_type=%s",
+        run.run_id, summary.created, summary.existing, summary.by_type,
+    )
+
     run = await lifecycle.complete_discovery_run(
         session, run.run_id, resolve_outcome(data)
     )

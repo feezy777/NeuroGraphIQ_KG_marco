@@ -22,7 +22,7 @@ from typing import Any
 import httpx
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, OperationalError
 
 from app.database import get_db
 from app.llm_model_policy import effective_deepseek_model
@@ -84,22 +84,45 @@ class _FakeResult:
 
 
 class _FakeDiscoveryDb:
-    """knowledge_discovery_runs + brain_regions, with the DB invariants."""
+    """knowledge_discovery_runs + discovery_candidates + brain_regions, with the
+    DB invariants.
+
+    ``discovery_candidates`` is modelled too, because the execution path now
+    persists the proposals it parsed and the test must be able to see them. It
+    models the gate7b_016 UNIQUE (run, type, local_id) key so a replayed
+    response is observable as "existing" rather than as a new row.
+    """
 
     def __init__(self, seeds: dict[str, int] | None = None) -> None:
         self.seeds = seeds if seeds is not None else {SEED_ENTITY: SEED_PK}
         self.runs: list[dict[str, Any]] = []
+        self.candidates: list[dict[str, Any]] = []
+        self.candidate_keys: set[tuple[Any, str, str]] = set()
         self.other_writes: list[str] = []
         self._t = datetime(2026, 9, 14, 12, 0, tzinfo=timezone.utc)
+        self._run_pk = 0
+        #: P0-1: make the run-key read itself fail, to exercise the
+        #: persistence-PREPARATION failure path. The run still exists and the
+        #: lifecycle transition can still be attempted.
+        self.fail_run_keys_read = False
+        #: ...and make the session die only AFTER the run has started, so even
+        #: the failure transition cannot run. `start_discovery_run` must still
+        #: succeed, or the test would never reach the step it is about.
+        self.run_lock_fails_after_start = False
 
     def tick(self) -> datetime:
         self._t = self._t + timedelta(minutes=1)
         return self._t
 
+    def next_run_pk(self) -> int:
+        self._run_pk += 1
+        return self._run_pk
+
     def seed_run(self, *, entity_id: str = SEED_ENTITY, status: str = "RUNNING") -> str:
         run_id = str(uuid.uuid4())
         self.runs.append(
             {
+                "run_pk": self.next_run_pk(),
                 "run_id": run_id,
                 "seed_entity_id": entity_id,
                 "seed_region_pk": self.seeds[entity_id],
@@ -154,6 +177,7 @@ class _FakeSession:
                     "INSERT", p, Exception("duplicate key value violates unique constraint")
                 )
             row = {
+                "run_pk": self.db.next_run_pk(),
                 "run_id": str(uuid.uuid4()),
                 "seed_entity_id": next(
                     k for k, v in self.db.seeds.items() if v == p["seed_region_pk"]
@@ -178,9 +202,50 @@ class _FakeSession:
             return _FakeResult(rows=[row])
 
         if "knowledge_discovery_runs r" in sql and "r.run_id = :run_id" in sql:
-            return _FakeResult(
-                rows=[r for r in self.db.runs if r["run_id"] == p.get("run_id")]
+            current = next(
+                (r for r in self.db.runs if r["run_id"] == p.get("run_id")), None
             )
+            if (
+                self.db.run_lock_fails_after_start
+                and current is not None
+                and current["status"] != "QUEUED"
+            ):
+                raise OperationalError("SELECT ... FOR UPDATE", p, Exception("no connection"))
+            return _FakeResult(rows=[current] if current is not None else [])
+
+        if sql.startswith("SELECT run_pk, seed_region_pk FROM knowledge_discovery_runs"):
+            if self.db.fail_run_keys_read:
+                raise OperationalError("SELECT run keys", p, Exception("connection reset"))
+            return _FakeResult(
+                rows=[
+                    {"run_pk": r["run_pk"], "seed_region_pk": r["seed_region_pk"]}
+                    for r in self.db.runs
+                    if r["run_id"] == p.get("run_id")
+                ]
+            )
+
+        if sql.startswith("INSERT INTO discovery_candidates"):
+            indexes = sorted(int(k.split("_", 1)[1]) for k in p if k.startswith("type_"))
+            created: list[str] = []
+            for i in indexes:
+                key = (p["run_pk"], p[f"type_{i}"], p[f"local_id_{i}"])
+                if key in self.db.candidate_keys:
+                    continue  # ON CONFLICT (...) DO NOTHING
+                self.db.candidate_keys.add(key)
+                self.db.candidates.append(
+                    {
+                        "discovery_run_pk": p["run_pk"],
+                        "seed_region_pk": p["seed_pk"],
+                        "candidate_type": p[f"type_{i}"],
+                        "local_id": p[f"local_id_{i}"],
+                        "name": p[f"name_{i}"],
+                        "payload_json": p[f"payload_{i}"],
+                        "confidence": p[f"confidence_{i}"],
+                        "status": p["status"],
+                    }
+                )
+                created.append(p[f"type_{i}"])
+            return _FakeResult(rows=created)
 
         if "status = ANY(" in sql:
             dup = self.db.active_duplicate(p["seed_region_pk"], p["discovery_type"])
@@ -1124,13 +1189,20 @@ def _exec_source() -> str:
     return EXEC_PATH.read_text(encoding="utf-8")
 
 
-def test_29_1_the_execution_service_issues_no_sql_of_its_own(env):
+def test_29_1_the_execution_service_never_writes_a_run_with_raw_sql(env):
+    """Widened from "issues no SQL at all" when P0-1 made this path persist
+    candidates. The property that actually matters is unchanged and is now
+    stated precisely: the run row is READ (to learn its own internal keys) and
+    is never written except through the lifecycle service."""
     source = _exec_source()
-    for forbidden in ("INSERT INTO", "UPDATE ", "DELETE FROM", "SELECT ", "FOR UPDATE"):
+    for forbidden in ("INSERT INTO knowledge_discovery_runs",
+                      "UPDATE knowledge_discovery_runs",
+                      "DELETE FROM",
+                      "FOR UPDATE"):
         assert forbidden not in source, forbidden
 
 
-def test_29_2_the_only_table_the_execution_path_writes_is_the_run_table(env):
+def test_29_2_the_execution_path_writes_only_the_run_and_the_candidate_staging_table(env):
     _execute(env)
     writes = [
         s for s in env.session.statements
@@ -1138,27 +1210,39 @@ def test_29_2_the_only_table_the_execution_path_writes_is_the_run_table(env):
     ]
     assert writes, "the lifecycle transitions must actually be executed"
     for sql in writes:
-        assert "knowledge_discovery_runs" in sql, sql
+        assert (
+            "knowledge_discovery_runs" in sql or "discovery_candidates" in sql
+        ), sql
         for other in ("brain_regions", "kg_entities", "entity_aliases"):
             assert other not in sql, sql
 
 
-def test_29_3_no_candidate_or_knowledge_table_is_ever_touched(env):
+def test_29_3_no_canonical_knowledge_table_is_ever_touched(env):
+    """A candidate is a PROPOSAL: the only candidate table this path may touch
+    is the Knowledge Production staging table, never a legacy `candidate_*` or
+    Mirror table, and never a canonical entity table."""
     _execute(env)
-    forbidden = (
-        "candidate",
-        "mirror",
-        "final_",
+    # Never mentioned by ANY statement, read or write: none of these layers is
+    # a legitimate participant in an LLM discovery execution.
+    never = ("mirror", "final_", "evidence", "knowledge_assertions")
+    # Never WRITTEN. Reading them is how the seed is built, and that is the
+    # whole point of a BrainRegion-anchored run.
+    never_written = (
+        "kg_entities",
+        "brain_regions",
         "connections",
         "circuits",
         "functions",
-        "evidence",
-        "knowledge_assertions",
     )
     for sql in env.session.statements:
         lowered = sql.lower()
-        for name in forbidden:
+        for name in never:
             assert name not in lowered, f"{name} in {sql}"
+        if "candidate" in lowered:
+            assert "discovery_candidates" in lowered, sql
+        if sql.split(" ", 1)[0] in ("INSERT", "UPDATE", "DELETE"):
+            for name in never_written:
+                assert name not in lowered, f"{name} in {sql}"
     assert env.db.other_writes == []
 
 
@@ -1452,3 +1536,53 @@ def test_30_7_a_client_supplied_body_cannot_change_the_execution(client, env):
 def test_30_8_the_endpoint_is_registered_once_on_its_own_path():
     paths = [r.path for r in app.routes if "llm-discovery" in getattr(r, "path", "")]
     assert paths == [f"{BASE}/brain-regions/{{entity_id}}/llm-discovery/execute"]
+
+
+# ===========================================================================
+# §31 — P0-1: reading the run's own keys is part of candidate persistence
+# ===========================================================================
+# Persisting candidates needs the run's internal keys, so that read is the FIRST
+# step of persistence, not a separate concern. If it fails, the run must end the
+# same way any other persistence failure ends it — under the one existing code,
+# never a new one.
+def test_31_1_a_failed_run_key_read_ends_the_run_as_a_persistence_failure(env):
+    env.db.fail_run_keys_read = True
+
+    with pytest.raises(execution.LlmDiscoveryExecutionError) as excinfo:
+        _execute(env)
+
+    assert excinfo.value.code == execution.ERR_CANDIDATE_PERSISTENCE_FAILED
+    assert excinfo.value.run_id is not None
+
+    run = env.db.runs[0]
+    assert run["status"] == "FAILED", "the run must not remain successful or RUNNING"
+    assert run["error_code"] == "LLM_CANDIDATE_PERSISTENCE_FAILED"
+    assert run["outcome"] is None, "a failure is an execution fact, not a result"
+
+    # The message stays an operational summary: no SQL, no constraint, no stack.
+    for forbidden in ("SELECT", "run_pk", "seed_region_pk", "OperationalError",
+                      "connection reset", "Traceback"):
+        assert forbidden not in run["error_message"], forbidden
+
+    assert env.db.candidates == [], "nothing may be persisted"
+    assert env.session.rollbacks >= 1, "the aborted transaction must be rolled back"
+
+
+def test_31_2_when_the_run_cannot_even_be_failed_the_error_still_surfaces(env):
+    """The honest negative: a session too broken to run the failure transition.
+
+    `_abort` cannot repair this, and it must not pretend otherwise. What is
+    asserted is exactly what it promises: the error still reaches the caller,
+    and the failure is recorded loudly rather than swallowed.
+    """
+    env.db.fail_run_keys_read = True
+    env.db.run_lock_fails_after_start = True
+
+    with pytest.raises(execution.LlmDiscoveryExecutionError) as excinfo:
+        _execute(env)
+
+    assert excinfo.value.code == execution.ERR_CANDIDATE_PERSISTENCE_FAILED
+    # No invented success: the run could not be transitioned, and that is the
+    # truth this test records rather than papering over.
+    assert env.db.runs[0]["status"] == "RUNNING"
+    assert env.db.candidates == []
