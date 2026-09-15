@@ -30,6 +30,7 @@ from app.schemas.knowledge_production import (
     DISCOVERY_RUN_OUTCOMES,
     DISCOVERY_RUN_STATUSES,
     DISCOVERY_TYPES,
+    LITERATURE_DISCOVERY_TYPES,
     DiscoveryRunItem,
 )
 from app.services import knowledge_discovery_run_service as run_svc
@@ -285,6 +286,21 @@ def test_every_frozen_vocabulary_value_is_accepted_by_validation(client, session
         assert client.get(RUNS_ENDPOINT, params={"discovery_type": t}).status_code == 200
     for s in DISCOVERY_RUN_STATUSES:
         assert client.get(RUNS_ENDPOINT, params={"status": s}).status_code == 200
+
+
+def test_the_discovery_type_vocabulary_is_frozen_and_complete():
+    """COMPLETENESS, not just validity.
+
+    The test above passes even if this constant holds HALF the vocabulary --
+    which is how it went stale (gate7b_013 widened the DB CHECK to four values,
+    the constant kept two, nothing compared them). Comparing against a literal
+    is the point: it cannot silently follow the vocabulary, and it still works
+    where no database is reachable.
+    """
+    assert set(DISCOVERY_TYPES) == {
+        "LLM_DISCOVERY", "LITERATURE_DISCOVERY", "EVIDENCE_SEARCH", "CITATION_CHAINING"}
+    assert set(LITERATURE_DISCOVERY_TYPES) == {
+        "LITERATURE_DISCOVERY", "EVIDENCE_SEARCH", "CITATION_CHAINING"}
 
 
 # ---------------------------------------------------------------------------
