@@ -17,6 +17,13 @@ E2E = "neurographiq_human_brain_v1_e2e"
 
 NEW_TABLES = ["region_mappings", "relation_definitions", "knowledge_assertions", "evidence_links"]
 
+#: Added AFTER Phase 5, each by a reviewed migration. Listed separately so the
+#: reason a table exists stays visible next to the phase that froze the rest:
+#:
+#:   knowledge_discovery_runs    gate7b_011  (Phase 2A, discovery-run lifecycle)
+#:   publication_discovery_hits  gate7b_013  (Phase 3E.1A, retrieval provenance)
+POST_PHASE5_TABLES = ["knowledge_discovery_runs", "publication_discovery_hits"]
+
 EXPECTED_TABLES = sorted(
     ["atlases", "brain_region_aggregation_mappings", "brain_region_hierarchy_relations",
      "brain_region_spatial_representations", "brain_regions", "cellular_neural_structures",
@@ -27,7 +34,18 @@ EXPECTED_TABLES = sorted(
      "neurobiological_processes", "neurotransmitters", "publications", "receptors",
      "research_studies", "sources", "symptoms"]
     + NEW_TABLES
+    + POST_PHASE5_TABLES
 )
+
+#: Tables whose absence would invalidate other guards or break the publication /
+#: discovery chain outright. Asserted INDEPENDENTLY of the freeze below, so that
+#: deleting a name from EXPECTED_TABLES can never quietly legalise a real drop.
+REQUIRED_AUTHORITY_TABLES = [
+    "atlases", "brain_regions", "circuits", "connections", "entity_xrefs", "evidence",
+    "external_regions", "functions", "kg_entities", "knowledge_assertions",
+    "knowledge_discovery_runs", "publication_discovery_hits", "publications",
+    "region_mappings", "sources",
+]
 
 FORBIDDEN_TABLES = [
     "assertion_evidence_links", "brain_region_spatial_relations",
@@ -169,8 +187,12 @@ def _insert_elink(cur, evidence_pk, assertion_pk=None, entity_pk=None, claim_sco
 
 
 # ---------------------------------------------------------------------------
-# Table set / count / no 33rd table
+# Table surface
 # ---------------------------------------------------------------------------
+# The surface is frozen by NAME, never by count. A count is the wrong guard: it
+# goes stale the moment a reviewed migration adds a table (which is exactly what
+# gate7b_011 / gate7b_013 did, unnoticed, because only the count was asserted),
+# and when it fails it does not say WHICH table appeared.
 
 
 def _public_tables(conn) -> list[str]:
@@ -179,27 +201,42 @@ def _public_tables(conn) -> list[str]:
     return [r[0] for r in cur.fetchall()]
 
 
-def test_table_count_is_thirty_two_exact():
+def test_required_authority_tables_exist():
     conn = _conn(E2E)
     try:
-        tables = _public_tables(conn)
+        actual = set(_public_tables(conn))
     finally:
         conn.close()
-    assert tables == EXPECTED_TABLES
-    assert len(tables) == 32
+    missing = [t for t in REQUIRED_AUTHORITY_TABLES if t not in actual]
+    assert missing == [], f"Gate7B authority tables missing from public schema: {missing}"
 
 
-def test_no_33rd_table():
+def test_public_table_surface_is_exactly_frozen():
     conn = _conn(E2E)
     try:
-        cur = conn.cursor()
-        cur.execute("SELECT tablename FROM pg_tables WHERE schemaname='public'")
-        tables = {r[0] for r in cur.fetchall()}
+        actual = set(_public_tables(conn))
     finally:
         conn.close()
-    leaked = [t for t in FORBIDDEN_TABLES if t in tables]
+    expected = set(EXPECTED_TABLES)
+    assert actual == expected, (
+        "Gate7B public schema surface drifted.\n"
+        f"  missing   : {sorted(expected - actual)}\n"
+        f"  unexpected: {sorted(actual - expected)}\n"
+        "An unexpected table must come from a reviewed migration, and must be"
+        " added to EXPECTED_TABLES in the same commit as that migration."
+    )
+
+
+def test_no_forbidden_concept_table():
+    """Tables that would give a concept a SECOND identity alongside its
+    kg_entities row + typed subtype row (e.g. a separate connection_types)."""
+    conn = _conn(E2E)
+    try:
+        actual = set(_public_tables(conn))
+    finally:
+        conn.close()
+    leaked = [t for t in FORBIDDEN_TABLES if t in actual]
     assert leaked == [], f"forbidden tables must not exist: {leaked}"
-    assert len(tables) == 32
 
 
 # ---------------------------------------------------------------------------
