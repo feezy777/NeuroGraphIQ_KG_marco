@@ -504,6 +504,30 @@ async def record_publication_discovery_hit(
 # ---------------------------------------------------------------------------
 # orchestration (§18)
 # ---------------------------------------------------------------------------
+def _explicit_ranks(result_ranks: Sequence[int], count: int) -> list[int]:
+    """Validate caller-supplied retrieval ranks BEFORE any row is written.
+
+    Up-front on purpose: a malformed rank list discovered halfway through
+    persistence would leave some publications committed and the run in exactly
+    the unexplained partial state the per-publication transaction exists to
+    avoid. Nothing is persisted unless the whole rank list is usable.
+    """
+    if len(result_ranks) != count:
+        raise ValueError(
+            f"result_ranks has {len(result_ranks)} entries but {count} papers were given"
+        )
+    ranks: list[int] = []
+    for value in result_ranks:
+        # bool is a subclass of int, so `True` would otherwise be accepted as
+        # rank 1 -- a silent corruption of the provenance rather than an error.
+        if isinstance(value, bool) or not isinstance(value, int):
+            raise ValueError(f"result_ranks must be integers, got {value!r}")
+        if value < 1:
+            raise ValueError(f"result_ranks must be >= 1, got {value!r}")
+        ranks.append(int(value))
+    return ranks
+
+
 async def persist_search_results(
     session: AsyncSession,
     *,
@@ -514,15 +538,26 @@ async def persist_search_results(
     seed_brain_region_pk: int | None = None,
     query_family: str | None = None,
     query_level: str | None = None,
+    result_ranks: Sequence[int] | None = None,
 ) -> PersistSummary:
     """Persist one query's results, ONE TRANSACTION PER PUBLICATION.
 
     Per-publication (not one giant transaction for the whole run) so a failure
     cannot leave "publication written, hit lost" as an unexplained partial
     state, and so a 1000-paper run does not hold a single enormous transaction.
+
+    ``result_ranks`` (optional) preserves the ORIGINAL provider rank of each
+    paper. Omitting it keeps the previous behaviour exactly: ranks 1..N in the
+    given order. A caller that filtered or reordered papers before persisting
+    must pass it, otherwise a paper the provider ranked 2nd would be recorded
+    as rank 1 and its retrieval provenance would be wrong.
     """
     summary = PersistSummary()
-    for rank, paper in enumerate(papers, start=1):
+    ranks = (
+        _explicit_ranks(result_ranks, len(papers)) if result_ranks is not None else None
+    )
+    for index, paper in enumerate(papers):
+        rank = ranks[index] if ranks is not None else index + 1
         try:
             resolved = await resolve_or_create_publication(
                 session,

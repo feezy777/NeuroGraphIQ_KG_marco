@@ -706,3 +706,97 @@ async def test_a_junk_identifier_never_becomes_a_real_identity(h, svc):
     assert a.publication_pk != b.publication_pk
     assert await h.scalar("SELECT pmid FROM publications WHERE entity_pk = :p",
                           p=a.publication_pk) is None
+
+
+# ===========================================================================
+# Phase 3E.2D-2A — explicit retrieval ranks
+# ===========================================================================
+# The rank of a hit is the rank the PROVIDER gave the paper for that query. A
+# caller that filtered or reordered papers before persisting must be able to
+# keep it; otherwise a paper the provider ranked 2nd is recorded as rank 1 and
+# the retrieval provenance is simply wrong.
+async def _stored_ranks(h, run_pk: int) -> list[int]:
+    from sqlalchemy import text
+
+    rows = (
+        await h.db.execute(
+            text("SELECT result_rank FROM publication_discovery_hits"
+                 " WHERE discovery_run_pk = :p ORDER BY hit_pk"),
+            {"p": run_pk},
+        )
+    ).scalars().all()
+    return [int(r) for r in rows]
+
+
+@case
+async def test_23_without_explicit_ranks_the_1_to_n_behaviour_is_unchanged(h, svc):
+    run = await svc.create_literature_run(h.db, seed_entity_id=SEED)
+    summary = await svc.persist_search_results(
+        h.db,
+        papers=[_paper(pmid="63000001", title="First"), _paper(pmid="63000002", title="Second")],
+        discovery_run_pk=run["run_pk"], query_text="ordered by provider",
+    )
+    assert summary.hits_recorded == 2
+    assert await _stored_ranks(h, run["run_pk"]) == [1, 2]
+
+
+@case
+async def test_23b_explicit_ranks_are_recorded_verbatim(h, svc):
+    run = await svc.create_literature_run(h.db, seed_entity_id=SEED)
+    summary = await svc.persist_search_results(
+        h.db,
+        papers=[_paper(pmid="63100001", title="Rank 2"), _paper(pmid="63100002", title="Rank 7")],
+        discovery_run_pk=run["run_pk"], query_text="filtered subset",
+        result_ranks=[2, 7],
+    )
+    assert summary.hits_recorded == 2
+    assert await _stored_ranks(h, run["run_pk"]) == [2, 7]
+
+
+@case
+async def test_23c_invalid_ranks_are_rejected_before_any_write(h, svc):
+    """Validation is up-front: a half-persisted run is the exact partial state
+    the per-publication transaction exists to prevent."""
+    run = await svc.create_literature_run(h.db, seed_entity_id=SEED)
+    papers = [_paper(pmid="63200001", title="A"), _paper(pmid="63200002", title="B")]
+    before = await h.count("SELECT count(*) FROM publications")
+
+    for bad in ([1], [1, 2, 3], [0, 1], [-1, 2], [True, 2], [1, "2"], [1.5, 2], []):
+        with pytest.raises(ValueError):
+            await svc.persist_search_results(
+                h.db, papers=papers, discovery_run_pk=run["run_pk"],
+                query_text="q", result_ranks=bad,
+            )
+
+    assert await h.count("SELECT count(*) FROM publications") == before, \
+        "a rejected rank list must not leave publications behind"
+    assert await h.count(
+        "SELECT count(*) FROM publication_discovery_hits WHERE discovery_run_pk = :p",
+        p=run["run_pk"]) == 0
+
+
+@case
+async def test_23d_idempotency_still_holds_with_explicit_ranks(h, svc):
+    run = await svc.create_literature_run(h.db, seed_entity_id=SEED)
+    papers = [_paper(pmid="63300001", title="Idem")]
+    kwargs = dict(papers=papers, discovery_run_pk=run["run_pk"],
+                  query_text="same query", result_ranks=[3])
+
+    first = await svc.persist_search_results(h.db, **kwargs)
+    second = await svc.persist_search_results(h.db, **kwargs)
+
+    assert first.hits_recorded == 1
+    assert second.hits_recorded == 0 and second.hits_deduplicated == 1
+    assert await _stored_ranks(h, run["run_pk"]) == [3], "the retry must not add a hit"
+
+
+@case
+async def test_23e_one_publication_may_have_many_explicitly_ranked_hits(h, svc):
+    pub = await svc.resolve_or_create_publication(h.db, title="Multi ranked", pmid="63400001")
+    run = await svc.create_literature_run(h.db, seed_entity_id=SEED)
+    for rank in (1, 5, 9):
+        _pk, created = await svc.record_publication_discovery_hit(
+            h.db, publication_pk=pub.publication_pk, discovery_run_pk=run["run_pk"],
+            query_text=f"query at rank {rank}", result_rank=rank)
+        assert created
+    assert sorted(await _stored_ranks(h, run["run_pk"])) == [1, 5, 9]

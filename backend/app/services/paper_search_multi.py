@@ -656,15 +656,28 @@ def _build_query_strategies(context: dict) -> list[tuple[str, str]]:
 
     strategies: list[tuple[str, str]] = []
 
+    def _clean_terms(values) -> list[str]:
+        """Drop blank terms so an ABSENT group is absent, not a degenerate clause.
+
+        Callers pass term lists such as ``[tgt, tgt_core]``. With no target
+        region that list is ``["", ""]`` -- TRUTHY, so a plain ``if t:`` guard
+        let it through and emitted ``(""[TIAB] OR ""[TIAB])``. A source-only
+        search is a broad search over the source, not a search ANDed against an
+        empty target: the empty group must vanish, and no stand-in target may be
+        invented to fill it.
+        """
+        return [v.strip() for v in values if isinstance(v, str) and v.strip()]
+
     def _q(s, t, conn_words):
-        """Build a TIAB query: (src_terms) AND (tgt_terms) AND (conn_terms)."""
+        """Build a TIAB query: (src_terms) AND (tgt_terms) AND (conn_terms).
+
+        A group with no usable term contributes no clause at all.
+        """
         parts = []
-        if s:
-            parts.append("(" + " OR ".join(f'"{x}"[TIAB]' for x in s[:3]) + ")")
-        if t:
-            parts.append("(" + " OR ".join(f'"{x}"[TIAB]' for x in t[:3]) + ")")
-        if conn_words:
-            parts.append("(" + " OR ".join(f'"{x}"[TIAB]' for x in conn_words[:4]) + ")")
+        for group, limit in ((_clean_terms(s), 3), (_clean_terms(t), 3),
+                             (_clean_terms(conn_words), 4)):
+            if group:
+                parts.append("(" + " OR ".join(f'"{x}"[TIAB]' for x in group[:limit]) + ")")
         return " AND ".join(parts) if parts else ""
 
     # Strategy 1: exact source + exact target + projection
@@ -704,7 +717,8 @@ def _build_query_strategies(context: dict) -> list[tuple[str, str]]:
 
 # ── Main multi-source search ──────────────────────────────────────────────
 async def multi_search(context: dict, limit: int = 20,
-                       diagnostics: dict | None = None) -> list[dict]:
+                       diagnostics: dict | None = None,
+                       retrieval_events: list[dict] | None = None) -> list[dict]:
     """Multi-query, multi-source search with dedup and evidence-aware ranking.
 
     Partial success is allowed -- one provider being down must not fail the
@@ -712,7 +726,18 @@ async def multi_search(context: dict, limit: int = 20,
     dict; it is filled in place) to receive a ``provider_failures`` list, so a
     caller can tell "these sources were unreachable" apart from "these sources
     were searched and had nothing". Callers that pass nothing are unaffected.
+
+    ``retrieval_events`` (optional, filled in place) receives one entry per
+    SUCCESSFUL retrieval fact, captured BEFORE cross-query / cross-provider
+    dedup: which exact query text, through which source, found which paper at
+    which rank. The normalised return value is a DEDUPLICATED paper list, so it
+    cannot express that by itself -- one paper found by three queries is one
+    entry there and three retrieval facts here.
+
+    The return contract is unchanged: still ``list[dict]``, and a caller that
+    passes no ``retrieval_events`` observes exactly the previous behaviour.
     """
+
     strategies = _build_query_strategies(context)
 
     # Build loose query fallback
@@ -728,18 +753,22 @@ async def multi_search(context: dict, limit: int = 20,
 
     async def search_all():
         tasks = []
-        # Run each strategy on all available sources (4 sources)
+        # Run each strategy on all available sources (4 sources).
+        # The EXACT query string rides along in the task tuple: it is the only
+        # place it exists, and a retrieval fact must be able to name it. The
+        # strategy label is NOT a substitute -- several strategies can share a
+        # label while their query text differs, and vice versa.
         for query, strategy in strategies:
-            tasks.append((_pubmed_search(query, per_source_limit), "pubmed", strategy))
-            tasks.append((_openalex_search(query, per_source_limit), "openalex", strategy))
-            tasks.append((_semanticscholar_search(query, per_source_limit), "semanticscholar", strategy))
-            tasks.append((_europepmc_search(query, per_source_limit), "europepmc", strategy))
+            tasks.append((_pubmed_search(query, per_source_limit), "pubmed", strategy, query))
+            tasks.append((_openalex_search(query, per_source_limit), "openalex", strategy, query))
+            tasks.append((_semanticscholar_search(query, per_source_limit), "semanticscholar", strategy, query))
+            tasks.append((_europepmc_search(query, per_source_limit), "europepmc", strategy, query))
         # Loose fallback on all sources
         if query_loose:
-            tasks.append((_pubmed_search(query_loose, per_source_limit), "pubmed", "loose"))
-            tasks.append((_openalex_search(query_loose, per_source_limit), "openalex", "loose"))
-            tasks.append((_semanticscholar_search(query_loose, per_source_limit), "semanticscholar", "loose"))
-            tasks.append((_europepmc_search(query_loose, per_source_limit), "europepmc", "loose"))
+            tasks.append((_pubmed_search(query_loose, per_source_limit), "pubmed", "loose", query_loose))
+            tasks.append((_openalex_search(query_loose, per_source_limit), "openalex", "loose", query_loose))
+            tasks.append((_semanticscholar_search(query_loose, per_source_limit), "semanticscholar", "loose", query_loose))
+            tasks.append((_europepmc_search(query_loose, per_source_limit), "europepmc", "loose", query_loose))
         results = await asyncio.gather(*(t[0] for t in tasks), return_exceptions=True)
         return results, tasks
 
@@ -749,16 +778,45 @@ async def multi_search(context: dict, limit: int = 20,
     # "unreachable" and "returned nothing" are different scientific facts.
     all_papers: list[dict] = []
     failures: list[dict] = []
+    # Invocation outcome is tracked SEPARATELY from what was retrieved. Whether
+    # an invocation succeeded does not depend on how many papers it returned:
+    # a successful empty result is a SUCCESS, and counting papers instead made
+    # "three providers answered with nothing + one was down" look like a total
+    # outage.
+    attempted = len(results)
+    succeeded = 0
     for i, r in enumerate(results):
-        _, source, strategy = tasks[i]
+        _, source, strategy, query_text = tasks[i]
         if isinstance(r, BaseException):
+            # A FAILED invocation is not a retrieval. It is recorded as a
+            # provider failure and produces no retrieval event -- inventing one
+            # would claim a search that never happened.
             failure = (r.as_diagnostic() if isinstance(r, LiteratureSearchError)
                        else {"provider": source, "status_code": None,
                              "retryable": None, "message": type(r).__name__})
             failure["query_strategy"] = strategy
             failures.append(failure)
             continue
-        for p in r:
+        # Reached only when the invocation returned normally. An empty list
+        # lands here too -- it is an ANSWER, not a failure.
+        succeeded += 1
+        for rank, p in enumerate(r, start=1):
+            # Captured BEFORE dedup and BEFORE any later re-ranking, so the
+            # rank is this provider's own rank for THIS query. A paper whose
+            # rank was 2 keeps 2 even if it is the only survivor downstream.
+            # A successful EMPTY result contributes nothing here, which is
+            # correct: it retrieved no publication.
+            if retrieval_events is not None:
+                retrieval_events.append({
+                    "query_text": query_text,
+                    "query_strategy": strategy,
+                    "source": source,
+                    "result_rank": rank,
+                    # The normalised unified mapping -- the same object that
+                    # flows into the final list -- so the caller can correlate
+                    # an event with the paper the search ultimately returned.
+                    "paper": p,
+                })
             p.setdefault("discovery_source", source)
             existing = p.get("matched_queries", [])
             if isinstance(existing, list):
@@ -769,10 +827,15 @@ async def multi_search(context: dict, limit: int = 20,
 
     if diagnostics is not None:
         diagnostics["provider_failures"] = failures
-        # A caller must be able to tell "some sources were down" from "all
-        # sources were searched and found nothing".
-        diagnostics["partial"] = bool(failures) and bool(all_papers)
-        diagnostics["all_providers_failed"] = bool(failures) and not all_papers
+        # These two flags describe the SEARCH EXECUTION, not whether anything
+        # was found. A caller must be able to tell "some sources were down"
+        # from "every source answered and none of them had anything" -- and
+        # from "every source was down", which is neither of those.
+        has_failures = bool(failures)
+        has_successes = succeeded > 0
+        diagnostics["partial"] = has_failures and has_successes
+        # "Nothing was attempted" is not "everything failed".
+        diagnostics["all_providers_failed"] = attempted > 0 and not has_successes
 
     # Dedup
     papers = _dedup_papers(all_papers)
