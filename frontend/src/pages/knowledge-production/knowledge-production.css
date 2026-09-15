@@ -609,6 +609,14 @@
 .kp-run-history tbody tr:hover td { cursor: default; background: #fafbfc; }
 .kp-run-history td { white-space: nowrap; }
 
+/* Phase 3E.2C: literature runs ARE selectable (they have publications to
+   inspect); LLM_DISCOVERY runs are not. Both rules below are needed to state
+   that honestly, because DataTable marks every row of a table that has an
+   onRowClick handler. Declared after the default above so the pointer returns
+   only for the rows that really do something. */
+.kp-run-history tbody tr.kp-run-selectable td { cursor: pointer; }
+.kp-run-history tbody tr.kp-run-selected td { background: #eef4ff; }
+
 /* Operation cards sit below the empty state / history in the Discovery tab. */
 .kp-op-grid { margin-top: 14px; }
 

@@ -167,7 +167,30 @@ export const WORKSPACE_WORKFLOW_STEPS: WorkflowStepDef[] = [
  * knowledge_discovery_runs. `status` (execution) and `outcome` (scientific
  * result) are independent — see docs/KNOWLEDGE_PRODUCTION_ARCHITECTURE.md §13.
  */
-export type DiscoveryType = 'LLM_DISCOVERY' | 'LITERATURE_DISCOVERY'
+export type DiscoveryType =
+  | 'LLM_DISCOVERY'
+  | 'LITERATURE_DISCOVERY'
+  | 'EVIDENCE_SEARCH'
+  | 'CITATION_CHAINING'
+
+/**
+ * The discovery routes that search literature.
+ *
+ * An EXPLICIT list, deliberately not `discovery_type !== 'LLM_DISCOVERY'`: the
+ * complement form would make any future non-literature route (a graph
+ * traversal, a citation-only sweep) silently selectable and silently queried
+ * against a literature endpoint. Adding a route must be a decision made here.
+ */
+export const LITERATURE_DISCOVERY_TYPES: readonly DiscoveryType[] = [
+  'LITERATURE_DISCOVERY',
+  'EVIDENCE_SEARCH',
+  'CITATION_CHAINING',
+]
+
+/** Whether a run's route searches literature. The single source of that answer. */
+export function isLiteratureDiscoveryType(discoveryType: DiscoveryType): boolean {
+  return LITERATURE_DISCOVERY_TYPES.includes(discoveryType)
+}
 
 export type DiscoveryRunStatus =
   | 'QUEUED'
@@ -237,4 +260,94 @@ export const DISCOVERY_STATUS_TONES: Record<DiscoveryRunStatus, string> = {
   COMPLETED: 'badge-green',
   FAILED: 'badge-red',
   CANCELLED: 'badge-gray',
+}
+
+// ---------------------------------------------------------------------------
+// Phase 3E.2C — Literature production READ views
+// ---------------------------------------------------------------------------
+// Mirrors the approved backend read DTOs exactly. These describe the chain
+// BrainRegion -> Literature Run -> PublicationDiscoveryHit -> Publication.
+//
+// A PublicationHit means ONLY "this query found this publication". It is
+// retrieval provenance. It is deliberately NOT evidence: there is no supports,
+// no contradicts, no evidence_strength, and no Evidence/KnowledgeAssertion
+// shape here, because the backend does not return any and inventing one would
+// assert a scientific claim the data does not make.
+
+/** One provider's failure. Only the bounded fields the backend exposes. */
+export interface ProviderFailureDiagnostic {
+  provider: string | null
+  status_code: number | null
+  retryable: boolean | null
+  message: string | null
+  query_strategy: string | null
+}
+
+/**
+ * Bounded view of a run's diagnostics.
+ *
+ * `all_providers_failed` is what separates a provider OUTAGE from a genuine
+ * zero-result search — the two must never be rendered the same way.
+ */
+export interface LiteratureRunDiagnostics {
+  provider_failures: ProviderFailureDiagnostic[]
+  partial: boolean
+  all_providers_failed: boolean
+  papers_found: number | null
+}
+
+export interface LiteratureRun {
+  run_id: string
+  seed_entity_id: string
+  discovery_type: DiscoveryType
+  status: DiscoveryRunStatus
+  outcome: DiscoveryRunOutcome | null
+  provider: string | null
+  created_at: string
+  started_at: string | null
+  finished_at: string | null
+  error_code: string | null
+  error_message: string | null
+  diagnostics: LiteratureRunDiagnostics
+}
+
+export interface LiteratureRunListResponse {
+  items: LiteratureRun[]
+  total: number
+}
+
+/** One retrieval fact: this query found this publication. */
+export interface PublicationHit {
+  query_text: string
+  query_family: string | null
+  query_level: string | null
+  source: string | null
+  result_rank: number | null
+  retrieved_at: string
+  run_id: string | null
+}
+
+export interface Publication {
+  entity_id: string
+  original_title: string | null
+  pmid: string | null
+  pmcid: string | null
+  doi: string | null
+  publication_year: number | null
+  source_database: string | null
+  hits: PublicationHit[]
+}
+
+/**
+ * Publications reached by ONE run.
+ *
+ * `distinct_publications` and `hits_total` are separate on purpose: one
+ * publication found by three queries is ONE publication and THREE retrieval
+ * facts. Collapsing them would hide the provenance the backend preserves.
+ */
+export interface PublicationListResponse {
+  run_id: string
+  items: Publication[]
+  distinct_publications: number
+  hits_total: number
 }

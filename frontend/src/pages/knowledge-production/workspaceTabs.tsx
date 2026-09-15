@@ -6,15 +6,19 @@
  * no fake statuses. See docs/KNOWLEDGE_PRODUCTION_ARCHITECTURE.md §8 and the
  * visual contract in §12.
  */
-import type { ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { useI18n } from '../../i18n-context'
 import { DataTable, type Column } from '../../components/DataTable'
+import { fetchLiteratureRuns } from './kpApi'
+import { LiteratureInspector } from './LiteratureInspector'
 import {
   DISCOVERY_STATUS_LABEL_KEYS,
   DISCOVERY_STATUS_TONES,
+  isLiteratureDiscoveryType,
   type BrainRegionSeedDetail,
   type DiscoveryRun,
   type DiscoveryRunOutcome,
+  type LiteratureRun,
 } from './types'
 
 /** `key` is stable (never translated) so React keys survive a language switch. */
@@ -233,8 +237,26 @@ function StatusBadge({ status }: { status: DiscoveryRun['status'] }) {
   )
 }
 
-/** Read-only run history. No candidate counts, no evidence counts. */
-function RunHistory({ runs }: { runs: DiscoveryRun[] }) {
+/**
+ * Read-only run history. No candidate counts, no evidence counts.
+ *
+ * Literature runs are SELECTABLE: they reached publications that can be
+ * inspected. An LLM_DISCOVERY run is not, and the click is gated here on the
+ * raw discovery_type rather than allowed through to a request the backend
+ * deliberately answers with 404 — a user should not learn a boundary by
+ * watching it fail. The gate uses the shared predicate, not an inline
+ * `!== 'LLM_DISCOVERY'` comparison, so a future non-literature route cannot
+ * silently become clickable.
+ */
+function RunHistory({
+  runs,
+  selectedRunId,
+  onSelectLiteratureRun,
+}: {
+  runs: DiscoveryRun[]
+  selectedRunId: string | null
+  onSelectLiteratureRun: (run: DiscoveryRun) => void
+}) {
   const { t } = useI18n()
   const columns: Column<DiscoveryRun>[] = [
     {
@@ -242,9 +264,9 @@ function RunHistory({ runs }: { runs: DiscoveryRun[] }) {
       header: t('knowledgeProduction.discovery.colType'),
       // The comparison uses the raw API enum; only the caption is localized.
       render: r =>
-        r.discovery_type === 'LLM_DISCOVERY'
-          ? t('knowledgeProduction.discovery.llmTitle')
-          : t('knowledgeProduction.discovery.literatureTitle'),
+        isLiteratureDiscoveryType(r.discovery_type)
+          ? t('knowledgeProduction.discovery.literatureTitle')
+          : t('knowledgeProduction.discovery.llmTitle'),
     },
     {
       key: 'status',
@@ -285,7 +307,22 @@ function RunHistory({ runs }: { runs: DiscoveryRun[] }) {
   return (
     <section className="kp-section kp-run-history" data-testid="kp-run-history">
       <h3 className="kp-section-title">{t('knowledgeProduction.discovery.historyTitle')}</h3>
-      <DataTable columns={columns} rows={runs} getKey={r => r.run_id} />
+      <DataTable
+        columns={columns}
+        rows={runs}
+        getKey={r => r.run_id}
+        onRowClick={r => {
+          // Non-literature rows are inert: the handler is the gate.
+          if (isLiteratureDiscoveryType(r.discovery_type)) onSelectLiteratureRun(r)
+        }}
+        getRowClassName={r =>
+          isLiteratureDiscoveryType(r.discovery_type)
+            ? r.run_id === selectedRunId
+              ? 'kp-run-selectable kp-run-selected'
+              : 'kp-run-selectable'
+            : undefined
+        }
+      />
     </section>
   )
 }
@@ -299,6 +336,37 @@ export function DiscoveryTab({
   error?: string | null
 }) {
   const { t } = useI18n()
+  const [literatureRuns, setLiteratureRuns] = useState<LiteratureRun[] | null>(null)
+  const [literatureError, setLiteratureError] = useState<string | null>(null)
+  const [selectedRunId, setSelectedRunId] = useState<string | null>(null)
+
+  // The run rows already carry their seed, so this tab can load the literature
+  // metadata it needs without the page passing an entity_id down.
+  const entityId = runs && runs.length > 0 ? runs[0].seed_entity_id : null
+
+  useEffect(() => {
+    if (!entityId) return
+    let cancelled = false
+    setLiteratureRuns(null)
+    setLiteratureError(null)
+    setSelectedRunId(null)
+    fetchLiteratureRuns(entityId)
+      .then(res => {
+        if (!cancelled) setLiteratureRuns(res.items)
+      })
+      .catch((e: unknown) => {
+        // Kept null, not []: an unreadable list is unknown, not empty.
+        if (!cancelled) setLiteratureError(e instanceof Error ? e.message : String(e))
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [entityId])
+
+  const selectRun = (run: DiscoveryRun) => {
+    setSelectedRunId(prev => (prev === run.run_id ? null : run.run_id))
+  }
+
   return (
     <div data-testid="kp-discovery-tab">
       {error && (
@@ -323,7 +391,24 @@ export function DiscoveryTab({
           />
         </TabPlaceholder>
       )}
-      {!error && runs !== null && runs.length > 0 && <RunHistory runs={runs} />}
+      {!error && runs !== null && runs.length > 0 && (
+        <RunHistory
+          runs={runs}
+          selectedRunId={selectedRunId}
+          onSelectLiteratureRun={selectRun}
+        />
+      )}
+
+      {/* Rendered only once the seed is known to HAVE runs: when it has none at
+          all, the intentional empty state above already says so, and a second
+          empty panel underneath would only repeat it. */}
+      {!error && runs !== null && runs.length > 0 && (
+        <LiteratureInspector
+          literatureRuns={literatureRuns}
+          error={literatureError}
+          selectedRunId={selectedRunId}
+        />
+      )}
 
       <div className="kp-card-grid kp-op-grid">
         <DiscoveryCard

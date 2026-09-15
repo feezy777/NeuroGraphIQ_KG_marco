@@ -24,6 +24,9 @@ vi.mock('./kpApi', () => ({
   fetchBrainRegionSummary: (...a: unknown[]) => fetchSummary(...a),
   fetchBrainRegionSeed: (...a: unknown[]) => getSeed(...a),
   fetchDiscoveryRuns: (...a: unknown[]) => getRuns(...a),
+  fetchLiteratureRuns: () => Promise.resolve({ items: [], total: 0 }),
+  fetchRunPublications: () =>
+    Promise.resolve({ run_id: 'x', items: [], distinct_publications: 0, hits_total: 0 }),
 }))
 
 const SEED: BrainRegionSeed = {

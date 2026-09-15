@@ -15,12 +15,16 @@ import type { BrainRegionSeedDetail, DiscoveryRun } from './types'
 
 const getSeed = vi.fn()
 const getRuns = vi.fn()
+const getLiteratureRuns = vi.fn()
+const getRunPublications = vi.fn()
 
 vi.mock('./kpApi', () => ({
   fetchBrainRegionSeed: (...args: unknown[]) => getSeed(...args),
   fetchDiscoveryRuns: (...args: unknown[]) => getRuns(...args),
   fetchBrainRegionSeeds: vi.fn(),
   fetchBrainRegionSummary: vi.fn(),
+  fetchLiteratureRuns: (...args: unknown[]) => getLiteratureRuns(...args),
+  fetchRunPublications: (...args: unknown[]) => getRunPublications(...args),
 }))
 
 /** One persisted Discovery Run row, as the Phase 2A API returns it. */
@@ -84,6 +88,16 @@ beforeEach(() => {
   getRuns.mockReset()
   // Default: a real BrainRegion with no runs yet (accepted Phase 2A state).
   getRuns.mockResolvedValue({ items: [], total: 0 })
+  getLiteratureRuns.mockReset()
+  // Default: no literature runs — the accepted authority state today.
+  getLiteratureRuns.mockResolvedValue({ items: [], total: 0 })
+  getRunPublications.mockReset()
+  getRunPublications.mockResolvedValue({
+    run_id: 'x',
+    items: [],
+    distinct_publications: 0,
+    hits_total: 0,
+  })
   window.location.hash = ''
 })
 
