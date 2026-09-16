@@ -9,6 +9,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { I18nProvider } from '../../i18n-context'
 import { LANGUAGE_STORAGE_KEY } from '../../i18n'
+import { ApiError } from '../../api/client'
 import { CandidateKnowledgeTab } from './CandidateKnowledgeTab'
 import type { LlmDiscoveryCandidate } from './candidateTypes'
 
@@ -177,6 +178,79 @@ describe('candidate pool', () => {
     const err = await screen.findByTestId('kp-candidate-pool-error')
     expect(err.textContent).toContain('HTTP 500: boom')
     expect(screen.queryByTestId('kp-candidate-pool-empty')).toBeNull()
+  })
+})
+
+// ===========================================================================
+// Closeout — the database is not enabled for candidates.
+//
+// A deployment without candidate storage is not a failure and not an empty
+// pool: it is a feature that is off, and it must be reported as exactly that.
+// ===========================================================================
+function apiFailure(status: number, code?: string): ApiError {
+  return new ApiError(status, `HTTP ${status}: boom`, {
+    url: '/api/knowledge-production/brain-regions/x/llm-candidates',
+    method: 'GET',
+    responseBody: code
+      ? { detail: { code, message: 'candidate storage is not enabled' } }
+      : { detail: 'boom' },
+  })
+}
+
+describe('candidate storage not enabled on this database', () => {
+  it('says the feature is NOT ENABLED — never that the region has no candidates', async () => {
+    getCandidatePool.mockRejectedValue(
+      apiFailure(409, 'DISCOVERY_DATABASE_NOT_READY'),
+    )
+    renderTab()
+
+    const notice = await screen.findByTestId('kp-candidate-storage-not-enabled')
+    expect(notice.textContent).toBe(
+      'Candidate knowledge is not enabled on the current database',
+    )
+    // The three things it must NOT be mistaken for. "暂无候选知识" would assert
+    // that this region holds nothing — a claim about a table nobody could read.
+    expect(screen.queryByTestId('kp-candidate-pool-empty')).toBeNull()
+    expect(screen.queryByTestId('kp-candidate-pool-error')).toBeNull()
+    expect(screen.queryByRole('table')).toBeNull()
+  })
+
+  it('does not offer filters or a count for a pool it never read', async () => {
+    getCandidatePool.mockRejectedValue(
+      apiFailure(409, 'DISCOVERY_DATABASE_NOT_READY'),
+    )
+    renderTab()
+
+    await screen.findByTestId('kp-candidate-storage-not-enabled')
+    expect(screen.queryByTestId('kp-candidate-filters')).toBeNull()
+    expect(screen.queryByTestId('kp-candidate-pool-stats')).toBeNull()
+  })
+
+  it('a 503 DATABASE_UNAVAILABLE stays an ERROR — an outage is not a disabled feature', async () => {
+    // The exact failure this closeout removed from the read path. If it ever
+    // comes back it must be loud: the database IS down, and hiding that behind
+    // a quiet "not enabled" line would bury a real incident.
+    getCandidatePool.mockRejectedValue(apiFailure(503, 'DATABASE_UNAVAILABLE'))
+    renderTab()
+
+    expect(await screen.findByTestId('kp-candidate-pool-error')).toBeTruthy()
+    expect(screen.queryByTestId('kp-candidate-storage-not-enabled')).toBeNull()
+  })
+
+  it('an unknown code stays an ERROR — only the one known code is a state', async () => {
+    getCandidatePool.mockRejectedValue(apiFailure(500, 'SOMETHING_ELSE'))
+    renderTab()
+
+    expect(await screen.findByTestId('kp-candidate-pool-error')).toBeTruthy()
+    expect(screen.queryByTestId('kp-candidate-storage-not-enabled')).toBeNull()
+  })
+
+  it('a failure with no code at all stays an ERROR', async () => {
+    getCandidatePool.mockRejectedValue(new Error('Network Error'))
+    renderTab()
+
+    expect(await screen.findByTestId('kp-candidate-pool-error')).toBeTruthy()
+    expect(screen.queryByTestId('kp-candidate-storage-not-enabled')).toBeNull()
   })
 })
 

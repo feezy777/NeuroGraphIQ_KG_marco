@@ -19,10 +19,29 @@ import { fetchRunLlmCandidates } from './kpApi'
 import {
   CANDIDATE_TYPE_LABEL_KEYS,
   CANDIDATE_TYPE_ORDER,
+  isCandidateStorageUnavailable,
   type LlmCandidateListResponse,
 } from './candidateTypes'
-import { orDash } from './kpFormat'
+import { formatTimestamp, orDash } from './kpFormat'
 import type { DiscoveryRun } from './types'
+
+/**
+ * How long a run took, from the two stamps the API reports — or `null`.
+ *
+ * `null` unless BOTH stamps parse: a duration computed from one stamp and a
+ * guess would be a fabricated measurement. Negative or absurd values are also
+ * refused rather than displayed.
+ */
+function runDuration(startedAt: string | null, finishedAt: string | null): string | null {
+  if (!startedAt || !finishedAt) return null
+  const start = new Date(startedAt).getTime()
+  const end = new Date(finishedAt).getTime()
+  if (Number.isNaN(start) || Number.isNaN(end) || end < start) return null
+  const totalSeconds = Math.round((end - start) / 1000)
+  if (totalSeconds < 60) return `${totalSeconds}s`
+  const minutes = Math.floor(totalSeconds / 60)
+  return `${minutes}m ${totalSeconds % 60}s`
+}
 
 /** One labelled read-only value. */
 function Field({
@@ -61,6 +80,11 @@ export function LlmCandidateList({ llmRuns, selectedRunId, onOpenCandidates }: P
   const { t } = useI18n()
   const [candidates, setCandidates] = useState<LlmCandidateListResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
+  // This database has no candidate storage at all. A DEPLOYMENT state, not a
+  // failed read: the run's result is not unavailable BY ERROR, it does not
+  // exist to be read. Kept apart from `error` so it is answered quietly, and
+  // apart from an empty list so it never reports "the run proposed nothing".
+  const [storageNotEnabled, setStorageNotEnabled] = useState(false)
 
   const selectedRun = llmRuns?.find(r => r.run_id === selectedRunId) ?? null
   const runId = selectedRun?.run_id ?? null
@@ -68,26 +92,35 @@ export function LlmCandidateList({ llmRuns, selectedRunId, onOpenCandidates }: P
   // Reload whenever the selection changes. `cancelled` guards against a slower
   // response for the PREVIOUS run overwriting the current one — the same
   // convention the workspace page and the literature inspector use. Resetting
-  // both states up front also means the previous run's counts can never be shown
-  // even for one frame under the new run's heading.
+  // all three states up front also means the previous run's counts can never be
+  // shown even for one frame under the new run's heading.
   useEffect(() => {
     if (!runId) {
       setCandidates(null)
       setError(null)
+      setStorageNotEnabled(false)
       return
     }
     let cancelled = false
     setCandidates(null)
     setError(null)
+    setStorageNotEnabled(false)
     fetchRunLlmCandidates(runId)
       .then(res => {
         if (!cancelled) setCandidates(res)
       })
       .catch((e: unknown) => {
+        if (cancelled) return
+        // Only this ONE condition is a state. A 500, a 502, a 503, a network
+        // error or an unknown code stays an ERROR below.
+        if (isCandidateStorageUnavailable(e)) {
+          setStorageNotEnabled(true)
+          return
+        }
         // An unreadable result set is UNKNOWN, not empty — same rule the run
         // history and the literature inspector follow. It is never rendered as
         // "no candidates were proposed".
-        if (!cancelled) setError(e instanceof Error ? e.message : String(e))
+        setError(e instanceof Error ? e.message : String(e))
       })
     return () => {
       cancelled = true
@@ -140,57 +173,110 @@ export function LlmCandidateList({ llmRuns, selectedRunId, onOpenCandidates }: P
             value={selectedRun.outcome}
             testId="kp-llm-run-outcome"
           />
+          {/* The rest of the run's provenance. All of it is real API data, and
+              all of it is needed to audit a candidate: which model, which prompt,
+              how long it ran. */}
+          <Field
+            label={t('knowledgeProduction.circuitDetail.field.provider')}
+            value={selectedRun.provider ?? null}
+            testId="kp-llm-run-provider"
+          />
+          <Field
+            label={t('knowledgeProduction.circuitDetail.field.model')}
+            value={selectedRun.model_name ?? null}
+            testId="kp-llm-run-model"
+          />
+          <Field
+            label={t('knowledgeProduction.circuitDetail.field.promptKey')}
+            value={selectedRun.prompt_key ?? null}
+            testId="kp-llm-run-prompt-key"
+          />
+          <Field
+            label={t('knowledgeProduction.circuitDetail.field.promptVersion')}
+            value={selectedRun.prompt_version ?? null}
+            testId="kp-llm-run-prompt-version"
+          />
+          <Field
+            label={t('knowledgeProduction.discovery.field.started')}
+            value={formatTimestamp(selectedRun.started_at)}
+            testId="kp-llm-run-started"
+          />
+          <Field
+            label={t('knowledgeProduction.discovery.field.finished')}
+            value={formatTimestamp(selectedRun.finished_at)}
+            testId="kp-llm-run-finished"
+          />
+          {/* Derived from the two stamps above — arithmetic on reported times,
+              not a new fact: a run with no finish stamp shows —. */}
+          <Field
+            label={t('knowledgeProduction.discovery.field.duration')}
+            value={runDuration(selectedRun.started_at, selectedRun.finished_at)}
+            testId="kp-llm-run-duration"
+          />
         </div>
 
-        {error && (
-          <div className="state-box state-err" data-testid="kp-llm-candidates-error">
-            <p>{error}</p>
-          </div>
-        )}
-
-        {!error && candidates === null && (
-          <p className="kp-muted" data-testid="kp-llm-candidates-loading">
-            {t('knowledgeProduction.loading')}
+        {/* ONE gate for the whole result area. When the database has no
+            candidate storage there is no result to report: not an errored one,
+            not an empty one, and no counts — a count would be a number nobody
+            measured. The run's provenance above stays, because that record IS
+            readable and is what tells the reader the run happened. */}
+        {storageNotEnabled ? (
+          <p className="kp-muted" data-testid="kp-llm-candidates-storage-not-enabled">
+            {t('knowledgeProduction.candidateStorage.notEnabled')}
           </p>
-        )}
-
-        {/* A genuine zero-candidate run. Only reachable once an answer arrived,
-            so an outage or an unreadable list can never say this. */}
-        {!error && candidates !== null && rows.length === 0 && (
-          <p className="kp-muted" data-testid="kp-llm-candidates-empty">
-            {t('knowledgeProduction.llmCandidates.emptyText')}
-          </p>
-        )}
-
-        {!error && rows.length > 0 && (
+        ) : (
           <>
-            <p className="kp-muted" data-testid="kp-llm-run-found">
-              {t('knowledgeProduction.execution.found')}
-            </p>
-            <div className="kp-stat-row" data-testid="kp-llm-run-summary">
-              <span className="kp-stat" data-testid="kp-llm-run-total">
-                <span className="kp-stat-label">
-                  {t('knowledgeProduction.candidateKnowledge.stat.total')}
-                </span>
-                <span className="kp-stat-value">{rows.length}</span>
-              </span>
-              {CANDIDATE_TYPE_ORDER.map(type => (
-                <span className="kp-stat" key={type} data-testid={`kp-llm-run-count-${type}`}>
-                  <span className="kp-stat-label">{t(CANDIDATE_TYPE_LABEL_KEYS[type])}</span>
-                  <span className="kp-stat-value">{countOf(type)}</span>
-                </span>
-              ))}
-            </div>
-            {/* The rows themselves live on the Candidate Knowledge tab: this tab
-                reports the run, that tab owns the pool. */}
-            <button
-              type="button"
-              className="btn btn-sm"
-              data-testid="kp-open-candidates"
-              onClick={onOpenCandidates}
-            >
-              {t('knowledgeProduction.candidateKnowledge.openTab')}
-            </button>
+            {error && (
+              <div className="state-box state-err" data-testid="kp-llm-candidates-error">
+                <p>{error}</p>
+              </div>
+            )}
+
+            {!error && candidates === null && (
+              <p className="kp-muted" data-testid="kp-llm-candidates-loading">
+                {t('knowledgeProduction.loading')}
+              </p>
+            )}
+
+            {/* A genuine zero-candidate run. Only reachable once an answer
+                arrived, so an outage or an unreadable list can never say this. */}
+            {!error && candidates !== null && rows.length === 0 && (
+              <p className="kp-muted" data-testid="kp-llm-candidates-empty">
+                {t('knowledgeProduction.llmCandidates.emptyText')}
+              </p>
+            )}
+
+            {!error && rows.length > 0 && (
+              <>
+                <p className="kp-muted" data-testid="kp-llm-run-found">
+                  {t('knowledgeProduction.execution.found')}
+                </p>
+                <div className="kp-stat-row" data-testid="kp-llm-run-summary">
+                  <span className="kp-stat" data-testid="kp-llm-run-total">
+                    <span className="kp-stat-label">
+                      {t('knowledgeProduction.candidateKnowledge.stat.total')}
+                    </span>
+                    <span className="kp-stat-value">{rows.length}</span>
+                  </span>
+                  {CANDIDATE_TYPE_ORDER.map(type => (
+                    <span className="kp-stat" key={type} data-testid={`kp-llm-run-count-${type}`}>
+                      <span className="kp-stat-label">{t(CANDIDATE_TYPE_LABEL_KEYS[type])}</span>
+                      <span className="kp-stat-value">{countOf(type)}</span>
+                    </span>
+                  ))}
+                </div>
+                {/* The rows themselves live on the Candidate Knowledge tab: this
+                    tab reports the run, that tab owns the pool. */}
+                <button
+                  type="button"
+                  className="btn btn-sm"
+                  data-testid="kp-open-candidates"
+                  onClick={onOpenCandidates}
+                >
+                  {t('knowledgeProduction.candidateKnowledge.openTab')}
+                </button>
+              </>
+            )}
           </>
         )}
       </>

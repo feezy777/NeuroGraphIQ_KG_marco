@@ -18,6 +18,8 @@
  * resolution"; it does NOT mean validated or promoted. No field here says
  * otherwise, and none may be invented to imply it.
  */
+import { apiErrorCode } from '../../utils/apiErrorMessage'
+
 /**
  * The four candidate kinds the frozen DB CHECK admits.
  *
@@ -54,6 +56,34 @@ export interface LlmDiscoveryCandidate {
 export interface LlmCandidateListResponse {
   items: LlmDiscoveryCandidate[]
   total: number
+}
+
+/**
+ * The error code both candidate read endpoints answer when the CURRENT DATABASE
+ * has no candidate storage (P0-4C.1's readiness contract, now enforced on reads).
+ *
+ * It is not a failure. A deployment without the candidate staging table has
+ * simply not enabled this feature, so the UI says so quietly instead of showing
+ * a red error — and must never say "no candidates", which would be a claim about
+ * a table nobody could read.
+ */
+export const CANDIDATE_STORAGE_NOT_ENABLED_CODE = 'DISCOVERY_DATABASE_NOT_READY'
+
+/**
+ * Is this failure the ONE condition that means "this feature is off here"?
+ *
+ * Every candidate reader asks this exact question, and it is deliberately the
+ * only thing any of them asks: the code names a deployment state, not a failed
+ * request. Anything else — a 500, a 502, a 503, a network error, an unknown
+ * code, a code-less error — is a fault and must stay a fault. A blanket `catch`
+ * that showed the quiet notice for all of them would hide real outages behind a
+ * sentence saying the database was never set up.
+ *
+ * Centralised so the rule has ONE definition: four readers that each compared
+ * the code themselves would be four places for it to drift.
+ */
+export function isCandidateStorageUnavailable(e: unknown): boolean {
+  return apiErrorCode(e) === CANDIDATE_STORAGE_NOT_ENABLED_CODE
 }
 
 /** i18n key per candidate type. Display only — never persist resolved text. */

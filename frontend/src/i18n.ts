@@ -2568,6 +2568,12 @@ export const messages: Record<Language, Record<string, string>> = {
     'knowledgeProduction.summary.total': '脑区总数',
     'knowledgeProduction.summary.discovery': '知识发现',
     'knowledgeProduction.summary.candidates': '候选知识',
+    // The ONE sentence for "this database has no candidate storage". Shown by the
+    // Overview dash, the Discovery run result and the circuit detail page — three
+    // surfaces, one source, because three copies of one user-facing sentence is
+    // how copy drifts. It appears only when the backend answered
+    // DISCOVERY_DATABASE_NOT_READY; it is never a stand-in for a failure.
+    'knowledgeProduction.candidateStorage.notEnabled': '当前数据库尚未启用候选知识存储',
     'knowledgeProduction.summary.evidence': '证据',
     'knowledgeProduction.summary.review': '审核',
     'knowledgeProduction.filters.granularity': '粒度',
@@ -2604,6 +2610,8 @@ export const messages: Record<Language, Record<string, string>> = {
     'knowledgeProduction.section.hierarchy': '层级关系',
     'knowledgeProduction.section.sourceMapping': '来源与映射',
     'knowledgeProduction.section.governance': '数据治理',
+    'knowledgeProduction.section.hierarchyNotRecorded': '该脑区未记录上级脑区与层级深度。',
+    'knowledgeProduction.section.sourceMappingNotRecorded': '该脑区未登记来源 Atlas、外部映射或映射审核状态。',
     'knowledgeProduction.field.nameEn': '英文名',
     'knowledgeProduction.field.nameZh': '中文名',
     'knowledgeProduction.field.abbreviation': '缩写',
@@ -2636,6 +2644,11 @@ export const messages: Record<Language, Record<string, string>> = {
     'knowledgeProduction.discovery.emptyBlockTitle': '每次运行记录',
     'knowledgeProduction.discovery.emptyItems': '类型与状态,结果,提供方 / 模型,创建 / 开始 / 结束',
     'knowledgeProduction.discovery.historyTitle': '运行历史',
+    'knowledgeProduction.discovery.colRunId': '运行 ID',
+    'knowledgeProduction.discovery.colPrompt': '提示词',
+    'knowledgeProduction.discovery.field.started': '开始时间',
+    'knowledgeProduction.discovery.field.finished': '结束时间',
+    'knowledgeProduction.discovery.field.duration': '耗时',
     // Phase P0-4B — LLM 发现执行（同步）。只有 LLM 通道可执行，文献通道仍为占位。
     // 执行失败**不是**「暂无候选」：两者是完全不同的状态，措辞不得混淆。
     'knowledgeProduction.execution.llmButtonBusy': '正在启动…',
@@ -2655,9 +2668,16 @@ export const messages: Record<Language, Record<string, string>> = {
     'knowledgeProduction.candidateKnowledge.stat.total': '总数',
     'knowledgeProduction.candidateKnowledge.col.run': '来源运行',
     'knowledgeProduction.candidateKnowledge.col.created': '创建时间',
+    'knowledgeProduction.candidateKnowledge.col.actions': '操作',
+    'knowledgeProduction.candidateKnowledge.viewDetail': '查看详情',
+    'knowledgeProduction.candidateKnowledge.noDetailShort': '后续阶段开放',
     'knowledgeProduction.candidateKnowledge.openTab': '查看候选知识',
     'knowledgeProduction.candidateKnowledge.backToPool': '返回候选知识',
     'knowledgeProduction.candidateKnowledge.emptyPool': '该脑区暂无候选知识',
+    // NOT "暂无候选知识": the pool was never read. A feature that is off on this
+    // deployment is a different statement from a region that holds nothing.
+    'knowledgeProduction.candidateKnowledge.storageNotEnabled':
+      '候选知识功能尚未在当前数据库启用',
     'knowledgeProduction.candidateKnowledge.emptyFilter': '当前筛选条件下没有候选知识',
     'knowledgeProduction.candidateKnowledge.noDetailYet': '「{type}」详情页将在后续阶段开放',
     'knowledgeProduction.candidateKnowledge.notFound': '候选知识不存在',
@@ -5354,6 +5374,8 @@ export const messages: Record<Language, Record<string, string>> = {
     'knowledgeProduction.summary.total': 'Total BrainRegions',
     'knowledgeProduction.summary.discovery': 'Discovery',
     'knowledgeProduction.summary.candidates': 'Candidates',
+    'knowledgeProduction.candidateStorage.notEnabled':
+      'Candidate knowledge storage is not enabled on the current database',
     'knowledgeProduction.summary.evidence': 'Evidence',
     'knowledgeProduction.summary.review': 'Review',
     'knowledgeProduction.filters.granularity': 'Granularity',
@@ -5390,6 +5412,8 @@ export const messages: Record<Language, Record<string, string>> = {
     'knowledgeProduction.section.hierarchy': 'Hierarchy',
     'knowledgeProduction.section.sourceMapping': 'Source / Mapping',
     'knowledgeProduction.section.governance': 'Governance',
+    'knowledgeProduction.section.hierarchyNotRecorded': 'No parent region or hierarchy depth is recorded for this BrainRegion.',
+    'knowledgeProduction.section.sourceMappingNotRecorded': 'No source Atlas, external mapping or mapping review status is registered for this BrainRegion.',
     'knowledgeProduction.field.nameEn': 'English name',
     'knowledgeProduction.field.nameZh': 'Chinese name',
     'knowledgeProduction.field.abbreviation': 'abbreviation',
@@ -5424,6 +5448,11 @@ export const messages: Record<Language, Record<string, string>> = {
     'knowledgeProduction.discovery.emptyItems':
       'Type and status,Outcome,Provider / model,Created / started / finished',
     'knowledgeProduction.discovery.historyTitle': 'Run History',
+    'knowledgeProduction.discovery.colRunId': 'Run ID',
+    'knowledgeProduction.discovery.colPrompt': 'Prompt',
+    'knowledgeProduction.discovery.field.started': 'Started',
+    'knowledgeProduction.discovery.field.finished': 'Finished',
+    'knowledgeProduction.discovery.field.duration': 'Duration',
     // Phase P0-4B — LLM Discovery execution (synchronous). LLM is the only
     // runnable route; literature stays a placeholder.
     // A FAILED launch is NOT "no candidates": the two are different states and
@@ -5449,10 +5478,15 @@ export const messages: Record<Language, Record<string, string>> = {
     'knowledgeProduction.candidateKnowledge.stat.total': 'Total',
     'knowledgeProduction.candidateKnowledge.col.run': 'Source run',
     'knowledgeProduction.candidateKnowledge.col.created': 'Created',
+    'knowledgeProduction.candidateKnowledge.col.actions': 'Actions',
+    'knowledgeProduction.candidateKnowledge.viewDetail': 'View details',
+    'knowledgeProduction.candidateKnowledge.noDetailShort': 'later phase',
     'knowledgeProduction.candidateKnowledge.openTab': 'View candidate knowledge',
     'knowledgeProduction.candidateKnowledge.backToPool': 'Back to candidate knowledge',
     'knowledgeProduction.candidateKnowledge.emptyPool':
       'This BrainRegion has no candidate knowledge yet',
+    'knowledgeProduction.candidateKnowledge.storageNotEnabled':
+      'Candidate knowledge is not enabled on the current database',
     'knowledgeProduction.candidateKnowledge.emptyFilter':
       'No candidates match the current filter',
     'knowledgeProduction.candidateKnowledge.noDetailYet':

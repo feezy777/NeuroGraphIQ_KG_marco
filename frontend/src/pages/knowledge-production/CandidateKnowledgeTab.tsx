@@ -21,6 +21,7 @@ import {
   CANDIDATE_TYPE_LABEL_KEYS,
   CANDIDATE_TYPE_ORDER,
   CANDIDATE_TYPE_TONES,
+  isCandidateStorageUnavailable,
   type DiscoveryCandidateType,
   type LlmDiscoveryCandidate,
 } from './candidateTypes'
@@ -39,6 +40,10 @@ export function CandidateKnowledgeTab({ entityId, onOpenCircuit }: Props) {
   const { t } = useI18n()
   const [candidates, setCandidates] = useState<LlmDiscoveryCandidate[] | null>(null)
   const [error, setError] = useState<string | null>(null)
+  // This database has no candidate storage at all — a DEPLOYMENT fact, not a
+  // failed read. Kept apart from `error` so it can be answered quietly, and
+  // apart from an empty pool so it is never reported as "no candidates".
+  const [storageNotEnabled, setStorageNotEnabled] = useState(false)
   const [filter, setFilter] = useState<Filter>('all')
   // A kind with no detail page yet: named, never silently inert.
   const [noDetailType, setNoDetailType] = useState<DiscoveryCandidateType | null>(null)
@@ -47,6 +52,7 @@ export function CandidateKnowledgeTab({ entityId, onOpenCircuit }: Props) {
     let cancelled = false
     setCandidates(null)
     setError(null)
+    setStorageNotEnabled(false)
     setFilter('all')
     setNoDetailType(null)
     fetchBrainRegionLlmCandidates(entityId)
@@ -54,15 +60,34 @@ export function CandidateKnowledgeTab({ entityId, onOpenCircuit }: Props) {
         if (!cancelled) setCandidates(res.items)
       })
       .catch((e: unknown) => {
+        if (cancelled) return
+        // Only this ONE condition is a state. A network failure, a PostgreSQL
+        // error or a 500 stays an ERROR below: those are faults, and dressing
+        // one up as "the feature is off" would hide a real outage.
+        if (isCandidateStorageUnavailable(e)) {
+          setStorageNotEnabled(true)
+          return
+        }
         // An unreadable pool is UNKNOWN, never empty: "this region has no
         // candidates" would be a claim we cannot make.
-        if (!cancelled) setError(e instanceof Error ? e.message : String(e))
+        setError(e instanceof Error ? e.message : String(e))
       })
     return () => {
       cancelled = true
     }
   }, [entityId])
 
+  // Deliberately NOT the empty-pool message: the pool was never read, and
+  // "暂无候选知识" would assert that this region has none.
+  if (storageNotEnabled) {
+    return (
+      <div data-testid="kp-candidates-tab">
+        <p className="kp-muted" data-testid="kp-candidate-storage-not-enabled">
+          {t('knowledgeProduction.candidateKnowledge.storageNotEnabled')}
+        </p>
+      </div>
+    )
+  }
   if (error) {
     return (
       <div data-testid="kp-candidates-tab">
@@ -124,6 +149,31 @@ export function CandidateKnowledgeTab({ entityId, onOpenCircuit }: Props) {
       key: 'created_at',
       header: t('knowledgeProduction.candidateKnowledge.col.created'),
       render: c => formatTimestamp(c.created_at),
+    },
+    {
+      key: 'actions',
+      header: t('knowledgeProduction.candidateKnowledge.col.actions'),
+      // Circuit rows get an explicit way in, because a clickable row is an
+      // affordance you have to discover. The other kinds have no detail page
+      // yet and say so instead of offering a dead link.
+      render: c =>
+        c.candidate_type === 'circuit' ? (
+          <button
+            type="button"
+            className="kp-link-btn"
+            data-testid={`kp-open-circuit-${c.local_id}`}
+            onClick={event => {
+              // The row itself navigates too; stop here so one click is one
+              // navigation, not two.
+              event.stopPropagation()
+              onOpenCircuit(c.candidate_id)
+            }}
+          >
+            {t('knowledgeProduction.candidateKnowledge.viewDetail')}
+          </button>
+        ) : (
+          <span className="kp-muted">{t('knowledgeProduction.candidateKnowledge.noDetailShort')}</span>
+        ),
     },
   ]
 

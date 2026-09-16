@@ -12,6 +12,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { I18nProvider } from '../../i18n-context'
 import { LANGUAGE_STORAGE_KEY } from '../../i18n'
+import { ApiError } from '../../api/client'
 import { BrainRegionWorkspacePage } from './BrainRegionWorkspacePage'
 import { LlmCandidateList } from './LlmCandidateList'
 import type { LlmDiscoveryCandidate } from './candidateTypes'
@@ -121,6 +122,17 @@ function renderPanel(props: Partial<Parameters<typeof LlmCandidateList>[0]> = {}
     </I18nProvider>,
   )
   return { ...utils, onOpenCandidates }
+}
+
+/** An ApiError shaped exactly as the api client builds one. */
+function apiFailure(status: number, code?: string): ApiError {
+  return new ApiError(status, `HTTP ${status}: boom`, {
+    url: '/api/knowledge-production/discovery-runs/x/llm-candidates',
+    method: 'GET',
+    responseBody: code
+      ? { detail: { code, message: 'candidate storage is not enabled' } }
+      : { detail: 'boom' },
+  })
 }
 
 function runHistoryRow(index: number): HTMLElement {
@@ -233,6 +245,73 @@ describe('empty and error are not the same thing', () => {
     const err = await panel.findByTestId('kp-llm-candidates-error')
     expect(err.textContent).toContain('HTTP 500: boom')
     expect(panel.queryByTestId('kp-llm-candidates-empty')).toBeNull()
+  })
+})
+
+// ===========================================================================
+// the database has no candidate storage — a STATE, not a failure
+// ===========================================================================
+describe('candidate storage not enabled on this database', () => {
+  it('shows the unavailable sentence — not the raw 409, not an error, not empty', async () => {
+    getLlmCandidates.mockRejectedValue(apiFailure(409, 'DISCOVERY_DATABASE_NOT_READY'))
+    await openDiscoveryWith([run()])
+    fireEvent.click(runHistoryRow(0))
+
+    const panel = within(screen.getByTestId('kp-llm-candidates'))
+    const notice = await panel.findByTestId('kp-llm-candidates-storage-not-enabled')
+    expect(notice.textContent).toBe(
+      'Candidate knowledge storage is not enabled on the current database',
+    )
+    // The three things it must not be mistaken for.
+    expect(panel.queryByTestId('kp-llm-candidates-error')).toBeNull()
+    expect(panel.queryByTestId('kp-llm-candidates-empty')).toBeNull()
+    // ...and no technical payload anywhere in the panel.
+    expect(panel.queryByText(/HTTP 409/)).toBeNull()
+    expect(panel.queryByText(/DISCOVERY_DATABASE_NOT_READY/)).toBeNull()
+  })
+
+  it('shows no candidate counts for a result it never read', async () => {
+    getLlmCandidates.mockRejectedValue(apiFailure(409, 'DISCOVERY_DATABASE_NOT_READY'))
+    await openDiscoveryWith([run()])
+    fireEvent.click(runHistoryRow(0))
+
+    const panel = within(screen.getByTestId('kp-llm-candidates'))
+    await panel.findByTestId('kp-llm-candidates-storage-not-enabled')
+    // A count here would be a number nobody measured.
+    expect(panel.queryByTestId('kp-llm-run-summary')).toBeNull()
+    expect(panel.queryByTestId('kp-llm-run-total')).toBeNull()
+    expect(panel.queryByTestId('kp-open-candidates')).toBeNull()
+  })
+
+  it('still shows the RUN, whose record is readable even when candidates are not', async () => {
+    getLlmCandidates.mockRejectedValue(apiFailure(409, 'DISCOVERY_DATABASE_NOT_READY'))
+    await openDiscoveryWith([run()])
+    fireEvent.click(runHistoryRow(0))
+
+    const panel = within(screen.getByTestId('kp-llm-candidates'))
+    await panel.findByTestId('kp-llm-candidates-storage-not-enabled')
+    expect(panel.getByTestId('kp-llm-run-provider').textContent).toContain('deepseek')
+    expect(panel.getByTestId('kp-llm-run-model').textContent).toContain('deepseek-flash')
+  })
+
+  it('a 503 DATABASE_UNAVAILABLE stays an ERROR — an outage is not a disabled feature', async () => {
+    getLlmCandidates.mockRejectedValue(apiFailure(503, 'DATABASE_UNAVAILABLE'))
+    await openDiscoveryWith([run()])
+    fireEvent.click(runHistoryRow(0))
+
+    const panel = within(screen.getByTestId('kp-llm-candidates'))
+    expect(await panel.findByTestId('kp-llm-candidates-error')).toBeTruthy()
+    expect(panel.queryByTestId('kp-llm-candidates-storage-not-enabled')).toBeNull()
+  })
+
+  it('an unknown code stays an ERROR — only the one known code is a state', async () => {
+    getLlmCandidates.mockRejectedValue(apiFailure(500, 'SOMETHING_ELSE'))
+    await openDiscoveryWith([run()])
+    fireEvent.click(runHistoryRow(0))
+
+    const panel = within(screen.getByTestId('kp-llm-candidates'))
+    expect(await panel.findByTestId('kp-llm-candidates-error')).toBeTruthy()
+    expect(panel.queryByTestId('kp-llm-candidates-storage-not-enabled')).toBeNull()
   })
 })
 

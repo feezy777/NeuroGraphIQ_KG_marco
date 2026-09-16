@@ -10,6 +10,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { I18nProvider } from '../../i18n-context'
 import { LANGUAGE_STORAGE_KEY } from '../../i18n'
+import { ApiError } from '../../api/client'
 import { BrainRegionWorkspacePage } from './BrainRegionWorkspacePage'
 import type { BrainRegionSeedDetail, DiscoveryRun } from './types'
 
@@ -140,10 +141,77 @@ describe('BrainRegionWorkspacePage', () => {
         'Not initialized',
       ),
     )
-    for (const k of ['candidates', 'evidence', 'review']) {
+    // Candidates is now a MEASURED count (the pool API is mocked to 0 here), so
+    // 0 is a fact, not a fabrication. Evidence and review have no read API yet
+    // and must stay unknown — an em dash, never a zero.
+    await waitFor(() =>
+      expect(screen.getByTestId('kp-ws-summary-candidates').textContent).toContain('0'),
+    )
+    for (const k of ['evidence', 'review']) {
       expect(screen.getByTestId(`kp-ws-summary-${k}`).textContent).toContain('—')
       expect(screen.getByTestId(`kp-ws-summary-${k}`).textContent).not.toContain('0')
     }
+  })
+
+  it('shows — for the candidate count while the pool is unreadable', async () => {
+    getCandidatePool.mockRejectedValue(new Error('503 unavailable'))
+    renderWorkspace()
+    const card = await screen.findByTestId('kp-ws-summary-candidates')
+    // An unreadable pool is UNKNOWN, not empty: a zero here would claim this
+    // region has no candidate knowledge.
+    await waitFor(() => expect(card.textContent).toContain('—'))
+    expect(card.textContent).not.toContain('0')
+  })
+
+  // ---- Closeout: the unknown count has a stated cause when it has one ----
+  it('names the reason when this database has no candidate storage', async () => {
+    getCandidatePool.mockRejectedValue(
+      new ApiError(409, 'HTTP 409: boom', {
+        url: '/x/llm-candidates',
+        method: 'GET',
+        responseBody: {
+          detail: { code: 'DISCOVERY_DATABASE_NOT_READY', message: 'not enabled' },
+        },
+      }),
+    )
+    renderWorkspace()
+
+    const card = await screen.findByTestId('kp-ws-summary-candidates')
+    // Still —, because nothing was measured...
+    await waitFor(() => expect(card.textContent).toContain('—'))
+    expect(card.textContent).not.toContain('0')
+    // ...and now the dash explains itself instead of leaving a bare em dash.
+    await waitFor(() =>
+      expect(screen.getByTestId('kp-ws-summary-candidates-note').textContent).toBe(
+        'Candidate knowledge storage is not enabled on the current database',
+      ),
+    )
+  })
+
+  it('leaves the dash UNEXPLAINED for any other failure', async () => {
+    // A 503 is an outage, not a deployment choice. Guessing "not enabled" here
+    // would be an invented cause, so the dash stays bare.
+    getCandidatePool.mockRejectedValue(
+      new ApiError(503, 'HTTP 503: boom', {
+        url: '/x/llm-candidates',
+        method: 'GET',
+        responseBody: { detail: { code: 'DATABASE_UNAVAILABLE', message: 'down' } },
+      }),
+    )
+    renderWorkspace()
+
+    const card = await screen.findByTestId('kp-ws-summary-candidates')
+    await waitFor(() => expect(card.textContent).toContain('—'))
+    expect(screen.queryByTestId('kp-ws-summary-candidates-note')).toBeNull()
+  })
+
+  it('shows the pool count the API reports, not a count derived from runs', async () => {
+    getRuns.mockResolvedValue({ items: [run({ status: 'COMPLETED' })], total: 1 })
+    getCandidatePool.mockResolvedValue({ items: [], total: 68 })
+    renderWorkspace()
+    await waitFor(() =>
+      expect(screen.getByTestId('kp-ws-summary-candidates').textContent).toContain('68'),
+    )
   })
 
   // ---- Phase 2A: Discovery summary card is driven by persisted runs ----
@@ -181,10 +249,14 @@ describe('BrainRegionWorkspacePage', () => {
       items: [run({ status: 'COMPLETED', outcome: 'CANDIDATES_FOUND' })],
       total: 7,
     })
+    // The pool is armed to FAIL before render: a run that reported CANDIDATES_FOUND
+    // is not a count, so the card must stay unknown rather than infer 7 or 0.
+    getCandidatePool.mockRejectedValue(new Error('unavailable'))
     renderWorkspace()
     await waitFor(() =>
       expect(screen.getByTestId('kp-ws-summary-discovery').textContent).toContain('Completed'),
     )
+    await waitFor(() => expect(getCandidatePool).toHaveBeenCalled())
     for (const k of ['candidates', 'evidence', 'review']) {
       expect(screen.getByTestId(`kp-ws-summary-${k}`).textContent).toContain('—')
     }
@@ -263,8 +335,11 @@ describe('BrainRegionWorkspacePage', () => {
     // status != outcome: finished, and "no evidence" is a real answer
     expect(history.getByText('No evidence found')).toBeTruthy()
     // provider/model is absent for this route -> em dash, never blank or "null";
-    // started/finished are also unset on this row.
-    expect(history.getAllByText('—')).toHaveLength(3)
+    // started/finished and the prompt are also unset on this row. The run id is
+    // always present, so it is NOT one of the dashes.
+    expect(history.getAllByText('—')).toHaveLength(4)
+    // The run id IS present (as its 8-char prefix), so it is not one of them.
+    expect(history.getByText('11111111')).toBeTruthy()
   })
 
   it('never queries runs with a candidate, mirror or final identifier', async () => {
@@ -355,7 +430,10 @@ describe('BrainRegionWorkspacePage', () => {
     expect(ov.getByText('NGIQ-XREG-00000001')).toBeTruthy()
   })
 
-  it('omits a section that has nothing authoritative to show', async () => {
+  it('SHOWS a section with nothing recorded, with — and a reason', async () => {
+    // Phase 1B hid an all-empty section; this phase reverses that deliberately.
+    // An inspection surface must be able to answer "where is it in the hierarchy"
+    // — a section that vanishes cannot be told apart from a broken page.
     getSeed.mockResolvedValue({
       ...DETAIL,
       parent_region_pk: null,
@@ -368,8 +446,23 @@ describe('BrainRegionWorkspacePage', () => {
     renderWorkspace()
     await waitFor(() => expect(screen.getByTestId('kp-overview')).toBeTruthy())
     const ov = within(screen.getByTestId('kp-overview'))
-    expect(ov.queryByText('Hierarchy')).toBeNull()
-    expect(ov.queryByText('Source / Mapping')).toBeNull()
+
+    const hierarchy = within(ov.getByText('Hierarchy').closest('section')!)
+    expect(hierarchy.getByText('parent region')).toBeTruthy()
+    expect(hierarchy.getByText('hierarchy depth')).toBeTruthy()
+    // Every unrecorded value answers with an em dash, never a blank or "null".
+    expect(hierarchy.getAllByText('—')).toHaveLength(2)
+    expect(
+      hierarchy.getByText('No parent region or hierarchy depth is recorded for this BrainRegion.'),
+    ).toBeTruthy()
+
+    const mapping = within(ov.getByText('Source / Mapping').closest('section')!)
+    expect(mapping.getAllByText('—')).toHaveLength(4)
+    expect(
+      mapping.getByText(/No source Atlas, external mapping or mapping review status/),
+    ).toBeTruthy()
+
+    // …and the sections that DO have data are untouched by this.
     expect(ov.getByText('Identity')).toBeTruthy()
   })
 

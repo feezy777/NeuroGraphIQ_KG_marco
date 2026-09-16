@@ -27,6 +27,7 @@ import {
 import {
   CANDIDATE_STATUS_LABEL_KEYS,
   CANDIDATE_STATUS_TONES,
+  isCandidateStorageUnavailable,
   type LlmDiscoveryCandidate,
 } from './candidateTypes'
 import {
@@ -62,9 +63,9 @@ export function CircuitCandidateDetailPage({ entityId, candidateId, onBack }: Pr
   // The seed's own record, so its display name can be derived at RENDER time:
   // storing the resolved string would freeze it at the language it was fetched in.
   const [seedDetail, setSeedDetail] = useState<BrainRegionSeedDetail | null>(null)
-  const [state, setState] = useState<'loading' | 'ready' | 'notFound' | 'wrongType' | 'error'>(
-    'loading',
-  )
+  const [state, setState] = useState<
+    'loading' | 'ready' | 'notFound' | 'wrongType' | 'error' | 'unavailable'
+  >('loading')
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
@@ -104,10 +105,18 @@ export function CircuitCandidateDetailPage({ entityId, candidateId, onBack }: Pr
     }
 
     load().catch((e: unknown) => {
-      if (!cancelled) {
-        setError(e instanceof Error ? e.message : String(e))
-        setState('error')
+      if (cancelled) return
+      // "This database cannot hold candidates" is NOT "this candidate does not
+      // exist". The pool read is this page's entry point, so on such a database
+      // the page can neither find nor fail to find the candidate — it never got
+      // to look. Saying not-found would be a false claim about the id; showing
+      // the raw 409 would be a technical payload where a fact belongs.
+      if (isCandidateStorageUnavailable(e)) {
+        setState('unavailable')
+        return
       }
+      setError(e instanceof Error ? e.message : String(e))
+      setState('error')
     })
     return () => {
       cancelled = true
@@ -133,6 +142,19 @@ export function CircuitCandidateDetailPage({ entityId, candidateId, onBack }: Pr
         {back}
         <p className="kp-muted" data-testid="kp-circuit-loading">
           {t('knowledgeProduction.loading')}
+        </p>
+      </div>
+    )
+  }
+  // The pool could not be read because this database has no candidate storage.
+  // The way back is offered FIRST and labelled as the way to the pool, because
+  // that is where a reader can act — this is a dead end only for this id.
+  if (state === 'unavailable') {
+    return (
+      <div className="page kp-page" data-testid="kp-circuit-detail">
+        {back}
+        <p className="kp-muted" data-testid="kp-circuit-storage-not-enabled">
+          {t('knowledgeProduction.candidateStorage.notEnabled')}
         </p>
       </div>
     )

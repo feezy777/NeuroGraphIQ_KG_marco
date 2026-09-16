@@ -70,6 +70,13 @@
   color: var(--text-muted);
   font-variant-numeric: normal;
 }
+/* Why a value is unknown, when the cause is known. Quiet by design: it explains
+   a dash, it is not an alarm, and it must never compete with the value itself. */
+.kp-summary-note {
+  font-size: 11px;
+  line-height: 1.35;
+  color: var(--text-muted);
+}
 
 /* ── Filter toolbar (Index) ─────────────────────────────────────────────── */
 .kp-toolbar {
@@ -687,6 +694,20 @@
   color: var(--danger, #cf1322);
 }
 .kp-mono-sm { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 11.5px; }
+
+/* The explicit way into a candidate's own page. Styled as a link rather than a
+   button: it navigates, it does not act on the data. */
+.kp-link-btn {
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  color: var(--primary);
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.kp-link-btn:hover { text-decoration-thickness: 2px; }
 
 /* Operation cards sit below the empty state / history in the Discovery tab. */
 .kp-op-grid { margin-top: 14px; }

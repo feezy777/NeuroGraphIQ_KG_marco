@@ -44,18 +44,36 @@ function Field({ label, value }: { label: string; value: string | number | null 
   )
 }
 
-function FieldSection({ title, fields }: { title: string; fields: FieldDef[] }) {
-  const shown = fields.filter(f => f.value !== null && f.value !== '')
-  // a section with nothing authoritative to show is omitted rather than padded
-  if (shown.length === 0) return null
+/**
+ * One labelled group of read-only values.
+ *
+ * EVERY declared field is rendered, with `—` where the API reports nothing, and
+ * a section is never dropped for being empty. Phase 1B hid an all-empty section
+ * "rather than padded it"; that policy is reversed here on purpose: this is an
+ * inspection surface, and a section that silently disappears cannot be told apart
+ * from a broken page — whereas an answered `—` says "nothing is recorded here",
+ * which is a real answer to the reader's question. When every value IS empty the
+ * `note` states that in words, so the dashes are not mistaken for a loading bug.
+ */
+function FieldSection({
+  title,
+  fields,
+  note,
+}: {
+  title: string
+  fields: FieldDef[]
+  note?: string
+}) {
+  const allEmpty = fields.every(f => f.value === null || f.value === '')
   return (
     <section className="kp-section">
       <h3 className="kp-section-title">{title}</h3>
       <div className="kp-field-grid">
-        {shown.map(f => (
+        {fields.map(f => (
           <Field key={f.key} label={f.label} value={f.value} />
         ))}
       </div>
+      {allEmpty && note && <p className="kp-muted">{note}</p>}
     </section>
   )
 }
@@ -86,6 +104,9 @@ export function OverviewTab({ detail }: { detail: BrainRegionSeedDetail }) {
       />
       <FieldSection
         title={t('knowledgeProduction.section.hierarchy')}
+        // "Where is this region in the hierarchy" must be a question a reader can
+        // SEE answered: for a root region the answer is "no parent is recorded".
+        note={t('knowledgeProduction.section.hierarchyNotRecorded')}
         fields={[
           // only identifiers the API actually exposes — no invented labels
           { key: 'parent_region', label: f('parentRegion'), value: detail.parent_region_pk },
@@ -94,6 +115,7 @@ export function OverviewTab({ detail }: { detail: BrainRegionSeedDetail }) {
       />
       <FieldSection
         title={t('knowledgeProduction.section.sourceMapping')}
+        note={t('knowledgeProduction.section.sourceMappingNotRecorded')}
         fields={[
           { key: 'atlas', label: f('sourceAtlas'), value: detail.atlas_names.join(', ') || null },
           {
@@ -374,6 +396,26 @@ function RunHistory({
       // Literature runs carry no provider/model — they show —. A model name is
       // a technical identifier and is never translated.
       render: r => [r.provider, r.model_name].filter(Boolean).join(' · ') || '—',
+    },
+    {
+      key: 'run_id',
+      header: t('knowledgeProduction.discovery.colRunId'),
+      // The 8-char prefix, with the FULL uuid on hover: a 36-character column
+      // would push this table past the viewport, and the whole value is listed
+      // in the run's own provenance panel once it is selected.
+      render: r => (
+        <span className="kp-mono-sm" title={r.run_id}>
+          {r.run_id.slice(0, 8)}
+        </span>
+      ),
+    },
+    {
+      key: 'prompt',
+      header: t('knowledgeProduction.discovery.colPrompt'),
+      // Which prompt produced this run is part of its provenance, and nothing
+      // else on this tab carries it.
+      render: r =>
+        [r.prompt_key, r.prompt_version].filter(Boolean).join(' · ') || '—',
     },
     {
       key: 'created_at',

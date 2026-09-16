@@ -38,3 +38,24 @@ export function formatApiErrorMessage(e: unknown): string {
   if (formatted) return formatted
   return e.message
 }
+
+/**
+ * The structured `code` of an API failure, or null when the response carried
+ * none (a network failure, a plain-text body, a foreign error type).
+ *
+ * Read the CODE, never the message, whenever different failures need different
+ * handling. A message is prose for a human and may be translated, reworded or
+ * localized; matching on it makes correctness depend on copywriting. It is also
+ * the only way to tell two failures apart that a user must see differently —
+ * "this database is not enabled for candidates" is a deployment fact that
+ * deserves a quiet explanation, while "the database is unreachable" is an
+ * outage that must stay red.
+ */
+export function apiErrorCode(e: unknown): string | null {
+  if (!(e instanceof ApiError)) return null
+  const body = e.meta?.responseBody as { detail?: unknown } | undefined
+  const detail = body?.detail
+  if (!detail || typeof detail !== 'object') return null
+  const code = (detail as { code?: unknown }).code
+  return typeof code === 'string' && code.length > 0 ? code : null
+}

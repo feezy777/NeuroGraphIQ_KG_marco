@@ -15,6 +15,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { I18nProvider } from '../../i18n-context'
 import { LANGUAGE_STORAGE_KEY } from '../../i18n'
+import { ApiError } from '../../api/client'
 import { CircuitCandidateDetailPage } from './CircuitCandidateDetailPage'
 import type { LlmDiscoveryCandidate } from './candidateTypes'
 import type { DiscoveryRun } from './types'
@@ -150,6 +151,17 @@ const HISTORY_RUN: DiscoveryRun = {
   finished_at: '2026-09-16T12:08:53Z',
   error_code: null,
   error_message: null,
+}
+
+/** An ApiError shaped exactly as the api client builds one. */
+function apiFailure(status: number, code?: string): ApiError {
+  return new ApiError(status, `HTTP ${status}: boom`, {
+    url: '/api/knowledge-production/brain-regions/x/llm-candidates',
+    method: 'GET',
+    responseBody: code
+      ? { detail: { code, message: 'candidate storage is not enabled' } }
+      : { detail: 'boom' },
+  })
 }
 
 function renderDetail(candidateId = 'NGIQ-DC-circuit_2', entityId = SEED_ID) {
@@ -485,6 +497,57 @@ describe('raw payload and failure states', () => {
     expect(box.textContent).toContain('region')
     expect(screen.queryByTestId('kp-circuit-overview')).toBeNull()
     expect(screen.queryByTestId('kp-circuit-functions-none')).toBeNull()
+  })
+
+  // ---- the database has no candidate storage: not-found would be a lie ----
+  it('says the storage is unavailable — NOT that the candidate does not exist', async () => {
+    getCandidatePool.mockRejectedValue(apiFailure(409, 'DISCOVERY_DATABASE_NOT_READY'))
+    renderDetail()
+
+    const notice = await screen.findByTestId('kp-circuit-storage-not-enabled')
+    expect(notice.textContent).toBe(
+      'Candidate knowledge storage is not enabled on the current database',
+    )
+    // The pool read is this page's entry point, so the page never got to look —
+    // "not found" would assert something about the id that nobody established.
+    expect(screen.queryByTestId('kp-circuit-not-found')).toBeNull()
+    expect(screen.queryByTestId('kp-circuit-error')).toBeNull()
+    expect(screen.queryByTestId('kp-circuit-overview')).toBeNull()
+    // No technical payload anywhere.
+    expect(screen.queryByText(/HTTP 409/)).toBeNull()
+    expect(screen.queryByText(/DISCOVERY_DATABASE_NOT_READY/)).toBeNull()
+  })
+
+  it('offers the way back to the candidate pool from the unavailable state', async () => {
+    getCandidatePool.mockRejectedValue(apiFailure(409, 'DISCOVERY_DATABASE_NOT_READY'))
+    const { onBack } = renderDetail()
+
+    await screen.findByTestId('kp-circuit-storage-not-enabled')
+    const back = screen.getByTestId('kp-circuit-back')
+    expect(back.textContent).toContain('Back to candidate knowledge')
+    fireEvent.click(back)
+    expect(onBack).toHaveBeenCalledTimes(1)
+  })
+
+  it('a 503 on the pool stays an ERROR, not an unavailable state', async () => {
+    getCandidatePool.mockRejectedValue(apiFailure(503, 'DATABASE_UNAVAILABLE'))
+    renderDetail()
+
+    const err = await screen.findByTestId('kp-circuit-error')
+    expect(err.textContent).toContain('HTTP 503')
+    expect(screen.queryByTestId('kp-circuit-storage-not-enabled')).toBeNull()
+    expect(screen.queryByTestId('kp-circuit-not-found')).toBeNull()
+  })
+
+  it('a 409 on the RUN read is also an unavailable state, not a broken page', async () => {
+    // The pool lists candidates, so the target is found; the second read is what
+    // meets the readiness guard. Same condition, same answer.
+    getRunCandidates.mockRejectedValue(apiFailure(409, 'DISCOVERY_DATABASE_NOT_READY'))
+    renderDetail()
+
+    expect(await screen.findByTestId('kp-circuit-storage-not-enabled')).toBeTruthy()
+    expect(screen.queryByTestId('kp-circuit-error')).toBeNull()
+    expect(screen.queryByTestId('kp-circuit-not-found')).toBeNull()
   })
 
   it('an API failure is an ERROR, never a not-found and never empty sections', async () => {

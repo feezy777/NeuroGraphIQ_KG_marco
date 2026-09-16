@@ -5,14 +5,21 @@
  * production. Entering this route already means the BrainRegion is selected,
  * so selection is NOT a workflow step here.
  *
- * Phase 1B: only Overview holds real data. No Discovery Run table exists, so
- * no workflow step is active and no production count is fabricated.
+ * Overview holds the region's own fields; Discovery holds the run history and,
+ * once a run is selected, its result summary; Candidates holds the region's
+ * candidate pool and links out to one candidate's own page. No workflow step is
+ * active and no count is fabricated: an unread value shows `—`.
  * (See docs/KNOWLEDGE_PRODUCTION_ARCHITECTURE.md §8.)
  */
 import { useEffect, useState } from 'react'
 import { useI18n } from '../../i18n-context'
 import { WorkflowSteps } from './WorkflowSteps'
-import { fetchBrainRegionSeed, fetchDiscoveryRuns } from './kpApi'
+import { isCandidateStorageUnavailable } from './candidateTypes'
+import {
+  fetchBrainRegionLlmCandidates,
+  fetchBrainRegionSeed,
+  fetchDiscoveryRuns,
+} from './kpApi'
 import { KP_INDEX_PATH, kpCandidatePath, navigate } from './routes'
 import {
   DISCOVERY_STATUS_LABEL_KEYS,
@@ -50,9 +57,9 @@ function formatSpecies(
 }
 
 /**
- * Phase 1B placeholder — replaced by Discovery Run / Candidate APIs in later
- * phases. `—` is used deliberately instead of `0`, because no production-layer
- * table exists yet and a zero would read as an authoritative count.
+ * The value shown when something is UNKNOWN — a request in flight, or one that
+ * failed. Deliberately not `0`: a zero is a measurement, and showing one for a
+ * value nobody read would state as fact something we do not know.
  */
 const NO_DATA = '—'
 
@@ -79,11 +86,42 @@ function discoveryValue(
   return t(DISCOVERY_STATUS_LABEL_KEYS[runs[0].status])
 }
 
-function WorkspaceSummary({ discovery }: { discovery: string }) {
+function WorkspaceSummary({
+  discovery,
+  candidates,
+  candidatesNote,
+}: {
+  discovery: string
+  /**
+   * The BrainRegion's candidate pool size, or `null` while it is unknown.
+   *
+   * `—` and `0` are different answers and both are honest: `—` means the pool
+   * could not be read, `0` means it was read and is empty. Showing `—` next to a
+   * pool that actually holds candidates is the one thing this card must not do —
+   * it reads as "nothing was found".
+   */
+  candidates: number | null
+  /**
+   * Why the pool is unknown, when the reason is known and worth saying.
+   *
+   * An unknown value is not always an unexplained one: on a database without
+   * candidate storage the `—` has a definite cause, and stating it turns a
+   * silence into an answer. Still `—` for the value itself — the count was not
+   * measured, so no number may appear.
+   */
+  candidatesNote?: string
+}) {
   const { t } = useI18n()
   const cells = [
     { key: 'discovery', labelKey: 'knowledgeProduction.summary.discovery', value: discovery },
-    { key: 'candidates', labelKey: 'knowledgeProduction.summary.candidates', value: NO_DATA },
+    {
+      key: 'candidates',
+      labelKey: 'knowledgeProduction.summary.candidates',
+      value: candidates === null ? NO_DATA : String(candidates),
+      note: candidatesNote,
+    },
+    // Evidence and review have no read API wired yet, so they remain unknown —
+    // NOT zero, which would claim this region has none.
     { key: 'evidence', labelKey: 'knowledgeProduction.summary.evidence', value: NO_DATA },
     { key: 'review', labelKey: 'knowledgeProduction.summary.review', value: NO_DATA },
   ]
@@ -92,9 +130,14 @@ function WorkspaceSummary({ discovery }: { discovery: string }) {
       {cells.map(c => (
         <div className="kp-summary-card" key={c.key} data-testid={`kp-ws-summary-${c.key}`}>
           <span className="kp-summary-label">{t(c.labelKey)}</span>
-          {/* No count exists yet for any of these: a status word or an em dash,
-              never a number that would read as an authoritative count. */}
+          {/* A MEASURED count (the candidate pool) or an em dash where nothing
+              is known — never a zero standing in for "we did not look". */}
           <span className="kp-summary-value kp-summary-value--muted">{c.value}</span>
+          {c.note && (
+            <span className="kp-summary-note" data-testid={`kp-ws-summary-${c.key}-note`}>
+              {c.note}
+            </span>
+          )}
         </div>
       ))}
     </section>
@@ -114,6 +157,10 @@ export function BrainRegionWorkspacePage({ entityId }: { entityId: string }) {
   // backend (P0-4B). A counter rather than a copy of the new run: the history
   // stays the BACKEND's list, and nothing here splices a locally built row in.
   const [runsRefreshToken, setRunsRefreshToken] = useState(0)
+  // null = the pool could not be read; a number is a MEASURED count.
+  const [candidateTotal, setCandidateTotal] = useState<number | null>(null)
+  // This database has no candidate storage: the `—` above has a stated cause.
+  const [candidateStorageNotEnabled, setCandidateStorageNotEnabled] = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -129,6 +176,31 @@ export function BrainRegionWorkspacePage({ entityId }: { entityId: string }) {
       })
       .finally(() => {
         if (!cancelled) setLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [entityId])
+
+  // The candidate pool size, from the SAME region-scoped endpoint the Candidate
+  // Knowledge tab reads. Only the number is taken: the pool itself stays that
+  // tab's business. A failed read stays `null` (unknown), never 0.
+  useEffect(() => {
+    let cancelled = false
+    setCandidateTotal(null)
+    setCandidateStorageNotEnabled(false)
+    fetchBrainRegionLlmCandidates(entityId)
+      .then(res => {
+        if (!cancelled) setCandidateTotal(res.total)
+      })
+      .catch((e: unknown) => {
+        // Unknown, not empty: the summary keeps showing —. Only the readiness
+        // code additionally explains WHY, because that cause is knowable and
+        // fixed; any other failure keeps the dash unexplained rather than
+        // guessing at a reason.
+        if (cancelled) return
+        setCandidateTotal(null)
+        setCandidateStorageNotEnabled(isCandidateStorageUnavailable(e))
       })
     return () => {
       cancelled = true
@@ -210,7 +282,15 @@ export function BrainRegionWorkspacePage({ entityId }: { entityId: string }) {
         )}
       </header>
 
-      <WorkspaceSummary discovery={discoveryValue(runs, runsError, t)} />
+      <WorkspaceSummary
+        discovery={discoveryValue(runs, runsError, t)}
+        candidates={candidateTotal}
+        candidatesNote={
+          candidateStorageNotEnabled
+            ? t('knowledgeProduction.candidateStorage.notEnabled')
+            : undefined
+        }
+      />
 
       <div className="kp-workflow">
         {/* Phase 1B: no Discovery Run exists, so no step is active or completed. */}
