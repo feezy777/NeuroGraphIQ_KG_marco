@@ -25,7 +25,11 @@ from fastapi.testclient import TestClient
 from sqlalchemy.exc import IntegrityError, OperationalError
 
 from app.database import get_db
-from app.llm_discovery_views import InvalidDiscoveryView
+from app.llm_discovery_views import (
+    InvalidDiscoveryView,
+    strategy_identifier,
+    view_provenance,
+)
 from app.llm_model_policy import effective_deepseek_model
 from app.main import app
 from app.prompts.llm_discovery_prompt import PROMPT_KEY, PROMPT_VERSION
@@ -55,6 +59,14 @@ SEED_PATH = Path(seed_svc.__file__)
 # ===========================================================================
 # In-memory authority stand-in
 # ===========================================================================
+def _prov(row: dict[str, Any]) -> dict[str, Any]:
+    """A run row's provenance object, however the fake happens to hold it."""
+    value = row.get("provenance_json")
+    if not value:
+        return {}
+    return json.loads(value) if isinstance(value, str) else value
+
+
 class _FakeResult:
     def __init__(self, rows: list[dict[str, Any]] | None = None, scalar: Any = None):
         self._rows = list(rows or [])
@@ -153,6 +165,16 @@ class _FakeDiscoveryDb:
         )
         return run_id
 
+    def _chain(self, p: dict[str, Any]) -> list[dict[str, Any]]:
+        """The completed runs of one seed+view — the WHOLE chain, not one run."""
+        return [
+            r for r in self.runs
+            if r["seed_entity_id"] == p["entity_id"]
+            and r["discovery_type"] == p["discovery_type"]
+            and r["status"] == p["status"]
+            and r["query_strategy_version"] == p["strategy"]
+        ]
+
     def active_duplicate(self, seed_region_pk: int, discovery_type: str) -> dict | None:
         for r in self.runs:
             if (
@@ -202,6 +224,37 @@ class _FakeSession:
             return _FakeResult(
                 rows=[{"filename": p.get("filename")}] if self.db.migration_applied else []
             )
+
+        # Discovery View continuation — the scope of the run being continued,
+        # the chain of completed runs of this seed+view, and the circuits they
+        # produced. Placed BEFORE the generic run lookup: this scope query also
+        # matches `r.run_id = :run_id`, and it needs a different row shape.
+        if "AS continuation_round" in sql and "r.run_id = :run_id" in sql:
+            row = next((r for r in self.db.runs if r["run_id"] == p.get("run_id")), None)
+            if row is None:
+                return _FakeResult(rows=[])
+            return _FakeResult(rows=[{
+                "run_id": row["run_id"],
+                "status": row["status"],
+                "discovery_type": row["discovery_type"],
+                "query_strategy_version": row["query_strategy_version"],
+                "continuation_round": _prov(row).get("continuation_round"),
+                "seed_entity_id": row["seed_entity_id"],
+            }])
+
+        if "ORDER BY r.created_at, r.run_id" in sql:
+            return _FakeResult(rows=[
+                {"run_id": r["run_id"], "continuation_round": _prov(r).get("continuation_round")}
+                for r in self.db._chain(p)
+            ])
+
+        if "dc.candidate_type = 'circuit'" in sql:
+            pks = {r["run_pk"] for r in self.db._chain(p)}
+            return _FakeResult(rows=[
+                {"name": c["name"], "local_id": c["local_id"]}
+                for c in self.db.candidates
+                if c["candidate_type"] == "circuit" and c["discovery_run_pk"] in pks
+            ])
 
         if sql.startswith("SELECT b.entity_pk FROM brain_regions"):
             return _FakeResult(scalar=self.db.seeds.get(p.get("entity_id")))
@@ -1712,8 +1765,8 @@ def test_32_4_every_view_is_asked_a_different_question(env, monkeypatch):
     sent: list[str] = []
     real = execution.build_view_prompt
 
-    def _capture(seed, view):
-        prompt = real(seed, view)
+    def _capture(seed, view, already=None):
+        prompt = real(seed, view, already)
         sent.append(prompt["system_prompt"])
         return prompt
 
@@ -1822,3 +1875,245 @@ def test_32_10_every_view_still_runs_on_the_policy_model(env):
     for row in env.db.runs:
         assert row["provider"] == "deepseek"
         assert row["model_name"] == "deepseek-flash"
+
+
+# ===========================================================================
+# §33 — Discovery View continuation: a second pass over the SAME question
+# ===========================================================================
+def _seed_completed_view_run(env, *, view=None, round_no=None, circuits=("Papez circuit",)):
+    """A COMPLETED run of a view that a continuation can honestly be built on."""
+    view = view or VIEW_A
+    db = env.db
+    run_id = str(uuid.uuid4())
+    db.runs.append({
+        "run_pk": db.next_run_pk(),
+        "run_id": run_id,
+        "seed_entity_id": SEED_ENTITY,
+        "seed_region_pk": SEED_PK,
+        "discovery_type": "LLM_DISCOVERY",
+        "status": "COMPLETED",
+        "outcome": "CANDIDATES_FOUND",
+        "provider": "deepseek",
+        "model_name": "deepseek-flash",
+        "prompt_key": PROMPT_KEY,
+        "prompt_version": PROMPT_VERSION,
+        "query_strategy_version": strategy_identifier(view),
+        "created_by": None,
+        "created_at": db.tick(),
+        "started_at": db.tick(),
+        "finished_at": db.tick(),
+        "error_code": None,
+        "error_message": None,
+        "provenance_json": json.dumps(view_provenance(
+            view,
+            continuation={"continuation_round": round_no} if round_no else None,
+        )),
+    })
+    run_pk = db.runs[-1]["run_pk"]
+    for i, name in enumerate(circuits, 1):
+        db.candidates.append({
+            "discovery_run_pk": run_pk,
+            "seed_region_pk": SEED_PK,
+            "candidate_type": "circuit",
+            "local_id": "circuit_%d" % i,
+            "name": name,
+        })
+    return run_id
+
+
+def _execute_continuation(env, from_run_id, *, view=None):
+    return asyncio.run(execution.execute_llm_discovery(
+        env.session,
+        entity_id=SEED_ENTITY,
+        discovery_view=view or VIEW_A,
+        continuation_from_run_id=from_run_id,
+    ))
+
+
+def test_33_1_a_first_pass_with_no_continuation_is_unchanged(env):
+    """§16.1 — naming a view but not a continuation is the ordinary run."""
+    run = _execute_view(env, VIEW_A)
+    provenance = _prov(env.db.runs[0])
+    assert provenance["discovery_view"] == VIEW_A
+    assert "continuation_round" not in provenance, "a first pass is not round 2"
+    assert run.run.query_strategy_version == strategy_identifier(VIEW_A)
+
+
+def test_33_2_a_continuation_creates_a_NEW_run(env):
+    """§16.2 — round 2 is a second, independent run; the parent is not rewritten."""
+    parent = _seed_completed_view_run(env)
+    before = len(env.db.runs)
+
+    _execute_continuation(env, parent)
+
+    assert len(env.db.runs) == before + 1, "one continuation, one new run"
+    kept = next(r for r in env.db.runs if r["run_id"] == parent)
+    assert kept["status"] == "COMPLETED", "the parent run still holds its own result"
+
+
+def test_33_3_33_4_the_continuation_keeps_the_same_seed_and_view(env):
+    parent = _seed_completed_view_run(env)
+    _execute_continuation(env, parent)
+
+    child = env.db.runs[-1]
+    assert child["seed_entity_id"] == SEED_ENTITY
+    assert child["seed_region_pk"] == SEED_PK
+    # §16.16 — the strategy identifier does NOT fork per round: "which question"
+    # and "how many times we asked it" are different dimensions.
+    assert child["query_strategy_version"] == "G4HR1/NAMED_CLASSIC_CIRCUITS"
+
+
+def test_33_5_the_round_is_derived_and_recorded_as_two(env):
+    """§16.14 — round 1 exists with no recorded round, so this one is round 2."""
+    parent = _seed_completed_view_run(env)
+    _execute_continuation(env, parent)
+
+    provenance = _prov(env.db.runs[-1])
+    assert provenance["continuation_round"] == 2
+    assert provenance["continuation_from_run_id"] == parent
+    assert provenance["already_discovered_circuit_count"] == 1
+    assert provenance["discovery_view"] == VIEW_A
+    assert provenance["strategy_version"] == "G4HR1"
+
+
+def test_33_15_a_further_continuation_derives_round_three(env):
+    """§16.15 — the round comes from the persisted chain, not from the caller."""
+    parent = _seed_completed_view_run(env)
+    _execute_continuation(env, parent)
+    second = env.db.runs[-1]["run_id"]
+
+    _execute_continuation(env, second)
+
+    assert _prov(env.db.runs[-1])["continuation_round"] == 3
+
+
+def test_33_9_the_exclusion_context_is_derived_server_side(env, monkeypatch):
+    """§16.9 — names come from the CANDIDATE ROWS, never from the request."""
+    parent = _seed_completed_view_run(
+        env, circuits=("Papez circuit", "Entorhinal-hippocampal loop")
+    )
+    seen = []
+    real = execution.build_view_prompt
+
+    def _capture(seed, view, already=None):
+        seen.append(already)
+        return real(seed, view, already)
+
+    monkeypatch.setattr(execution, "build_view_prompt", _capture)
+    _execute_continuation(env, parent)
+
+    assert seen == [("Papez circuit", "Entorhinal-hippocampal loop")]
+    # ...and the block really reaches the prompt the model would receive.
+    prompt = real(_seed_input(), VIEW_A, seen[0])
+    assert "CONTINUATION PASS" in prompt["system_prompt"]
+    for name in seen[0]:
+        assert name in prompt["system_prompt"]
+
+
+def test_33_11_every_completed_run_of_the_view_is_included(env, monkeypatch):
+    """§16.11 — a round-3 continuation sees rounds 1 AND 2, not only its parent."""
+    first = _seed_completed_view_run(env, circuits=("From round 1",))
+    second = _seed_completed_view_run(env, round_no=2, circuits=("From round 2",))
+
+    seen = []
+    real = execution.build_view_prompt
+
+    def _capture(seed, view, already=None):
+        seen.append(already)
+        return real(seed, view, already)
+
+    monkeypatch.setattr(execution, "build_view_prompt", _capture)
+    _execute_continuation(env, second)
+
+    assert seen and set(seen[0]) == {"From round 1", "From round 2"}
+    assert first, "round 1 still contributes after round 2 exists"
+
+
+def test_33_13_the_continuation_never_merges_or_deletes_candidates(env):
+    """§16.13 — the exclusion list is a PROMPT construct; storage is untouched."""
+    parent = _seed_completed_view_run(env, circuits=("Papez circuit",))
+    before = [dict(c) for c in env.db.candidates]
+
+    _execute_continuation(env, parent)
+
+    for original in before:
+        assert original in env.db.candidates, "no parent candidate was removed"
+    child_pk = env.db.runs[-1]["run_pk"]
+    assert all(c["discovery_run_pk"] != child_pk for c in before)
+
+
+def test_33_10_a_client_cannot_supply_its_own_exclusion_list(client, env):
+    """§16.10 — forbidden by the schema, so it cannot even be silently ignored."""
+    parent = _seed_completed_view_run(env)
+    response = client.post(
+        BASE + "/brain-regions/" + SEED_ENTITY + "/llm-discovery/execute",
+        json={
+            "discovery_view": VIEW_A,
+            "continuation_from_run_id": parent,
+            "already_discovered": ["I choose what to exclude"],
+        },
+    )
+    assert response.status_code == 422
+    assert len(env.db.runs) == 1, "no run was created"
+    assert env.provider.calls == [], "and no model was called"
+
+
+@pytest.mark.parametrize(
+    ("label", "mutate"),
+    [
+        ("cross-seed", lambda r: r.update(seed_entity_id=UNKNOWN_ENTITY)),
+        ("cross-view", lambda r: r.update(query_strategy_version=strategy_identifier(VIEW_B))),
+        ("not-completed", lambda r: r.update(status="RUNNING")),
+        ("not-llm", lambda r: r.update(discovery_type="LITERATURE_DISCOVERY")),
+    ],
+)
+def test_33_rejections_leave_no_trace(env, label, mutate):
+    """§16.6/7/8 — a refused continuation creates no run and calls no model."""
+    parent = _seed_completed_view_run(env)
+    mutate(next(r for r in env.db.runs if r["run_id"] == parent))
+    before = len(env.db.runs)
+
+    with pytest.raises(execution.continuation.ContinuationError):
+        _execute_continuation(env, parent)
+
+    assert len(env.db.runs) == before, label + ": no run may be created"
+    assert env.provider.calls == [], label + ": no model may be called"
+
+
+def test_33_a_missing_parent_run_is_refused(env):
+    with pytest.raises(execution.continuation.ContinuationRunNotFound):
+        _execute_continuation(env, str(uuid.uuid4()))
+    assert env.db.runs == []
+    assert env.provider.calls == []
+
+
+def test_33_18_readiness_blocks_a_continuation_before_any_side_effect(env):
+    """§16.18 — and before the candidate read, which would otherwise 503."""
+    parent = _seed_completed_view_run(env)
+    env.db.has_candidates_table = False
+    before = len(env.db.runs)
+
+    with pytest.raises(readiness.LlmDiscoveryDatabaseNotReady):
+        _execute_continuation(env, parent)
+
+    assert len(env.db.runs) == before
+    assert env.provider.calls == []
+
+
+def test_33_17_a_continuation_still_runs_on_the_policy_model(env):
+    """§16.17 — continuation selects a question, never a model."""
+    parent = _seed_completed_view_run(env)
+    _execute_continuation(env, parent)
+
+    assert env.provider.calls[0]["model"] == effective_deepseek_model(None)
+    assert env.provider.calls[0]["model"] == "deepseek-flash"
+    child = env.db.runs[-1]
+    assert child["provider"] == "deepseek"
+    assert child["model_name"] == "deepseek-flash"
+
+
+def test_33_19_legacy_no_body_discovery_is_still_unchanged(client, env):
+    response = client.post(BASE + "/brain-regions/" + SEED_ENTITY + "/llm-discovery/execute")
+    assert response.status_code == 200
+    assert env.db.runs[0]["query_strategy_version"] is None
+    assert _prov(env.db.runs[0]) == {}

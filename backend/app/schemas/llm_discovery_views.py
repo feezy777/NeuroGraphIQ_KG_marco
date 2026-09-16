@@ -32,3 +32,13 @@ class LlmDiscoveryViewExecuteRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     discovery_view: str | None = None
+
+    #: Continue an EARLIER run of this same view: the new run is told what that
+    #: view already found, so it looks for omissions instead of re-answering.
+    #:
+    #: Only the run's ID travels. The already-discovered circuits are read
+    #: server-side from the authoritative candidate rows of every completed run
+    #: of this seed+view — a client cannot supply, extend or trim that list, and
+    #: `extra="forbid"` makes an attempt a 422 rather than a silent no-op. The
+    #: round number is likewise derived by the server, never requested.
+    continuation_from_run_id: str | None = None

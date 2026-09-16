@@ -35,6 +35,7 @@ their import graph.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any, Mapping
 
 #: The DEFAULT a caller gets by saying nothing. It is NOT a fifth scientific
 #: view: it means "the frozen single-pass behaviour", unchanged since P0-4B, and
@@ -326,17 +327,27 @@ def view_of_strategy_identifier(identifier: str | None) -> str | None:
     return view if is_discovery_view(view) else None
 
 
-def view_provenance(view: str | None) -> dict[str, str] | None:
+def view_provenance(
+    view: str | None, *, continuation: Mapping[str, Any] | None = None
+) -> dict[str, Any] | None:
     """The structured provenance written to ``provenance_json``, or None.
 
     None for the legacy path so the column is left exactly as it was: a run with
     no view must not acquire an empty provenance object that makes it look like
     a view run whose view went missing.
+
+    ``continuation`` merges the round facts for a continuation pass. They are a
+    SEPARATE dimension from the view: the strategy identifier stays
+    ``G4HR1/<VIEW>`` however many rounds a view runs, because "which question"
+    and "how many times we have asked it" are different questions.
     """
     if view is None:
         return None
-    return {
+    provenance: dict[str, Any] = {
         "discovery_view": view,
         "strategy_family": STRATEGY_FAMILY,
         "strategy_version": STRATEGY_VERSION,
     }
+    if continuation:
+        provenance.update(continuation)
+    return provenance

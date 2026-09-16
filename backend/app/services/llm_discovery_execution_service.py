@@ -56,6 +56,7 @@ from app.schemas.llm_discovery_execution import (
 )
 from app.services import knowledge_discovery_run_lifecycle_service as lifecycle
 from app.services import llm_candidate_persistence_service as candidate_persistence
+from app.services import llm_discovery_continuation_service as continuation
 from app.services import llm_discovery_readiness_service as readiness
 from app.services.llm_discovery_parser import parse_llm_discovery_response
 from app.services.llm_discovery_seed_service import build_discovery_input
@@ -261,7 +262,11 @@ async def _resolve_run_keys(session: AsyncSession, run_id: str) -> tuple[int, in
 
 
 async def execute_llm_discovery(
-    session: AsyncSession, *, entity_id: str, discovery_view: str | None = None
+    session: AsyncSession,
+    *,
+    entity_id: str,
+    discovery_view: str | None = None,
+    continuation_from_run_id: str | None = None,
 ) -> LlmDiscoveryExecutionResult:
     """Run one synchronous LLM Discovery for a BrainRegion seed.
 
@@ -287,14 +292,52 @@ async def execute_llm_discovery(
     #     to the default and quietly run a different search than was asked for.
     resolved_view = resolve_discovery_view(discovery_view)
 
-    # 0b. THE DATABASE MUST BE ABLE TO STORE THE RESULT (P0-4C.1). This is the
+    # 0b. A CONTINUATION IS VALIDATED BEFORE ANYTHING IS CREATED. Every rule
+    #     protects one thing: the exclusion context must be circuits THIS view
+    #     genuinely found for THIS region. A source run from another seed, route
+    #     or view would put the wrong names in front of the model; a source that
+    #     never completed would contribute none. Cheap, read-only, and it leaves
+    #     no trace when it refuses.
+    already: continuation.AlreadyDiscovered | None = None
+    if continuation_from_run_id is not None:
+        if resolved_view is None:
+            # A continuation continues a VIEW. There is no legacy multi-round
+            # chain to continue, and inventing one would be a new contract.
+            raise continuation.ContinuationRunWrongView(
+                "continuation requires a discovery_view; the legacy single-pass "
+                "run has no view to continue"
+            )
+        await continuation.validate_continuation(
+            session,
+            from_run_id=continuation_from_run_id,
+            entity_id=entity_id,
+            discovery_view=resolved_view,
+            strategy=strategy_identifier(resolved_view),
+        )
+
+    # 0c. THE DATABASE MUST BE ABLE TO STORE THE RESULT (P0-4C.1). This is the
     #    first thing that happens, before the seed is read, before a run row
     #    exists and before any model is called: the candidate staging table is
     #    written LAST, so without this check a database lacking it produces a
     #    paid provider call and a permanent FAILED run instead of an answer.
     #    Raising here costs nothing at all — no run, no request, no parse, no
     #    storage attempt.
+    #
+    #    It also precedes the read below, which touches the candidate table: on
+    #    a database without it that read would fail as an outage instead of
+    #    being answered as "discovery is not enabled here".
     await readiness.require_llm_discovery_database_readiness(session)
+
+    # 0d. The exclusion context, read from the AUTHORITATIVE candidate rows of
+    #     every completed run of this seed+view — never from the request. A
+    #     Round 4 sees rounds 1-3, because a circuit first found in round 1 and
+    #     not repeated since is still discovered.
+    if continuation_from_run_id is not None:
+        already = await continuation.collect_already_discovered(
+            session,
+            entity_id=entity_id,
+            strategy=strategy_identifier(resolved_view),
+        )
 
     # 1. The seed must exist and be usable BEFORE a run is created, so an
     #    unusable seed cannot leave an orphaned FAILED run behind.
@@ -324,14 +367,27 @@ async def execute_llm_discovery(
         query_strategy_version=(
             strategy_identifier(resolved_view) if resolved_view else None
         ),
-        provenance=view_provenance(resolved_view),
+        provenance=view_provenance(
+            resolved_view,
+            # The round is DERIVED from the persisted chain, never requested:
+            # a client cannot declare itself round 2.
+            continuation=(
+                {
+                    "continuation_round": already.next_round,
+                    "continuation_from_run_id": continuation_from_run_id,
+                    "already_discovered_circuit_count": already.raw_count,
+                }
+                if already is not None
+                else None
+            ),
+        ),
     )
     run = await lifecycle.start_discovery_run(session, run.run_id)
 
     # 3. Build the FROZEN Phase 3A prompt, with the view's focus appended when
     #    there is one. Nothing is re-written here: the prompt modules are the
     #    only authors of prompt text, and the shared contract is not duplicated.
-    prompt = build_view_prompt(seed, resolved_view)
+    prompt = build_view_prompt(seed, resolved_view, already.names if already else None)
     config = get_deepseek_runtime_config()
 
     try:

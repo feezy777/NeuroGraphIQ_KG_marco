@@ -79,6 +79,7 @@ from app.services import knowledge_discovery_run_lifecycle_service as lifecycle
 from app.services import knowledge_discovery_run_service as run_svc
 from app.services import knowledge_production_brain_region_service as svc
 from app.services import knowledge_production_literature_service as literature
+from app.services import llm_discovery_continuation_service as continuation
 from app.services import llm_discovery_execution_service as execution
 
 router = APIRouter(prefix="/api/knowledge-production", tags=["Knowledge Production"])
@@ -359,6 +360,16 @@ def _mapped_execution_errors():
         raise HTTPException(
             422, detail=_error_detail(exc.code, str(exc), discovery_view=exc.value)
         ) from None
+    except continuation.ContinuationRunNotFound as exc:
+        # The named source run does not exist — a lookup failure, not a conflict.
+        raise HTTPException(
+            404, detail=_error_detail(exc.code, str(exc), run_id=exc.run_id)
+        ) from None
+    except continuation.ContinuationError as exc:
+        # The source run EXISTS but cannot honestly be continued: another seed,
+        # another route, another view, or not completed. 409 — the request is
+        # well-formed and conflicts with the state of the run it names.
+        raise HTTPException(409, detail=_error_detail(exc.code, str(exc))) from None
     except execution.LlmDiscoveryExecutionError as exc:
         extra: dict[str, Any] = {}
         if exc.run_id is not None:
@@ -401,6 +412,11 @@ async def execute_brain_region_llm_discovery(
             db,
             entity_id=entity_id,
             discovery_view=payload.discovery_view if payload else None,
+            # The server reads the already-discovered circuits itself; the
+            # request carries only WHICH earlier run to continue.
+            continuation_from_run_id=(
+                payload.continuation_from_run_id if payload else None
+            ),
         )
 
 
