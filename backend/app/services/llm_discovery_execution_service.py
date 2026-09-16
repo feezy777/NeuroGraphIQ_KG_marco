@@ -37,12 +37,17 @@ import httpx
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.llm_discovery_views import (
+    resolve_discovery_view,
+    strategy_identifier,
+    view_provenance,
+)
 from app.llm_model_policy import effective_deepseek_model
 from app.prompts.llm_discovery_prompt import (
     PROMPT_KEY,
     PROMPT_VERSION,
-    build_llm_discovery_prompt,
 )
+from app.prompts.llm_discovery_views import build_view_prompt
 from app.schemas.knowledge_production import DiscoveryRunItem
 from app.schemas.llm_discovery import SCHEMA_VERSION, LlmDiscoveryResponse
 from app.schemas.llm_discovery_execution import (
@@ -256,7 +261,7 @@ async def _resolve_run_keys(session: AsyncSession, run_id: str) -> tuple[int, in
 
 
 async def execute_llm_discovery(
-    session: AsyncSession, *, entity_id: str
+    session: AsyncSession, *, entity_id: str, discovery_view: str | None = None
 ) -> LlmDiscoveryExecutionResult:
     """Run one synchronous LLM Discovery for a BrainRegion seed.
 
@@ -264,13 +269,25 @@ async def execute_llm_discovery(
     COMPLETED, so a COMPLETED/CANDIDATES_FOUND run always has its proposals
     stored.
 
-    Raises ``LlmDiscoveryDatabaseNotReady`` before anything happens at all when
-    the database lacks the candidate staging shape, ``DiscoveryRunNotFound``
+    ``discovery_view`` names the scientific focus of THIS run (see
+    ``app.llm_discovery_views``). ``None`` is the legacy single-pass behaviour,
+    unchanged: no view instruction is added and the run records no view. One
+    view is one run — a view never spans runs, and a run never spans views.
+
+    Raises ``InvalidDiscoveryView`` before anything happens at all when the
+    caller names a view this server does not implement;
+    ``LlmDiscoveryDatabaseNotReady`` before anything happens at all when the
+    database lacks the candidate staging shape, ``DiscoveryRunNotFound``
     (unknown seed), ``DiscoveryRunConflict`` (an active run already exists) or
     ``LlmDiscoveryExecutionError`` (the run was created, started and then
     FAILED).
     """
-    # 0. THE DATABASE MUST BE ABLE TO STORE THE RESULT (P0-4C.1). This is the
+    # 0a. THE VIEW IS A REQUEST FACT, checked first because it costs nothing: no
+    #     database read, no run, no model. An unknown view must not fall through
+    #     to the default and quietly run a different search than was asked for.
+    resolved_view = resolve_discovery_view(discovery_view)
+
+    # 0b. THE DATABASE MUST BE ABLE TO STORE THE RESULT (P0-4C.1). This is the
     #    first thing that happens, before the seed is read, before a run row
     #    exists and before any model is called: the candidate staging table is
     #    written LAST, so without this check a database lacking it produces a
@@ -285,9 +302,16 @@ async def execute_llm_discovery(
     if seed is None:
         raise lifecycle.DiscoveryRunNotFound(entity_id, what="BrainRegion")
 
-    # 2. TRUSTED INTERNAL CALLER. The client supplies only the entity id; the
-    #    provenance below is written by the layer that knows what will run. The
-    #    model comes from the global policy — never a literal repeated here.
+    # 2. TRUSTED INTERNAL CALLER. The client supplies only the entity id and, at
+    #    most, the name of a view; the provenance below is written by the layer
+    #    that knows what will run. The model comes from the global policy —
+    #    never a literal repeated here, and never chosen by the view.
+    #
+    #    The view is recorded TWICE, in two shapes that answer two questions:
+    #    `query_strategy_version` is the single readable identifier the run DTO
+    #    already exposes ("which view was this?"), and `provenance_json` carries
+    #    the structured fact for readers that want the parts. A legacy run
+    #    passes neither, so its row is byte-for-byte what it was before.
     effective_model = effective_deepseek_model(None)
     run = await lifecycle.create_discovery_run(
         session,
@@ -297,12 +321,17 @@ async def execute_llm_discovery(
         model_name=effective_model,
         prompt_key=PROMPT_KEY,
         prompt_version=PROMPT_VERSION,
+        query_strategy_version=(
+            strategy_identifier(resolved_view) if resolved_view else None
+        ),
+        provenance=view_provenance(resolved_view),
     )
     run = await lifecycle.start_discovery_run(session, run.run_id)
 
-    # 3. Build the FROZEN Phase 3A prompt. Nothing is re-written here: the
-    #    prompt module is the only author of its text.
-    prompt = build_llm_discovery_prompt(seed)
+    # 3. Build the FROZEN Phase 3A prompt, with the view's focus appended when
+    #    there is one. Nothing is re-written here: the prompt modules are the
+    #    only authors of prompt text, and the shared contract is not duplicated.
+    prompt = build_view_prompt(seed, resolved_view)
     config = get_deepseek_runtime_config()
 
     try:

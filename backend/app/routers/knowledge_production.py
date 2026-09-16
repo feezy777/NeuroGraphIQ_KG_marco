@@ -50,7 +50,9 @@ import uuid
 from contextlib import contextmanager
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Body, Depends, HTTPException, Query
+
+from app.llm_discovery_views import InvalidDiscoveryView
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
@@ -72,6 +74,7 @@ from app.schemas.knowledge_production import (
     PublicationDetailResponse,
 )
 from app.schemas.llm_discovery_execution import LlmDiscoveryExecutionResult
+from app.schemas.llm_discovery_views import LlmDiscoveryViewExecuteRequest
 from app.services import knowledge_discovery_run_lifecycle_service as lifecycle
 from app.services import knowledge_discovery_run_service as run_svc
 from app.services import knowledge_production_brain_region_service as svc
@@ -331,21 +334,31 @@ async def cancel_discovery_run(
 # ---------------------------------------------------------------------------
 # A separate path on purpose: the generic Run Create API above stays untouched
 # (§8), and this endpoint is the TRUSTED caller that owns the run it creates.
-# It takes NO body — the client supplies the seed, nothing else, so provider /
-# model / prompt provenance cannot be fabricated from the outside.
+# Its body is OPTIONAL and carries exactly one field, `discovery_view`: the
+# client names the question, and nothing else. Provider / model / prompt /
+# prompt-version provenance stay server-owned and cannot be fabricated from the
+# outside — the request schema forbids unknown keys outright, and omitting the
+# body entirely is the legacy single-pass run, unchanged.
 
 
 @contextmanager
 def _mapped_execution_errors():
-    """Translate execution failures (502) without masking lifecycle errors.
+    """Translate execution failures (502/422) without masking lifecycle errors.
 
     A provider or parser failure means the upstream model did not produce a
     usable answer: the run is already FAILED by the time this fires, and the
     body names the failure code so the client can distinguish a bad model
     response from a bad request.
+
+    An unknown Discovery View is neither. It is a bad request, and it is
+    answered as one — 422 with its own code — before any run exists.
     """
     try:
         yield
+    except InvalidDiscoveryView as exc:
+        raise HTTPException(
+            422, detail=_error_detail(exc.code, str(exc), discovery_view=exc.value)
+        ) from None
     except execution.LlmDiscoveryExecutionError as exc:
         extra: dict[str, Any] = {}
         if exc.run_id is not None:
@@ -362,7 +375,9 @@ def _mapped_execution_errors():
     response_model=LlmDiscoveryExecutionResult,
 )
 async def execute_brain_region_llm_discovery(
-    entity_id: str, db: AsyncSession = Depends(get_db)
+    entity_id: str,
+    payload: LlmDiscoveryViewExecuteRequest | None = Body(default=None),
+    db: AsyncSession = Depends(get_db),
 ) -> LlmDiscoveryExecutionResult:
     """Run LLM Discovery synchronously for one BrainRegion seed.
 
@@ -371,11 +386,22 @@ async def execute_brain_region_llm_discovery(
     candidates the Phase 3A parser accepted. Nothing is persisted except the
     run record: candidates exist for this response only.
 
-    404 unknown BrainRegion, 409 an active run already exists, 502 the model
+    The optional body names the Discovery View — the scientific focus of this
+    one run. The view is recorded on the run it creates, so a run permanently
+    knows which question it asked. Omitting the body is the legacy single-pass
+    run: no view instruction, no view recorded, byte-for-byte the previous
+    behaviour. One view is one run.
+
+    404 unknown BrainRegion, 409 an active run already exists, 422 the body
+    names an unknown view or carries a field the server owns, 502 the model
     response could not be used (timeout / auth / provider / empty / unparseable).
     """
     with _mapped_lifecycle_errors(), _mapped_execution_errors():
-        return await execution.execute_llm_discovery(db, entity_id=entity_id)
+        return await execution.execute_llm_discovery(
+            db,
+            entity_id=entity_id,
+            discovery_view=payload.discovery_view if payload else None,
+        )
 
 
 # ---------------------------------------------------------------------------

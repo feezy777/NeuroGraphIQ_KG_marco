@@ -25,6 +25,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy.exc import IntegrityError, OperationalError
 
 from app.database import get_db
+from app.llm_discovery_views import InvalidDiscoveryView
 from app.llm_model_policy import effective_deepseek_model
 from app.main import app
 from app.prompts.llm_discovery_prompt import PROMPT_KEY, PROMPT_VERSION
@@ -35,6 +36,7 @@ from app.schemas.knowledge_production import (
 from app.schemas.llm_discovery import LlmDiscoveryInput
 from app.services import knowledge_discovery_run_lifecycle_service as lifecycle
 from app.services import llm_discovery_execution_service as execution
+from app.services import llm_discovery_readiness_service as readiness
 from app.services import llm_discovery_seed_service as seed_svc
 from app.services.llm_providers.base import (
     LlmProviderResponse,
@@ -224,7 +226,11 @@ class _FakeSession:
                 "model_name": p.get("model_name"),
                 "prompt_key": p.get("prompt_key"),
                 "prompt_version": p.get("prompt_version"),
-                "query_strategy_version": None,
+                # Recorded from the statement's own parameters, not hardcoded:
+                # a fake that always answered None could not tell a legacy run
+                # from a view run, which is exactly what the view contract adds.
+                "query_strategy_version": p.get("query_strategy_version"),
+                "provenance_json": p.get("provenance_json"),
                 "created_by": None,
                 "created_at": self.db.tick(),
                 "started_at": None,
@@ -1557,14 +1563,32 @@ def test_30_6_the_endpoint_takes_no_body(client, env):
 
 
 def test_30_7_a_client_supplied_body_cannot_change_the_execution(client, env):
-    """Extra fields are ignored by the signature, so they cannot steer anything."""
+    """The body may name a VIEW and nothing else, and a stray field is REJECTED.
+
+    Before the view contract the body was ignored by the signature. It is now
+    refused outright, which is the stronger promise: a silently dropped `model`
+    leaves the caller believing it took effect, and the run's provenance would
+    then name a model the server never used.
+    """
     response = client.post(
         f"{BASE}/brain-regions/{SEED_ENTITY}/llm-discovery/execute",
         json={"provider": "kimi", "model_name": "moonshot-v1-auto"},
     )
-    assert response.status_code == 200
-    assert env.db.runs[0]["provider"] == "deepseek"
-    assert env.provider.calls[0]["model"] == effective_deepseek_model(None)
+    assert response.status_code == 422
+    # Rejected before anything ran, so nothing was steered and nothing was spent.
+    assert env.db.runs == []
+    assert env.provider.calls == []
+
+
+def test_30_7b_a_view_may_be_named_but_a_model_still_may_not(client, env):
+    """The one permitted field steers the QUESTION. The provider stays the server's."""
+    response = client.post(
+        f"{BASE}/brain-regions/{SEED_ENTITY}/llm-discovery/execute",
+        json={"discovery_view": "AFFERENT_CIRCUITS", "model_name": "moonshot-v1-auto"},
+    )
+    assert response.status_code == 422
+    assert env.db.runs == []
+    assert env.provider.calls == []
 
 
 def test_30_8_the_endpoint_is_registered_once_on_its_own_path():
@@ -1620,3 +1644,181 @@ def test_31_2_when_the_run_cannot_even_be_failed_the_error_still_surfaces(env):
     # truth this test records rather than papering over.
     assert env.db.runs[0]["status"] == "RUNNING"
     assert env.db.candidates == []
+
+
+# ===========================================================================
+# §32 — G4 Discovery View contract: one view is one run, and the run says which
+# ===========================================================================
+# The four views are named HERE as literals rather than imported, so this file
+# fails if the frozen vocabulary changes: a test that imported the tuple would
+# agree with any tuple it was given.
+VIEW_A = "NAMED_CLASSIC_CIRCUITS"
+VIEW_B = "LOCAL_INTRINSIC_CIRCUITS"
+VIEW_C = "AFFERENT_CIRCUITS"
+VIEW_D = "EFFERENT_CIRCUITS"
+ALL_VIEWS = (VIEW_A, VIEW_B, VIEW_C, VIEW_D)
+
+
+def _execute_view(env, view: str | None):
+    return asyncio.run(
+        execution.execute_llm_discovery(
+            env.session, entity_id=SEED_ENTITY, discovery_view=view
+        )
+    )
+
+
+def test_32_1_one_view_is_exactly_one_run(env):
+    _execute_view(env, VIEW_C)
+
+    assert len(env.db.runs) == 1, "a view must not fan out into several runs"
+    assert len(env.provider.calls) == 1, "and must not spend more than one call"
+
+
+def test_32_2_four_views_are_four_runs_each_carrying_its_own_view(env):
+    for view in ALL_VIEWS:
+        _execute_view(env, view)
+
+    assert len(env.db.runs) == 4, "four views, four runs — never one merged run"
+    assert [r["query_strategy_version"] for r in env.db.runs] == [
+        f"LLM_DISCOVERY_VIEW_V1/{v}" for v in ALL_VIEWS
+    ]
+    # Same seed throughout: the views differ in what they ASKED, not in what
+    # they were pointed at.
+    assert {r["seed_entity_id"] for r in env.db.runs} == {SEED_ENTITY}
+
+
+def test_32_3_the_view_is_readable_from_the_run_record(env):
+    import json
+
+    for view in ALL_VIEWS:
+        _execute_view(env, view)
+
+    for view, row in zip(ALL_VIEWS, env.db.runs):
+        # The single readable identifier the run DTO already exposes...
+        assert row["query_strategy_version"] == f"LLM_DISCOVERY_VIEW_V1/{view}"
+        # ...and the structured fact for readers that want the parts.
+        assert json.loads(row["provenance_json"]) == {
+            "discovery_view": view,
+            "strategy_family": "G4_HIGH_RECALL_V1",
+            "strategy_version": "LLM_DISCOVERY_VIEW_V1",
+        }
+        # Provenance stays truthful about what actually ran.
+        assert row["provider"] == "deepseek"
+        assert row["prompt_key"] == "knowledge_production.llm_discovery"
+
+
+def test_32_4_every_view_is_asked_a_different_question(env, monkeypatch):
+    """The prompt actually sent must differ per view — otherwise the record lies."""
+    sent: list[str] = []
+    real = execution.build_view_prompt
+
+    def _capture(seed, view):
+        prompt = real(seed, view)
+        sent.append(prompt["system_prompt"])
+        return prompt
+
+    monkeypatch.setattr(execution, "build_view_prompt", _capture)
+    for view in ALL_VIEWS:
+        _execute_view(env, view)
+
+    assert len(set(sent)) == 4, "four views must send four different instructions"
+    for view, text in zip(ALL_VIEWS, sent):
+        assert view in text
+
+
+def test_32_5_the_same_candidate_in_two_views_is_two_rows_never_merged(env):
+    """RECALL layer: an unresolved duplicate is cheap, a destroyed one is not."""
+    _execute_view(env, VIEW_A)
+    _execute_view(env, VIEW_B)
+
+    per_run: dict[Any, list[dict[str, Any]]] = {}
+    for c in env.db.candidates:
+        per_run.setdefault(c["discovery_run_pk"], []).append(c)
+
+    assert len(per_run) == 2, "each view's candidates live under its own run"
+    sizes = [len(v) for v in per_run.values()]
+    assert sizes[0] == sizes[1] and sizes[0] > 0, sizes
+
+    # Identical stub payloads in both runs: the SAME names must survive twice.
+    names_a = sorted(c["name"] for c in per_run[env.db.runs[0]["run_pk"]])
+    names_b = sorted(c["name"] for c in per_run[env.db.runs[1]["run_pk"]])
+    assert names_a == names_b, "the same concept is returned by both views"
+    assert len(env.db.candidates) == sizes[0] + sizes[1], "nothing was deduplicated"
+
+
+def test_32_6_candidates_stay_scoped_to_the_run_that_produced_them(env):
+    _execute_view(env, VIEW_A)
+    _execute_view(env, VIEW_D)
+
+    run_pks = {r["run_pk"] for r in env.db.runs}
+    assert len(run_pks) == 2
+    for c in env.db.candidates:
+        assert c["discovery_run_pk"] in run_pks
+    # No candidate escaped its run, and no run claimed another's rows.
+    assert {c["discovery_run_pk"] for c in env.db.candidates} == run_pks
+
+
+def test_32_7_an_unready_database_blocks_a_view_run_before_any_side_effect(env):
+    env.db.has_candidates_table = False
+
+    with pytest.raises(readiness.LlmDiscoveryDatabaseNotReady):
+        _execute_view(env, VIEW_A)
+
+    assert env.db.runs == [], "no run may exist after a readiness refusal"
+    assert env.provider.calls == [], "and no provider call may have been made"
+
+
+def test_32_8_an_invalid_view_is_refused_before_readiness_is_even_asked(env):
+    """A request fault costs nothing: it is answered before the database is read."""
+    env.db.has_candidates_table = False  # the database is ALSO unready
+    asked: list[str] = []
+    real_check = readiness.require_llm_discovery_database_readiness
+
+    async def _spy(session):
+        asked.append("read")
+        return await real_check(session)
+
+    import app.services.llm_discovery_execution_service as _ex
+
+    original = _ex.readiness.require_llm_discovery_database_readiness
+    _ex.readiness.require_llm_discovery_database_readiness = _spy
+    try:
+        with pytest.raises(InvalidDiscoveryView):
+            _execute_view(env, "NOT_A_VIEW")
+    finally:
+        _ex.readiness.require_llm_discovery_database_readiness = original
+
+    assert asked == [], "an invalid view must not reach the readiness check"
+    assert env.db.runs == [] and env.provider.calls == []
+
+
+def test_32_9_the_legacy_run_records_no_view_at_all(env):
+    """§8 — the old entry point stays semantically distinguishable.
+
+    The assertion is on the CLAIM, not on the encoding. A legacy run currently
+    stores `{}` rather than SQL NULL (the lifecycle writes `_json(provenance or
+    {})` on every create), which is an empty object and not a view. What must
+    never happen is a view appearing where none was asked for.
+    """
+    _execute_view(env, None)
+
+    row = env.db.runs[0]
+    assert row["query_strategy_version"] is None, "a legacy run names no strategy"
+    provenance = json.loads(row["provenance_json"] or "{}")
+    assert provenance == {}, "no empty object may carry a view"
+    assert "discovery_view" not in provenance
+    # ...and it is still a normal, complete run.
+    assert row["status"] == "COMPLETED"
+
+
+def test_32_10_every_view_still_runs_on_the_policy_model(env):
+    """§17 — a view selects a question; it never selects a model."""
+    for view in ALL_VIEWS:
+        _execute_view(env, view)
+
+    for call in env.provider.calls:
+        assert call["model"] == effective_deepseek_model(None)
+        assert call["model"] == "deepseek-flash"
+    for row in env.db.runs:
+        assert row["provider"] == "deepseek"
+        assert row["model_name"] == "deepseek-flash"
