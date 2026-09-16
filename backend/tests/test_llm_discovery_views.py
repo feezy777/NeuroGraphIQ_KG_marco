@@ -21,6 +21,7 @@ from app.llm_discovery_views import (
     CIRCUIT_BOUNDARY_RULE,
     DISCOVERY_VIEWS,
     GENERAL_DISCOVERY,
+    QUERY_STRATEGY_VERSION_MAX_LENGTH,
     RECALL_FIRST_RULE,
     STRATEGY_FAMILY,
     STRATEGY_VERSION,
@@ -28,6 +29,7 @@ from app.llm_discovery_views import (
     InvalidDiscoveryView,
     is_discovery_view,
     resolve_discovery_view,
+    query_strategy_version_width_ok,
     strategy_identifier,
     view_of_strategy_identifier,
     view_provenance,
@@ -238,3 +240,68 @@ def test_10c_the_structured_provenance_names_the_view_and_its_family():
 def test_10d_a_legacy_run_records_no_view_at_all():
     """§8 — absence is absence: no empty provenance pretending to be a view run."""
     assert view_provenance(None) is None
+
+
+# ===========================================================================
+# §5 — the identifier must FIT THE COLUMN it is stored in
+# ===========================================================================
+# Regression for a defect that reached a live database. The strategy identifier
+# overflowed `knowledge_discovery_runs.query_strategy_version`
+# (character varying(32)) and the run INSERT died with
+# StringDataRightTruncation — reported, misleadingly, as a database outage. The
+# unit tests could not see it because the fake database models no column widths.
+#
+# So the real width is encoded HERE and asserted against every identifier the
+# vocabulary can produce. The column is not being widened; if someone later
+# lengthens the prefix or a view name, this fails instead of the live run.
+#: Mirrors the LIVE column. Read from information_schema, not assumed.
+QUERY_STRATEGY_VERSION_COLUMN_WIDTH = 32
+
+
+@pytest.mark.parametrize("view", DISCOVERY_VIEWS)
+def test_width_1_every_view_identifier_fits_the_real_column(view):
+    identifier = strategy_identifier(view)
+    assert len(identifier) <= QUERY_STRATEGY_VERSION_COLUMN_WIDTH, (
+        f"{view}: '{identifier}' is {len(identifier)} chars but the column is "
+        f"varchar({QUERY_STRATEGY_VERSION_COLUMN_WIDTH}) — the run INSERT would "
+        "fail with StringDataRightTruncation"
+    )
+    assert query_strategy_version_width_ok(identifier)
+
+
+def test_width_2_the_longest_identifier_is_exactly_thirty():
+    """Pinned, not merely bounded: shortening the prefix is also a contract change."""
+    identifiers = {v: strategy_identifier(v) for v in DISCOVERY_VIEWS}
+    longest = max(identifiers.values(), key=len)
+    assert longest == "G4HR1/LOCAL_INTRINSIC_CIRCUITS", identifiers
+    assert len(longest) == 30, len(longest)
+    # ...and there is exactly one character of slack left.
+    assert QUERY_STRATEGY_VERSION_COLUMN_WIDTH - len(longest) == 2
+
+
+def test_width_3_the_module_and_the_test_agree_on_the_limit():
+    assert QUERY_STRATEGY_VERSION_MAX_LENGTH == QUERY_STRATEGY_VERSION_COLUMN_WIDTH
+
+
+def test_width_4_the_guard_can_actually_fail():
+    """A guard that cannot fail protects nothing."""
+    assert not query_strategy_version_width_ok("A" * 33)
+    assert not query_strategy_version_width_ok(f"{STRATEGY_VERSION}/{'X' * 40}")
+    # The exact string the live run choked on would now be rejected by the guard.
+    assert not query_strategy_version_width_ok(
+        "LLM_DISCOVERY_VIEW_V1/NAMED_CLASSIC_CIRCUITS"
+    )
+
+
+def test_width_5_the_identifier_is_the_compact_form_of_the_full_semantics():
+    """Shortening the token must not LOSE the information — provenance carries it."""
+    for view in DISCOVERY_VIEWS:
+        identifier = strategy_identifier(view)
+        prov = view_provenance(view)
+        # The identifier is the compact persisted form...
+        assert identifier == f"{STRATEGY_VERSION}/{view}"
+        assert view in identifier
+        # ...and the full semantics remain, unabbreviated, in provenance_json.
+        assert prov["strategy_version"] == STRATEGY_VERSION
+        assert prov["strategy_family"] == "G4_HIGH_RECALL_V1"
+        assert prov["discovery_view"] == view

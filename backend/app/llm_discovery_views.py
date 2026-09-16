@@ -56,7 +56,24 @@ DISCOVERY_VIEWS: tuple[str, ...] = (
 #: view, and the view alone would lose which strategy produced it; the run read
 #: DTO already exposes this column, so both facts stay readable with no schema
 #: change and no migration.
-STRATEGY_VERSION = "LLM_DISCOVERY_VIEW_V1"
+#:
+#: WIDTH IS A HARD CONSTRAINT, not a style preference. That column is
+#: ``character varying(32)`` and is NOT being widened, so the identifier must fit
+#: inside it — the first live run failed with `StringDataRightTruncation` because
+#: a 44-character prefix made every view's identifier too long. Hence the compact
+#: ``G4HR1`` form: it is a durable version tag for the G4 high-recall strategy, and
+#: ``G4HR1/LOCAL_INTRINSIC_CIRCUITS`` is the longest identifier this vocabulary can
+#: produce at 30 characters. The full, human-readable strategy semantics live in
+#: ``provenance_json`` (an unbounded jsonb column), which is why shortening this
+#: token loses no information. See ``query_strategy_version_width_ok`` and its
+#: test: expanding this prefix or a view name past the column width must fail
+#: loudly rather than at runtime.
+STRATEGY_VERSION = "G4HR1"
+
+#: ``query_strategy_version`` is ``character varying(32)``. Mirrored here so the
+#: vocabulary can prove its own output fits, instead of discovering it in
+#: production.
+QUERY_STRATEGY_VERSION_MAX_LENGTH = 32
 
 #: The family a view run belongs to. A second family (a different granularity
 #: policy, say) would be a second value here, not a rewrite of the first.
@@ -284,6 +301,16 @@ def resolve_discovery_view(value: str | None) -> str | None:
 def strategy_identifier(view: str) -> str:
     """The value written to ``query_strategy_version`` for a view run."""
     return f"{STRATEGY_VERSION}{_SEPARATOR}{view}"
+
+
+def query_strategy_version_width_ok(identifier: str) -> bool:
+    """True when this identifier fits the ``varchar(32)`` column it is stored in.
+
+    Exposed so the vocabulary can be checked against its own storage limit in a
+    test, rather than against a comment: the identifier that overflowed the
+    column was produced by this very function, and nothing in the code said so.
+    """
+    return len(identifier) <= QUERY_STRATEGY_VERSION_MAX_LENGTH
 
 
 def view_of_strategy_identifier(identifier: str | None) -> str | None:

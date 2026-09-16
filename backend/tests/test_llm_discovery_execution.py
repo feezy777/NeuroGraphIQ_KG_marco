@@ -1680,7 +1680,7 @@ def test_32_2_four_views_are_four_runs_each_carrying_its_own_view(env):
 
     assert len(env.db.runs) == 4, "four views, four runs — never one merged run"
     assert [r["query_strategy_version"] for r in env.db.runs] == [
-        f"LLM_DISCOVERY_VIEW_V1/{v}" for v in ALL_VIEWS
+        f"G4HR1/{v}" for v in ALL_VIEWS
     ]
     # Same seed throughout: the views differ in what they ASKED, not in what
     # they were pointed at.
@@ -1695,12 +1695,12 @@ def test_32_3_the_view_is_readable_from_the_run_record(env):
 
     for view, row in zip(ALL_VIEWS, env.db.runs):
         # The single readable identifier the run DTO already exposes...
-        assert row["query_strategy_version"] == f"LLM_DISCOVERY_VIEW_V1/{view}"
+        assert row["query_strategy_version"] == f"G4HR1/{view}"
         # ...and the structured fact for readers that want the parts.
         assert json.loads(row["provenance_json"]) == {
             "discovery_view": view,
             "strategy_family": "G4_HIGH_RECALL_V1",
-            "strategy_version": "LLM_DISCOVERY_VIEW_V1",
+            "strategy_version": "G4HR1",
         }
         # Provenance stays truthful about what actually ran.
         assert row["provider"] == "deepseek"
