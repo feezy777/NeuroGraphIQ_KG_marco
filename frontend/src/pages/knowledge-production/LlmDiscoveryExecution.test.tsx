@@ -24,6 +24,7 @@ const getRuns = vi.fn()
 const getLiteratureRuns = vi.fn()
 const getRunPublications = vi.fn()
 const getLlmCandidates = vi.fn()
+const getCandidatePool = vi.fn()
 const postExecute = vi.fn()
 
 vi.mock('./kpApi', () => ({
@@ -32,6 +33,7 @@ vi.mock('./kpApi', () => ({
   fetchLiteratureRuns: (...a: unknown[]) => getLiteratureRuns(...a),
   fetchRunPublications: (...a: unknown[]) => getRunPublications(...a),
   fetchRunLlmCandidates: (...a: unknown[]) => getLlmCandidates(...a),
+  fetchBrainRegionLlmCandidates: (...a: unknown[]) => getCandidatePool(...a),
   executeLlmDiscovery: (...a: unknown[]) => postExecute(...a),
   fetchBrainRegionSeeds: vi.fn(),
   fetchBrainRegionSummary: vi.fn(),
@@ -128,6 +130,8 @@ beforeEach(() => {
   })
   getLlmCandidates.mockReset()
   getLlmCandidates.mockResolvedValue({ items: [], total: 0 })
+  getCandidatePool.mockReset()
+  getCandidatePool.mockResolvedValue({ items: [], total: 0 })
   postExecute.mockReset()
   window.location.hash = ''
 })
@@ -383,7 +387,7 @@ describe('route isolation holds', () => {
     }
   })
 
-  it('14. a completed execution does not disturb the candidate list tests’ contract', async () => {
+  it('14. a completed execution hands the new run to the result summary', async () => {
     getRuns
       .mockResolvedValueOnce({ items: [], total: 0 })
       .mockResolvedValue({ items: [run()], total: 1 })
@@ -393,11 +397,11 @@ describe('route isolation holds', () => {
         candidate_id: 'NGIQ-DC-00000001',
         run_id: NEW_RUN,
         seed_entity_id: SEED_ID,
-        candidate_type: 'region',
-        local_id: 'region_1',
-        name: 'CA1 field',
-        payload: { local_id: 'region_1' },
-        confidence: 0.72,
+        candidate_type: 'circuit',
+        local_id: 'circuit_1',
+        name: 'Hippocampal trisynaptic circuit',
+        payload: { local_id: 'circuit_1' },
+        confidence: 0.9,
         status: 'proposed',
         created_at: '2026-09-16T10:00:20Z',
         updated_at: '2026-09-16T10:00:20Z',
@@ -408,11 +412,13 @@ describe('route isolation holds', () => {
     await openDiscovery()
     fireEvent.click(llmButton())
 
-    // The P0-4A panel renders the new run's candidates with no change on its
-    // side: the handoff is a run id, not a new code path.
+    // P0-4C: the Discovery tab reports the run's RESULT — the run it belongs to
+    // and how many candidates it produced — and does not list the rows.
     const panel = within(await screen.findByTestId('kp-llm-candidates'))
-    expect(await panel.findByText('NGIQ-DC-00000001')).toBeTruthy()
-    const ctx = within(panel.getByTestId('kp-llm-candidates-run'))
+    const ctx = within(await panel.findByTestId('kp-llm-candidates-run'))
     expect(ctx.getByText(NEW_RUN)).toBeTruthy()
+    expect((await panel.findByTestId('kp-llm-run-total')).textContent).toContain('1')
+    expect(panel.getByTestId('kp-llm-run-found').textContent).toBe('Discovery complete')
+    expect(panel.queryByText('NGIQ-DC-00000001')).toBeNull()
   })
 })

@@ -26,7 +26,13 @@ function EvidenceCenterRedirect() {
 import { BackgroundTaskCenterPage } from './pages/BackgroundTaskCenter'
 import { KnowledgeProductionPage } from './pages/knowledge-production/KnowledgeProductionPage'
 import { BrainRegionWorkspacePage } from './pages/knowledge-production/BrainRegionWorkspacePage'
-import { entityIdFromWorkspacePath } from './pages/knowledge-production/routes'
+import { CircuitCandidateDetailPage } from './pages/knowledge-production/CircuitCandidateDetailPage'
+import {
+  candidateRefFromPath,
+  entityIdFromWorkspacePath,
+  kpWorkspacePath,
+  navigate,
+} from './pages/knowledge-production/routes'
 import { GraphExplorerPage } from './pages/GraphExplorerPage'
 import './components/brain-3d/brain3d.css'
 /* Single module-level import for the Knowledge Production stylesheet. Both
@@ -82,14 +88,25 @@ export default function App() {
   }, [])
 
   const basePath = path.split('?')[0] || '/'
-  // Dynamic BrainRegion workspace route (hash router; no routing library).
+  // Dynamic BrainRegion routes (hash router; no routing library). The candidate
+  // detail route is checked first because it is the more specific shape: it also
+  // carries the entity_id, and must never be mistaken for the workspace itself.
+  const candidateRef = candidateRefFromPath(basePath)
   const workspaceEntityId = entityIdFromWorkspacePath(basePath)
   const legacyTarget = LEGACY_REDIRECTS[basePath]
-  const Page = workspaceEntityId
-    ? () => <BrainRegionWorkspacePage entityId={workspaceEntityId} />
-    : legacyTarget
-      ? () => <LegacyDataCenterRedirect target={legacyTarget} />
-      : (ROUTES[basePath] ?? DashboardPage)
+  const Page = candidateRef
+    ? () => (
+        <CircuitCandidateDetailPage
+          entityId={candidateRef.entityId}
+          candidateId={candidateRef.candidateId}
+          onBack={() => navigate(kpWorkspacePath(candidateRef.entityId))}
+        />
+      )
+    : workspaceEntityId
+      ? () => <BrainRegionWorkspacePage entityId={workspaceEntityId} />
+      : legacyTarget
+        ? () => <LegacyDataCenterRedirect target={legacyTarget} />
+        : (ROUTES[basePath] ?? DashboardPage)
 
   return (
     <I18nProvider>

@@ -1,18 +1,12 @@
 /**
- * Phase P0-4A — the run → candidate list flow, plus the read-only boundary.
+ * Phase P0-4C — the Discovery tab's run RESULT SUMMARY.
  *
- * Two render targets, on purpose:
- *
- *   * the WORKSPACE, for everything about run selection — which run gets
- *     queried, what the panel does while a request is in flight, and that a
- *     slower answer for a previously selected run can never replace the current
- *     one. Those states only exist in the run's company.
- *   * the PANEL alone, for presentation — the four candidate kinds, the status,
- *     and the seven columns. A run fixture would only be noise there.
- *
- * The last describe block is the phase boundary: this round adds NO review
- * action. That is asserted against the sources AND against the real API module,
- * not only against the rendered output.
+ * P0-4A rendered the run's candidate rows here; P0-4C moved them to the Candidate
+ * Knowledge tab, which owns a BrainRegion's pool. What this file still pins is
+ * everything that did NOT move: the run-scoped fetch, the four render states, the
+ * stale-run protection, and the fact that this tab reports a run rather than
+ * listing its candidates. The row-rendering assertions now live in
+ * `CandidateKnowledgeTab.test.tsx`, where the rows actually are.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
@@ -28,6 +22,7 @@ const getRuns = vi.fn()
 const getLiteratureRuns = vi.fn()
 const getRunPublications = vi.fn()
 const getLlmCandidates = vi.fn()
+const getCandidatePool = vi.fn()
 
 vi.mock('./kpApi', () => ({
   fetchBrainRegionSeed: (...a: unknown[]) => getSeed(...a),
@@ -35,6 +30,8 @@ vi.mock('./kpApi', () => ({
   fetchLiteratureRuns: (...a: unknown[]) => getLiteratureRuns(...a),
   fetchRunPublications: (...a: unknown[]) => getRunPublications(...a),
   fetchRunLlmCandidates: (...a: unknown[]) => getLlmCandidates(...a),
+  fetchBrainRegionLlmCandidates: (...a: unknown[]) => getCandidatePool(...a),
+  executeLlmDiscovery: vi.fn().mockResolvedValue({ run: null }),
   fetchBrainRegionSeeds: vi.fn(),
   fetchBrainRegionSummary: vi.fn(),
 }))
@@ -65,7 +62,6 @@ function run(over: Partial<DiscoveryRun> = {}): DiscoveryRun {
   }
 }
 
-/** One persisted candidate, as P0-2A returns it. */
 function candidate(over: Partial<LlmDiscoveryCandidate> = {}): LlmDiscoveryCandidate {
   return {
     candidate_id: 'NGIQ-DC-00000001',
@@ -89,7 +85,7 @@ const DETAIL: BrainRegionSeedDetail = {
   name_en: 'Left Hippocampus',
   name_zh: '左侧海马',
   abbreviation: null,
-  granularity_level: 'G3_MESO_FINE',
+  granularity_level: 'G1_MACRO',
   region_category: 'cortical_region',
   hemisphere: 'left',
   species_taxon_id: '9606',
@@ -112,26 +108,31 @@ function renderWorkspace() {
   )
 }
 
-function renderPanel(props: Parameters<typeof LlmCandidateList>[0]) {
-  return render(
+function renderPanel(props: Partial<Parameters<typeof LlmCandidateList>[0]> = {}) {
+  const onOpenCandidates = props.onOpenCandidates ?? vi.fn()
+  const utils = render(
     <I18nProvider>
-      <LlmCandidateList {...props} />
+      <LlmCandidateList
+        llmRuns={[run()]}
+        selectedRunId={RUN_A}
+        onOpenCandidates={onOpenCandidates}
+        {...props}
+      />
     </I18nProvider>,
   )
+  return { ...utils, onOpenCandidates }
 }
 
-/** The Nth DATA row of the run history (row 0 is the header). */
 function runHistoryRow(index: number): HTMLElement {
   const rows = within(screen.getByTestId('kp-run-history')).getAllByRole('row')
   return rows[index + 1]
 }
 
-/** Open the Discovery tab with a run history in place. */
 async function openDiscoveryWith(runs: DiscoveryRun[]) {
   getRuns.mockResolvedValue({ items: runs, total: runs.length })
   renderWorkspace()
   fireEvent.click(await screen.findByTestId('kp-tab-discovery'))
-  await waitFor(() => expect(screen.getByTestId('kp-run-history')).toBeTruthy())
+  await screen.findByTestId('kp-llm-discovery')
 }
 
 beforeEach(() => {
@@ -144,18 +145,17 @@ beforeEach(() => {
   getLiteratureRuns.mockResolvedValue({ items: [], total: 0 })
   getRunPublications.mockReset()
   getRunPublications.mockResolvedValue({
-    run_id: 'x',
-    items: [],
-    distinct_publications: 0,
-    hits_total: 0,
+    run_id: 'x', items: [], distinct_publications: 0, hits_total: 0,
   })
   getLlmCandidates.mockReset()
   getLlmCandidates.mockResolvedValue({ items: [], total: 0 })
+  getCandidatePool.mockReset()
+  getCandidatePool.mockResolvedValue({ items: [], total: 0 })
   window.location.hash = ''
 })
 
 // ===========================================================================
-// §13.1-4 — selection, the request, and what is shown while it is in flight
+// selection, the request, and what is shown while it is in flight
 // ===========================================================================
 describe('run selection', () => {
   it('1. prompts the user to pick a run when none is selected', async () => {
@@ -176,7 +176,7 @@ describe('run selection', () => {
 
     await waitFor(() => expect(getLlmCandidates).toHaveBeenCalledTimes(1))
     expect(getLlmCandidates).toHaveBeenCalledWith(RUN_A)
-    // The candidate endpoint only — never a publications request.
+    // The run-scoped candidate endpoint only — never a publications request.
     expect(getRunPublications).not.toHaveBeenCalled()
   })
 
@@ -193,7 +193,7 @@ describe('run selection', () => {
     expect(panel.queryByTestId('kp-llm-candidates-error')).toBeNull()
 
     resolveCandidates({ items: [candidate()], total: 1 })
-    expect(await panel.findByText('NGIQ-DC-00000001')).toBeTruthy()
+    expect(await panel.findByTestId('kp-llm-run-found')).toBeTruthy()
   })
 
   it('deselecting a run returns to the prompt and issues no further request', async () => {
@@ -209,7 +209,7 @@ describe('run selection', () => {
 })
 
 // ===========================================================================
-// §13.5-6 — a zero-candidate run and an unreadable one are DIFFERENT facts
+// empty and error are not the same thing
 // ===========================================================================
 describe('empty and error are not the same thing', () => {
   it('5. a run that proposed nothing shows a clean empty state, not an error', async () => {
@@ -221,7 +221,7 @@ describe('empty and error are not the same thing', () => {
     const empty = await panel.findByTestId('kp-llm-candidates-empty')
     expect(empty.textContent).toContain('This discovery run proposed no candidates')
     expect(panel.queryByTestId('kp-llm-candidates-error')).toBeNull()
-    expect(panel.queryByTestId('kp-llm-candidates-loading')).toBeNull()
+    expect(panel.queryByTestId('kp-llm-run-summary')).toBeNull()
   })
 
   it('6. an unreadable candidate list is an ERROR, never an empty result', async () => {
@@ -232,16 +232,15 @@ describe('empty and error are not the same thing', () => {
     const panel = within(screen.getByTestId('kp-llm-candidates'))
     const err = await panel.findByTestId('kp-llm-candidates-error')
     expect(err.textContent).toContain('HTTP 500: boom')
-    // The failure must NOT be reported as "proposed nothing".
     expect(panel.queryByTestId('kp-llm-candidates-empty')).toBeNull()
   })
 })
 
 // ===========================================================================
-// §13.10-11 — a stale run can never masquerade as the selected one
+// a stale run can never masquerade as the selected one
 // ===========================================================================
 describe('stale run protection', () => {
-  it('10. switching runs clears the previous run’s candidates immediately', async () => {
+  it('10. switching runs clears the previous run’s counts immediately', async () => {
     let resolveB: (v: unknown) => void = () => {}
     getLlmCandidates.mockResolvedValueOnce({ items: [candidate()], total: 1 })
     getLlmCandidates.mockReturnValueOnce(new Promise(r => (resolveB = r)))
@@ -249,41 +248,38 @@ describe('stale run protection', () => {
     await openDiscoveryWith([run(), run({ run_id: RUN_B })])
     fireEvent.click(runHistoryRow(0))
     const panel = within(screen.getByTestId('kp-llm-candidates'))
-    expect(await panel.findByText('NGIQ-DC-00000001')).toBeTruthy()
+    expect((await panel.findByTestId('kp-llm-run-total')).textContent).toContain('1')
 
     // Switch to the OTHER run, whose answer has not arrived.
     fireEvent.click(runHistoryRow(1))
     expect(await panel.findByTestId('kp-llm-candidates-loading')).toBeTruthy()
-    expect(panel.queryByText('NGIQ-DC-00000001')).toBeNull()
+    expect(panel.queryByTestId('kp-llm-run-summary')).toBeNull()
 
-    resolveB({ items: [candidate({ candidate_id: 'NGIQ-DC-00000002', run_id: RUN_B })], total: 1 })
-    expect(await panel.findByText('NGIQ-DC-00000002')).toBeTruthy()
-    expect(panel.queryByText('NGIQ-DC-00000001')).toBeNull()
+    resolveB({ items: [], total: 0 })
+    expect(await panel.findByTestId('kp-llm-candidates-empty')).toBeTruthy()
   })
 
   it('11. a late answer for the PREVIOUS run cannot overwrite the current one', async () => {
     let resolveA: (v: unknown) => void = () => {}
     getLlmCandidates.mockReturnValueOnce(new Promise(r => (resolveA = r)))
-    getLlmCandidates.mockResolvedValueOnce({
-      items: [candidate({ candidate_id: 'NGIQ-DC-00000002', run_id: RUN_B })],
-      total: 1,
-    })
+    getLlmCandidates.mockResolvedValueOnce({ items: [candidate()], total: 1 })
 
     await openDiscoveryWith([run(), run({ run_id: RUN_B })])
     fireEvent.click(runHistoryRow(0)) // A — slow, still in flight
     fireEvent.click(runHistoryRow(1)) // B — answers first
 
     const panel = within(screen.getByTestId('kp-llm-candidates'))
-    expect(await panel.findByText('NGIQ-DC-00000002')).toBeTruthy()
+    expect((await panel.findByTestId('kp-llm-run-total')).textContent).toContain('1')
 
-    // A finally answers. It is no longer the selected run, so it is discarded.
-    resolveA({ items: [candidate({ candidate_id: 'NGIQ-DC-00000001' })], total: 1 })
+    // A finally answers. It is no longer the selected run, so it is discarded:
+    // the summary must still be B's, and A reported nothing.
+    resolveA({ items: [], total: 0 })
     await waitFor(() => expect(getLlmCandidates).toHaveBeenCalledTimes(2))
-    expect(panel.queryByText('NGIQ-DC-00000001')).toBeNull()
-    expect(panel.getByText('NGIQ-DC-00000002')).toBeTruthy()
+    expect(panel.queryByTestId('kp-llm-candidates-empty')).toBeNull()
+    expect(panel.getByTestId('kp-llm-run-summary')).toBeTruthy()
   })
 
-  it('states which run the candidates belong to, so rows cannot be misattributed', async () => {
+  it('states which run the summary belongs to, so counts cannot be misattributed', async () => {
     await openDiscoveryWith([run()])
     fireEvent.click(runHistoryRow(0))
     const ctx = within(await screen.findByTestId('kp-llm-candidates-run'))
@@ -292,137 +288,62 @@ describe('stale run protection', () => {
 })
 
 // ===========================================================================
-// §13.7-9 — the list itself
+// the run RESULT SUMMARY — the whole report this tab owes the user
 // ===========================================================================
-describe('candidate list rendering', () => {
-  it('7. renders one row per candidate with the six contract columns', async () => {
-    getLlmCandidates.mockResolvedValue({
-      items: [candidate(), candidate({ candidate_id: 'NGIQ-DC-00000002', local_id: 'region_2' })],
-      total: 2,
-    })
-    renderPanel({ llmRuns: [run()], selectedRunId: RUN_A })
+describe('run result summary', () => {
+  const MIXED = [
+    candidate({ candidate_id: 'NGIQ-DC-00000001', candidate_type: 'region' }),
+    candidate({ candidate_id: 'NGIQ-DC-00000002', candidate_type: 'region' }),
+    candidate({ candidate_id: 'NGIQ-DC-00000003', candidate_type: 'circuit' }),
+    candidate({ candidate_id: 'NGIQ-DC-00000004', candidate_type: 'connection' }),
+    candidate({ candidate_id: 'NGIQ-DC-00000005', candidate_type: 'function' }),
+  ]
 
-    await screen.findByText('NGIQ-DC-00000002')
-    const table = screen.getByRole('table')
-    expect(within(table).getAllByRole('columnheader').map(h => h.textContent)).toEqual([
-      'candidate_id',
-      'Type',
-      'local_id',
-      'Name',
-      'Confidence',
-      'Status',
-    ])
-    // 1 header row + one row per candidate.
-    expect(within(table).getAllByRole('row')).toHaveLength(3)
+  it('reports the total and one count per candidate kind', async () => {
+    getLlmCandidates.mockResolvedValue({ items: MIXED, total: MIXED.length })
+    renderPanel()
+    const panel = within(screen.getByTestId('kp-llm-candidates'))
+
+    await panel.findByTestId('kp-llm-run-summary')
+    expect(panel.getByTestId('kp-llm-run-total').textContent).toContain('5')
+    expect(panel.getByTestId('kp-llm-run-count-circuit').textContent).toContain('1')
+    expect(panel.getByTestId('kp-llm-run-count-connection').textContent).toContain('1')
+    expect(panel.getByTestId('kp-llm-run-count-function').textContent).toContain('1')
+    expect(panel.getByTestId('kp-llm-run-count-region').textContent).toContain('2')
   })
 
-  it('8. the four candidate kinds are visually distinct, and never re-typed here', async () => {
-    getLlmCandidates.mockResolvedValue({
-      items: [
-        candidate({ candidate_id: 'NGIQ-DC-00000001', candidate_type: 'region' }),
-        candidate({ candidate_id: 'NGIQ-DC-00000002', candidate_type: 'connection' }),
-        candidate({ candidate_id: 'NGIQ-DC-00000003', candidate_type: 'circuit' }),
-        candidate({ candidate_id: 'NGIQ-DC-00000004', candidate_type: 'function' }),
-      ],
-      total: 4,
-    })
-    renderPanel({ llmRuns: [run()], selectedRunId: RUN_A })
+  it('does NOT list the candidate rows — that is the Candidate Knowledge tab’s job', async () => {
+    getLlmCandidates.mockResolvedValue({ items: MIXED, total: MIXED.length })
+    renderPanel()
+    const panel = within(screen.getByTestId('kp-llm-candidates'))
 
-    await waitFor(() => expect(screen.getByText('NGIQ-DC-00000004')).toBeTruthy())
-    const badges = screen.getAllByTestId('kp-candidate-type-badge')
-    // The caption is localized; the tone keys off the RAW enum, so the four must
-    // differ in BOTH — one shared tone would make the taxonomy unreadable.
-    expect(badges.map(b => b.textContent)).toEqual(['Region', 'Connection', 'Circuit', 'Function'])
-    expect(new Set(badges.map(b => b.className)).size).toBe(4)
+    await panel.findByTestId('kp-llm-run-summary')
+    // Counts, not rows: no candidate id and no per-candidate name appears here.
+    expect(panel.queryByText('NGIQ-DC-00000001')).toBeNull()
+    expect(panel.queryByText('CA1 field')).toBeNull()
+    expect(screen.queryByTestId('kp-candidate-detail')).toBeNull()
+    expect(panel.queryByRole('table')).toBeNull()
   })
 
-  it('9. shows the real status of every candidate', async () => {
-    getLlmCandidates.mockResolvedValue({
-      items: [
-        candidate({ candidate_id: 'NGIQ-DC-00000001', status: 'proposed' }),
-        candidate({ candidate_id: 'NGIQ-DC-00000002', status: 'accepted' }),
-        candidate({ candidate_id: 'NGIQ-DC-00000003', status: 'rejected' }),
-        candidate({ candidate_id: 'NGIQ-DC-00000004', status: 'deferred' }),
-      ],
-      total: 4,
-    })
-    renderPanel({ llmRuns: [run()], selectedRunId: RUN_A })
+  it('offers exactly one way forward: to the candidate pool', async () => {
+    getLlmCandidates.mockResolvedValue({ items: MIXED, total: MIXED.length })
+    const { onOpenCandidates } = renderPanel()
+    const panel = within(screen.getByTestId('kp-llm-candidates'))
 
-    await waitFor(() => expect(screen.getByText('NGIQ-DC-00000004')).toBeTruthy())
-    expect(screen.getAllByTestId('kp-candidate-status-badge').map(b => b.textContent)).toEqual([
-      'Pending review',
-      'Accepted',
-      'Rejected',
-      'Deferred',
-    ])
-  })
-
-  it('9b. `accepted` is never dressed as validated or canonical', async () => {
-    getLlmCandidates.mockResolvedValue({
-      items: [candidate({ status: 'accepted' })],
-      total: 1,
-    })
-    renderPanel({ llmRuns: [run()], selectedRunId: RUN_A })
-
-    const badge = await screen.findByTestId('kp-candidate-status-badge')
-    // Green is this workbench's "validated" tone. An accepted candidate has only
-    // entered resolution, so it must not wear it.
-    expect(badge.className).not.toContain('badge-green')
-  })
-
-  it('marks the selected row, and toggles the mark off on a second click', async () => {
-    getLlmCandidates.mockResolvedValue({ items: [candidate()], total: 1 })
-    renderPanel({ llmRuns: [run()], selectedRunId: RUN_A })
-
-    // Scoped to the TABLE: once a candidate is selected its id also appears in
-    // the detail grid below, so an unscoped query would match twice.
-    const cell = () => within(screen.getByRole('table')).getByText('NGIQ-DC-00000001')
-    const row = () => cell().closest('tr')
-    await waitFor(() => expect(cell()).toBeTruthy())
-    expect(row()?.className).not.toContain('kp-candidate-selected')
-
-    fireEvent.click(cell())
-    await waitFor(() => expect(row()?.className).toContain('kp-candidate-selected'))
-
-    fireEvent.click(cell())
-    await waitFor(() => expect(row()?.className).not.toContain('kp-candidate-selected'))
-  })
-
-  it('shows the selected candidate’s persisted fields, verbatim', async () => {
-    getLlmCandidates.mockResolvedValue({
-      items: [candidate({ payload: { local_id: 'region_1', relation_to_seed: 'AFFERENT' } })],
-      total: 1,
-    })
-    renderPanel({ llmRuns: [run()], selectedRunId: RUN_A })
-
-    await screen.findByRole('table')
-    fireEvent.click(within(screen.getByRole('table')).getByText('NGIQ-DC-00000001'))
-    const detail = within(await screen.findByTestId('kp-candidate-detail'))
-    // Every contract field is present. Identifiers keep their raw column names;
-    // only the descriptive captions are localized.
-    for (const label of ['candidate_id', 'run_id', 'seed_entity_id', 'local_id',
-      'Candidate type', 'Status', 'Confidence', 'Created', 'Updated']) {
-      expect(detail.getByText(label), label).toBeTruthy()
-    }
-    expect(detail.getByText('NGIQ-DC-00000001')).toBeTruthy()
-    // The payload is shown as stored — not summarized, not rebuilt from `name`.
-    expect(detail.getByTestId('kp-candidate-payload').textContent).toContain('AFFERENT')
-  })
-
-  it('reports the API’s own total rather than counting what it rendered', async () => {
-    getLlmCandidates.mockResolvedValue({ items: [candidate()], total: 42 })
-    renderPanel({ llmRuns: [run()], selectedRunId: RUN_A })
-    expect((await screen.findByTestId('kp-llm-candidates-total')).textContent).toBe('42')
+    const button = await panel.findByTestId('kp-open-candidates')
+    expect(button.textContent).toBe('View candidate knowledge')
+    fireEvent.click(button)
+    expect(onOpenCandidates).toHaveBeenCalledTimes(1)
   })
 
   it('A. a seed with no LLM run says so, instead of prompting for a run', () => {
-    renderPanel({ llmRuns: [], selectedRunId: null })
+    renderPanel({ llmRuns: [] })
     expect(screen.getByTestId('kp-llm-candidates-noruns')).toBeTruthy()
     expect(screen.queryByTestId('kp-llm-candidates-select-prompt')).toBeNull()
   })
 
   it('B. an UNKNOWN run list is loading, never "there are none"', () => {
-    renderPanel({ llmRuns: null, selectedRunId: null })
+    renderPanel({ llmRuns: null })
     expect(screen.getByTestId('kp-llm-candidates-runs-loading')).toBeTruthy()
     expect(screen.queryByTestId('kp-llm-candidates-noruns')).toBeNull()
     expect(screen.queryByTestId('kp-llm-candidates-select-prompt')).toBeNull()
@@ -439,20 +360,21 @@ describe('candidate list rendering', () => {
 })
 
 // ===========================================================================
-// §13.12-14 — this phase has NO review action
+// the phase boundary — no review action
 // ===========================================================================
 describe('no review coupling', () => {
-  it('12. the panel offers no interactive control at all', async () => {
+  it('12. the only control is the navigation button, and it decides nothing', async () => {
     getLlmCandidates.mockResolvedValue({ items: [candidate()], total: 1 })
-    renderPanel({ llmRuns: [run()], selectedRunId: RUN_A })
+    renderPanel()
+    const panel = within(await screen.findByTestId('kp-llm-candidates'))
 
-    await screen.findByText('NGIQ-DC-00000001')
-    const panel = within(screen.getByTestId('kp-llm-candidates'))
-    // Selecting a row is allowed; acting on a candidate is not. With no button
-    // and no form in here, there is nothing that could submit a decision.
-    expect(panel.queryAllByRole('button')).toHaveLength(0)
-    expect(panel.queryAllByRole('textbox')).toHaveLength(0)
-    expect(panel.queryAllByRole('combobox')).toHaveLength(0)
+    const buttons = panel.getAllByRole('button')
+    expect(buttons.map(b => b.textContent)).toEqual(['View candidate knowledge'])
+    for (const word of ['accept', 'reject', 'defer', '接受', '拒绝', '延后']) {
+      expect(buttons.some(b => (b.textContent ?? '').toLowerCase().includes(word)), word).toBe(
+        false,
+      )
+    }
   })
 
   it('12b. no candidate source mentions a review decision or endpoint', async () => {
@@ -460,15 +382,17 @@ describe('no review coupling', () => {
     const { join } = await import('node:path')
     // No review endpoint and no review decision, anywhere on this path.
     const reviewTerms = ['/review', '/reviews', 'reviewJson', 'ACCEPT', 'REJECT', 'DEFER']
-    // P0-4B gave kpApi.ts exactly ONE write: the LLM Discovery execution POST.
-    // It lives THERE and nowhere else — no component issues its own request —
-    // so the write verbs stay banned outright in every UI module.
+    // The write verbs stay banned outright in every UI module: components never
+    // issue their own requests. kpApi.ts owns the module's one write.
     const writeTerms = ['postJson', 'putJson', 'patchJson', 'deleteJson']
     const strip = (src: string) =>
       src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '')
 
     for (const f of [
       'LlmCandidateList.tsx',
+      'CandidateKnowledgeTab.tsx',
+      'CircuitCandidateDetailPage.tsx',
+      'circuitPayload.ts',
       'candidateTypes.ts',
       'workspaceTabs.tsx',
       'types.ts',
@@ -484,36 +408,31 @@ describe('no review coupling', () => {
     }
   })
 
-  it('13 + 14. the real API module exposes no review or history function', async () => {
+  it('13 + 14. the real API module performs exactly one write, and it is not a review', async () => {
     const actual = await vi.importActual<typeof import('./kpApi')>('./kpApi')
     const names = Object.keys(actual)
-    // Positive control: the candidate READ function is there, so "nothing
-    // matched" means "no review function exists", not "the module failed to load".
+    // Positive control: the reads are there, so "nothing matched" below means
+    // "no review function exists", not "the module failed to load".
     expect(names).toContain('fetchRunLlmCandidates')
-    expect(names).toContain('fetchRunPublications')
-    const suspect = names.filter(n => /review|accept|reject|defer/i.test(n))
-    expect(suspect).toEqual([])
-    // Every exported function is a read: kpApi imports getJson and nothing that
-    // could send a body.
+    expect(names).toContain('fetchBrainRegionLlmCandidates')
+    expect(names.filter(n => /review|accept|reject|defer/i.test(n))).toEqual([])
+
     const src = (await import('node:fs')).readFileSync(
       (await import('node:path')).join(__dirname, 'kpApi.ts'),
       'utf8',
     )
     expect(src).toContain('getJson')
-    // P0-4B added the module's ONE write. Capping the count is a STRONGER guard
-    // than the blanket ban it replaces: a second write cannot appear unnoticed,
-    // and the one that exists must be the execution route, not a review.
     expect(src.match(/postJson</g) ?? []).toHaveLength(1)
     const afterPost = src.split('postJson<')[1] ?? ''
     expect(afterPost).toContain('llm-discovery/execute')
     expect(afterPost).not.toContain('review')
   })
 
-  it('14b. rendering the whole panel performs no non-GET request', async () => {
+  it('14b. rendering the whole summary performs no non-GET request', async () => {
     const fetchSpy = vi.spyOn(globalThis, 'fetch')
     getLlmCandidates.mockResolvedValue({ items: [candidate()], total: 1 })
-    renderPanel({ llmRuns: [run()], selectedRunId: RUN_A })
-    await screen.findByText('NGIQ-DC-00000001')
+    renderPanel()
+    await screen.findByTestId('kp-llm-run-summary')
 
     for (const call of fetchSpy.mock.calls) {
       const init = call[1] as RequestInit | undefined
@@ -524,7 +443,7 @@ describe('no review coupling', () => {
 })
 
 // ===========================================================================
-// §13.15 — the existing workspace behaviour still holds
+// the existing workspace behaviour still holds
 // ===========================================================================
 describe('no regression in the existing workspace', () => {
   it('15. the seven tabs, the run history and the literature panel are intact', async () => {
@@ -534,7 +453,6 @@ describe('no regression in the existing workspace', () => {
       expect(screen.getByTestId(`kp-tab-${id}`)).toBeTruthy()
     }
     expect(screen.getByTestId('kp-run-history')).toBeTruthy()
-    // The literature panel is still rendered alongside the candidate panel.
     expect(screen.getByTestId('kp-literature-inspector')).toBeTruthy()
   })
 
@@ -544,9 +462,18 @@ describe('no regression in the existing workspace', () => {
     fireEvent.click(runHistoryRow(0))
 
     await waitFor(() => expect(getLlmCandidates).toHaveBeenCalled())
-    // The LLM run is not a literature resource, so the literature panel neither
-    // selects it nor asks for its publications.
     expect(screen.getByTestId('kp-literature-noruns')).toBeTruthy()
     expect(getRunPublications).not.toHaveBeenCalled()
+  })
+
+  it('15c. the handoff button switches the workspace to the candidate tab', async () => {
+    getLlmCandidates.mockResolvedValue({ items: [candidate()], total: 1 })
+    await openDiscoveryWith([run()])
+    fireEvent.click(runHistoryRow(0))
+
+    fireEvent.click(await screen.findByTestId('kp-open-candidates'))
+    // The page owns the tab state; the pool now loads for THIS region.
+    await waitFor(() => expect(getCandidatePool).toHaveBeenCalledWith(SEED_ID))
+    expect(await screen.findByTestId('kp-candidate-filters')).toBeTruthy()
   })
 })

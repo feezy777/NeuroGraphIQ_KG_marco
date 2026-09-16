@@ -642,6 +642,52 @@
   white-space: pre;
 }
 
+/* Phase P0-4C: a candidate row that opens its own page. Scoped to the tables the
+   candidate pool renders, so it cannot leak onto an inert table. */
+.kp-row-openable td { cursor: pointer; }
+
+/* Stat strip: the pool's composition (and a run's result summary). Dense and
+   scannable — one line of label/value pairs, not a row of cards. */
+.kp-stat-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 18px;
+  align-items: baseline;
+  margin: 0 0 10px;
+}
+.kp-stat { display: inline-flex; gap: 6px; align-items: baseline; }
+.kp-stat-label { font-size: 11px; color: var(--text-muted); letter-spacing: 0.01em; }
+.kp-stat-value { font-size: 15px; font-weight: 600; color: var(--text); }
+
+/* Candidate type filter — reuses the tab button look so it reads as a control,
+   not as navigation. */
+.kp-filter-row { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 10px; }
+
+/* Detail page: 70 / 30. Data density first — the reading column is wide, the
+   reference column stays narrow and constant. */
+.kp-detail-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 7fr) minmax(240px, 3fr);
+  gap: 18px;
+  align-items: start;
+  margin-top: 14px;
+}
+@media (max-width: 1100px) {
+  .kp-detail-grid { grid-template-columns: minmax(0, 1fr); }
+}
+.kp-detail-main { min-width: 0; }
+.kp-detail-side { min-width: 0; }
+
+/* A ref that resolved to nothing. Listed, never hidden: an unresolved reference
+   is a fact about the payload and dropping it would edit the science. */
+.kp-unresolved {
+  margin: 6px 0 0;
+  padding-left: 18px;
+  font-size: 12px;
+  color: var(--danger, #cf1322);
+}
+.kp-mono-sm { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 11.5px; }
+
 /* Operation cards sit below the empty state / history in the Discovery tab. */
 .kp-op-grid { margin-top: 14px; }
 

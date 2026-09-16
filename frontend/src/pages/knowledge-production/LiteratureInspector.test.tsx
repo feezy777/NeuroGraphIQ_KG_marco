@@ -27,6 +27,7 @@ const getSeed = vi.fn()
 const getRuns = vi.fn()
 const getLiteratureRuns = vi.fn()
 const getRunPublications = vi.fn()
+const getCandidatePool = vi.fn()
 const getLlmCandidates = vi.fn()
 
 vi.mock('./kpApi', () => ({
@@ -34,6 +35,8 @@ vi.mock('./kpApi', () => ({
   fetchDiscoveryRuns: (...a: unknown[]) => getRuns(...a),
   fetchLiteratureRuns: (...a: unknown[]) => getLiteratureRuns(...a),
   fetchRunPublications: (...a: unknown[]) => getRunPublications(...a),
+  // P0-4C: the Candidates tab is the live candidate pool.
+  fetchBrainRegionLlmCandidates: (...a: unknown[]) => getCandidatePool(...a),
   // P0-4A. An LLM run row is now selectable, so clicking one reaches this. It is
   // mocked to a spy rather than left undefined: the tests below assert that a
   // literature request is NOT made for an LLM run, and an undefined function
@@ -145,6 +148,8 @@ beforeEach(() => {
   // P0-4A: selecting an LLM run now loads its candidates. Kept a resolved spy so
   // that "the literature request was not made" is proved by absence, not by a
   // thrown TypeError from an unmocked import.
+  getCandidatePool.mockReset()
+  getCandidatePool.mockResolvedValue({ items: [], total: 0 })
   getLlmCandidates.mockReset()
   getLlmCandidates.mockResolvedValue({ items: [], total: 0 })
   window.location.hash = ''

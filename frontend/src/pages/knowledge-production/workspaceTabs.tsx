@@ -16,6 +16,7 @@ import { DataTable, type Column } from '../../components/DataTable'
 import { executeLlmDiscovery, fetchLiteratureRuns } from './kpApi'
 import { LiteratureInspector } from './LiteratureInspector'
 import { LlmCandidateList } from './LlmCandidateList'
+import { CandidateKnowledgeTab } from './CandidateKnowledgeTab'
 import {
   DISCOVERY_STATUS_LABEL_KEYS,
   DISCOVERY_STATUS_TONES,
@@ -412,6 +413,7 @@ export function DiscoveryTab({
   runs,
   error,
   onRunsChanged,
+  onOpenCandidates,
 }: {
   /** The Workspace's BrainRegion. The route is the selection authority (§4). */
   entityId: string
@@ -420,6 +422,8 @@ export function DiscoveryTab({
   error?: string | null
   /** Called after a run was STARTED, so the page refetches the real history. */
   onRunsChanged: () => void
+  /** Switch to the Candidate Knowledge tab. The page owns the tab state. */
+  onOpenCandidates: () => void
 }) {
   const { t } = useI18n()
   const [literatureRuns, setLiteratureRuns] = useState<LiteratureRun[] | null>(null)
@@ -570,11 +574,16 @@ export function DiscoveryTab({
         />
       )}
 
-      {/* Phase P0-4A — the candidates an LLM Discovery run proposed. Read-only:
-          no review action of any kind lives here. The panel resolves the id
-          against `llmRuns` itself, which is why no gate is applied here. */}
+      {/* P0-4A/P0-4C — the run's candidate RESULT SUMMARY, and the way through to
+          the pool. The candidate rows themselves are the Candidate Knowledge
+          tab's job; this tab reports the run, it does not list the candidates.
+          No review action of any kind lives here. */}
       {!error && runs !== null && runs.length > 0 && (
-        <LlmCandidateList llmRuns={llmRuns} selectedRunId={selectedRunId} />
+        <LlmCandidateList
+          llmRuns={llmRuns}
+          selectedRunId={selectedRunId}
+          onOpenCandidates={onOpenCandidates}
+        />
       )}
 
       <div className="kp-card-grid kp-op-grid">
@@ -608,27 +617,22 @@ export function DiscoveryTab({
   )
 }
 
-export function CandidatesTab() {
-  const { t } = useI18n()
-  return (
-    <div data-testid="kp-candidates-tab">
-      <TabPlaceholder
-        icon="◇"
-        title={t('knowledgeProduction.candidates.title')}
-        description={t('knowledgeProduction.candidates.text')}
-        blockTitle={t('knowledgeProduction.candidates.blockTitle')}
-      >
-        <FutureList
-          items={[
-            t('knowledgeProduction.candidates.circuits'),
-            t('knowledgeProduction.candidates.connections'),
-            t('knowledgeProduction.candidates.functions'),
-            t('knowledgeProduction.candidates.relatedRegions'),
-          ]}
-        />
-      </TabPlaceholder>
-    </div>
-  )
+/**
+ * Candidate Knowledge tab (P0-4C).
+ *
+ * No longer a placeholder: it owns the BrainRegion's candidate POOL. The work
+ * lives in `CandidateKnowledgeTab`; this wrapper exists because the workspace
+ * tabs are addressed by id here, and because the page — not the tab — owns both
+ * the entity_id and the navigation out to a candidate's own page.
+ */
+export function CandidatesTab({
+  entityId,
+  onOpenCircuit,
+}: {
+  entityId: string
+  onOpenCircuit: (candidateId: string) => void
+}) {
+  return <CandidateKnowledgeTab entityId={entityId} onOpenCircuit={onOpenCircuit} />
 }
 
 export function EvidenceTab() {

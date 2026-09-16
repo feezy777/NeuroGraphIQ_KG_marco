@@ -121,6 +121,25 @@ export function fetchRunLlmCandidates(runId: string): Promise<LlmCandidateListRe
 }
 
 /**
+ * Phase P0-4C — every LLM candidate proposed around ONE BrainRegion seed.
+ *
+ * Spans ALL of the region's LLM_DISCOVERY runs (newest run first, as the backend
+ * orders them), which is exactly what a candidate POOL is. The Candidate
+ * Knowledge tab uses this directly instead of walking the run history and
+ * aggregating client-side: the backend is the authority on what belongs to a
+ * region, and a client-side union would be a second, weaker answer.
+ *
+ * Each item carries `run_id`, so a row can still be attributed to its run.
+ */
+export function fetchBrainRegionLlmCandidates(
+  entityId: string,
+): Promise<LlmCandidateListResponse> {
+  return getJson<LlmCandidateListResponse>(
+    `${BASE}/brain-regions/${encodeURIComponent(entityId)}/llm-candidates`,
+  )
+}
+
+/**
  * Phase P0-4B — START LLM Discovery for one BrainRegion seed.
  *
  * The one WRITE in this module, and the only way this UI can cause a run.

@@ -17,6 +17,7 @@ const getSeed = vi.fn()
 const getRuns = vi.fn()
 const getLiteratureRuns = vi.fn()
 const getRunPublications = vi.fn()
+const getCandidatePool = vi.fn()
 const getLlmCandidates = vi.fn()
 
 vi.mock('./kpApi', () => ({
@@ -29,6 +30,8 @@ vi.mock('./kpApi', () => ({
   // P0-4A. Present so a future test that selects an LLM run fails on its own
   // assertion rather than on an undefined import.
   fetchRunLlmCandidates: (...args: unknown[]) => getLlmCandidates(...args),
+  // P0-4C. The Candidates tab is now the live candidate pool.
+  fetchBrainRegionLlmCandidates: (...args: unknown[]) => getCandidatePool(...args),
 }))
 
 /** One persisted Discovery Run row, as the Phase 2A API returns it. */
@@ -102,6 +105,8 @@ beforeEach(() => {
     distinct_publications: 0,
     hits_total: 0,
   })
+  getCandidatePool.mockReset()
+  getCandidatePool.mockResolvedValue({ items: [], total: 0 })
   getLlmCandidates.mockReset()
   getLlmCandidates.mockResolvedValue({ items: [], total: 0 })
   window.location.hash = ''
@@ -293,12 +298,15 @@ describe('BrainRegionWorkspacePage', () => {
     for (const id of ['circuits', 'connections', 'functions']) {
       expect(screen.queryByTestId(`kp-tab-${id}`)).toBeNull()
     }
-    // they are listed INSIDE Candidates instead
+    // P0-4C: they are candidate KINDS, so they are filters inside Candidates —
+    // the tab itself is now the BrainRegion's candidate pool, not a placeholder.
     fireEvent.click(screen.getByTestId('kp-tab-candidates'))
-    const panel = within(screen.getByTestId('kp-candidates-tab'))
-    for (const label of ['Circuits', 'Connections', 'Functions', 'Related Regions']) {
+    const panel = within(await screen.findByTestId('kp-candidate-filters'))
+    // Singular labels: one candidate IS a Circuit / Connection / Function / Region.
+    for (const label of ['Circuit', 'Connection', 'Function', 'Region']) {
       expect(panel.getByText(label)).toBeTruthy()
     }
+    expect(panel.getByText('All')).toBeTruthy()
   })
 
   it('shows the four high-level workflow steps with none active', async () => {

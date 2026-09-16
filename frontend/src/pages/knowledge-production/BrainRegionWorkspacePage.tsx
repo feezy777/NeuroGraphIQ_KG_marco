@@ -13,7 +13,7 @@ import { useEffect, useState } from 'react'
 import { useI18n } from '../../i18n-context'
 import { WorkflowSteps } from './WorkflowSteps'
 import { fetchBrainRegionSeed, fetchDiscoveryRuns } from './kpApi'
-import { KP_INDEX_PATH, navigate } from './routes'
+import { KP_INDEX_PATH, kpCandidatePath, navigate } from './routes'
 import {
   DISCOVERY_STATUS_LABEL_KEYS,
   brainRegionNames,
@@ -252,9 +252,18 @@ export function BrainRegionWorkspacePage({ entityId }: { entityId: string }) {
             runs={runs}
             error={runsError}
             onRunsChanged={() => setRunsRefreshToken(v => v + 1)}
+            onOpenCandidates={() => setTab('candidates')}
           />
         )}
-        {tab === 'candidates' && <CandidatesTab />}
+        {tab === 'candidates' && (
+          <CandidatesTab
+            entityId={entityId}
+            // A circuit opens its OWN page — the pool never expands a detail
+            // underneath itself, and the detail page re-reads everything from
+            // the URL so a refresh recovers the same view.
+            onOpenCircuit={candidateId => navigate(kpCandidatePath(entityId, candidateId))}
+          />
+        )}
         {tab === 'evidence' && <EvidenceTab />}
         {tab === 'canonicalization' && <CanonicalizationTab />}
         {tab === 'validation' && <ValidationTab />}

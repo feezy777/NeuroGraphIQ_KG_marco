@@ -65,6 +65,19 @@ export const CANDIDATE_TYPE_LABEL_KEYS: Record<DiscoveryCandidateType, string> =
 }
 
 /**
+ * The order a candidate kind is presented in: the order the workflow reads
+ * (a circuit is composed of connections and regions, and carries functions).
+ * The API's own order (alphabetical by type, then local_id) is a storage order
+ * and is left alone for the rows themselves.
+ */
+export const CANDIDATE_TYPE_ORDER: readonly DiscoveryCandidateType[] = [
+  'circuit',
+  'connection',
+  'function',
+  'region',
+]
+
+/**
  * Badge tone per candidate type.
  *
  * Four CATEGORICAL tones and no red/green: a candidate's kind is a taxonomy, not

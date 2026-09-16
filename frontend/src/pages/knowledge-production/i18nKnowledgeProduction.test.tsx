@@ -18,6 +18,7 @@ const listSeeds = vi.fn()
 const fetchSummary = vi.fn()
 const getSeed = vi.fn()
 const getRuns = vi.fn()
+const getCandidatePool = vi.fn()
 
 vi.mock('./kpApi', () => ({
   fetchBrainRegionSeeds: (...a: unknown[]) => listSeeds(...a),
@@ -28,6 +29,7 @@ vi.mock('./kpApi', () => ({
   fetchRunPublications: () =>
     Promise.resolve({ run_id: 'x', items: [], distinct_publications: 0, hits_total: 0 }),
   // P0-4A: the Discovery tab now also carries the LLM candidate panel.
+  fetchBrainRegionLlmCandidates: (...a: unknown[]) => getCandidatePool(...a),
   fetchRunLlmCandidates: () => Promise.resolve({ items: [], total: 0 }),
 }))
 
@@ -129,6 +131,7 @@ beforeEach(() => {
   })
   getSeed.mockReset().mockResolvedValue(DETAIL)
   getRuns.mockReset().mockResolvedValue({ items: [], total: 0 })
+  getCandidatePool.mockReset().mockResolvedValue({ items: [], total: 0 })
   window.location.hash = '#/knowledge-production/brain-regions/NGIQ-BR-00000001'
 })
 
@@ -211,8 +214,11 @@ describe('Knowledge Production localization', () => {
     fireEvent.click(screen.getByTestId('lang-en'))
     fireEvent.click(screen.getByTestId('kp-tab-discovery'))
     expect(screen.getByText('No Discovery Runs yet')).toBeTruthy()
+    // P0-4C: Candidates is no longer a "future tab" — it is the live candidate
+    // pool. Its localization is asserted where the pool's own behaviour is.
     fireEvent.click(screen.getByTestId('kp-tab-candidates'))
-    expect(screen.getByText('Circuits')).toBeTruthy()
+    expect(await screen.findByTestId('kp-candidate-filters')).toBeTruthy()
+    expect(screen.getByText('All')).toBeTruthy()
   })
 
   it('localizes both discovery buttons, with only LLM runnable (P0-4B)', async () => {
