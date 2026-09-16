@@ -4,7 +4,8 @@
  * Talks only to the /api/knowledge-production endpoints, which read the Gate7B
  * formal knowledge tables. No legacy staging endpoint is referenced.
  */
-import { getJson } from '../../api/client'
+import { getJson, postJson } from '../../api/client'
+import type { LlmCandidateListResponse } from './candidateTypes'
 import type {
   BrainRegionSeedDetail,
   BrainRegionSeedListResponse,
@@ -13,6 +14,7 @@ import type {
   DiscoveryRunListResponse,
   DiscoveryRunQuery,
   LiteratureRunListResponse,
+  LlmDiscoveryExecutionResult,
   PublicationListResponse,
 } from './types'
 
@@ -96,5 +98,50 @@ export function fetchLiteratureRuns(entityId: string): Promise<LiteratureRunList
 export function fetchRunPublications(runId: string): Promise<PublicationListResponse> {
   return getJson<PublicationListResponse>(
     `${BASE}/discovery-runs/${encodeURIComponent(runId)}/publications`,
+  )
+}
+
+/**
+ * Phase P0-4A — the candidates ONE LLM Discovery run proposed, newest contract.
+ *
+ * Read-only, and the ONLY candidate source: no mock, no cached JSON, no parsing
+ * of a run log. The backend orders the rows (type, then local_id) and that order
+ * is what the UI shows.
+ *
+ * Caller contract: `runId` must belong to an LLM_DISCOVERY run. The backend
+ * answers 409 for any other route — deliberately, because a literature run
+ * proposes no LLM candidates and "found none" would be a false statement about
+ * it. Gate on `isLlmDiscoveryType()` BEFORE calling; a user should not discover
+ * the boundary by watching a request fail.
+ */
+export function fetchRunLlmCandidates(runId: string): Promise<LlmCandidateListResponse> {
+  return getJson<LlmCandidateListResponse>(
+    `${BASE}/discovery-runs/${encodeURIComponent(runId)}/llm-candidates`,
+  )
+}
+
+/**
+ * Phase P0-4B — START LLM Discovery for one BrainRegion seed.
+ *
+ * The one WRITE in this module, and the only way this UI can cause a run.
+ *
+ * No request body: the endpoint is the TRUSTED caller and is the sole author of
+ * the run's provider, model and prompt provenance, so a client cannot fabricate
+ * any of it. The seed is the only thing the caller supplies.
+ *
+ * SYNCHRONOUS: the response arrives once the run is already terminal, and its
+ * `run` is the persisted record. There is nothing to poll and no run id to
+ * invent — the caller takes the id from the response.
+ *
+ * Failures are typed and must never be flattened into "no candidates":
+ *   404 NOT_FOUND                  unknown BrainRegion
+ *   409 ACTIVE_RUN_EXISTS          an active run already exists for this seed
+ *   502 LLM_*                      the model run failed (run already FAILED)
+ */
+export function executeLlmDiscovery(
+  entityId: string,
+): Promise<LlmDiscoveryExecutionResult> {
+  return postJson<LlmDiscoveryExecutionResult>(
+    `${BASE}/brain-regions/${encodeURIComponent(entityId)}/llm-discovery/execute`,
   )
 }

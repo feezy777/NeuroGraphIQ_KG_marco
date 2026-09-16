@@ -2636,6 +2636,16 @@ export const messages: Record<Language, Record<string, string>> = {
     'knowledgeProduction.discovery.emptyBlockTitle': '每次运行记录',
     'knowledgeProduction.discovery.emptyItems': '类型与状态,结果,提供方 / 模型,创建 / 开始 / 结束',
     'knowledgeProduction.discovery.historyTitle': '运行历史',
+    // Phase P0-4B — LLM 发现执行（同步）。只有 LLM 通道可执行，文献通道仍为占位。
+    // 执行失败**不是**「暂无候选」：两者是完全不同的状态，措辞不得混淆。
+    'knowledgeProduction.execution.llmButtonBusy': '正在启动…',
+    'knowledgeProduction.execution.llmHint': '同步执行：等待模型返回后写入运行记录。',
+    'knowledgeProduction.execution.runId': '运行 ID',
+    'knowledgeProduction.execution.error.brainRegionNotFound': '该脑区不存在，无法启动发现任务。',
+    'knowledgeProduction.execution.error.activeRun': '该脑区已有正在执行的发现任务，请等待其结束。',
+    'knowledgeProduction.execution.error.modelRunFailed':
+      '本任务已启动，但模型执行失败。下方为后端记录的原因，本次运行不会产生任何候选知识。',
+    'knowledgeProduction.execution.error.generic': '启动发现任务失败。',
     // Phase 3E.2C — Literature Inspector（只读）。
     // 术语：Literature / 文献检索；Publication / 文献；Retrieval hit / 检索命中。
     // 检索命中**不是**证据，措辞上不得暗示 supports / contradicts。
@@ -2679,6 +2689,41 @@ export const messages: Record<Language, Record<string, string>> = {
     'knowledgeProduction.literature.hit.rank': '排名',
     'knowledgeProduction.literature.hit.retrievedAt': '检索时间',
     'knowledgeProduction.literature.hit.runId': '所属运行',
+    // Phase P0-4A — LLM Discovery 候选知识列表（只读）。
+    // 术语：候选知识是**提议**，不是规范知识、不是已验证、不是有证据支撑 ——
+    // 措辞不得暗示。本轮不含任何审核动作（接受 / 拒绝 / 延后）。
+    'knowledgeProduction.llmCandidates.title': 'LLM 候选知识结果',
+    'knowledgeProduction.llmCandidates.selectPrompt': '请选择一次 LLM 发现任务查看候选结果',
+    'knowledgeProduction.llmCandidates.noRunsTitle': '暂无 LLM 发现任务',
+    'knowledgeProduction.llmCandidates.noRunsText':
+      '该脑区尚未发起过 LLM 知识发现。这不代表没有候选知识，也不代表发现失败。',
+    'knowledgeProduction.llmCandidates.emptyText': '本次发现任务暂无候选知识',
+    'knowledgeProduction.llmCandidates.col.candidateId': 'candidate_id',
+    'knowledgeProduction.llmCandidates.col.type': '类型',
+    'knowledgeProduction.llmCandidates.col.localId': 'local_id',
+    'knowledgeProduction.llmCandidates.col.name': '名称',
+    'knowledgeProduction.llmCandidates.col.confidence': '置信度',
+    'knowledgeProduction.llmCandidates.col.status': '状态',
+    'knowledgeProduction.llmCandidates.type.region': '脑区',
+    'knowledgeProduction.llmCandidates.type.connection': '连接',
+    'knowledgeProduction.llmCandidates.type.circuit': '回路',
+    'knowledgeProduction.llmCandidates.type.function': '功能',
+    'knowledgeProduction.llmCandidates.status.proposed': '待审核',
+    'knowledgeProduction.llmCandidates.status.accepted': '已接受',
+    'knowledgeProduction.llmCandidates.status.rejected': '已拒绝',
+    'knowledgeProduction.llmCandidates.status.deferred': '已延后',
+    'knowledgeProduction.llmCandidates.field.runId': 'run_id',
+    'knowledgeProduction.llmCandidates.field.runStatus': '运行状态',
+    'knowledgeProduction.llmCandidates.field.total': '候选总数',
+    'knowledgeProduction.llmCandidates.field.candidateId': 'candidate_id',
+    'knowledgeProduction.llmCandidates.field.seedEntityId': 'seed_entity_id',
+    'knowledgeProduction.llmCandidates.field.localId': 'local_id',
+    'knowledgeProduction.llmCandidates.field.type': '候选类型',
+    'knowledgeProduction.llmCandidates.field.status': '状态',
+    'knowledgeProduction.llmCandidates.field.confidence': '置信度',
+    'knowledgeProduction.llmCandidates.field.createdAt': '创建时间',
+    'knowledgeProduction.llmCandidates.field.updatedAt': '更新时间',
+    'knowledgeProduction.llmCandidates.field.payload': 'payload（原始持久化内容）',
     'knowledgeProduction.discovery.colType': '类型',
     'knowledgeProduction.discovery.colStatus': '状态',
     'knowledgeProduction.discovery.colOutcome': '结果',
@@ -5324,6 +5369,21 @@ export const messages: Record<Language, Record<string, string>> = {
     'knowledgeProduction.discovery.emptyItems':
       'Type and status,Outcome,Provider / model,Created / started / finished',
     'knowledgeProduction.discovery.historyTitle': 'Run History',
+    // Phase P0-4B — LLM Discovery execution (synchronous). LLM is the only
+    // runnable route; literature stays a placeholder.
+    // A FAILED launch is NOT "no candidates": the two are different states and
+    // no wording may merge them.
+    'knowledgeProduction.execution.llmButtonBusy': 'Starting…',
+    'knowledgeProduction.execution.llmHint':
+      'Runs synchronously: the run is recorded once the model answers.',
+    'knowledgeProduction.execution.runId': 'Run ID',
+    'knowledgeProduction.execution.error.brainRegionNotFound':
+      'This BrainRegion does not exist, so no discovery run can be started.',
+    'knowledgeProduction.execution.error.activeRun':
+      'This BrainRegion already has a discovery run in progress. Wait for it to finish.',
+    'knowledgeProduction.execution.error.modelRunFailed':
+      'The run was started and the model call failed. The reason the backend recorded is below; this attempt produced no candidates.',
+    'knowledgeProduction.execution.error.generic': 'The discovery run could not be started.',
     // Phase 3E.2C — Literature Inspector (read-only).
     // Terminology: Literature / Publication / Retrieval hit. A retrieval hit is
     // NOT evidence — no wording may imply supports or contradicts.
@@ -5368,6 +5428,43 @@ export const messages: Record<Language, Record<string, string>> = {
     'knowledgeProduction.literature.hit.rank': 'Rank',
     'knowledgeProduction.literature.hit.retrievedAt': 'Retrieved',
     'knowledgeProduction.literature.hit.runId': 'Run',
+    // Phase P0-4A — LLM Discovery candidate list (read-only).
+    // A candidate is a PROPOSAL: not canonical knowledge, not validated, not
+    // evidence-backed. No wording may imply otherwise. This phase has no review
+    // action (accept / reject / defer) of any kind.
+    'knowledgeProduction.llmCandidates.title': 'LLM Candidate Results',
+    'knowledgeProduction.llmCandidates.selectPrompt':
+      'Select an LLM discovery run to see the candidates it proposed',
+    'knowledgeProduction.llmCandidates.noRunsTitle': 'No LLM discovery runs yet',
+    'knowledgeProduction.llmCandidates.noRunsText':
+      'This BrainRegion has not entered an LLM discovery run. That is not a failed discovery, and it does not mean no candidates exist.',
+    'knowledgeProduction.llmCandidates.emptyText': 'This discovery run proposed no candidates',
+    'knowledgeProduction.llmCandidates.col.candidateId': 'candidate_id',
+    'knowledgeProduction.llmCandidates.col.type': 'Type',
+    'knowledgeProduction.llmCandidates.col.localId': 'local_id',
+    'knowledgeProduction.llmCandidates.col.name': 'Name',
+    'knowledgeProduction.llmCandidates.col.confidence': 'Confidence',
+    'knowledgeProduction.llmCandidates.col.status': 'Status',
+    'knowledgeProduction.llmCandidates.type.region': 'Region',
+    'knowledgeProduction.llmCandidates.type.connection': 'Connection',
+    'knowledgeProduction.llmCandidates.type.circuit': 'Circuit',
+    'knowledgeProduction.llmCandidates.type.function': 'Function',
+    'knowledgeProduction.llmCandidates.status.proposed': 'Pending review',
+    'knowledgeProduction.llmCandidates.status.accepted': 'Accepted',
+    'knowledgeProduction.llmCandidates.status.rejected': 'Rejected',
+    'knowledgeProduction.llmCandidates.status.deferred': 'Deferred',
+    'knowledgeProduction.llmCandidates.field.runId': 'run_id',
+    'knowledgeProduction.llmCandidates.field.runStatus': 'Run status',
+    'knowledgeProduction.llmCandidates.field.total': 'Candidates',
+    'knowledgeProduction.llmCandidates.field.candidateId': 'candidate_id',
+    'knowledgeProduction.llmCandidates.field.seedEntityId': 'seed_entity_id',
+    'knowledgeProduction.llmCandidates.field.localId': 'local_id',
+    'knowledgeProduction.llmCandidates.field.type': 'Candidate type',
+    'knowledgeProduction.llmCandidates.field.status': 'Status',
+    'knowledgeProduction.llmCandidates.field.confidence': 'Confidence',
+    'knowledgeProduction.llmCandidates.field.createdAt': 'Created',
+    'knowledgeProduction.llmCandidates.field.updatedAt': 'Updated',
+    'knowledgeProduction.llmCandidates.field.payload': 'payload (as persisted)',
     'knowledgeProduction.discovery.colType': 'Type',
     'knowledgeProduction.discovery.colStatus': 'Status',
     'knowledgeProduction.discovery.colOutcome': 'Outcome',

@@ -1,20 +1,26 @@
 /**
- * BrainRegion Workspace tab bodies (Phase 1B/1C).
+ * BrainRegion Workspace tab bodies (Phase 1B/1C, extended by later phases).
  *
- * Only Overview shows real Gate7B data. Every other tab is an explicit,
- * data-free placeholder describing what will live there — no counts, no rows,
- * no fake statuses. See docs/KNOWLEDGE_PRODUCTION_ARCHITECTURE.md §8 and the
- * visual contract in §12.
+ * Overview, Discovery and Candidates-by-run hold real Gate7B data: Overview the
+ * region's own fields, Discovery the persisted run history plus — once a run is
+ * selected — its publications (literature route) or its proposed candidates
+ * (LLM route). The remaining tabs are explicit, data-free placeholders
+ * describing what will live there — no counts, no rows, no fake statuses. See
+ * docs/KNOWLEDGE_PRODUCTION_ARCHITECTURE.md §8 and the visual contract in §12.
  */
 import { useEffect, useState, type ReactNode } from 'react'
 import { useI18n } from '../../i18n-context'
+import { ApiError } from '../../api/client'
+import { formatApiErrorMessage } from '../../utils/apiErrorMessage'
 import { DataTable, type Column } from '../../components/DataTable'
-import { fetchLiteratureRuns } from './kpApi'
+import { executeLlmDiscovery, fetchLiteratureRuns } from './kpApi'
 import { LiteratureInspector } from './LiteratureInspector'
+import { LlmCandidateList } from './LlmCandidateList'
 import {
   DISCOVERY_STATUS_LABEL_KEYS,
   DISCOVERY_STATUS_TONES,
   isLiteratureDiscoveryType,
+  isLlmDiscoveryType,
   type BrainRegionSeedDetail,
   type DiscoveryRun,
   type DiscoveryRunOutcome,
@@ -162,6 +168,65 @@ function FutureList({ items }: { items: string[] }) {
   )
 }
 
+/**
+ * A failed launch attempt, kept as the backend stated it.
+ *
+ * `code` is the machine-readable reason (the backend's frozen vocabulary) and
+ * `message` its own bounded prose — never a raw response body. `runId` is
+ * present when the failure happened AFTER a run was created, which is the
+ * difference between "nothing happened" and "a run failed and is inspectable".
+ */
+interface LaunchFailure {
+  code: string | null
+  message: string
+  runId: string | null
+}
+
+/**
+ * i18n key for the headline of a launch failure.
+ *
+ * The headline states WHICH failure it is; the backend's message below it says
+ * what happened. The cases are deliberately not merged into one "failed"
+ * message: "this BrainRegion does not exist", "a run is already active" and
+ * "the model run failed" call for three different user actions.
+ */
+const LAUNCH_FAILURE_HEADLINES: Record<string, string> = {
+  NOT_FOUND: 'knowledgeProduction.execution.error.brainRegionNotFound',
+  ACTIVE_RUN_EXISTS: 'knowledgeProduction.execution.error.activeRun',
+}
+
+function launchFailureHeadlineKey(code: string | null): string {
+  if (code && LAUNCH_FAILURE_HEADLINES[code]) return LAUNCH_FAILURE_HEADLINES[code]
+  // The model-run failures all share one headline; their distinct codes and the
+  // backend's message are still shown, so nothing is lost by grouping them.
+  if (code && code.startsWith('LLM_')) return 'knowledgeProduction.execution.error.modelRunFailed'
+  return 'knowledgeProduction.execution.error.generic'
+}
+
+/** Read a launch failure out of whatever the API client threw. */
+function readLaunchFailure(e: unknown): LaunchFailure {
+  const detail = e instanceof ApiError
+    ? (e.meta?.responseBody as { detail?: { code?: string; run_id?: string } } | undefined)?.detail
+    : undefined
+  return {
+    code: detail?.code ?? null,
+    runId: detail?.run_id ?? null,
+    // Extracts the structured `detail.message` rather than stringifying the
+    // body, so the user reads prose instead of JSON.
+    message: formatApiErrorMessage(e),
+  }
+}
+
+/**
+ * One discovery operation.
+ *
+ * A route is LIVE only when it is given an `action`. Without one the button is
+ * disabled and explains why — an enabled button that does nothing would be a
+ * worse lie than a disabled one, and a disabled button with no explanation is
+ * just broken. Nothing here decides WHICH routes are live: the caller passes an
+ * action or it does not, so literature stays a placeholder until it has a real
+ * execution path.
+ */
 function DiscoveryCard({
   glyph,
   title,
@@ -169,6 +234,10 @@ function DiscoveryCard({
   produces,
   buttonLabel,
   testId,
+  action,
+  busy = false,
+  busyLabel,
+  liveHint,
 }: {
   glyph: string
   title: string
@@ -176,8 +245,15 @@ function DiscoveryCard({
   produces: string[]
   buttonLabel: string
   testId: string
+  /** Present when this route can actually be started. */
+  action?: () => void
+  busy?: boolean
+  busyLabel?: string
+  /** Shown instead of the placeholder hint once the route is live. */
+  liveHint?: string
 }) {
   const { t } = useI18n()
+  const live = Boolean(action)
   return (
     <div className="kp-card kp-op-card">
       <h3 className="kp-card-title">
@@ -197,13 +273,20 @@ function DiscoveryCard({
       <button
         type="button"
         className="btn btn-sm"
-        disabled
-        title={t('knowledgeProduction.discovery.executionTooltip')}
+        // Disabled while an attempt is in flight as well as when there is no
+        // execution path: a second click would be a second run.
+        disabled={!live || busy}
+        title={live ? undefined : t('knowledgeProduction.discovery.executionTooltip')}
+        onClick={action}
         data-testid={testId}
       >
-        {buttonLabel}
+        {busy && busyLabel ? busyLabel : buttonLabel}
       </button>
-      <p className="kp-card-hint">{t('knowledgeProduction.discovery.executionHint')}</p>
+      {live ? (
+        liveHint && <p className="kp-card-hint">{liveHint}</p>
+      ) : (
+        <p className="kp-card-hint">{t('knowledgeProduction.discovery.executionHint')}</p>
+      )}
     </div>
   )
 }
@@ -240,22 +323,26 @@ function StatusBadge({ status }: { status: DiscoveryRun['status'] }) {
 /**
  * Read-only run history. No candidate counts, no evidence counts.
  *
- * Literature runs are SELECTABLE: they reached publications that can be
- * inspected. An LLM_DISCOVERY run is not, and the click is gated here on the
- * raw discovery_type rather than allowed through to a request the backend
- * deliberately answers with 404 — a user should not learn a boundary by
- * watching it fail. The gate uses the shared predicate, not an inline
- * `!== 'LLM_DISCOVERY'` comparison, so a future non-literature route cannot
- * silently become clickable.
+ * Every row is SELECTABLE, because the tab now has a panel for each route:
+ * literature runs open the publication inspector, LLM runs open the candidate
+ * list (Phase P0-4A). Which panel answers a click is decided by the ROUTE of the
+ * run that was selected, at the hand-off in DiscoveryTab — not by which rows are
+ * clickable. Stating it there means the gate is one explicit type test on one
+ * value, and it cannot be weakened by a second list disagreeing about what it
+ * contains.
+ *
+ * A run on some future route is selectable and simply opens no panel: a click
+ * that does nothing is honest, whereas a click that fires a request the backend
+ * will refuse teaches the boundary by failure.
  */
 function RunHistory({
   runs,
   selectedRunId,
-  onSelectLiteratureRun,
+  onSelectRun,
 }: {
   runs: DiscoveryRun[]
   selectedRunId: string | null
-  onSelectLiteratureRun: (run: DiscoveryRun) => void
+  onSelectRun: (run: DiscoveryRun) => void
 }) {
   const { t } = useI18n()
   const columns: Column<DiscoveryRun>[] = [
@@ -311,16 +398,9 @@ function RunHistory({
         columns={columns}
         rows={runs}
         getKey={r => r.run_id}
-        onRowClick={r => {
-          // Non-literature rows are inert: the handler is the gate.
-          if (isLiteratureDiscoveryType(r.discovery_type)) onSelectLiteratureRun(r)
-        }}
+        onRowClick={onSelectRun}
         getRowClassName={r =>
-          isLiteratureDiscoveryType(r.discovery_type)
-            ? r.run_id === selectedRunId
-              ? 'kp-run-selectable kp-run-selected'
-              : 'kp-run-selectable'
-            : undefined
+          r.run_id === selectedRunId ? 'kp-run-selectable kp-run-selected' : 'kp-run-selectable'
         }
       />
     </section>
@@ -328,24 +408,30 @@ function RunHistory({
 }
 
 export function DiscoveryTab({
+  entityId,
   runs,
   error,
+  onRunsChanged,
 }: {
+  /** The Workspace's BrainRegion. The route is the selection authority (§4). */
+  entityId: string
   /** null while the first request is in flight; [] once known to be empty. */
   runs: DiscoveryRun[] | null
   error?: string | null
+  /** Called after a run was STARTED, so the page refetches the real history. */
+  onRunsChanged: () => void
 }) {
   const { t } = useI18n()
   const [literatureRuns, setLiteratureRuns] = useState<LiteratureRun[] | null>(null)
   const [literatureError, setLiteratureError] = useState<string | null>(null)
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null)
-
-  // The run rows already carry their seed, so this tab can load the literature
-  // metadata it needs without the page passing an entity_id down.
-  const entityId = runs && runs.length > 0 ? runs[0].seed_entity_id : null
+  // Execution is synchronous, so this covers the whole attempt: POST in flight,
+  // then the history refetch. One flag, because two would allow a state where
+  // the button is live again while the run it started is not yet in the list.
+  const [launching, setLaunching] = useState(false)
+  const [launchError, setLaunchError] = useState<LaunchFailure | null>(null)
 
   useEffect(() => {
-    if (!entityId) return
     let cancelled = false
     setLiteratureRuns(null)
     setLiteratureError(null)
@@ -367,11 +453,89 @@ export function DiscoveryTab({
     setSelectedRunId(prev => (prev === run.run_id ? null : run.run_id))
   }
 
+  /**
+   * Start ONE LLM Discovery for this Workspace's BrainRegion.
+   *
+   * The chain is the frozen backend one and this layer adds nothing to it: the
+   * request starts a run, the provider answers, the run is persisted and its
+   * candidates are stored. The frontend neither calls a model nor writes a run.
+   *
+   * On success the history is REFETCHED — the new run is taken from the backend
+   * list, never spliced in from the response — and then handed to the candidate
+   * panel, which loads its candidates from the read API. On failure NOTHING is
+   * refetched and nothing is selected: a failed attempt added no run, and showing
+   * an empty candidate list for it would report "found nothing" about a run that
+   * never happened.
+   */
+  const launchLlmDiscovery = async () => {
+    // The double-submit guard is the BUTTON's `disabled` state (set from
+    // `launching` below), not a re-entry check here: React flushes discrete
+    // clicks synchronously, so a second click is dispatched only after the
+    // button has already gone disabled. Do not "simplify" that attribute away —
+    // it is the only thing preventing two runs from one double-click.
+    setLaunching(true)
+    setLaunchError(null)
+    try {
+      const result = await executeLlmDiscovery(entityId)
+      onRunsChanged()
+      setSelectedRunId(result.run.run_id)
+    } catch (e: unknown) {
+      setLaunchError(readLaunchFailure(e))
+    } finally {
+      setLaunching(false)
+    }
+  }
+
+  // One selection, two panels.
+  //
+  // The literature panel is handed the id ONLY when the selected run is on the
+  // literature route, because it looks the run up in a SECOND list
+  // (`/literature-runs`) that could disagree with the run history. Without this
+  // gate a literature list containing an LLM run's id would be enough to make
+  // the panel render — and query — a run it has no contract for.
+  //
+  // The candidate panel needs no such gate: it is handed the same rows the
+  // history renders, so its own membership check IS the route check. It still
+  // receives the raw id, so a run on another route simply opens nothing.
+  const selectedRun = runs?.find(r => r.run_id === selectedRunId) ?? null
+  const literatureRunId =
+    selectedRun && isLiteratureDiscoveryType(selectedRun.discovery_type)
+      ? selectedRun.run_id
+      : null
+
+  // null while the run history is unknown; derived from the SAME rows the history
+  // renders, so the two can never disagree about which runs exist.
+  const llmRuns =
+    runs === null ? null : runs.filter(r => isLlmDiscoveryType(r.discovery_type))
+
   return (
     <div data-testid="kp-discovery-tab">
       {error && (
         <div className="state-box state-err" data-testid="kp-discovery-error">
           <p>{error}</p>
+        </div>
+      )}
+
+      {/* A FAILED LAUNCH, reported as a failure. It is never rendered as an
+          empty result: no run was produced, so "no candidates" would be a
+          statement about something that does not exist. */}
+      {launchError && (
+        <div className="state-box state-err" data-testid="kp-llm-execute-error">
+          <p data-testid="kp-llm-execute-error-headline">
+            {t(launchFailureHeadlineKey(launchError.code))}
+          </p>
+          <p>{launchError.message}</p>
+          {launchError.code && (
+            <p className="kp-muted" data-testid="kp-llm-execute-error-code">
+              {launchError.code}
+            </p>
+          )}
+          {/* A run was created before it failed, so it is inspectable. */}
+          {launchError.runId && (
+            <p className="kp-muted" data-testid="kp-llm-execute-error-run">
+              {t('knowledgeProduction.execution.runId')}: {launchError.runId}
+            </p>
+          )}
         </div>
       )}
       {!error && runs === null && (
@@ -392,11 +556,7 @@ export function DiscoveryTab({
         </TabPlaceholder>
       )}
       {!error && runs !== null && runs.length > 0 && (
-        <RunHistory
-          runs={runs}
-          selectedRunId={selectedRunId}
-          onSelectLiteratureRun={selectRun}
-        />
+        <RunHistory runs={runs} selectedRunId={selectedRunId} onSelectRun={selectRun} />
       )}
 
       {/* Rendered only once the seed is known to HAVE runs: when it has none at
@@ -406,11 +566,21 @@ export function DiscoveryTab({
         <LiteratureInspector
           literatureRuns={literatureRuns}
           error={literatureError}
-          selectedRunId={selectedRunId}
+          selectedRunId={literatureRunId}
         />
       )}
 
+      {/* Phase P0-4A — the candidates an LLM Discovery run proposed. Read-only:
+          no review action of any kind lives here. The panel resolves the id
+          against `llmRuns` itself, which is why no gate is applied here. */}
+      {!error && runs !== null && runs.length > 0 && (
+        <LlmCandidateList llmRuns={llmRuns} selectedRunId={selectedRunId} />
+      )}
+
       <div className="kp-card-grid kp-op-grid">
+        {/* The ONLY live route (P0-4B). Literature gets no action, so its button
+            stays disabled with its explanation — this phase wires one execution
+            channel, not two. */}
         <DiscoveryCard
           glyph="✦"
           title={t('knowledgeProduction.discovery.llmTitle')}
@@ -418,6 +588,10 @@ export function DiscoveryTab({
           produces={t('knowledgeProduction.discovery.llmProduces').split(',').map(s => s.trim())}
           buttonLabel={t('knowledgeProduction.discovery.llmButton')}
           testId="kp-llm-discovery"
+          action={launchLlmDiscovery}
+          busy={launching}
+          busyLabel={t('knowledgeProduction.execution.llmButtonBusy')}
+          liveHint={t('knowledgeProduction.execution.llmHint')}
         />
         <DiscoveryCard
           glyph="▤"

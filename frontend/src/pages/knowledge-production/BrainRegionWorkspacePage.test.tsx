@@ -17,6 +17,7 @@ const getSeed = vi.fn()
 const getRuns = vi.fn()
 const getLiteratureRuns = vi.fn()
 const getRunPublications = vi.fn()
+const getLlmCandidates = vi.fn()
 
 vi.mock('./kpApi', () => ({
   fetchBrainRegionSeed: (...args: unknown[]) => getSeed(...args),
@@ -25,6 +26,9 @@ vi.mock('./kpApi', () => ({
   fetchBrainRegionSummary: vi.fn(),
   fetchLiteratureRuns: (...args: unknown[]) => getLiteratureRuns(...args),
   fetchRunPublications: (...args: unknown[]) => getRunPublications(...args),
+  // P0-4A. Present so a future test that selects an LLM run fails on its own
+  // assertion rather than on an undefined import.
+  fetchRunLlmCandidates: (...args: unknown[]) => getLlmCandidates(...args),
 }))
 
 /** One persisted Discovery Run row, as the Phase 2A API returns it. */
@@ -98,6 +102,8 @@ beforeEach(() => {
     distinct_publications: 0,
     hits_total: 0,
   })
+  getLlmCandidates.mockReset()
+  getLlmCandidates.mockResolvedValue({ items: [], total: 0 })
   window.location.hash = ''
 })
 
@@ -309,11 +315,14 @@ describe('BrainRegionWorkspacePage', () => {
     ).toHaveLength(0)
   })
 
-  it('keeps both Discovery actions disabled', async () => {
+  it('keeps Literature disabled while LLM Discovery is a live action (P0-4B)', async () => {
     renderWorkspace()
     fireEvent.click(await screen.findByTestId('kp-tab-discovery'))
-    expect(screen.getByTestId('kp-llm-discovery')).toHaveProperty('disabled', true)
+    // P0-4B wired ONE execution channel. Literature has no execution path yet,
+    // so it stays disabled and keeps its explanation.
+    expect(screen.getByTestId('kp-llm-discovery')).toHaveProperty('disabled', false)
     expect(screen.getByTestId('kp-literature-discovery')).toHaveProperty('disabled', true)
+    expect(screen.getByTestId('kp-literature-discovery').getAttribute('title')).toBeTruthy()
   })
 
   it('renders a read-only placeholder on every non-overview tab', async () => {

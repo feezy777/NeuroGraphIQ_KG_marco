@@ -27,12 +27,18 @@ const getSeed = vi.fn()
 const getRuns = vi.fn()
 const getLiteratureRuns = vi.fn()
 const getRunPublications = vi.fn()
+const getLlmCandidates = vi.fn()
 
 vi.mock('./kpApi', () => ({
   fetchBrainRegionSeed: (...a: unknown[]) => getSeed(...a),
   fetchDiscoveryRuns: (...a: unknown[]) => getRuns(...a),
   fetchLiteratureRuns: (...a: unknown[]) => getLiteratureRuns(...a),
   fetchRunPublications: (...a: unknown[]) => getRunPublications(...a),
+  // P0-4A. An LLM run row is now selectable, so clicking one reaches this. It is
+  // mocked to a spy rather than left undefined: the tests below assert that a
+  // literature request is NOT made for an LLM run, and an undefined function
+  // would make that assertion pass by throwing instead of by not being called.
+  fetchRunLlmCandidates: (...a: unknown[]) => getLlmCandidates(...a),
   fetchBrainRegionSeeds: vi.fn(),
   fetchBrainRegionSummary: vi.fn(),
 }))
@@ -136,6 +142,11 @@ beforeEach(() => {
     distinct_publications: 0,
     hits_total: 0,
   })
+  // P0-4A: selecting an LLM run now loads its candidates. Kept a resolved spy so
+  // that "the literature request was not made" is proved by absence, not by a
+  // thrown TypeError from an unmocked import.
+  getLlmCandidates.mockReset()
+  getLlmCandidates.mockResolvedValue({ items: [], total: 0 })
   window.location.hash = ''
 })
 
@@ -181,7 +192,7 @@ describe('literature run vocabulary', () => {
     })
   }
 
-  it('5. LLM_DISCOVERY is NOT selectable and triggers NO publications request', async () => {
+  it('5. LLM_DISCOVERY opens the CANDIDATE panel and triggers NO publications request', async () => {
     // The realistic state: an LLM run exists but the literature list is empty.
     getRuns.mockResolvedValue({ items: [runRow({ discovery_type: 'LLM_DISCOVERY' })], total: 1 })
     getLiteratureRuns.mockResolvedValue({ items: [], total: 0 })
@@ -191,6 +202,10 @@ describe('literature run vocabulary', () => {
 
     fireEvent.click(runHistoryRow(0))
     await waitFor(() => expect(screen.getByTestId('kp-literature-noruns')).toBeTruthy())
+    // The click is not inert — it is routed by the run's ROUTE, to the panel that
+    // has a contract for it. That routing is what keeps the literature response
+    // below from being reached, rather than the click being swallowed.
+    await waitFor(() => expect(getLlmCandidates).toHaveBeenCalledWith(RUN_ID))
     expect(getRunPublications).not.toHaveBeenCalled()
   })
 
@@ -210,7 +225,9 @@ describe('literature run vocabulary', () => {
     await waitFor(() => expect(getLiteratureRuns).toHaveBeenCalled())
 
     fireEvent.click(runHistoryRow(0))
-    // The click selected nothing, so the inspector still asks the user to pick.
+    // The click selected the run, but the run is on the LLM route, so the
+    // literature inspector is handed nothing and still asks the user to pick.
+    // The gate is the route test at the hand-off, not the row's clickability.
     expect(screen.getByTestId('kp-literature-select-prompt')).toBeTruthy()
     expect(getRunPublications).not.toHaveBeenCalled()
   })

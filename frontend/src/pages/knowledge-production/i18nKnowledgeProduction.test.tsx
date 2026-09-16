@@ -27,6 +27,8 @@ vi.mock('./kpApi', () => ({
   fetchLiteratureRuns: () => Promise.resolve({ items: [], total: 0 }),
   fetchRunPublications: () =>
     Promise.resolve({ run_id: 'x', items: [], distinct_publications: 0, hits_total: 0 }),
+  // P0-4A: the Discovery tab now also carries the LLM candidate panel.
+  fetchRunLlmCandidates: () => Promise.resolve({ items: [], total: 0 }),
 }))
 
 const SEED: BrainRegionSeed = {
@@ -213,15 +215,18 @@ describe('Knowledge Production localization', () => {
     expect(screen.getByText('Circuits')).toBeTruthy()
   })
 
-  it('keeps both discovery buttons disabled in both languages', async () => {
+  it('localizes both discovery buttons, with only LLM runnable (P0-4B)', async () => {
     renderWorkspace('zh-CN')
     fireEvent.click(await screen.findByTestId('kp-tab-discovery'))
-    expect(screen.getByTestId('kp-llm-discovery')).toHaveProperty('disabled', true)
+    // P0-4B made LLM Discovery a real action; Literature still has no execution
+    // path. The distinction is behavioural, not just a label.
+    expect(screen.getByTestId('kp-llm-discovery')).toHaveProperty('disabled', false)
     expect(screen.getByTestId('kp-literature-discovery')).toHaveProperty('disabled', true)
     expect(screen.getByText('启动 LLM 发现')).toBeTruthy()
 
     fireEvent.click(screen.getByTestId('lang-en'))
-    expect(screen.getByTestId('kp-llm-discovery')).toHaveProperty('disabled', true)
+    expect(screen.getByTestId('kp-llm-discovery')).toHaveProperty('disabled', false)
+    expect(screen.getByTestId('kp-literature-discovery')).toHaveProperty('disabled', true)
     expect(screen.getByText('Start LLM Discovery')).toBeTruthy()
   })
 })

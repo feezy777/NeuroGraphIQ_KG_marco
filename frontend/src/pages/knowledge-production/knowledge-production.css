@@ -459,6 +459,9 @@
   color: var(--text);
   overflow-wrap: anywhere;
 }
+/* A field whose value is a block (a payload dump) rather than a token. Full
+   width, because a wrapped JSON column reads as noise. */
+.kp-field-wide { grid-column: 1 / -1; }
 
 /* ── Cards (Discovery operations, future-tab panels) ────────────────────── */
 .kp-card {
@@ -609,13 +612,35 @@
 .kp-run-history tbody tr:hover td { cursor: default; background: #fafbfc; }
 .kp-run-history td { white-space: nowrap; }
 
-/* Phase 3E.2C: literature runs ARE selectable (they have publications to
-   inspect); LLM_DISCOVERY runs are not. Both rules below are needed to state
-   that honestly, because DataTable marks every row of a table that has an
-   onRowClick handler. Declared after the default above so the pointer returns
-   only for the rows that really do something. */
+/* Phase 3E.2C / P0-4A: runs ARE selectable — a literature run opens its
+   publications, an LLM run opens the candidates it proposed. DataTable marks
+   every row of a table that has an onRowClick handler; these rules are declared
+   after the default above so the pointer and the selected tint say the same
+   thing the handler does. */
 .kp-run-history tbody tr.kp-run-selectable td { cursor: pointer; }
 .kp-run-history tbody tr.kp-run-selected td { background: #eef4ff; }
+
+/* ── P0-4A: candidate list (read-only) ──────────────────────────────────── */
+.kp-candidate-table { margin: 10px 0 12px; }
+.kp-candidate-table td { vertical-align: top; }
+/* Selection tint, scoped to this table: the run-history rule above is scoped to
+   .kp-run-history and would not reach here. */
+.kp-candidate-table tbody tr.kp-candidate-selected td { background: #eef4ff; }
+/* A candidate payload is data, shown as stored — never re-flowed for prettiness.
+   Scrolls inside the panel so one large payload cannot widen the whole page. */
+.kp-json {
+  margin: 0;
+  padding: 8px 10px;
+  max-height: 260px;
+  overflow: auto;
+  background: var(--white);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 11.5px;
+  line-height: 1.45;
+  white-space: pre;
+}
 
 /* Operation cards sit below the empty state / history in the Discovery tab. */
 .kp-op-grid { margin-top: 14px; }

@@ -192,6 +192,19 @@ export function isLiteratureDiscoveryType(discoveryType: DiscoveryType): boolean
   return LITERATURE_DISCOVERY_TYPES.includes(discoveryType)
 }
 
+/**
+ * Whether a run's route is the one that proposes LLM candidates (Phase P0-4A).
+ *
+ * An EQUALITY test, deliberately not `!isLiteratureDiscoveryType(...)`: the LLM
+ * candidate read API admits exactly `LLM_DISCOVERY` and answers every other
+ * route with 409, so the complement form would let a future route (a citation
+ * sweep, a graph traversal) become selectable and then fail on click. The
+ * complement is never the classification.
+ */
+export function isLlmDiscoveryType(discoveryType: DiscoveryType): boolean {
+  return discoveryType === 'LLM_DISCOVERY'
+}
+
 export type DiscoveryRunStatus =
   | 'QUEUED'
   | 'RUNNING'
@@ -233,6 +246,23 @@ export interface DiscoveryRunQuery {
   status?: DiscoveryRunStatus | null
   limit?: number
   offset?: number
+}
+
+/**
+ * Phase P0-4B — the outcome of ONE synchronous LLM Discovery execution.
+ *
+ * Only ``run`` is modelled. The endpoint also returns the typed in-memory
+ * candidates, their validation warnings and the run's provenance metrics; this
+ * workbench consumes none of them (the candidates are read back from the frozen
+ * P0-2A read API, which is the only candidate source the UI may use). Mirroring
+ * a large DTO field-by-field in order to ignore most of it would be a second
+ * authority that could drift from the real one.
+ *
+ * ``run`` is the PERSISTED record, already terminal when the response arrives —
+ * which is what makes polling unnecessary.
+ */
+export interface LlmDiscoveryExecutionResult {
+  run: DiscoveryRun
 }
 
 /**

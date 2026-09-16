@@ -110,6 +110,10 @@ export function BrainRegionWorkspacePage({ entityId }: { entityId: string }) {
   // Discovery Runs: null = not yet known, [] = known to be empty.
   const [runs, setRuns] = useState<DiscoveryRun[] | null>(null)
   const [runsError, setRunsError] = useState<string | null>(null)
+  // Bumped when a run has been started, so the history is refetched from the
+  // backend (P0-4B). A counter rather than a copy of the new run: the history
+  // stays the BACKEND's list, and nothing here splices a locally built row in.
+  const [runsRefreshToken, setRunsRefreshToken] = useState(0)
 
   useEffect(() => {
     let cancelled = false
@@ -147,7 +151,7 @@ export function BrainRegionWorkspacePage({ entityId }: { entityId: string }) {
     return () => {
       cancelled = true
     }
-  }, [entityId])
+  }, [entityId, runsRefreshToken])
 
   // Metadata chips: raw identifiers (granularity enum, hemisphere, NCBI taxon,
   // canonical atlas names) stay language-neutral; only "Human" is localized.
@@ -242,7 +246,14 @@ export function BrainRegionWorkspacePage({ entityId }: { entityId: string }) {
               </p>
             </div>
           ))}
-        {tab === 'discovery' && <DiscoveryTab runs={runs} error={runsError} />}
+        {tab === 'discovery' && (
+          <DiscoveryTab
+            entityId={entityId}
+            runs={runs}
+            error={runsError}
+            onRunsChanged={() => setRunsRefreshToken(v => v + 1)}
+          />
+        )}
         {tab === 'candidates' && <CandidatesTab />}
         {tab === 'evidence' && <EvidenceTab />}
         {tab === 'canonicalization' && <CanonicalizationTab />}
