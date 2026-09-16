@@ -531,12 +531,12 @@ def test_K_the_router_contains_no_sql_and_no_database_table_name():
     assert "list_candidates_for_seed" in code
 
 
-def test_the_router_declares_exactly_its_three_endpoints():
-    """Two reads (P0-2B) and one review action (P0-3C1).
+def test_the_router_declares_exactly_its_four_endpoints():
+    """Two candidate reads (P0-2B), one review action (P0-3C1), one history read (P0-3C2).
 
     Asserted as an EXACT set, so a route added or removed is visible rather than
-    absorbed. P0-3C1 added the third; this is the one place that pins the
-    surface, so the review-API tests do not assert it again.
+    absorbed. This is the one place that pins the surface, so the review-API and
+    review-history tests do not assert it again.
     """
     from app.routers import llm_discovery_candidates
 
@@ -546,6 +546,7 @@ def test_the_router_declares_exactly_its_three_endpoints():
     )
     assert routes == [
         (["GET"], "/api/knowledge-production/brain-regions/{entity_id}/llm-candidates"),
+        (["GET"], "/api/knowledge-production/candidates/{candidate_id}/reviews"),
         (["GET"], "/api/knowledge-production/discovery-runs/{run_id}/llm-candidates"),
         (["POST"], "/api/knowledge-production/candidates/{candidate_id}/review"),
     ]

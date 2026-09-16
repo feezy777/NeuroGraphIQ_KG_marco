@@ -1,21 +1,31 @@
-"""LLM Discovery candidate API — the HTTP surface of P0-2A (read) and P0-3C1 (review).
+"""LLM Discovery candidate API — the HTTP surface of P0-2A/P0-2B (read),
+P0-3C1 (review) and P0-3C2 (review history).
 
-Three endpoints, and nothing else:
+Four endpoints, and nothing else:
 
     GET  /api/knowledge-production/discovery-runs/{run_id}/llm-candidates
     GET  /api/knowledge-production/brain-regions/{entity_id}/llm-candidates
     POST /api/knowledge-production/candidates/{candidate_id}/review
+    GET  /api/knowledge-production/candidates/{candidate_id}/reviews
 
-All three are thin: the router validates nothing itself, resolves nothing itself,
+All four are thin: the router validates nothing itself, resolves nothing itself,
 sorts nothing itself and writes nothing itself. Every semantic decision — which
 run is an LLM run, whether an id exists, what order rows come back in, whether a
 decision is legal, what gate follows — belongs to the service layer, which is
 the ONLY thing here that touches the database. This module issues no SQL at all.
 
+Candidate details and review history are INDEPENDENT RESOURCES: history is not
+folded into the candidate list, because a list of proposals and the audit trail
+of decisions made about one of them have different shapes, different volumes and
+different access patterns. For the same reason ``/reviews`` is a sub-resource of
+one candidate rather than a second ``/reviews`` namespace of its own.
+
 The review route delegates to ``llm_candidate_review_persistence_service``
 (P0-3B), which owns the row lock, the atomic review-record INSERT plus status
-UPDATE, and the commit/rollback. The transition vocabulary lives in the P0-3A
-contract; this layer merely maps its typed errors onto status codes.
+UPDATE, and the commit/rollback. The history route delegates to
+``llm_candidate_review_read_service`` (P0-3C2), which only ever SELECTs. The
+transition vocabulary lives in the P0-3A contract; this layer merely maps typed
+errors onto status codes.
 
 Why a separate router file rather than adding routes to
 ``knowledge_production``: that module is a PARKED, uncommitted workstream, and
@@ -51,7 +61,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
 from app.services import llm_candidate_read_service as read_service
 from app.services import llm_candidate_review_persistence_service as review_service
+from app.services import llm_candidate_review_read_service as review_read_service
 from app.services.llm_candidate_read_service import DiscoveryCandidateReadItem
+from app.services.llm_candidate_review_read_service import CandidateReviewHistoryItem
 
 router = APIRouter(prefix="/api/knowledge-production", tags=["Knowledge Production"])
 
@@ -111,6 +123,25 @@ class CandidateReviewResponse(BaseModel):
     next_gate: str
 
 
+class CandidateReviewHistoryResponse(BaseModel):
+    """One candidate's complete review history, in chronological order.
+
+    Same envelope as every other list in this family: ``items`` plus ``total``,
+    with ``total`` the count of THIS page (there is no pagination in this phase).
+    The item DTO lives with its read service, so the history's field semantics
+    have exactly one authority.
+
+    ``items`` is never truncated, deduplicated or reduced to the newest record —
+    see the read service. An empty list is a legitimate answer and means "this
+    candidate has not been reviewed yet", which is NOT the same as the candidate
+    being absent.
+    """
+
+    candidate_id: str
+    items: list[CandidateReviewHistoryItem]
+    total: int
+
+
 def _error_detail(code: str, message: str, **extra: Any) -> dict[str, Any]:
     """Structured error body, matching the app-wide {code, message} shape.
 
@@ -151,7 +182,13 @@ def _mapped_read_errors():
 
 @contextmanager
 def _mapped_review_errors():
-    """Translate P0-3B's typed review errors onto HTTP (the only place that mapping lives).
+    """Translate the review layer's typed errors onto HTTP (the only place that mapping lives).
+
+    Serves BOTH the review action (P0-3B) and the review history (P0-3C2), which
+    raise the SAME error classes on purpose: "candidate absent" and "wrong
+    discovery channel" mean the same thing to a reader as to a reviewer, so both
+    endpoints must fail identically rather than each owning a copy of the
+    mapping that could drift.
 
     The split is deliberate:
 
@@ -295,4 +332,41 @@ async def review_llm_candidate(
         reviewer_note=result.reviewer_note,
         created_at=result.created_at,
         next_gate=result.next_gate,
+    )
+
+
+@router.get(
+    "/candidates/{candidate_id}/reviews",
+    response_model=CandidateReviewHistoryResponse,
+)
+async def list_candidate_reviews(
+    candidate_id: str, db: AsyncSession = Depends(get_db)
+) -> CandidateReviewHistoryResponse:
+    """The complete review history of ONE LLM Discovery candidate.
+
+    A read-only counterpart to the review action above, over the same resource.
+    It issues SELECTs only: no record is appended, no status is moved, no run is
+    touched. Reading a history must never be a way to change one.
+
+    Chronological, earliest first, in full. The current transition contract
+    allows at most ONE review per candidate (a decided candidate cannot be
+    reviewed again, and nothing returns it to ``proposed``), so a normal
+    candidate has 0 or 1 records — but that is a fact about the transition
+    rules, not a limit of this endpoint, and nothing here encodes it.
+
+    Candidate details and review history are deliberately separate resources:
+    the candidate list endpoint does not carry review records, and this one
+    carries no candidate fields beyond the id it was asked about.
+
+    Errors: 404 unknown candidate — reported explicitly, never as an empty
+    history, because "no such candidate" and "not reviewed yet" are different
+    facts and a client would act on them differently. 409 the candidate exists
+    on another discovery channel, exactly as the review action reports it.
+    """
+    with _mapped_review_errors():
+        items = await review_read_service.list_reviews_for_candidate(
+            db, candidate_id=candidate_id
+        )
+    return CandidateReviewHistoryResponse(
+        candidate_id=candidate_id, items=items, total=len(items)
     )
