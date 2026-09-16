@@ -277,6 +277,35 @@ async def _seeded_run(h: Session, raw: dict[str, Any], *, finish: bool = True):
     return run_id, created
 
 
+async def _region_with_no_runs(h: Session) -> str | None:
+    """A BrainRegion that no discovery run has ever used, or None.
+
+    Resolved at RUN time rather than hardcoded. The isolated database holds the
+    real Left Hippocampus pilot run, so a region that is empty today may hold
+    candidates tomorrow; a literal id would silently stop being the fixture it
+    was chosen to be.
+    """
+    rows = await h.rows(
+        "SELECT e.entity_id FROM brain_regions b"
+        " JOIN kg_entities e ON e.entity_pk = b.entity_pk"
+        " WHERE b.entity_pk NOT IN ("
+        "   SELECT seed_region_pk FROM knowledge_discovery_runs)"
+        " ORDER BY e.entity_id LIMIT 1"
+    )
+    return rows[0]["entity_id"] if rows else None
+
+
+def _mine(body: dict[str, Any], run_ids: set[str]) -> list[dict[str, Any]]:
+    """Only the rows of the runs THIS test created.
+
+    The endpoint answers for the WHOLE region, and the region is shared with the
+    real pilot run, so `total` is legitimately larger than what the test made.
+    The envelope invariant (`total` == `len(items)`) is still asserted globally;
+    only the count of the test's own rows is scoped.
+    """
+    return [i for i in body["items"] if i["run_id"] in run_ids]
+
+
 async def _hostile_row(h: Session, *, run_pk: int, seed_pk: int, local_id: str) -> None:
     """A candidate under a run the writer would never produce one for."""
     from sqlalchemy import text
@@ -325,11 +354,14 @@ async def test_B_the_seed_endpoint_returns_candidates_across_runs(h, api):
     response = await api.get(SEED_URL.format(entity_id=SEED))
     assert response.status_code == 200
     body = response.json()
-    # 4 from the first run + 6 from the second: the endpoint spans runs.
-    assert body["total"] == 10
+    # The envelope is asserted whole — total IS the length of items, for the
+    # region, whatever else lives in the database.
     assert len(body["items"]) == body["total"]
-    assert {i["run_id"] for i in body["items"]} == {run_a, run_b}
-    assert {i["seed_entity_id"] for i in body["items"]} == {SEED}
+    # 4 from the first run + 6 from the second: the endpoint spans runs.
+    mine = _mine(body, {run_a, run_b})
+    assert len(mine) == 10
+    assert {i["run_id"] for i in mine} == {run_a, run_b}
+    assert {i["seed_entity_id"] for i in mine} == {SEED}
 
 
 # ===========================================================================
@@ -384,7 +416,13 @@ async def test_F_a_known_run_with_no_candidates_is_200_and_empty(h, api):
 
 @api_case
 async def test_G_a_known_seed_with_no_candidates_is_200_and_empty(h, api):
-    response = await api.get(SEED_URL.format(entity_id=SEED))
+    region = await _region_with_no_runs(h)
+    if region is None:
+        pytest.skip("no BrainRegion in the isolated database is free of runs")
+
+    # A region no run has used: 200 + [] is a fact about this read, not a bet
+    # that nobody else has written to the shared database.
+    response = await api.get(SEED_URL.format(entity_id=region))
     assert response.status_code == 200
     assert response.json() == {"items": [], "total": 0}
 
@@ -392,12 +430,14 @@ async def test_G_a_known_seed_with_no_candidates_is_200_and_empty(h, api):
 @api_case
 async def test_G2_a_literature_run_under_the_same_seed_contributes_nothing(h, api):
     llm_run, _ = await _seeded_run(h, _one_of_each(SEED))
-    _, lit_pk, seed_pk = await _new_run(h, discovery_type="LITERATURE_DISCOVERY")
+    lit_run, lit_pk, seed_pk = await _new_run(h, discovery_type="LITERATURE_DISCOVERY")
     await _hostile_row(h, run_pk=lit_pk, seed_pk=seed_pk, local_id="circuit_9")
 
     body = (await api.get(SEED_URL.format(entity_id=SEED))).json()
-    assert body["total"] == 4
-    assert {i["run_id"] for i in body["items"]} == {llm_run}
+    # Of the two runs this test created, only the LLM one contributes.
+    assert len(_mine(body, {llm_run, lit_run})) == 4
+    assert {i["run_id"] for i in _mine(body, {llm_run, lit_run})} == {llm_run}
+    assert not _mine(body, {lit_run})
 
 
 # ===========================================================================
@@ -475,20 +515,37 @@ async def test_J_a_GET_writes_nothing(h, api):
 
 @api_case
 async def test_J2_statement_count_does_not_grow_with_the_candidate_count(h, api):
-    """§8 — no candidate-level N+1 behind the response."""
+    """§8 — no candidate-level N+1 behind the response.
+
+    The constant is 4, not 2, because each read now opens with the two readiness
+    probes (P0-4C closeout). Those probes are catalogue lookups whose count does
+    not depend on any row, which is why the invariant this test is actually about
+    is asserted separately below: exactly ONE statement per request names
+    ``discovery_candidates``, whatever the row count.
+    """
+
+    def candidate_statements() -> int:
+        # "FROM discovery_candidates", not the bare name: the readiness probe
+        # mentions the table inside `to_regclass('public.discovery_candidates')`
+        # and is a catalogue lookup, not a read of the rows.
+        return sum("FROM discovery_candidates" in s for s in api.recorder.statements)
+
     small_run, small_n = await _seeded_run(h, _one_of_each(SEED))
     big_run, big_n = await _seeded_run(h, _two_regions(SEED))
 
     await api.get(RUN_URL.format(run_id=small_run))
     small = len(api.recorder.statements)
+    assert candidate_statements() == 1, "one candidate statement for 4 rows"
     await api.get(RUN_URL.format(run_id=big_run))
     big = len(api.recorder.statements)
+    assert candidate_statements() == 1, "still one for 6 rows"
 
     assert (small_n, big_n) == (4, 6), "the fixtures must differ in size"
-    assert small == big == 2, (small, big)
+    assert small == big == 4, (small, big)
 
     await api.get(SEED_URL.format(entity_id=SEED))
-    assert len(api.recorder.statements) == 2, "ten rows across two runs, two statements"
+    assert len(api.recorder.statements) == 4, "ten rows across two runs, four statements"
+    assert candidate_statements() == 1, "one candidate statement for ten rows"
 
 
 def _router_source() -> str:

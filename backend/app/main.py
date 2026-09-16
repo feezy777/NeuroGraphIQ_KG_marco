@@ -17,6 +17,7 @@ from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy import text
 
 from app.config import get_settings
+from app.services.llm_discovery_readiness_service import LlmDiscoveryDatabaseNotReady
 from app.routers import (
     paper_evidence_workbench,
     candidate,
@@ -125,6 +126,38 @@ async def sqlalchemy_exception_handler(_request: Request, exc: SQLAlchemyError) 
             },
         )
     return JSONResponse(status_code=503, content={"detail": _db_error_detail(exc)})
+
+
+# ---------------------------------------------------------------------------
+# Phase P0-4C.1 — LLM Discovery database readiness (409, environment precondition)
+# ---------------------------------------------------------------------------
+# Registered HERE rather than as an `except` branch in the Knowledge Production
+# router, which owns the execute route: that module is a parked, uncommitted
+# workstream (P0-3E.2C literature work), and appending to it would make two
+# independent phases land in one diff. A global handler is also the pattern this
+# module already uses for SQLAlchemyError above, and it keeps the mapping at the
+# web layer where the service stays framework-free.
+#
+# 409, not 502: nothing failed. The request never started — no run was created and
+# no model was called — so this is a statement about the DEPLOYMENT, and it must
+# not be reported as a provider or persistence failure.
+@app.exception_handler(LlmDiscoveryDatabaseNotReady)
+async def llm_discovery_database_not_ready_handler(
+    _request: Request, exc: LlmDiscoveryDatabaseNotReady
+) -> JSONResponse:
+    return JSONResponse(
+        status_code=409,
+        content={
+            "detail": {
+                "code": exc.code,
+                "message": exc.message,
+                # Bounded, public diagnostics: schema object names only. No
+                # credential, host, database URL or stack fragment is reachable.
+                "missing_tables": list(exc.missing_tables),
+                "missing_migrations": list(exc.missing_migrations),
+            }
+        },
+    )
 
 
 @app.get("/", response_class=HTMLResponse, include_in_schema=False)

@@ -311,9 +311,15 @@ async def _persist(h: Session, run_pk: int, seed_pk: int, raw: dict[str, Any]) -
     return summary.created
 
 
-async def _seed_with(h: Session, raw: dict[str, Any], *, finish: bool = True):
+async def _seed_with(
+    h: Session,
+    raw: dict[str, Any],
+    *,
+    finish: bool = True,
+    entity_id: str = SEED,
+):
     """Create one LLM run and persist `raw` into it. Returns (run_id, rows)."""
-    run_id, run_pk, seed_pk = await _new_run(h)
+    run_id, run_pk, seed_pk = await _new_run(h, entity_id=entity_id)
     created = await _persist(h, run_pk, seed_pk, raw)
     if finish:
         await _finish(h, run_id)
@@ -442,6 +448,40 @@ async def test_C_run_scoped_order_is_deterministic(h, svc):
     assert [i.candidate_id for i in again] == [i.candidate_id for i in items]
 
 
+def _mine(items, run_ids):
+    """Only the rows of the runs THIS test created.
+
+    The isolated database is shared with real, committed discovery runs (the
+    Left Hippocampus pilot's 68 candidates), so a seed-scoped read legitimately
+    returns rows this test never made. Asserting a database-wide total would
+    turn the test into a statement about the environment — "nobody else has
+    written here" — which is not what any of these tests are about. Asserting
+    about the test's OWN runs keeps it a statement about the code.
+
+    The service's ORDER is preserved by filtering, so chronology assertions
+    (newest run first) still mean exactly what they meant before.
+    """
+    wanted = set(run_ids)
+    return [i for i in items if i.run_id in wanted]
+
+
+async def _region_with_no_runs(h) -> str | None:
+    """A BrainRegion that no discovery run has ever used, or None.
+
+    Resolved at RUN time rather than hardcoded. The isolated database holds real
+    pilot runs, so a region that is empty today may hold candidates tomorrow; a
+    literal id would silently stop being the fixture it was chosen to be.
+    """
+    rows = await h.rows(
+        "SELECT e.entity_id FROM brain_regions b"
+        " JOIN kg_entities e ON e.entity_pk = b.entity_pk"
+        " WHERE b.entity_pk NOT IN ("
+        "   SELECT seed_region_pk FROM knowledge_discovery_runs)"
+        " ORDER BY e.entity_id LIMIT 1"
+    )
+    return rows[0]["entity_id"] if rows else None
+
+
 # ===========================================================================
 # D / E — seed-scoped read, across runs and in run chronology
 # ===========================================================================
@@ -451,9 +491,38 @@ async def test_D_seed_scoped_read_spans_every_llm_run_of_that_seed(h, svc):
     run_b, _ = await _seed_with(h, _two_of_each(SEED))
 
     items = await svc.list_candidates_for_seed(h.db, entity_id=SEED)
-    assert len(items) == 12, "4 from the first run + 8 from the second"
-    assert {i.run_id for i in items} == {run_a, run_b}
-    assert {i.seed_entity_id for i in items} == {SEED}
+    mine = _mine(items, {run_a, run_b})
+    assert len(mine) == 12, "4 from the first run + 8 from the second"
+    assert {i.run_id for i in mine} == {run_a, run_b}
+    assert {i.seed_entity_id for i in mine} == {SEED}
+
+
+@case
+async def test_D2_a_run_under_another_region_never_reaches_this_region(h, svc):
+    """The scope of a seed read is that SEED — not "every LLM candidate there is".
+
+    Scoping the neighbouring tests to their own runs gives up the global claim
+    that no OTHER run contributes. This asserts that claim directly, and soundly:
+    the run it must not see is one the test itself placed under a different
+    region, and that region is one no other run has ever used.
+    """
+    other = await _region_with_no_runs(h)
+    if other is None:
+        pytest.skip("no BrainRegion in the isolated database is free of runs")
+    assert other != SEED, "the two regions must differ, or this proves nothing"
+
+    elsewhere, elsewhere_rows = await _seed_with(h, _one_of_each(other), entity_id=other)
+    here, _ = await _seed_with(h, _one_of_each(SEED))
+    assert elsewhere_rows == 4
+
+    for_seed = await svc.list_candidates_for_seed(h.db, entity_id=SEED)
+    assert elsewhere not in {i.run_id for i in for_seed}
+    assert {i.run_id for i in for_seed if i.run_id == here} == {here}
+
+    # The mirror image: the other region reads back ONLY its own run, exactly.
+    for_other = await svc.list_candidates_for_seed(h.db, entity_id=other)
+    assert {i.run_id for i in for_other} == {elsewhere}
+    assert {i.seed_entity_id for i in for_other} == {other}
 
 
 @case
@@ -474,11 +543,12 @@ async def test_E_seed_scoped_read_shows_the_newest_run_first(h, svc):
         )
 
     items = await svc.list_candidates_for_seed(h.db, entity_id=SEED)
-    assert len(items) == 8
-    assert [i.run_id for i in items] == [newer] * 4 + [older] * 4
+    mine = _mine(items, {older, newer})
+    assert len(mine) == 8
+    assert [i.run_id for i in mine] == [newer] * 4 + [older] * 4
 
     # Within a run the order is still candidate_type then local_id.
-    assert [i.candidate_type for i in items[:4]] == [
+    assert [i.candidate_type for i in mine[:4]] == [
         "circuit", "connection", "function", "region"
     ]
 
@@ -537,9 +607,13 @@ async def test_K_seed_scoped_read_excludes_non_llm_runs(h, svc):
                       candidate_type="circuit", local_id="circuit_9")
 
     items = await svc.list_candidates_for_seed(h.db, entity_id=SEED)
-    assert len(items) == 4, "only the LLM run's candidates may appear"
-    assert {i.run_id for i in items} == {llm_run}
-    assert lit_run not in {i.run_id for i in items}
+    # Of the two runs THIS test created, only the LLM one may contribute: that
+    # is the boundary under test, and it is asserted without also claiming
+    # anything about runs the test did not create.
+    mine = _mine(items, {llm_run, lit_run})
+    assert len(mine) == 4, "only the LLM run's candidates may appear"
+    assert {i.run_id for i in mine} == {llm_run}
+    assert lit_run not in {i.run_id for i in mine}
 
 
 # ===========================================================================
@@ -547,7 +621,13 @@ async def test_K_seed_scoped_read_excludes_non_llm_runs(h, svc):
 # ===========================================================================
 @case
 async def test_I_a_known_brain_region_with_no_llm_candidates_is_empty(h, svc):
-    assert await svc.list_candidates_for_seed(h.db, entity_id=SEED) == []
+    region = await _region_with_no_runs(h)
+    if region is None:
+        pytest.skip("no BrainRegion in the isolated database is free of runs")
+
+    # A region no run has ever used: "empty" is a fact about this read, not a
+    # bet that nobody else has written to the shared database.
+    assert await svc.list_candidates_for_seed(h.db, entity_id=region) == []
 
 
 @case
@@ -617,7 +697,7 @@ async def test_M_the_query_count_does_not_grow_with_the_candidate_count(h, svc):
 
     seed_recorder = _RecordingSession(h.db)
     items = await svc.list_candidates_for_seed(seed_recorder, entity_id=SEED)
-    assert len(items) == 12
+    assert len(_mine(items, {small_run, big_run})) == 12
     assert len(seed_recorder.statements) == 2, "twelve rows, still two statements"
 
 

@@ -99,6 +99,13 @@ class _FakeDiscoveryDb:
         self.candidates: list[dict[str, Any]] = []
         self.candidate_keys: set[tuple[Any, str, str]] = set()
         self.other_writes: list[str] = []
+        # P0-4C.1 — the readiness shape. Defaults are the E2E database: both
+        # tables and gate7b_016 applied. A test flips one flag to present an
+        # unready database.
+        self.has_runs_table = True
+        self.has_candidates_table = True
+        self.has_migration_ledger = True
+        self.migration_applied = True
         self._t = datetime(2026, 9, 14, 12, 0, tzinfo=timezone.utc)
         self._run_pk = 0
         #: P0-1: make the run-key read itself fail, to exercise the
@@ -166,6 +173,33 @@ class _FakeSession:
         sql = " ".join(str(stmt).split())
         p = dict(params or {})
         self.statements.append(sql)
+
+        # P0-4C.1 — the readiness guard runs BEFORE anything else in
+        # `execute_llm_discovery`, so the fake must answer its catalogue probes.
+        # Defaults describe a READY database (the E2E shape), which is the state
+        # every test below assumes; the flags let a test present the unready one.
+        if sql.startswith("SELECT to_regclass("):
+            return _FakeResult(
+                rows=[
+                    {
+                        # Keyed by the TABLE'S OWN NAME, matching the SQL aliases.
+                        "knowledge_discovery_runs": (
+                            "knowledge_discovery_runs" if self.db.has_runs_table else None
+                        ),
+                        "discovery_candidates": (
+                            "discovery_candidates" if self.db.has_candidates_table else None
+                        ),
+                        "schema_migrations": (
+                            "schema_migrations" if self.db.has_migration_ledger else None
+                        ),
+                    }
+                ]
+            )
+
+        if sql.startswith("SELECT filename FROM infra.schema_migrations"):
+            return _FakeResult(
+                rows=[{"filename": p.get("filename")}] if self.db.migration_applied else []
+            )
 
         if sql.startswith("SELECT b.entity_pk FROM brain_regions"):
             return _FakeResult(scalar=self.db.seeds.get(p.get("entity_id")))

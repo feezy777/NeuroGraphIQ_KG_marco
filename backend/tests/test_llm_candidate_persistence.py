@@ -468,10 +468,16 @@ async def test_E_the_same_local_id_in_two_runs_is_two_proposals(h, p):
     )
 
     assert summary_b.created == 4, "a second run's identical labels are new proposals"
+    # Scoped to the two runs THIS test created: `circuit_1` is a run-local label,
+    # and the shared isolated database also holds the real pilot run, which has
+    # a `circuit_1` of its own. Counting globally would make this a statement
+    # about who else has run, not about run-local scoping.
     circuit_rows = await h.rows(
         "SELECT discovery_run_pk FROM discovery_candidates"
         " WHERE candidate_type = 'circuit' AND local_id = 'circuit_1'"
-        " ORDER BY discovery_run_pk"
+        "   AND discovery_run_pk IN (:a, :b)"
+        " ORDER BY discovery_run_pk",
+        a=run_a, b=run_b,
     )
     assert len(circuit_rows) == 2
     assert {int(r["discovery_run_pk"]) for r in circuit_rows} == {run_a, run_b}

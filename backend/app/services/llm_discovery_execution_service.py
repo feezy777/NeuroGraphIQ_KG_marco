@@ -51,6 +51,7 @@ from app.schemas.llm_discovery_execution import (
 )
 from app.services import knowledge_discovery_run_lifecycle_service as lifecycle
 from app.services import llm_candidate_persistence_service as candidate_persistence
+from app.services import llm_discovery_readiness_service as readiness
 from app.services.llm_discovery_parser import parse_llm_discovery_response
 from app.services.llm_discovery_seed_service import build_discovery_input
 from app.services.llm_providers.base import ProviderNotConfiguredError
@@ -263,10 +264,21 @@ async def execute_llm_discovery(
     COMPLETED, so a COMPLETED/CANDIDATES_FOUND run always has its proposals
     stored.
 
-    Raises ``DiscoveryRunNotFound`` (unknown seed), ``DiscoveryRunConflict``
-    (an active run already exists) or ``LlmDiscoveryExecutionError`` (the run
-    was created, started and then FAILED).
+    Raises ``LlmDiscoveryDatabaseNotReady`` before anything happens at all when
+    the database lacks the candidate staging shape, ``DiscoveryRunNotFound``
+    (unknown seed), ``DiscoveryRunConflict`` (an active run already exists) or
+    ``LlmDiscoveryExecutionError`` (the run was created, started and then
+    FAILED).
     """
+    # 0. THE DATABASE MUST BE ABLE TO STORE THE RESULT (P0-4C.1). This is the
+    #    first thing that happens, before the seed is read, before a run row
+    #    exists and before any model is called: the candidate staging table is
+    #    written LAST, so without this check a database lacking it produces a
+    #    paid provider call and a permanent FAILED run instead of an answer.
+    #    Raising here costs nothing at all — no run, no request, no parse, no
+    #    storage attempt.
+    await readiness.require_llm_discovery_database_readiness(session)
+
     # 1. The seed must exist and be usable BEFORE a run is created, so an
     #    unusable seed cannot leave an orphaned FAILED run behind.
     seed = await build_discovery_input(session, entity_id)

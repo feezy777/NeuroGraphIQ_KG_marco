@@ -45,6 +45,18 @@ exists on a different discovery route. A scope that exists but holds no
 candidates is 200 with an empty list — "nothing proposed yet" is a fact about
 the scope, not a missing resource, and it must never be reported as 404.
 
+Database readiness (closeout of P0-4C.1): both candidate READS first ask
+``llm_discovery_readiness_service`` whether this database is enabled for
+discovery candidates, and answer 409 ``DISCOVERY_DATABASE_NOT_READY`` when it is
+not. Without that check the read is a `SELECT ... FROM discovery_candidates` on a
+database that has no such table, which raises `UndefinedTable` — an error the
+app-wide SQLAlchemy handler reports as 503 `DATABASE_UNAVAILABLE`, i.e. "the
+database is down". It is not down, and telling an operator to check PostgreSQL
+and DATABASE_URL sends them after a fault that does not exist. The condition is a
+DEPLOYMENT fact, so it is answered before the query is built and mapped by the
+app-level handler registered for it in ``main.py`` (one authority for that
+mapping, shared with the execute route).
+
 No secrets, no raw model response, no reasoning content, no prompt and no
 provider payload are reachable from the DTO, so none can leave through here.
 """
@@ -62,6 +74,7 @@ from app.database import get_db
 from app.services import llm_candidate_read_service as read_service
 from app.services import llm_candidate_review_persistence_service as review_service
 from app.services import llm_candidate_review_read_service as review_read_service
+from app.services import llm_discovery_readiness_service as readiness_service
 from app.services.llm_candidate_read_service import DiscoveryCandidateReadItem
 from app.services.llm_candidate_review_read_service import CandidateReviewHistoryItem
 
@@ -249,9 +262,16 @@ async def list_run_llm_candidates(
     reported by the service as "not found" rather than validated again here, so
     there is exactly one place that decides what an unidentifiable run means.
 
-    404 unknown run · 409 the run is not an LLM_DISCOVERY run · 200 + [] for a
-    known run that proposed nothing.
+    The readiness guard runs FIRST — before the run is looked up, not merely
+    before the candidate query. On a database with no candidate table neither
+    "this run has no candidates" nor "no such run" is a true answer, so the
+    question is answered before either is asked.
+
+    404 unknown run · 409 not an LLM_DISCOVERY run, or this database is not
+    enabled for discovery candidates · 200 + [] for a known run that proposed
+    nothing.
     """
+    await readiness_service.require_llm_discovery_database_readiness(db)
     with _mapped_read_errors():
         items = await read_service.list_candidates_for_run(db, run_id=run_id)
     # No sort, no filter, no re-shaping: the order the service chose IS the
@@ -270,10 +290,16 @@ async def list_brain_region_llm_candidates(
 
     Spans runs, newest run first, exactly as the service ordered them.
 
-    404 unknown BrainRegion · 200 + [] for a known region with no LLM
-    candidates. Literature runs are excluded by the service, so a
-    LITERATURE_DISCOVERY run under the same seed contributes nothing here.
+    The readiness guard runs FIRST, as on the run-scoped read: a database that
+    cannot store candidates cannot answer for this region either, and the 409 is
+    the honest report of that rather than an empty pool.
+
+    404 unknown BrainRegion · 409 this database is not enabled for discovery
+    candidates · 200 + [] for a known region with no LLM candidates. Literature
+    runs are excluded by the service, so a LITERATURE_DISCOVERY run under the
+    same seed contributes nothing here.
     """
+    await readiness_service.require_llm_discovery_database_readiness(db)
     with _mapped_read_errors():
         items = await read_service.list_candidates_for_seed(db, entity_id=entity_id)
     return LlmCandidateListResponse(items=items, total=len(items))
