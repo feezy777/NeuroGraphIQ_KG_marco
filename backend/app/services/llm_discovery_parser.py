@@ -14,12 +14,18 @@ Repair policy (deliberate and narrow):
   * ALLOWED, because it changes formatting only: BOM / control-char cleanup,
     markdown code-fence removal, whitespace, and extracting the single
     unambiguous top-level JSON object from surrounding prose.
+  * ALLOWED, and the one exception that is not formatting: an UNKNOWN key on a
+    region whose value is null is dropped before validation. The rule is
+    Region-only and null-only — see ``_strip_null_region_extras`` — and the
+    drop is reported as a warning, never made silently.
   * FORBIDDEN, because it would manufacture scientific content: inventing a
     missing connection (the legacy `no_connections` injection), inferring
     direction, creating region candidates, replacing missing circuit members,
     fabricating source hints, guessing canonical ids, or rewriting an enum.
 
-A structurally invalid response FAILS. It is never patched into validity.
+A structurally invalid response FAILS. It is never patched into validity. What
+the second bullet permits is the removal of a key that says nothing; every key
+that says anything at all is still the model's to get right, and still fails.
 """
 from __future__ import annotations
 
@@ -31,6 +37,7 @@ from app.schemas.llm_discovery import (
     DiscoveryWarningCode,
     LlmDiscoveryParseResult,
     LlmDiscoveryResponse,
+    RegionCandidate,
 )
 from app.services.llm_json_utils import extract_json_object_from_text
 
@@ -50,6 +57,80 @@ def _warn(
     code: DiscoveryWarningCode, message: str, local_id: str | None = None
 ) -> DiscoveryWarning:
     return DiscoveryWarning(code=code, message=message, local_id=local_id)
+
+
+#: The keys a RegionCandidate declares. Read FROM the contract rather than
+#: restated, so the schema stays the single authority for what a region may
+#: carry; this set is used only to decide which keys are UNKNOWN.
+_REGION_FIELDS: frozenset[str] = frozenset(RegionCandidate.model_fields)
+
+
+def _strip_null_region_extras(
+    parsed: object,
+) -> tuple[object, list[DiscoveryWarning]]:
+    """Drop UNKNOWN, null-valued keys from ``regions[]`` — and nothing else.
+
+    Why this exists
+    ---------------
+    Under RECALL FIRST a region is mostly a SUPPORTING REFERENCE: circuits and
+    connections point at regions by local_id, so regions exist to make that
+    topology expressible. A live Round-4 continuation pass was thrown away in
+    full — an otherwise valid response with ~15 circuits — because ONE region
+    carried one unknown key set to null. An empty auxiliary key is not worth a
+    whole round.
+
+    Why it is this narrow
+    ---------------------
+    A key is dropped only when BOTH hold: it is not a RegionCandidate field,
+    AND its value is None. An unknown key holding any content — a string, 0,
+    false, a list — is left exactly where the model put it and still fails
+    ``extra="forbid"``, because it carries meaning this contract does not
+    understand and silently discarding meaning is precisely what the FORBIDDEN
+    list above rules out. Connections, functions and circuits are not touched
+    at all: only Region was relaxed, and only for null.
+
+    The drop is reported, not silent. Strictness exists to surface drift, so
+    trading a loud failure for a quiet deletion would be a bad deal; the caller
+    gets a warning naming the region and the field.
+    """
+    if not isinstance(parsed, dict):
+        return parsed, []
+    regions = parsed.get("regions")
+    if not isinstance(regions, list):
+        return parsed, []
+
+    warnings: list[DiscoveryWarning] = []
+    cleaned: list[object] = []
+    changed = False
+    for region in regions:
+        if not isinstance(region, dict):
+            cleaned.append(region)
+            continue
+        dropped = [k for k, v in region.items() if k not in _REGION_FIELDS and v is None]
+        if not dropped:
+            cleaned.append(region)
+            continue
+        cleaned.append({k: v for k, v in region.items() if k not in dropped})
+        changed = True
+        raw_id = region.get("local_id")
+        local_id = raw_id if isinstance(raw_id, str) else None
+        for key in dropped:
+            # `OTHER` because DiscoveryWarningCode is the MODEL's vocabulary and
+            # is rendered into the prompt: a parser-only code would extend a
+            # frozen vocabulary and teach the model to emit it. The stable token
+            # lives in the message instead.
+            warnings.append(
+                _warn(
+                    "OTHER",
+                    f"REGION_NULL_EXTRA_IGNORED: region dropped unknown "
+                    f"null-valued field '{key}'",
+                    local_id,
+                )
+            )
+
+    if not changed:
+        return parsed, []
+    return {**parsed, "regions": cleaned}, warnings
 
 
 def _duplicate_local_ids(response: LlmDiscoveryResponse) -> list[str]:
@@ -198,6 +279,11 @@ def parse_llm_discovery_response(
         if parsed is None:
             return LlmDiscoveryParseResult(error=f"{ERR_INVALID_JSON}: {err}")
 
+    # Narrow pre-validation normalization: unknown NULL extras on regions only.
+    # Non-null unknowns survive this and are still rejected by the strict
+    # schema below, which remains the authority.
+    parsed, null_extra_warnings = _strip_null_region_extras(parsed)
+
     try:
         response = LlmDiscoveryResponse.model_validate(parsed)
     except Exception as exc:  # pydantic ValidationError (schema-shape failure)
@@ -219,5 +305,5 @@ def parse_llm_discovery_response(
 
     return LlmDiscoveryParseResult(
         data=response,
-        validation_warnings=[*response.warnings, *warnings],
+        validation_warnings=[*response.warnings, *null_extra_warnings, *warnings],
     )

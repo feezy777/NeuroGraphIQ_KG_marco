@@ -1529,3 +1529,265 @@ def test_structural_the_boundary_rule_is_untouched_by_this_repair():
     from app.llm_discovery_views import CIRCUIT_BOUNDARY_RULE
 
     assert "Projection != Connection != Pathway != Circuit" in CIRCUIT_BOUNDARY_RULE
+
+
+# ===========================================================================
+# Region-only tolerance: an UNKNOWN key whose value is null
+# ===========================================================================
+# A live Round-4 continuation pass was discarded in full — an otherwise valid
+# response with ~15 circuits — because ONE region carried one invented key set
+# to null (`regions.7.relation_note`, extra_forbidden, input_value=None). Under
+# RECALL FIRST that trade is wrong: a region is mostly a supporting reference
+# for circuit/connection topology, and an empty auxiliary key says nothing.
+#
+# These tests pin both halves of that judgement: the tolerance, AND its
+# narrowness. Every key that carries ANY content still fails, other candidate
+# types are untouched, and nothing was added to the frozen contract.
+def _live_round_4_payload() -> dict[str, Any]:
+    """Reproduce the exact response the provider returned and the parser refused.
+
+    Eight regions — so the failing one really is index 7 — with the eighth
+    carrying the invented `relation_note`, plus the topology that makes the rest
+    of the response valid.
+    """
+    regions = [region(f"region_{i}", name=f"Region {i}") for i in range(1, 9)]
+    regions[7]["relation_note"] = None
+    return payload(
+        summary="round 4 continuation pass",
+        regions=regions,
+        connections=[
+            connection("connection_1", source_ref="region_1", target_ref="region_2")
+        ],
+        circuits=[
+            circuit(
+                "circuit_1",
+                region_refs=["region_1", "region_2"],
+                connection_refs=["connection_1"],
+            )
+        ],
+    )
+
+
+def _ignored(parsed: parser.LlmDiscoveryParseResult) -> list[Any]:
+    return [
+        w for w in parsed.validation_warnings
+        if "REGION_NULL_EXTRA_IGNORED" in w.message
+    ]
+
+
+def test_round_4_live_failure_now_parses():
+    """§9 — the live failure, reproduced. Before the repair this whole response
+    was refused and ~15 circuits were lost with it."""
+    result = parse(_live_round_4_payload())
+    assert result.ok, result.error
+    assert len(result.data.regions) == 8
+    assert result.data.regions[7].local_id == "region_8"
+    assert result.data.regions[7].name == "Region 8"
+    assert len(result.data.circuits) == 1, "the circuits were never the problem"
+
+
+def test_the_ignored_key_is_gone_from_the_parsed_region():
+    """Dropped means dropped: it must not reappear as a canonical field."""
+    result = parse(_live_round_4_payload())
+    assert "relation_note" not in result.data.regions[7].model_dump()
+    assert not hasattr(result.data.regions[7], "relation_note")
+    # ... while the fields it DOES declare survive intact.
+    assert result.data.regions[7].confidence == 0.6
+    assert result.data.regions[7].relation_to_seed == "UNKNOWN"
+
+
+def test_the_drop_is_reported_not_silent():
+    """Strictness exists to surface drift; a quiet deletion would trade one
+    failure for a worse one."""
+    result = parse(_live_round_4_payload())
+    reported = _ignored(result)
+    assert len(reported) == 1
+    assert reported[0].local_id == "region_8"
+    assert "relation_note" in reported[0].message
+
+
+def test_the_tolerance_applies_on_the_raw_TEXT_path_too():
+    """The live path passes `response.raw_text`, not a dict."""
+    result = parse_text(json.dumps(_live_round_4_payload()))
+    assert result.ok, result.error
+    assert len(result.data.regions) == 8
+
+
+# --- A / B: the tolerated shape ---------------------------------------------
+def test_tolerance_a_region_unknown_field_null_passes():
+    data = region("region_1")
+    data["relation_note"] = None
+    result = parse(payload(regions=[data]))
+    assert result.ok, result.error
+    assert not _ignored(result) == [], "the drop must be reported"
+
+
+def test_tolerance_b_two_unknown_null_fields_pass():
+    data = region("region_1")
+    data["relation_note"] = None
+    data["another_invented_field"] = None
+    result = parse(payload(regions=[data]))
+    assert result.ok, result.error
+    assert len(_ignored(result)) == 2
+
+
+# --- C / D / E: content is never silently discarded -------------------------
+def test_tolerance_c_region_unknown_field_non_null_string_fails():
+    data = region("region_1")
+    data["relation_note"] = "CA3 receives strong input"
+    result = parse(payload(regions=[data]))
+    assert not result.ok, "an unknown field carrying meaning must not be dropped"
+    assert "extra_forbidden" in result.error
+
+
+def test_tolerance_d_region_unknown_field_zero_fails():
+    """0 is falsy but it is not null — a falsy check would have eaten it."""
+    data = region("region_1")
+    data["invented_field"] = 0
+    result = parse(payload(regions=[data]))
+    assert not result.ok
+    assert "extra_forbidden" in result.error
+
+
+def test_tolerance_e_region_unknown_field_false_fails():
+    data = region("region_1")
+    data["invented_field"] = False
+    result = parse(payload(regions=[data]))
+    assert not result.ok
+    assert "extra_forbidden" in result.error
+
+
+@pytest.mark.parametrize("value", [123, "", [], {}, ["x"], {"a": 1}])
+def test_tolerance_no_other_unknown_value_is_dropped(value):
+    data = region("region_1")
+    data["invented_field"] = value
+    assert not parse(payload(regions=[data])).ok, value
+
+
+# --- F / G / H: the tolerance is Region-only --------------------------------
+def test_tolerance_f_circuit_unknown_null_field_still_fails():
+    data = circuit("circuit_1", region_refs=["region_1", "region_2"])
+    data["invented_field"] = None
+    result = parse(payload(
+        regions=[region("region_1"), region("region_2")], circuits=[data]
+    ))
+    assert not result.ok
+    assert "extra_forbidden" in result.error
+
+
+def test_tolerance_g_connection_unknown_null_field_still_fails():
+    data = connection("connection_1")
+    data["invented_field"] = None
+    result = parse(payload(regions=[region("region_1")], connections=[data]))
+    assert not result.ok
+    assert "extra_forbidden" in result.error
+
+
+def test_tolerance_h_function_unknown_null_field_still_fails():
+    data = function("function_1")
+    data["invented_field"] = None
+    result = parse(payload(functions=[data]))
+    assert not result.ok
+    assert "extra_forbidden" in result.error
+
+
+# --- I / J: required region fields are untouched ----------------------------
+def test_tolerance_i_region_missing_name_still_fails():
+    data = region("region_1")
+    del data["name"]
+    assert not parse(payload(regions=[data])).ok
+
+
+def test_tolerance_j_region_missing_local_id_still_fails():
+    data = region("region_1")
+    del data["local_id"]
+    assert not parse(payload(regions=[data])).ok
+
+
+def test_a_KNOWN_region_field_set_to_null_is_not_dropped():
+    """The tolerance covers UNKNOWN keys. `name` is declared, so nulling it is a
+    missing value — not an empty extra — and still fails."""
+    data = region("region_1")
+    data["name"] = None
+    assert not parse(payload(regions=[data])).ok
+
+
+def test_a_region_local_id_of_the_WRONG_TYPE_is_not_dropped():
+    """Only null is tolerated. Every other invalid value still reaches the
+    schema and is judged there."""
+    data = region("region_1")
+    data["local_id"] = None
+    result = parse(payload(regions=[data]))
+    assert not result.ok
+
+
+# --- K / L: reference integrity is untouched --------------------------------
+def test_tolerance_k_dangling_region_ref_still_fails():
+    result = parse(payload(
+        regions=[region("region_1")],
+        circuits=[circuit("circuit_1", region_refs=["region_1", "region_404"])],
+    ))
+    assert not result.ok
+    assert "region_404" in str(result.error)
+
+
+def test_tolerance_l_dangling_connection_ref_still_fails():
+    result = parse(payload(
+        regions=[region("region_1"), region("region_2")],
+        circuits=[circuit(
+            "circuit_1",
+            region_refs=["region_1", "region_2"],
+            connection_refs=["connection_404"],
+        )],
+    ))
+    assert not result.ok
+    assert "connection_404" in str(result.error)
+
+
+def test_a_dangling_ref_is_still_fatal_EVEN_WITH_a_null_extra_present():
+    """The two rules must not interact: dropping an empty key must not soften
+    the reference check that runs after it.
+
+    The null extra goes on the REGION (where it is tolerated) and the dangling
+    ref on the circuit — otherwise the schema rejection would mask the
+    reference error and the test would prove nothing about their interaction.
+    """
+    tolerated_region = region("region_1")
+    tolerated_region["invented_field"] = None
+    result = parse(payload(
+        regions=[tolerated_region],
+        circuits=[circuit("circuit_1", region_refs=["region_1", "region_404"])],
+    ))
+    assert not result.ok
+    assert "region_404" in str(result.error)
+
+
+# --- the contract was NOT widened -------------------------------------------
+def test_relation_note_was_NOT_added_to_the_schema():
+    """§6 — the model invented the field. Promoting every invention to a formal
+    field is how a frozen contract drifts. Only ONE of them is even reachable
+    as a shape the model might repeat, and it is not this one."""
+    for name in ("relation_note", "invented_field", "another_invented_field"):
+        assert name not in RegionCandidate.model_fields, name
+
+
+def test_every_discovery_model_is_STILL_strict():
+    """§4/§5 — the repair is a pre-validation drop, not a relaxation. Every
+    model still forbids extras, so a NON-null unknown still fails everywhere."""
+    for model in (
+        RegionCandidate,
+        CircuitCandidate,
+        ConnectionCandidate,
+        FunctionCandidate,
+        LlmDiscoveryResponse,
+    ):
+        assert model.model_config["extra"] == "forbid", model.__name__
+
+
+def test_the_tolerance_did_not_touch_the_warning_vocabulary():
+    """The parser reports the drop through the EXISTING channel. It deliberately
+    did not mint a new DiscoveryWarningCode: that vocabulary is the MODEL's and
+    is rendered into the prompt, so a parser-only code would both extend a frozen
+    vocabulary and teach the model to emit it."""
+    assert len(DISCOVERY_WARNING_CODES) == 7
+    assert "REGION_NULL_EXTRA_IGNORED" not in DISCOVERY_WARNING_CODES
