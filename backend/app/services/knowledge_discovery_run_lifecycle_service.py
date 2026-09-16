@@ -157,13 +157,31 @@ async def _lock_run_or_404(session: AsyncSession, run_id: str) -> Mapping[str, A
     return row
 
 
+def _json(value: Any) -> str:
+    import json
+
+    return json.dumps(value, ensure_ascii=False, default=str)
+
+
 async def _apply(
     session: AsyncSession,
     locked: Mapping[str, Any],
     set_sql: str,
     params: Mapping[str, Any],
+    provenance: Mapping[str, Any] | None = None,
 ) -> DiscoveryRunItem:
-    """Apply one SET clause to the already-locked row and commit the transaction."""
+    """Apply one SET clause to the already-locked row and commit the transaction.
+
+    ``provenance`` is MERGED into ``provenance_json`` rather than replacing it,
+    so a run accumulates what each stage learned about it. Passing nothing
+    leaves the column exactly as it was — the previous behaviour.
+    """
+    if provenance:
+        set_sql += (
+            ", provenance_json = COALESCE(provenance_json, '{}'::jsonb)"
+            " || CAST(:provenance_json AS jsonb)"
+        )
+        params = {**params, "provenance_json": _json(provenance)}
     updated = (
         await session.execute(
             text(
@@ -197,6 +215,8 @@ async def create_discovery_run(
     model_name: str | None = None,
     prompt_key: str | None = None,
     prompt_version: str | None = None,
+    query_strategy_version: str | None = None,
+    provenance: Mapping[str, Any] | None = None,
 ) -> DiscoveryRunItem:
     """Create a QUEUED run for one BrainRegion seed.
 
@@ -222,9 +242,11 @@ async def create_discovery_run(
                 text(
                     "INSERT INTO knowledge_discovery_runs"
                     " (seed_region_pk, discovery_type, status, outcome, started_at,"
-                    "  finished_at, provider, model_name, prompt_key, prompt_version)"
+                    "  finished_at, provider, model_name, prompt_key, prompt_version,"
+                    "  query_strategy_version, provenance_json)"
                     " VALUES (:seed_region_pk, :discovery_type, 'QUEUED', NULL, NULL, NULL,"
-                    "  :provider, :model_name, :prompt_key, :prompt_version)"
+                    "  :provider, :model_name, :prompt_key, :prompt_version,"
+                    "  :query_strategy_version, CAST(:provenance_json AS jsonb))"
                     " RETURNING " + _RETURN_COLUMNS
                 ),
                 {
@@ -234,6 +256,8 @@ async def create_discovery_run(
                     "model_name": model_name,
                     "prompt_key": prompt_key,
                     "prompt_version": prompt_version,
+                    "query_strategy_version": query_strategy_version,
+                    "provenance_json": _json(provenance or {}),
                 },
             )
         ).mappings().one()
@@ -272,7 +296,8 @@ async def start_discovery_run(session: AsyncSession, run_id: str) -> DiscoveryRu
 
 
 async def complete_discovery_run(
-    session: AsyncSession, run_id: str, outcome: str
+    session: AsyncSession, run_id: str, outcome: str, *,
+    provenance: Mapping[str, Any] | None = None,
 ) -> DiscoveryRunItem:
     """RUNNING -> COMPLETED with a scientific outcome.
 
@@ -298,11 +323,13 @@ async def complete_discovery_run(
         raise _terminal_conflict(row, "complete")
     if row["status"] == "QUEUED":
         raise DiscoveryRunConflict("RUN_NOT_STARTED", "a run must be started before it can complete")
-    return await _apply(session, row, _SET_COMPLETE, {"outcome": outcome})
+    return await _apply(session, row, _SET_COMPLETE, {"outcome": outcome},
+                        provenance=provenance)
 
 
 async def fail_discovery_run(
-    session: AsyncSession, run_id: str, *, error_code: str | None, error_message: str
+    session: AsyncSession, run_id: str, *, error_code: str | None, error_message: str,
+    provenance: Mapping[str, Any] | None = None,
 ) -> DiscoveryRunItem:
     """QUEUED | RUNNING -> FAILED with an explanation.
 
@@ -323,6 +350,7 @@ async def fail_discovery_run(
         row,
         _SET_FAIL,
         {"error_code": error_code, "error_message": error_message},
+        provenance=provenance,
     )
 
 

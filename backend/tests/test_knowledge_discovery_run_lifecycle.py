@@ -11,6 +11,8 @@ constraints, so a transition that would violate them fails here too.
 from __future__ import annotations
 
 import ast
+import asyncio
+import json
 import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -165,7 +167,12 @@ class _FakeSession:
                 "model_name": None,
                 "prompt_key": None,
                 "prompt_version": None,
-                "query_strategy_version": None,
+                # Recorded from the statement's own parameters. A fake that
+                # always answered None could not tell a plain run from one that
+                # carried a strategy or a provenance object, which is exactly
+                # what the generic capability adds.
+                "query_strategy_version": p.get("query_strategy_version"),
+                "provenance_json": p.get("provenance_json"),
                 "created_by": None,
                 "created_at": self.db.tick(),
                 "started_at": None,
@@ -206,6 +213,16 @@ class _FakeSession:
                 row["finished_at"] = self.db.tick()
             else:  # pragma: no cover - guards against an unhandled SET clause
                 raise AssertionError(f"unhandled SET clause: {sql}")
+            # The generic provenance capability: when the statement carries the
+            # merge clause, MERGE — do not replace. `||` on jsonb is a shallow
+            # merge in PostgreSQL, and modelling it as an overwrite here would
+            # make a test pass that the real database would fail.
+            if "provenance_json = COALESCE" in sql:
+                incoming = json.loads(p["provenance_json"])
+                current = row.get("provenance_json")
+                merged = json.loads(current) if current else {}
+                merged.update(incoming)
+                row["provenance_json"] = json.dumps(merged)
             self._check_invariants(row)
             return _FakeResult(rows=[row])
 
@@ -826,3 +843,140 @@ def test_migration_declares_the_three_lifecycle_checks():
         assert name in sql
     # the state machine is NOT expressed in SQL
     assert "RUNNING' THEN 'COMPLETED" not in sql.upper()
+
+
+# ===========================================================================
+# Generic run provenance — the capability, independent of any caller
+# ===========================================================================
+# A run may carry two extra facts: which STRATEGY produced it, and a structured
+# PROVENANCE object. Both are generic — this file asserts them as such, with no
+# view, no literature and no discovery domain in sight.
+#
+# They are exercised through the SERVICE, not the HTTP routes: the public API
+# deliberately refuses client-supplied execution provenance (asserted elsewhere
+# in this file), so the capability is server-internal and its contract lives
+# here.
+def _create(session, **kw):
+    return asyncio.run(
+        lifecycle.create_discovery_run(
+            session, entity_id=SEED_ENTITY, discovery_type="LLM_DISCOVERY", **kw
+        )
+    )
+
+
+def _advance(session, run_id: str) -> None:
+    asyncio.run(lifecycle.start_discovery_run(session, run_id))
+
+
+def _stored(db, run_id: str) -> dict[str, Any]:
+    return next(r for r in db.runs if r["run_id"] == run_id)
+
+
+def _provenance(db, run_id: str) -> dict[str, Any]:
+    raw = _stored(db, run_id).get("provenance_json")
+    return json.loads(raw) if raw else {}
+
+
+def test_A_a_create_without_provenance_is_unchanged(session, db):
+    """The capability is OPTIONAL: a caller that says nothing gets what it always got."""
+    run = _create(session)
+    row = _stored(db, run.run_id)
+
+    assert row["status"] == "QUEUED"
+    assert row["query_strategy_version"] is None
+    # The assertion is on the CLAIM, not the encoding: the create path writes an
+    # empty JSON object rather than SQL NULL, and an empty object asserts
+    # nothing. What must never appear is provenance content nobody supplied.
+    assert _provenance(db, run.run_id) == {}
+    # ...and the run is otherwise a perfectly normal run.
+    _advance(session, run.run_id)
+    assert _stored(db, run.run_id)["status"] == "RUNNING"
+    assert _provenance(db, run.run_id) == {}, "a transition invents nothing either"
+
+
+def test_B_query_strategy_version_is_written_and_read_back(session, db):
+    run = _create(session, query_strategy_version="SOME_STRATEGY_V1/PART_A")
+
+    assert _stored(db, run.run_id)["query_strategy_version"] == "SOME_STRATEGY_V1/PART_A"
+    # It is returned on the created DTO too, so a caller sees what it stored.
+    assert run.query_strategy_version == "SOME_STRATEGY_V1/PART_A"
+
+
+def test_C_create_provenance_lands_in_provenance_json(session, db):
+    run = _create(session, provenance={"alpha": "one", "beta": 2})
+
+    assert _provenance(db, run.run_id) == {"alpha": "one", "beta": 2}
+
+
+def test_D_complete_MERGES_and_does_not_overwrite(session, db):
+    """A run ACCUMULATES what each stage learned — it is not replaced."""
+    run = _create(session, provenance={"from_create": "kept"})
+    _advance(session, run.run_id)
+    asyncio.run(
+        lifecycle.complete_discovery_run(
+            session, run.run_id, "CANDIDATES_FOUND",
+            provenance={"from_complete": "added"},
+        )
+    )
+
+    assert _provenance(db, run.run_id) == {
+        "from_create": "kept",     # survived
+        "from_complete": "added",  # merged in
+    }
+
+
+def test_E_fail_MERGES_and_leaves_unrelated_keys_alone(session, db):
+    run = _create(session, provenance={"strategy": "S", "unrelated": {"deep": [1, 2]}})
+    _advance(session, run.run_id)
+    asyncio.run(
+        lifecycle.fail_discovery_run(
+            session, run.run_id, error_code="SOME_CODE", error_message="failed",
+            provenance={"failure_stage": "provider"},
+        )
+    )
+
+    merged = _provenance(db, run.run_id)
+    assert merged["strategy"] == "S"
+    assert merged["unrelated"] == {"deep": [1, 2]}, "an unrelated value must survive"
+    assert merged["failure_stage"] == "provider"
+    assert _stored(db, run.run_id)["status"] == "FAILED"
+
+
+def test_E2_a_merge_overwrites_only_the_keys_it_carries(session, db):
+    run = _create(session, provenance={"shared": "old", "only_create": "kept"})
+    _advance(session, run.run_id)
+    asyncio.run(
+        lifecycle.complete_discovery_run(
+            session, run.run_id, "CANDIDATES_FOUND", provenance={"shared": "new"}
+        )
+    )
+
+    merged = _provenance(db, run.run_id)
+    assert merged["shared"] == "new", "a colliding key takes the newer value"
+    assert merged["only_create"] == "kept", "a non-colliding key is untouched"
+
+
+def test_F_none_provenance_changes_nothing(session, db):
+    """Absence must not rewrite the column, on create or on a transition."""
+    run = _create(session, provenance={"kept": "yes"})
+    _advance(session, run.run_id)
+    before = _provenance(db, run.run_id)
+
+    asyncio.run(lifecycle.complete_discovery_run(session, run.run_id, "CANDIDATES_FOUND"))
+
+    assert _stored(db, run.run_id)["status"] == "COMPLETED"
+    assert _provenance(db, run.run_id) == before, "provenance=None must be a no-op"
+
+
+def test_F2_a_transition_without_provenance_on_a_plain_run_invents_nothing(session, db):
+    run = _create(session)
+    _advance(session, run.run_id)
+    asyncio.run(
+        lifecycle.fail_discovery_run(
+            session, run.run_id, error_code="X", error_message="y"
+        )
+    )
+
+    assert _provenance(db, run.run_id) == {}, (
+        "a run that never had provenance must not gain a fact"
+    )
