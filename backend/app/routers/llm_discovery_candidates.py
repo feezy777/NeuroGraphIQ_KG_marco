@@ -1,15 +1,21 @@
-"""LLM Discovery candidate READ API — the HTTP surface of P0-2A.
+"""LLM Discovery candidate API — the HTTP surface of P0-2A (read) and P0-3C1 (review).
 
-Two GET endpoints, and nothing else:
+Three endpoints, and nothing else:
 
-    GET /api/knowledge-production/discovery-runs/{run_id}/llm-candidates
-    GET /api/knowledge-production/brain-regions/{entity_id}/llm-candidates
+    GET  /api/knowledge-production/discovery-runs/{run_id}/llm-candidates
+    GET  /api/knowledge-production/brain-regions/{entity_id}/llm-candidates
+    POST /api/knowledge-production/candidates/{candidate_id}/review
 
-Both are thin: the router validates nothing itself, resolves nothing itself and
-sorts nothing itself. Every semantic decision — which run is an LLM run, whether
-an id exists, what order the rows come back in — belongs to
-``llm_candidate_read_service`` (P0-2A), which is the ONLY thing here that touches
-the database. This module issues no SQL at all.
+All three are thin: the router validates nothing itself, resolves nothing itself,
+sorts nothing itself and writes nothing itself. Every semantic decision — which
+run is an LLM run, whether an id exists, what order rows come back in, whether a
+decision is legal, what gate follows — belongs to the service layer, which is
+the ONLY thing here that touches the database. This module issues no SQL at all.
+
+The review route delegates to ``llm_candidate_review_persistence_service``
+(P0-3B), which owns the row lock, the atomic review-record INSERT plus status
+UPDATE, and the commit/rollback. The transition vocabulary lives in the P0-3A
+contract; this layer merely maps its typed errors onto status codes.
 
 Why a separate router file rather than adding routes to
 ``knowledge_production``: that module is a PARKED, uncommitted workstream, and
@@ -35,6 +41,7 @@ provider payload are reachable from the DTO, so none can leave through here.
 from __future__ import annotations
 
 from contextlib import contextmanager
+from datetime import datetime
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -43,6 +50,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.services import llm_candidate_read_service as read_service
+from app.services import llm_candidate_review_persistence_service as review_service
 from app.services.llm_candidate_read_service import DiscoveryCandidateReadItem
 
 router = APIRouter(prefix="/api/knowledge-production", tags=["Knowledge Production"])
@@ -59,6 +67,48 @@ class LlmCandidateListResponse(BaseModel):
 
     items: list[DiscoveryCandidateReadItem]
     total: int
+
+
+class CandidateReviewRequest(BaseModel):
+    """One Candidate Review decision to submit.
+
+    ``decision`` is a plain ``str`` rather than a Literal on purpose: the three
+    decisions are a VOCABULARY owned by the P0-3A contract, and a Literal here
+    would be a second copy that could drift from it. An unknown decision is
+    rejected by the service and mapped to 422 below.
+
+    ``reviewer`` is REQUIRED and caller-supplied. There is no authentication
+    layer in this project yet, so the identity cannot be derived from a
+    principal — see the route docstring. It is never inferred from hostname, OS
+    user, git config or the environment; a review that cannot name its reviewer
+    is not an audit record.
+    """
+
+    decision: str
+    reviewer: str
+    reviewer_note: str | None = None
+
+
+class CandidateReviewResponse(BaseModel):
+    """The outcome of one review decision. Public fields only.
+
+    ``next_gate`` is carried straight through from the P0-3B service, which
+    derives it from the P0-3A contract. The router holds no gate mapping and
+    hard-codes no transition: whatever the contract says is what the client sees.
+
+    Internal keys (``candidate_pk`` / ``review_pk`` / ``discovery_run_pk``) are
+    deliberately absent — the public API is id-based.
+    """
+
+    candidate_id: str
+    review_id: str
+    decision: str
+    from_status: str
+    to_status: str
+    reviewer: str
+    reviewer_note: str | None = None
+    created_at: datetime
+    next_gate: str
 
 
 def _error_detail(code: str, message: str, **extra: Any) -> dict[str, Any]:
@@ -96,6 +146,56 @@ def _mapped_read_errors():
     except read_service.DiscoveryCandidateSeedNotFound as exc:
         raise HTTPException(
             404, detail=_error_detail("BRAIN_REGION_NOT_FOUND", str(exc))
+        ) from None
+
+
+@contextmanager
+def _mapped_review_errors():
+    """Translate P0-3B's typed review errors onto HTTP (the only place that mapping lives).
+
+    The split is deliberate:
+
+    * 404 — the candidate does not exist.
+    * 409 — the request is well-formed but CONFLICTS with the candidate's
+      current state: it belongs to another discovery channel, or it has already
+      been decided. A concurrent reviewer losing the race lands here too, which
+      is why it must never surface as a 500.
+    * 422 — the request itself is unusable (blank reviewer, unknown decision).
+
+    Messages come from the service and carry no SQL, constraint name or stack
+    fragment. An unexpected error is NOT caught here: it propagates to the
+    application's normal 500 handling rather than being swallowed.
+    """
+    try:
+        yield
+    except review_service.CandidateReviewCandidateNotFound as exc:
+        raise HTTPException(
+            404, detail=_error_detail("CANDIDATE_NOT_FOUND", str(exc))
+        ) from None
+    except review_service.CandidateReviewWrongDiscoveryType as exc:
+        raise HTTPException(
+            409,
+            detail=_error_detail(
+                "NOT_AN_LLM_CANDIDATE", str(exc), discovery_type=exc.discovery_type
+            ),
+        ) from None
+    except review_service.InvalidCandidateReviewTransition as exc:
+        raise HTTPException(
+            409,
+            detail=_error_detail(
+                "INVALID_REVIEW_TRANSITION",
+                str(exc),
+                from_status=exc.from_status,
+                decision=exc.decision,
+            ),
+        ) from None
+    except review_service.CandidateReviewInvalidReviewer as exc:
+        raise HTTPException(
+            422, detail=_error_detail("INVALID_REVIEWER", str(exc))
+        ) from None
+    except review_service.CandidateReviewInvalidDecision as exc:
+        raise HTTPException(
+            422, detail=_error_detail("INVALID_DECISION", str(exc))
         ) from None
 
 
@@ -140,3 +240,59 @@ async def list_brain_region_llm_candidates(
     with _mapped_read_errors():
         items = await read_service.list_candidates_for_seed(db, entity_id=entity_id)
     return LlmCandidateListResponse(items=items, total=len(items))
+
+
+@router.post(
+    "/candidates/{candidate_id}/review",
+    response_model=CandidateReviewResponse,
+)
+async def review_llm_candidate(
+    candidate_id: str,
+    payload: CandidateReviewRequest,
+    db: AsyncSession = Depends(get_db),
+) -> CandidateReviewResponse:
+    """Submit ONE Candidate Review decision about one LLM Discovery candidate.
+
+    One request, one review operation, one service transaction. The endpoint
+    writes nothing itself: it calls ``persist_candidate_review``, which owns the
+    row lock, the atomic review-record INSERT + status UPDATE, and the
+    commit/rollback. Nothing else is done in this session before that call, so
+    there is no foreign write for its transaction to drag along.
+
+    A candidate may be reviewed ONCE. A second decision — any decision, from any
+    of the three settled statuses — is a 409 conflict and appends no record and
+    changes no status; the first decision stands. Re-opening a deferred
+    candidate is deliberately NOT implemented (no governed operation exists).
+
+    AUTH: this project has no authentication layer yet, so the reviewer identity
+    CANNOT be derived from a principal. ``reviewer`` is therefore a required
+    request field, taken at face value and recorded verbatim as the audit
+    identity. It is never inferred from the host, the OS user, git config or the
+    environment. When authentication arrives, this field should be replaced by
+    the authenticated principal rather than merely accepted alongside it.
+
+    Errors: 404 unknown candidate · 409 wrong discovery channel or already
+    decided · 422 blank reviewer or unknown decision.
+    """
+    with _mapped_review_errors():
+        result = await review_service.persist_candidate_review(
+            db,
+            candidate_id=candidate_id,
+            decision=payload.decision,
+            reviewer=payload.reviewer,
+            reviewer_note=payload.reviewer_note,
+        )
+    # Straight pass-through: the fields a client sees are exactly the fields the
+    # service produced. next_gate in particular is the contract's answer, not
+    # anything this layer decided.
+    return CandidateReviewResponse(
+        candidate_id=result.candidate_id,
+        review_id=result.review_id,
+        decision=result.decision,
+        from_status=result.from_status,
+        to_status=result.to_status,
+        reviewer=result.reviewer,
+        reviewer_note=result.reviewer_note,
+        created_at=result.created_at,
+        next_gate=result.next_gate,
+    )
