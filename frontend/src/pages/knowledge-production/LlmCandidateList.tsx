@@ -16,6 +16,7 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { useI18n } from '../../i18n-context'
 import { fetchRunLlmCandidates } from './kpApi'
+import { resolveDiscoveryView } from './discoveryView'
 import {
   CANDIDATE_TYPE_LABEL_KEYS,
   CANDIDATE_TYPE_ORDER,
@@ -157,9 +158,36 @@ export function LlmCandidateList({ llmRuns, selectedRunId, onOpenCandidates }: P
   } else {
     const rows = candidates?.items ?? []
     const countOf = (type: string) => rows.filter(c => c.candidate_type === type).length
+    // WHICH QUESTION this run asked — resolved once, shown before the run id.
+    // The id is provenance; the view is what makes the run comparable to the
+    // others in the pilot.
+    const view = resolveDiscoveryView(selectedRun.query_strategy_version)
     body = (
       <>
         <div className="kp-field-grid" data-testid="kp-llm-candidates-run">
+          {/* The view leads. An identifier we cannot name keeps its raw value
+              as secondary text — never quietly labelled as a legacy run. */}
+          <Field
+            label={t('knowledgeProduction.discoveryView.colView')}
+            value={t(view.labelKey)}
+            testId="kp-llm-run-view"
+          />
+          {/* Only when the identifier actually carried a version: a legacy run
+              has no strategy to version, and inventing "—" would imply one. */}
+          {view.strategyVersion && (
+            <Field
+              label={t('knowledgeProduction.discoveryView.strategyVersion')}
+              value={view.strategyVersion}
+              testId="kp-llm-run-strategy-version"
+            />
+          )}
+          {view.unknown && view.raw && (
+            <Field
+              label={t('knowledgeProduction.discoveryView.unknown')}
+              value={view.raw}
+              testId="kp-llm-run-strategy-raw"
+            />
+          )}
           <Field
             label={t('knowledgeProduction.llmCandidates.field.runId')}
             value={selectedRun.run_id}

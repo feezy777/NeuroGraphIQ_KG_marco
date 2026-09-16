@@ -337,9 +337,79 @@ describe('BrainRegionWorkspacePage', () => {
     // provider/model is absent for this route -> em dash, never blank or "null";
     // started/finished and the prompt are also unset on this row. The run id is
     // always present, so it is NOT one of the dashes.
-    expect(history.getAllByText('—')).toHaveLength(4)
+    //
+    // FIVE, not four: the discovery view is a second thing this route has none
+    // of. The four views are LLM-discovery questions, so a literature run shows
+    // — there rather than a strategy label that would not apply to it. (Its
+    // `query_strategy_version` is `v1`, a literature strategy — not a view, and
+    // deliberately NOT rendered as one.)
+    expect(history.getAllByText('—')).toHaveLength(5)
     // The run id IS present (as its 8-char prefix), so it is not one of them.
     expect(history.getByText('11111111')).toBeTruthy()
+  })
+
+  it('shows the DISCOVERY VIEW of a run, not its internal identifier', async () => {
+    // Verbatim from the live CA3 Pass A run (8cd2e18a-…).
+    getRuns.mockResolvedValue({
+      items: [run({ status: 'COMPLETED', outcome: 'CANDIDATES_FOUND',
+                    query_strategy_version: 'G4HR1/NAMED_CLASSIC_CIRCUITS' })],
+      total: 1,
+    })
+    renderWorkspace()
+    fireEvent.click(await screen.findByTestId('kp-tab-discovery'))
+    const history = within(await screen.findByTestId('kp-run-history'))
+    // The user-facing label leads...
+    expect(history.getByText('Named / classic circuits')).toBeTruthy()
+    // ...and the machine token is NOT the primary text; it is available on
+    // hover instead, so it never competes with the label.
+    expect(history.queryByText(/G4HR1\/NAMED_CLASSIC_CIRCUITS/)).toBeNull()
+    const cell = document.querySelector('[data-testid^="kp-run-view-"]') as HTMLElement
+    expect(cell.getAttribute('title')).toBe('G4HR1/NAMED_CLASSIC_CIRCUITS')
+  })
+
+  it('shows GENERAL DISCOVERY for a legacy run, never a G4 view', async () => {
+    getRuns.mockResolvedValue({
+      items: [run({ status: 'COMPLETED', outcome: 'CANDIDATES_FOUND',
+                    query_strategy_version: null })],
+      total: 1,
+    })
+    renderWorkspace()
+    fireEvent.click(await screen.findByTestId('kp-tab-discovery'))
+    const history = within(await screen.findByTestId('kp-run-history'))
+    expect(history.getByText('General discovery')).toBeTruthy()
+    for (const view of ['Named / classic circuits', 'Local intrinsic circuits',
+                        'Afferent circuits', 'Efferent circuits']) {
+      expect(history.queryByText(view)).toBeNull()
+    }
+  })
+
+  it('counts high-recall progress from persisted runs, and invents nothing', async () => {
+    getRuns.mockResolvedValue({
+      items: [
+        run({ status: 'COMPLETED', query_strategy_version: 'G4HR1/NAMED_CLASSIC_CIRCUITS' }),
+        run({ run_id: '22222222-3333-4444-5555-666666666666', status: 'COMPLETED',
+              query_strategy_version: 'G4HR1/AFFERENT_CIRCUITS' }),
+      ],
+      total: 2,
+    })
+    renderWorkspace()
+    fireEvent.click(await screen.findByTestId('kp-tab-discovery'))
+    // 2 of the 4 views have runs — a COUNT of runs, not a modelled percentage.
+    expect((await screen.findByTestId('kp-high-recall-count')).textContent)
+      .toContain('2 / 4')
+    expect(screen.queryByText(/50%|% complete/)).toBeNull()
+  })
+
+  it('shows NO progress card when no view run exists', async () => {
+    getRuns.mockResolvedValue({
+      items: [run({ status: 'COMPLETED', query_strategy_version: null })],
+      total: 1,
+    })
+    renderWorkspace()
+    fireEvent.click(await screen.findByTestId('kp-tab-discovery'))
+    await screen.findByTestId('kp-run-history')
+    // A seed with no view run is not a pilot at 0% — it is not a pilot.
+    expect(screen.queryByTestId('kp-high-recall-progress')).toBeNull()
   })
 
   it('never queries runs with a candidate, mirror or final identifier', async () => {

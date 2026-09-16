@@ -18,6 +18,11 @@ import { LiteratureInspector } from './LiteratureInspector'
 import { LlmCandidateList } from './LlmCandidateList'
 import { CandidateKnowledgeTab } from './CandidateKnowledgeTab'
 import {
+  DISCOVERY_VIEW_LABEL_KEYS,
+  G4_DISCOVERY_VIEWS,
+  resolveDiscoveryView,
+} from './discoveryView'
+import {
   DISCOVERY_STATUS_LABEL_KEYS,
   DISCOVERY_STATUS_TONES,
   isLiteratureDiscoveryType,
@@ -358,6 +363,56 @@ function StatusBadge({ status }: { status: DiscoveryRun['status'] }) {
  * that does nothing is honest, whereas a click that fires a request the backend
  * will refuse teaches the boundary by failure.
  */
+/**
+ * Progress toward the four G4 discovery views, from PERSISTED runs alone.
+ *
+ * "N / 4" counts runs that exist, never a modelled percentage: there is no
+ * "50% of a model call" to report and claiming one would be invented. A view
+ * counts as done only when a run actually recorded it.
+ *
+ * Rendered NOTHING when no view run exists. A seed with none is not a pilot at
+ * 0% — it is a seed with no pilot — and showing "0 / 4" would conjure a pilot
+ * out of silence. That also keeps legacy-only seeds (Left Hippocampus) from
+ * displaying a progress card that has nothing to do with them.
+ */
+function HighRecallProgress({ runs }: { runs: DiscoveryRun[] }) {
+  const { t } = useI18n()
+  const recorded = new Set(
+    runs
+      .map(r => resolveDiscoveryView(r.query_strategy_version).view)
+      .filter((v): v is string => Boolean(v)),
+  )
+  const finished = G4_DISCOVERY_VIEWS.filter(v => recorded.has(v))
+  const pending = G4_DISCOVERY_VIEWS.filter(v => !recorded.has(v))
+  if (finished.length === 0) return null
+
+  const line = (view: string, mark: string) => (
+    <li key={view} className="kp-muted">
+      {mark} {t(DISCOVERY_VIEW_LABEL_KEYS[view])}
+    </li>
+  )
+
+  return (
+    <section className="kp-section" data-testid="kp-high-recall-progress">
+      <h3 className="kp-section-title">
+        {t('knowledgeProduction.discoveryView.pilotTitle')}{' '}
+        <span data-testid="kp-high-recall-count">
+          {finished.length} / {G4_DISCOVERY_VIEWS.length}
+        </span>
+      </h3>
+      <ul className="kp-progress-list">
+        <li className="kp-muted" data-testid="kp-high-recall-done">
+          {t('knowledgeProduction.discoveryView.pilotDone')}
+        </li>
+        {finished.map(v => line(v, '✓'))}
+        <li className="kp-muted">{t('knowledgeProduction.discoveryView.pilotPending')}</li>
+        {pending.map(v => line(v, '○'))}
+      </ul>
+    </section>
+  )
+}
+
+
 function RunHistory({
   runs,
   selectedRunId,
@@ -369,6 +424,34 @@ function RunHistory({
 }) {
   const { t } = useI18n()
   const columns: Column<DiscoveryRun>[] = [
+    {
+      key: 'discovery_view',
+      header: t('knowledgeProduction.discoveryView.colView'),
+      // WHICH QUESTION this run asked — the first thing a reader needs, and the
+      // reason a multi-pass pilot is legible at all. The persisted identifier is
+      // a machine token, so the label leads and the token stays available on
+      // hover; an identifier we cannot name is shown WITH its raw value rather
+      // than silently filed as a legacy run.
+      //
+      // Literature runs have no discovery view (the four views are LLM-discovery
+      // questions), so they show — exactly as they already do for provider/model.
+      render: r => {
+        if (isLiteratureDiscoveryType(r.discovery_type)) return '—'
+        const view = resolveDiscoveryView(r.query_strategy_version)
+        return (
+          <span
+            className={view.unknown ? 'kp-muted' : undefined}
+            title={view.raw ?? undefined}
+            data-testid={`kp-run-view-${r.run_id}`}
+          >
+            {t(view.labelKey)}
+            {view.unknown && view.raw && (
+              <span className="kp-mono-sm kp-view-raw"> {view.raw}</span>
+            )}
+          </span>
+        )
+      },
+    },
     {
       key: 'discovery_type',
       header: t('knowledgeProduction.discovery.colType'),
@@ -601,6 +684,9 @@ export function DiscoveryTab({
           />
         </TabPlaceholder>
       )}
+      {/* Progress is derived from PERSISTED runs only, and is absent until the
+          first one exists — see the component. */}
+      {!error && runs !== null && <HighRecallProgress runs={runs} />}
       {!error && runs !== null && runs.length > 0 && (
         <RunHistory runs={runs} selectedRunId={selectedRunId} onSelectRun={selectRun} />
       )}
