@@ -286,13 +286,45 @@ class LlmDiscoveryInput(BaseModel):
 # ===========================================================================
 # Candidate types — RAW DISCOVERY PROPOSALS, not canonical entities
 # ===========================================================================
-class RegionCandidate(_LocalIdMixin, _ConfidenceMixin):
+class RegionCandidate(_LocalIdMixin):
     """A region the model proposes as relevant. NOT canonicalized.
 
     Phase 3A never maps this onto a Gate7B BrainRegion: name resolution is a
     later, governed step. `name` stays exactly as discovered.
+
+    CONFIDENCE IS OPTIONAL HERE, AND ONLY HERE
+    ------------------------------------------
+    A region is a COMPONENT of the discovery, not a knowledge claim in its own
+    right: circuits and connections reference regions by local_id, so a region
+    without a stated confidence is still structurally usable, while the same
+    omission on a circuit, connection or function is a missing judgement about a
+    proposed claim. That is why this one type declares its own nullable
+    confidence instead of taking `_ConfidenceMixin`, and why the other three
+    keep the mixin. This is a deliberate asymmetry with a stated reason, not a
+    drift to be tidied away later.
+
+    A live continuation pass returned ten otherwise-valid regions with no
+    `confidence` at all, and the whole response — including its circuits — was
+    rejected for it. The field is now absent-able on THIS type only.
+
+    Absent means UNKNOWN, and it is recorded as unknown: `None`, never 0.0,
+    never 0.5, never a value copied from a sibling. Discovery confidence is the
+    model's own belief about a hypothesis; inventing one would put a number in
+    the pool that no model ever stated.
+
+    When a value IS given the constraint is unchanged (0.0-1.0), so tolerance
+    for omission is not tolerance for nonsense.
     """
 
+    confidence: float | None = Field(
+        default=None,
+        ge=0.0,
+        le=1.0,
+        description=(
+            "Discovery confidence in [0.0, 1.0], or null when the model stated "
+            "none. Not evidence quality. Null means UNKNOWN — never fabricated."
+        ),
+    )
     name: str
     name_en: str | None = None
     name_zh: str | None = None

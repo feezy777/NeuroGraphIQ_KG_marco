@@ -504,9 +504,21 @@ def test_24_prose_around_one_clear_json_object_is_tolerated():
 
 
 def test_24b_prose_does_not_let_the_parser_recover_a_missing_field():
-    body = json.dumps(payload(regions=[{"local_id": "region_1", "name": "X"}]))  # no confidence
-    result = parse_text(f"Note: confidence was unclear.\n{body}")
+    """A prose hint never substitutes for a field the contract REQUIRES.
+
+    This used `confidence` as the missing field. Region confidence is now
+    optional (a live pass returned ten regions without it), so the field under
+    test moved to one that is still required — the guarantee is unchanged, but
+    it no longer rests on the field this phase deliberately made absent-able.
+    """
+    body = json.dumps(payload(regions=[{"local_id": "region_1", "confidence": 0.5}]))  # no name
+    result = parse_text(f"Note: the region name was unclear.\n{body}")
     assert not result.ok, "a prose hint must not substitute for a required field"
+
+    # ...and the same prose still cannot rescue a missing confidence on a type
+    # where confidence IS required.
+    body2 = json.dumps(payload(circuits=[{"local_id": "circuit_1", "name": "X"}]))
+    assert not parse_text(f"Note: confidence was unclear.\n{body2}").ok
 
 
 def test_25_parser_invents_no_missing_scientific_fields():
@@ -1354,3 +1366,166 @@ def test_c18_the_example_reaches_the_rendered_prompt():
     example = identified[0]
     assert example["seed_entity_id"] == SEED_ID
     assert example["connections"][0]["local_id"] == "connection_1"
+
+
+# ===========================================================================
+# Region confidence is OPTIONAL — and only for Region
+# ===========================================================================
+# A live continuation pass returned ten otherwise-valid regions with no
+# `confidence` at all, and the parser rejected the WHOLE response for it —
+# including ten circuits that had nothing wrong with them. These tests pin the
+# repair and, just as importantly, pin its narrowness: tolerance for one missing
+# component field must not become tolerance for a malformed response.
+def region_without_confidence(local_id: str = "region_1", **over: Any) -> dict[str, Any]:
+    """A structurally valid region with the confidence key ABSENT (not null)."""
+    data = region(local_id, **over)
+    del data["confidence"]
+    return data
+
+
+def test_region_confidence_a_absent_is_accepted_as_UNKNOWN():
+    """§10.A — and recorded as None. Never 0.0, never a borrowed number."""
+    result = parse(payload(regions=[region_without_confidence()]))
+    assert result.ok, result.error
+    assert result.data.regions[0].confidence is None
+    # The region itself survives: dropping it would break every ref pointing here.
+    assert result.data.regions[0].name == "Medial dorsal nucleus"
+
+
+def test_region_confidence_b_explicit_null_is_accepted():
+    """§10.B — the model may state "no confidence" rather than omit it."""
+    result = parse(payload(regions=[region(confidence=None)]))
+    assert result.ok, result.error
+    assert result.data.regions[0].confidence is None
+
+
+def test_region_confidence_c_a_non_numeric_value_is_rejected():
+    """§10.C — omission is tolerated; nonsense is not."""
+    for bad in ("high", "0.8-ish", {}, []):
+        result = parse(payload(regions=[region(confidence=bad)]))
+        assert not result.ok, f"{bad!r} must not parse"
+
+
+def test_region_confidence_numeric_bounds_still_apply():
+    for bad in (1.5, -0.1, 2):
+        assert not parse(payload(regions=[region(confidence=bad)])).ok, bad
+    for good in (0.0, 0.5, 1.0):
+        assert parse(payload(regions=[region(confidence=good)])).ok, good
+
+
+def test_region_confidence_is_NOT_defaulted_to_a_number():
+    """The absence must survive as an absence, not become 0.0 or 0.5."""
+    result = parse(payload(regions=[region_without_confidence()]))
+    assert result.data.regions[0].confidence is None
+    assert result.data.regions[0].confidence != 0.0
+
+
+# --- the OTHER three still require it: no accidental generalisation ---------
+@pytest.mark.parametrize("kind", ["circuits", "connections", "functions"])
+def test_confidence_is_still_REQUIRED_on_every_other_candidate_type(kind):
+    """§8 — the tolerance is a Region fact, not a contract-wide relaxation.
+
+    A circuit, connection or function IS a proposed knowledge claim; a missing
+    confidence there is a missing judgement, and it still fails the response.
+    """
+    base = {
+        "circuits": circuit,
+        "connections": connection,
+        "functions": function,
+    }[kind]("x_1")
+    del base["confidence"]
+    result = parse(payload(**{kind: [base]}))
+    assert not result.ok, f"{kind} must still require confidence"
+
+
+# --- the exact live failure, reproduced ------------------------------------
+def test_the_round_2_live_failure_now_parses():
+    """§9 — ten regions with confidence omitted, plus circuits that reference them.
+
+    This is the shape the live continuation pass returned. Before the repair the
+    whole response was refused; now the regions parse as UNKNOWN and every
+    reference is still validated.
+    """
+    regions = [region_without_confidence(f"region_{i}", name=f"Region {i}")
+               for i in range(1, 11)]
+    result = parse(payload(
+        regions=regions,
+        connections=[connection("connection_1", source_ref="region_1",
+                                target_ref="region_2")],
+        circuits=[circuit("circuit_1", region_refs=["region_1", "region_2"],
+                          connection_refs=["connection_1"])],
+    ))
+    assert result.ok, result.error
+    assert len(result.data.regions) == 10
+    assert all(r.confidence is None for r in result.data.regions)
+    assert len(result.data.circuits) == 1, "the circuits were never the problem"
+
+
+def test_a_region_without_confidence_can_still_be_REFERENCED():
+    """§5 — keeping the region is what keeps its referrers resolvable.
+
+    Two regions, because a circuit must carry at least two components to be a
+    circuit at all — the point here is the MISSING CONFIDENCE, not the arity.
+    """
+    result = parse(payload(
+        regions=[region_without_confidence("region_1"),
+                 region_without_confidence("region_2")],
+        connections=[connection("connection_1", source_ref="region_1",
+                                target_ref="region_2")],
+        circuits=[circuit("circuit_1", region_refs=["region_1", "region_2"],
+                          connection_refs=["connection_1"])],
+    ))
+    assert result.ok, result.error
+    assert result.data.circuits[0].region_refs == ["region_1", "region_2"]
+    assert all(r.confidence is None for r in result.data.regions)
+
+
+def test_removing_the_confidence_key_from_the_fixture_is_what_makes_this_a_test():
+    """Guard: the fixture must genuinely OMIT the key, not set it to null."""
+    assert "confidence" not in region_without_confidence()
+
+
+# ===========================================================================
+# §10.D-H — structural strictness is UNCHANGED
+# ===========================================================================
+def test_structural_d_a_region_without_a_name_still_fails():
+    data = region_without_confidence()
+    del data["name"]
+    assert not parse(payload(regions=[data])).ok
+
+
+def test_structural_e_a_region_without_a_local_id_still_fails():
+    data = region_without_confidence()
+    del data["local_id"]
+    assert not parse(payload(regions=[data])).ok
+
+
+def test_structural_f_a_dangling_circuit_region_ref_still_fails():
+    result = parse(payload(
+        regions=[region_without_confidence("region_1")],
+        circuits=[circuit("circuit_1", region_refs=["region_1", "region_404"])],
+    ))
+    assert not result.ok
+    assert "region_404" in str(result.error)
+
+
+def test_structural_g_a_dangling_connection_source_ref_still_fails():
+    result = parse(payload(
+        regions=[region_without_confidence("region_1")],
+        connections=[connection("connection_1", source_ref="region_404")],
+    ))
+    assert not result.ok
+    assert "region_404" in str(result.error)
+
+
+def test_structural_h_a_malformed_circuit_still_fails():
+    for bad in ({"name": ""}, {"region_refs": "region_1"}, {"confidence": "high"}):
+        data = circuit("circuit_1", **bad)
+        assert not parse(payload(circuits=[data])).ok, bad
+
+
+def test_structural_the_boundary_rule_is_untouched_by_this_repair():
+    """A missing confidence never turns a non-circuit into a circuit."""
+    from app.llm_discovery_views import CIRCUIT_BOUNDARY_RULE
+
+    assert "Projection != Connection != Pathway != Circuit" in CIRCUIT_BOUNDARY_RULE
