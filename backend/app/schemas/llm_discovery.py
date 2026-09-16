@@ -91,10 +91,19 @@ RegionRelationToSeed = Literal[
 # A neural circuit is NOT required to be a closed loop. `LOOP` is one shape
 # among many; Gate7B models closed-ness as the boolean property
 # `circuits.is_closed_loop`, never as a requirement.
+#
+# RECURRENT is its own value, and deliberately NOT folded into LOOP, RECIPROCAL,
+# FEEDBACK or NETWORK: it names where the activity goes — back through
+# connections WITHIN one population or local ensemble (CA3 recurrent
+# collaterals being the canonical case) — not that the circuit closes, that two
+# structures point at each other, or that a macro-scale network exists. A model
+# asked about CA3 reaches for this word, and it was previously a rejected
+# response rather than a wrong answer.
 CircuitTopologyHint = Literal[
     "FEEDFORWARD",
     "FEEDBACK",
     "RECIPROCAL",
+    "RECURRENT",
     "LOOP",
     "PARALLEL",
     "CONVERGENT",
@@ -133,6 +142,7 @@ CIRCUIT_TOPOLOGY_HINTS: tuple[str, ...] = (
     "FEEDFORWARD",
     "FEEDBACK",
     "RECIPROCAL",
+    "RECURRENT",
     "LOOP",
     "PARALLEL",
     "CONVERGENT",

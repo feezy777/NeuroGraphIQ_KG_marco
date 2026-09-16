@@ -1791,3 +1791,165 @@ def test_the_tolerance_did_not_touch_the_warning_vocabulary():
     vocabulary and teach the model to emit it."""
     assert len(DISCOVERY_WARNING_CODES) == 7
     assert "REGION_NULL_EXTRA_IGNORED" not in DISCOVERY_WARNING_CODES
+
+
+# ===========================================================================
+# Circuit topology vocabulary: RECURRENT
+# ===========================================================================
+# A live Round-5 pass was rejected in full — an otherwise valid response — because
+# two circuits carried `topology_hint: "RECURRENT"`. The word was simply absent
+# from the frozen vocabulary, and it is the word a model asked about CA3 reaches
+# for: CA3's recurrent collaterals are its defining local architecture.
+#
+# This was a VOCABULARY EXTENSION, not tolerance and not enum rewriting. Nothing
+# was mapped onto an existing value: RECURRENT says WHERE activity goes (back
+# through connections within one population), which LOOP (the circuit closes),
+# RECIPROCAL (two structures point at each other), FEEDBACK (a projection returns)
+# and NETWORK (a macro-scale graph) each say differently. Every unknown string is
+# still a schema error.
+def _valid_circuit_payload(**circuit_over: Any) -> dict[str, Any]:
+    """A payload whose only variable is the circuit under test."""
+    data = circuit("circuit_1", region_refs=["region_1", "region_2"])
+    data.update(circuit_over)
+    return payload(
+        regions=[region("region_1"), region("region_2")],
+        circuits=[data],
+    )
+
+
+# --- A: the newly valid value -----------------------------------------------
+def test_topology_a_recurrent_is_now_accepted():
+    result = parse(_valid_circuit_payload(topology_hint="RECURRENT"))
+    assert result.ok, result.error
+    assert result.data.circuits[0].topology_hint == "RECURRENT"
+
+
+def test_topology_a_the_stored_value_is_RECURRENT_not_a_neighbour():
+    """The whole point: it must not be quietly rewritten to a lookalike."""
+    result = parse(_valid_circuit_payload(topology_hint="RECURRENT"))
+    assert result.data.circuits[0].topology_hint not in (
+        "LOOP", "RECIPROCAL", "FEEDBACK", "NETWORK",
+    )
+
+
+# --- B / C / D: the pre-existing values are untouched ------------------------
+@pytest.mark.parametrize(
+    "value", ["FEEDFORWARD", "RECIPROCAL", "LOOP", "FEEDBACK", "PARALLEL",
+              "CONVERGENT", "DIVERGENT", "NETWORK", "UNKNOWN"]
+)
+def test_topology_bcd_every_previous_value_still_parses(value):
+    result = parse(_valid_circuit_payload(topology_hint=value))
+    assert result.ok, (value, result.error)
+    assert result.data.circuits[0].topology_hint == value
+
+
+def test_topology_the_default_is_still_UNKNOWN():
+    assert parse(_valid_circuit_payload()).data.circuits[0].topology_hint == "UNKNOWN"
+
+
+# --- E / F: strictness is intact --------------------------------------------
+@pytest.mark.parametrize(
+    "value",
+    ["RECURRENT_LOOP", "recurrent", "Recurrent", "RECURRING", "RECURRENCY",
+     "AUTOASSOCIATIVE", "CYCLIC", "RECURRENT ", " RECURRENT", "RECURRENTLY", ""],
+)
+def test_topology_ef_no_lookalike_or_unknown_string_is_accepted(value):
+    """No fuzzy repair, no case normalisation, no prefix matching."""
+    result = parse(_valid_circuit_payload(topology_hint=value))
+    assert not result.ok, f"{value!r} must not be accepted"
+
+
+def test_topology_the_rejection_is_a_schema_error_not_a_silent_default():
+    """An unknown value must FAIL — never be coerced to UNKNOWN."""
+    result = parse(_valid_circuit_payload(topology_hint="RECURRENT_LOOP"))
+    assert not result.ok
+    assert "literal_error" in result.error
+
+
+# --- G / H: Circuit strictness is otherwise unchanged -----------------------
+def test_topology_g_a_circuit_missing_a_required_field_still_fails():
+    data = circuit("circuit_1", region_refs=["region_1", "region_2"])
+    del data["name"]
+    result = parse(payload(
+        regions=[region("region_1"), region("region_2")], circuits=[data]
+    ))
+    assert not result.ok
+
+
+def test_topology_h_a_circuit_with_an_unknown_extra_still_fails():
+    data = circuit("circuit_1", region_refs=["region_1", "region_2"])
+    data["invented_field"] = None
+    result = parse(payload(
+        regions=[region("region_1"), region("region_2")], circuits=[data]
+    ))
+    assert not result.ok
+    assert "extra_forbidden" in result.error
+
+
+# --- I / J / K: the neighbouring repairs are undisturbed --------------------
+def test_topology_i_the_region_null_extra_tolerance_is_unchanged():
+    tolerated = region("region_1")
+    tolerated["relation_note"] = None
+    result = parse(payload(regions=[tolerated]))
+    assert result.ok, result.error
+    # ... and it is still Region-only and still null-only.
+    strict = circuit("circuit_1", region_refs=["region_1", "region_2"])
+    strict["relation_note"] = None
+    assert not parse(payload(
+        regions=[region("region_1"), region("region_2")], circuits=[strict]
+    )).ok
+
+
+def test_topology_j_region_missing_confidence_is_still_None():
+    data = region("region_1")
+    del data["confidence"]
+    result = parse(payload(regions=[data]))
+    assert result.ok, result.error
+    assert result.data.regions[0].confidence is None
+
+
+@pytest.mark.parametrize("kind", ["circuits", "connections", "functions"])
+def test_topology_k_confidence_is_still_required_on_every_other_type(kind):
+    base = {
+        "circuits": circuit("circuit_1", region_refs=["region_1", "region_2"]),
+        "connections": connection("connection_1"),
+        "functions": function("function_1"),
+    }[kind]
+    del base["confidence"]
+    result = parse(payload(
+        regions=[region("region_1"), region("region_2")],
+        **{kind: [base]},
+    ))
+    assert not result.ok, f"{kind} must still require confidence"
+
+
+# --- §8: the frozen vocabulary, explicitly ----------------------------------
+def test_recurrent_is_part_of_the_frozen_topology_vocabulary():
+    assert "RECURRENT" in CIRCUIT_TOPOLOGY_HINTS
+    assert len(CIRCUIT_TOPOLOGY_HINTS) == 10
+
+
+def test_the_literal_and_the_tuple_are_the_same_vocabulary():
+    """Two copies of one vocabulary must never drift apart."""
+    from typing import get_args
+
+    from app.schemas.llm_discovery import CircuitTopologyHint
+
+    assert tuple(get_args(CircuitTopologyHint)) == CIRCUIT_TOPOLOGY_HINTS
+
+
+def test_the_vocabulary_widened_by_exactly_one_value():
+    """Guards against a careless bulk edit: the nine old values, unchanged."""
+    assert set(CIRCUIT_TOPOLOGY_HINTS) - {"RECURRENT"} == {
+        "FEEDFORWARD", "FEEDBACK", "RECIPROCAL", "LOOP", "PARALLEL",
+        "CONVERGENT", "DIVERGENT", "NETWORK", "UNKNOWN",
+    }
+
+
+def test_the_prompt_now_offers_RECURRENT_and_nothing_else_new():
+    """Rendered from the Literal, so the prompt follows the contract by itself."""
+    user = _user_prompt()
+    assert "RECURRENT" in user
+    assert "RECURRENT_LOOP" not in user
+    for value in CIRCUIT_TOPOLOGY_HINTS:
+        assert value in user, value
