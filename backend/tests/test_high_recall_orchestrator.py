@@ -1620,3 +1620,119 @@ async def test_sched_I_no_continuation_ever_crosses_a_view(h, _):
         assert owner[str(call["continuation_from"])] == call["view"], (
             f"a continuation crossed Views: {call}"
         )
+
+
+# ===========================================================================
+# A run's novelty verdict is applied to zero_streak AT MOST ONCE
+# ===========================================================================
+# A View's stored state belongs to a round, and ``latest_successful_run_pk``
+# says which. A resume attaches to that same run, so re-applying its verdict
+# would count ONE round twice — and one round counted twice saturates a View
+# that produced a single zero, which is a scientific claim the run never made.
+def _resume_patch(recorder: Recorder, h: H):
+    from app.services import high_recall_orchestrator_service as orch
+    from app.services import llm_discovery_execution_service as execution
+    from app.schemas.orchestration import OrchestrationStartRequest
+
+    async def _go(orchestration_id: str, budget: int):
+        with patch.object(execution, "execute_llm_discovery",
+                          _stub_discovery(recorder, h, EMPTY_SEED)), \
+             patch.object(orch, "_assess_run", _stub_assessment(recorder, h)):
+            return await orch.resume_orchestration(
+                h.db, orchestration_id=orchestration_id,
+                request=OrchestrationStartRequest(max_new_discovery_calls=budget))
+
+    return _go
+
+
+# --- A ----------------------------------------------------------------------
+@case
+async def test_zero_A_a_resume_does_not_re_count_the_same_run(h, _):
+    """R1 → zero (streak 1) → pause → resume: R1 is NOT judged again."""
+    first = Recorder([0])
+    started = await _orchestrate(h, first, budget=1)
+    assert started.status == "PAUSED_BY_BUDGET"
+    a = await _view(h, started.orchestration_id, "NAMED_CLASSIC_CIRCUITS")
+    assert a["zero_streak"] == 1
+
+    # The bootstrap re-judges R1 (a REUSE in production) and gets its stored
+    # verdict back — 0. That verdict is already in the streak, so the loop must
+    # move on to a NEW round, which returns 9.
+    second = Recorder([0, 9])
+    resumed = await _resume_patch(second, h)(started.orchestration_id, budget=1)
+
+    assert len(second.discovery_calls) == 1, "a NEW round, not a re-judged old one"
+    assert len(await _runs(h)) == 2
+    a = await _view(h, resumed.orchestration_id, "NAMED_CLASSIC_CIRCUITS")
+    assert a["status"] == "RUNNING", "one zero must not saturate"
+    assert a["zero_streak"] == 0, "the new round's novelty reset the streak"
+
+
+# --- B ----------------------------------------------------------------------
+@case
+async def test_zero_B_saturation_needs_two_DISTINCT_zero_runs(h, _):
+    first = Recorder([0])
+    started = await _orchestrate(h, first, budget=1)
+    assert (await _view(
+        h, started.orchestration_id, "NAMED_CLASSIC_CIRCUITS"))["zero_streak"] == 1
+
+    second = Recorder([0, 0])          # bootstrap reuse, then a NEW zero round
+    resumed = await _resume_patch(second, h)(started.orchestration_id, budget=1)
+
+    runs = await _runs(h)
+    assert len(runs) == 2, "saturation must come from two runs, not one counted twice"
+    assert all(r["status"] == "COMPLETED" for r in runs)
+    a = await _view(h, resumed.orchestration_id, "NAMED_CLASSIC_CIRCUITS")
+    assert a["status"] == "SATURATED_BY_ZERO_NOVELTY"
+    assert a["zero_streak"] == 2
+
+
+# --- C ----------------------------------------------------------------------
+@case
+async def test_zero_C_novelty_after_a_resumed_zero_resets_the_streak(h, _):
+    first = Recorder([0])
+    started = await _orchestrate(h, first, budget=1)
+
+    second = Recorder([0, 9, 9])       # bootstrap reuse, then two positive rounds
+    resumed = await _resume_patch(second, h)(started.orchestration_id, budget=2)
+
+    assert len(await _runs(h)) == 3, "the View kept searching"
+    a = await _view(h, resumed.orchestration_id, "NAMED_CLASSIC_CIRCUITS")
+    assert a["status"] == "RUNNING"
+    assert a["zero_streak"] == 0
+    assert resumed.status == "PAUSED_BY_BUDGET"
+
+
+# --- D ----------------------------------------------------------------------
+@case
+async def test_zero_D_reusing_a_stored_assessment_does_not_re_apply_its_effect(h, _):
+    """The bootstrap's assessment is a REUSE. Reuse is not re-application."""
+    first = Recorder([0])
+    started = await _orchestrate(h, first, budget=1)
+    r1 = (await _runs(h))[0]["run_id"]
+
+    second = Recorder([0, 9])
+    resumed = await _resume_patch(second, h)(started.orchestration_id, budget=1)
+
+    assert str(second.assessment_calls[0]) == str(r1), (
+        "the bootstrap re-judges the attached run — a reuse in production"
+    )
+    assert len(second.discovery_calls) == 1, "and a NEW round follows it"
+    a = await _view(h, resumed.orchestration_id, "NAMED_CLASSIC_CIRCUITS")
+    assert a["zero_streak"] == 0, "the reused verdict was not applied a second time"
+
+
+# --- E ----------------------------------------------------------------------
+@case
+async def test_zero_E_the_zero_guard_still_cooperates_with_the_scheduler(h, _):
+    """The fix touches the streak only: A resolves its zero and still yields."""
+    rec = Recorder([0, 9] + BUSY)
+    result = await _orchestrate(h, rec, budget=20)
+
+    assert _views(rec)[:2] == ["NAMED_CLASSIC_CIRCUITS"] * 2, (
+        "A took the round that resolved its zero"
+    )
+    assert "LOCAL_INTRINSIC_CIRCUITS" in _views(rec), "and the sweep still moved on"
+    a = await _view(h, result.orchestration_id, "NAMED_CLASSIC_CIRCUITS")
+    assert a["zero_streak"] == 0
+    assert a["status"] == "RUNNING"

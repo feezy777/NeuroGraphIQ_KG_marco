@@ -733,6 +733,23 @@ async def _run_view(
 
     latest_run_pk = await _run_pk(session, run_id)
 
+    # HAS THIS ROUND'S VERDICT ALREADY BEEN APPLIED TO zero_streak?
+    #
+    # ``latest_successful_run_pk`` is the row's own record of the round its
+    # stored state belongs to: the loop writes it together with zero_streak
+    # whenever it leaves a View, so a bootstrap that attaches to the run the row
+    # already names is looking at a verdict that is ALREADY IN THE STREAK.
+    # Applying it again would count ONE round twice — and one round counted
+    # twice saturates a View that produced a single zero, which is a scientific
+    # claim the run never made.
+    #
+    # NULL means no round has ever been judged for this View, so the bootstrap's
+    # own assessment is the first one and is applied normally.
+    verdict_already_applied = (
+        state["latest_successful_run_pk"] is not None
+        and int(state["latest_successful_run_pk"]) == latest_run_pk
+    )
+
     # Record the attachment IMMEDIATELY, not only when the View pauses or
     # saturates. A View that blocks mid-bootstrap would otherwise leave a row
     # naming no run at all — and "which run was this View working from" is
@@ -746,9 +763,18 @@ async def _run_view(
     })
     await session.commit()
 
+    # Only the FIRST iteration can be a re-application: after it, every
+    # assessment belongs to a round this execution judged itself.
+    first_round = True
     while True:
         semantic_new = assess.semantic_new_count
-        if semantic_new > 0:
+        if first_round and verdict_already_applied:
+            # Neither a novelty nor a zero: this round was judged in an earlier
+            # execution and its verdict is already reflected in zero_streak.
+            _log("reused", orchestration_id=orchestration_id, seed=seed_entity_id,
+                 view=view, run_id=run_id, semantic_new_count=semantic_new,
+                 zero_streak=zero_streak, note="verdict already applied; streak unchanged")
+        elif semantic_new > 0:
             zero_streak = 0
             _log("continue", orchestration_id=orchestration_id, seed=seed_entity_id,
                  view=view, run_id=run_id, semantic_new_count=semantic_new,
@@ -778,6 +804,10 @@ async def _run_view(
                 _log("view-saturated", orchestration_id=orchestration_id,
                      seed=seed_entity_id, view=view, zero_streak=zero_streak)
                 return ledger.discovery, ledger.novelty
+
+        # The next verdict belongs to a round THIS execution ran, so it is
+        # always applied.
+        first_round = False
 
         # Another round is needed — a continuation of the run just judged.
         if ledger.discovery >= budget:
