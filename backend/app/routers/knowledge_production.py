@@ -84,6 +84,8 @@ from app.services import llm_circuit_novelty_service as novelty
 from app.services import llm_discovery_continuation_service as continuation
 from app.services import llm_discovery_execution_service as execution
 from app.schemas.circuit_novelty import PersistedNoveltyAssessment
+from app.schemas.orchestration import OrchestrationRead, OrchestrationStartRequest
+from app.services import high_recall_orchestrator_service as orchestrator
 
 router = APIRouter(prefix="/api/knowledge-production", tags=["Knowledge Production"])
 
@@ -600,3 +602,138 @@ async def get_novelty_assessment(
                 f"Novelty assessment '{assessment_id}' not found",
             ),
         ) from None
+# ===========================================================================
+# Automatic multi-view high-recall discovery orchestration
+# ===========================================================================
+@router.post(
+    "/brain-regions/{entity_id}/high-recall-discovery/start",
+    response_model=OrchestrationRead,
+)
+async def start_high_recall_discovery(
+    entity_id: str,
+    request: OrchestrationStartRequest = Body(default_factory=OrchestrationStartRequest),
+    db: AsyncSession = Depends(get_db),
+) -> OrchestrationRead:
+    """Begin (or continue) the automatic A→B→C→D sweep of one BrainRegion.
+
+    The request carries ONE thing: a safety budget. View order, model, prompt,
+    the novelty rule and the two-zero rule are all server-owned — a field for
+    any of them would let a caller change what "saturated" means without
+    changing anything they can see.
+
+    This is the expensive endpoint: each round is one DeepSeek discovery call
+    plus (usually) one novelty call. It stops at the budget, at completion, or
+    on the first failure, and a stop is always resumable.
+
+    404 unknown BrainRegion; 409 an orchestration for this seed is already
+    RUNNING or is BLOCKED (a blocker must be resolved before a plain start);
+    502 an upstream provider outage.
+    """
+    try:
+        return await orchestrator.start_orchestration(
+            db, entity_id=entity_id, request=request
+        )
+    except orchestrator.OrchestrationSeedNotFound:
+        raise HTTPException(
+            status_code=404,
+            detail=_error_detail(
+                "ORCHESTRATION_SEED_NOT_FOUND", f"BrainRegion '{entity_id}' not found"
+            ),
+        ) from None
+    except orchestrator.OrchestrationAlreadyRunning as exc:
+        raise HTTPException(
+            status_code=409, detail=_error_detail(exc.code, str(exc))
+        ) from None
+    except orchestrator.OrchestrationBlocked as exc:
+        raise HTTPException(
+            status_code=409,
+            detail=_error_detail(exc.code, str(exc), reason=exc.reason),
+        ) from None
+
+
+@router.post(
+    "/discovery-orchestrations/{orchestration_id}/resume",
+    response_model=OrchestrationRead,
+)
+async def resume_high_recall_discovery(
+    orchestration_id: str,
+    request: OrchestrationStartRequest | None = Body(default=None),
+    db: AsyncSession = Depends(get_db),
+) -> OrchestrationRead:
+    """Continue a paused orchestration from exactly where it stopped.
+
+    The same orchestration, the same View, no repeated round and no re-assessed
+    run — so a resume with nothing left to do costs zero provider calls. An
+    optional body supplies a fresh safety budget for this execution.
+
+    404 unknown orchestration; 409 it is RUNNING, or still BLOCKED.
+    """
+    try:
+        return await orchestrator.resume_orchestration(
+            db, orchestration_id=orchestration_id, request=request
+        )
+    except orchestrator.OrchestrationNotFound:
+        raise HTTPException(
+            status_code=404,
+            detail=_error_detail(
+                "ORCHESTRATION_NOT_FOUND", f"orchestration '{orchestration_id}' not found"
+            ),
+        ) from None
+    except orchestrator.OrchestrationAlreadyRunning as exc:
+        raise HTTPException(
+            status_code=409, detail=_error_detail(exc.code, str(exc))
+        ) from None
+
+
+@router.get(
+    "/discovery-orchestrations/{orchestration_id}",
+    response_model=OrchestrationRead,
+)
+async def get_high_recall_discovery(
+    orchestration_id: str, db: AsyncSession = Depends(get_db)
+) -> OrchestrationRead:
+    """One orchestration, its Views in order, and its cost ledger.
+
+    NEVER calls a provider: this reads stored control state.
+    """
+    try:
+        return await orchestrator.get_orchestration(db, orchestration_id=orchestration_id)
+    except orchestrator.OrchestrationNotFound:
+        raise HTTPException(
+            status_code=404,
+            detail=_error_detail(
+                "ORCHESTRATION_NOT_FOUND", f"orchestration '{orchestration_id}' not found"
+            ),
+        ) from None
+
+
+@router.get(
+    "/brain-regions/{entity_id}/discovery-orchestrations/latest",
+    response_model=OrchestrationRead,
+)
+async def get_latest_high_recall_discovery(
+    entity_id: str, db: AsyncSession = Depends(get_db)
+) -> OrchestrationRead:
+    """The newest orchestration for one BrainRegion, active or completed.
+
+    NEVER calls a provider. 404 when the region has never been orchestrated,
+    which is the normal state of every seed before its first start.
+    """
+    try:
+        found = await orchestrator.get_latest_orchestration(db, entity_id=entity_id)
+    except orchestrator.OrchestrationSeedNotFound:
+        raise HTTPException(
+            status_code=404,
+            detail=_error_detail(
+                "ORCHESTRATION_SEED_NOT_FOUND", f"BrainRegion '{entity_id}' not found"
+            ),
+        ) from None
+    if found is None:
+        raise HTTPException(
+            status_code=404,
+            detail=_error_detail(
+                "ORCHESTRATION_NOT_FOUND",
+                f"BrainRegion '{entity_id}' has no orchestration",
+            ),
+        )
+    return found

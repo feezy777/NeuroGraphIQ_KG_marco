@@ -6,6 +6,11 @@ mostly about what may NOT inflate or deflate it: a run from another seed or
 another view, a FAILED run, the target run compared against itself, a missing
 verdict silently padded, a match claim pointing at nothing.
 
+A note on the LLM path: exercising it requires a NON-EMPTY prior pool. With an
+empty one the assessor answers deterministically — no prior art means nothing
+can be an alias or reformulation, so the stub is never consulted — and tests
+that want to check reply handling must therefore supply prior art.
+
 No database and no provider: the session is scripted and the provider is a stub,
 so every assertion is about the contract rather than about whether Postgres or
 DeepSeek happened to agree.
@@ -356,7 +361,7 @@ def test_the_counting_rule_is_exactly_new_plus_borderline():
 # ===========================================================================
 def test_a_MISSING_verdict_is_refused_not_padded():
     session = _Session(
-        scope=_scope(), prior=[],
+        scope=_scope(), prior=[_row("DC-00000001", "Prior art")],
         target=[_row("DC-00000010", "T1", run_id=RUN), _row("DC-00000011", "T2", run_id=RUN)],
     )
     with pytest.raises(nov.NoveltyAssessmentIncomplete):
@@ -364,13 +369,13 @@ def test_a_MISSING_verdict_is_refused_not_padded():
 
 
 def test_a_DUPLICATE_verdict_is_refused():
-    session = _Session(scope=_scope(), prior=[], target=_one_target())
+    session = _Session(scope=_scope(), prior=[_row("DC-00000001", "Prior art")], target=_one_target())
     with pytest.raises(nov.NoveltyAssessmentIncomplete):
         _assess(session, _reply(_v("DC-00000010", "NEW"), _v("DC-00000010", "NEW")))
 
 
 def test_an_unknown_candidate_id_is_refused():
-    session = _Session(scope=_scope(), prior=[], target=_one_target())
+    session = _Session(scope=_scope(), prior=[_row("DC-00000001", "Prior art")], target=_one_target())
     with pytest.raises(nov.NoveltyAssessmentInvalid):
         _assess(session, _reply(_v("DC-99999999", "NEW")))
 
@@ -397,13 +402,13 @@ def test_NEW_that_claims_a_match_is_refused():
 
 
 def test_an_invalid_class_is_refused():
-    session = _Session(scope=_scope(), prior=[], target=_one_target())
+    session = _Session(scope=_scope(), prior=[_row("DC-00000001", "Prior art")], target=_one_target())
     with pytest.raises(nov.NoveltyAssessmentInvalid):
         _assess(session, _reply(_v("DC-00000010", "PROBABLY_NEW")))
 
 
 def test_a_non_json_reply_is_refused():
-    session = _Session(scope=_scope(), prior=[], target=_one_target())
+    session = _Session(scope=_scope(), prior=[_row("DC-00000001", "Prior art")], target=_one_target())
     with pytest.raises(nov.NoveltyAssessmentInvalid):
         _assess(session, _Resp(raw_text="I think most of them are new."))
 
@@ -493,7 +498,7 @@ def test_confidence_is_NOT_sent_to_the_model():
 def test_the_model_is_the_frozen_deepseek_flash():
     from app.llm_model_policy import DEEPSEEK_MODEL
 
-    session = _Session(scope=_scope(), prior=[], target=_one_target())
+    session = _Session(scope=_scope(), prior=[_row("DC-00000001", "Prior art")], target=_one_target())
     stub = _StubProvider(_reply(_v("DC-00000010", "NEW")))
     with patch.object(nov, "get_llm_provider", lambda _name: stub):
         asyncio.run(nov.assess_circuit_novelty(session, run_id=RUN))
@@ -502,7 +507,7 @@ def test_the_model_is_the_frozen_deepseek_flash():
 
 
 def test_a_model_policy_violation_is_refused():
-    session = _Session(scope=_scope(), prior=[], target=_one_target())
+    session = _Session(scope=_scope(), prior=[_row("DC-00000001", "Prior art")], target=_one_target())
     resp = _reply(_v("DC-00000010", "NEW"))
     resp.model = "deepseek-v4-pro"
     with pytest.raises(nov.NoveltyProviderError):
@@ -510,7 +515,7 @@ def test_a_model_policy_violation_is_refused():
 
 
 def test_a_transport_failure_is_refused():
-    session = _Session(scope=_scope(), prior=[], target=_one_target())
+    session = _Session(scope=_scope(), prior=[_row("DC-00000001", "Prior art")], target=_one_target())
     with pytest.raises(nov.NoveltyProviderError):
         _assess(session, _Resp(raw_text="", transport_ok=False,
                                error_message="connection reset"))
@@ -605,7 +610,7 @@ def test_raw_text_is_authoritative_over_a_misleading_parsed_json():
 def test_a_reply_with_no_text_at_all_is_refused_before_parsing():
     """There is no `parsed_json` fallback to get wrong: an empty reply is an
     empty reply."""
-    session = _Session(scope=_scope(), prior=[], target=_one_target())
+    session = _Session(scope=_scope(), prior=[_row("DC-00000001", "Prior art")], target=_one_target())
     with pytest.raises(nov.NoveltyProviderError):
         _assess(session, _Resp(raw_text="   ", parsed_json={"verdicts": [_v("DC-00000010", "NEW")]}))
 
@@ -614,7 +619,7 @@ def test_a_bare_ARRAY_of_verdicts_is_the_same_answer_as_the_wrapper():
     """The model sometimes drops the envelope. That is a style difference, not a
     different answer, and refusing it would discard a valid assessment."""
     session = _Session(
-        scope=_scope(), prior=[],
+        scope=_scope(), prior=[_row("DC-00000001", "Prior art")],
         target=[_row("DC-00000010", "T1", run_id=RUN),
                 _row("DC-00000011", "T2", run_id=RUN)],
     )
@@ -629,7 +634,7 @@ def test_a_reply_with_NO_verdicts_is_not_reported_as_a_partial_one():
     """An unjudged-everything reply is a shape problem; a missing-three reply is
     a coverage problem. Conflating them sends a reader hunting for the wrong
     thing."""
-    session = _Session(scope=_scope(), prior=[], target=_one_target())
+    session = _Session(scope=_scope(), prior=[_row("DC-00000001", "Prior art")], target=_one_target())
     with pytest.raises(nov.NoveltyAssessmentInvalid) as exc:
         _assess(session, _Resp(raw_text=json.dumps({"summary": "all new I think"})))
     assert "carried no verdicts" in str(exc.value)

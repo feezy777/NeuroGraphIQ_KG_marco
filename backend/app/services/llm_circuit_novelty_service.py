@@ -83,6 +83,55 @@ ASSESSABLE_STATUS = "COMPLETED"
 CANDIDATE_TYPE_CIRCUIT = "circuit"
 
 
+@dataclass(frozen=True)
+class AssessorIdentity:
+    """WHO produced an assessment — the provenance half of its idempotency key."""
+
+    provider: str
+    model_name: str
+    prompt_key: str
+    prompt_version: str
+
+
+#: The judgement by the frozen DeepSeek model.
+LLM_ASSESSOR = AssessorIdentity(
+    provider=DEEPSEEK_PROVIDER,
+    model_name=effective_deepseek_model(None),
+    prompt_key=PROMPT_KEY,
+    prompt_version=PROMPT_VERSION,
+)
+
+#: The judgement of a run with NO prior art at all — decided without a model.
+#:
+#: With an empty prior pool the contract makes ALIAS and REFORMULATION
+#: STRUCTURALLY IMPOSSIBLE: both classes must name the earlier circuit they
+#: match, and there is none to name, so the parser rejects them. Only NEW and
+#: BORDERLINE remain, and both count as novelty. `semantic_new_count` therefore
+#: EQUALS the number of target circuits, by the contract rather than by
+#: judgement, and no model can improve on a theorem.
+#:
+#: The provider/model recorded here say so plainly rather than borrowing the
+#: LLM's identity for a call that never happened.
+EMPTY_POOL_ASSESSOR = AssessorIdentity(
+    provider="deterministic",
+    model_name="empty-prior-pool",
+    prompt_key=PROMPT_KEY,
+    prompt_version=f"{PROMPT_VERSION}+empty-pool",
+)
+
+
+def identity_for(prior: PriorCircuitPool, target: tuple[AssessableCircuit, ...]) -> AssessorIdentity:
+    """Which assessor can answer this question.
+
+    Only a run whose View has NO earlier completed round at all is decided
+    deterministically; the moment one prior circuit exists, matching becomes
+    possible and the judgement needs the model.
+    """
+    if target and not prior.circuits:
+        return EMPTY_POOL_ASSESSOR
+    return LLM_ASSESSOR
+
+
 # ===========================================================================
 # typed errors — the caller maps these; none carries SQL or DB internals
 # ===========================================================================
@@ -494,7 +543,9 @@ def _check_match(verdict: Any, prior_by_id: dict[str, AssessableCircuit]) -> Non
 # the assessment
 # ===========================================================================
 async def _judge(
-    session: AsyncSession, *, scope: _RunScope
+    session: AsyncSession, *, scope: _RunScope,
+    prior: PriorCircuitPool | None = None,
+    target: tuple[AssessableCircuit, ...] | None = None,
 ) -> tuple[CircuitNoveltyAssessment, tuple[AssessableCircuit, ...], PriorCircuitPool]:
     """The judgement itself: collect, one provider call, validate.
 
@@ -503,8 +554,13 @@ async def _judge(
     Writes nothing — persistence is a separate, later step that can only run on
     a result that already passed every check here.
     """
-    prior = await collect_prior_circuits(session, scope=scope)
-    target = await collect_target_circuits(session, scope=scope)
+    # Callers that already collected the pools pass them in, so the identity can
+    # be decided (and the idempotency lookup made) from ONE read of the scope
+    # rather than a read that could disagree with itself.
+    if prior is None:
+        prior = await collect_prior_circuits(session, scope=scope)
+    if target is None:
+        target = await collect_target_circuits(session, scope=scope)
 
     # A run with no circuits still has a well-defined answer — nothing to
     # assess, zero novelty — and must not cost a provider call to say so.
@@ -524,6 +580,48 @@ async def _judge(
                 BORDERLINE_count=0,
                 semantic_new_count=0,
                 verdicts=[],
+            ),
+            target,
+            prior,
+        )
+
+    # No prior art at all: every circuit is novel BY THE CONTRACT, not by
+    # opinion. ALIAS and REFORMULATION would each have to name the earlier
+    # circuit they match, and there is no earlier circuit — so neither class is
+    # even reachable, leaving NEW and BORDERLINE, which both count. Spending a
+    # provider call to have a model rediscover a theorem would also introduce
+    # variance into a number that is exact without it.
+    if not prior.circuits:
+        verdicts = [
+            CircuitNoveltyVerdict(
+                candidate_id=c.candidate_id,
+                local_id=c.local_id,
+                name=c.name,
+                novelty_class="NEW",
+                matched_prior_candidate_id=None,
+                matched_prior_run_id=None,
+                short_reason=(
+                    "no earlier completed round of this view exists, so there is "
+                    "nothing this circuit could be an alias or reformulation of"
+                ),
+            )
+            for c in target
+        ]
+        return (
+            CircuitNoveltyAssessment(
+                target_run_id=scope.run_id,
+                seed_entity_id=scope.seed_entity_id,
+                discovery_view=scope.discovery_view,
+                strategy_identifier=scope.strategy,
+                raw_circuit_count=len(verdicts),
+                prior_circuit_count=0,
+                prior_run_count=0,
+                NEW_count=len(verdicts),
+                ALIAS_count=0,
+                REFORMULATION_count=0,
+                BORDERLINE_count=0,
+                semantic_new_count=semantic_new_count_of(verdicts),
+                verdicts=verdicts,
             ),
             target,
             prior,
@@ -655,19 +753,22 @@ _EXISTING_SQL = text(
 
 
 async def existing_assessment_id(
-    session: AsyncSession, *, scope: _RunScope
+    session: AsyncSession, *, scope: _RunScope, identity: AssessorIdentity | None = None
 ) -> str | None:
     """The id of the assessment already stored for this run, or None.
 
-    Answers "would a POST spend another provider call?" without spending one.
+    Answers "would this spend another provider call?" without spending one. The
+    identity defaults to the LLM assessor; pass the empty-pool one to ask about
+    a deterministic judgement.
     """
+    who = identity or LLM_ASSESSOR
     row = (
         await session.execute(
             _EXISTING_SQL,
             {
                 "target_run_pk": scope.run_pk,
-                "prompt_version": PROMPT_VERSION,
-                "model_name": effective_deepseek_model(None),
+                "prompt_version": who.prompt_version,
+                "model_name": who.model_name,
             },
         )
     ).scalars().first()
@@ -681,6 +782,7 @@ async def persist_novelty_assessment(
     assessment: CircuitNoveltyAssessment,
     target: tuple[AssessableCircuit, ...],
     prior: PriorCircuitPool,
+    identity: AssessorIdentity | None = None,
 ) -> str:
     """Store one validated assessment and all its verdicts. Returns its id.
 
@@ -695,15 +797,16 @@ async def persist_novelty_assessment(
     """
     by_id = {c.candidate_id: c for c in target}
     prior_pk_by_id = {c.candidate_id: c.candidate_pk for c in prior.circuits}
+    who = identity or LLM_ASSESSOR
     params = {
         "target_run_pk": scope.run_pk,
         "seed_region_pk": scope.seed_region_pk,
         "discovery_view": scope.discovery_view,
         "query_strategy_version": scope.strategy,
-        "provider": DEEPSEEK_PROVIDER,
-        "model_name": effective_deepseek_model(None),
-        "prompt_key": PROMPT_KEY,
-        "prompt_version": PROMPT_VERSION,
+        "provider": who.provider,
+        "model_name": who.model_name,
+        "prompt_key": who.prompt_key,
+        "prompt_version": who.prompt_version,
         "raw_circuit_count": assessment.raw_circuit_count,
         "new_count": assessment.NEW_count,
         "alias_count": assessment.ALIAS_count,
@@ -781,23 +884,33 @@ async def assess_and_persist_circuit_novelty(
             f"its prior pool was confined to"
         )
 
-    existing = await existing_assessment_id(session, scope=scope)
+    # Read the scope ONCE: the identity (and therefore the idempotency key)
+    # depends on whether any prior art exists, so a second read that saw a
+    # different pool could look up the wrong key.
+    prior = await collect_prior_circuits(session, scope=scope)
+    target = await collect_target_circuits(session, scope=scope)
+    identity = identity_for(prior, target)
+
+    existing = await existing_assessment_id(session, scope=scope, identity=identity)
     if existing is not None:
         logger.info("[circuit-novelty] reusing stored assessment %s", existing)
         return await read_novelty_assessment(session, assessment_id=existing)
 
-    assessment, target, prior = await _judge(session, scope=scope)
+    assessment, target, prior = await _judge(
+        session, scope=scope, prior=prior, target=target
+    )
 
     try:
         assessment_id = await persist_novelty_assessment(
-            session, scope=scope, assessment=assessment, target=target, prior=prior
+            session, scope=scope, assessment=assessment, target=target, prior=prior,
+            identity=identity,
         )
     except IntegrityError:
         # A concurrent POST won the race. The UNIQUE constraint is the real
         # idempotency guard — persist_novelty_assessment has already rolled the
         # failed write back — so the honest answer is the winner's, not a
         # conflict for a question that now has an answer.
-        winner = await existing_assessment_id(session, scope=scope)
+        winner = await existing_assessment_id(session, scope=scope, identity=identity)
         if winner is None:
             raise
         logger.info("[circuit-novelty] concurrent POST; reusing %s", winner)
@@ -808,6 +921,7 @@ async def assess_and_persist_circuit_novelty(
 
 __all__ = [
     "AssessableCircuit",
+    "AssessorIdentity",
     "PriorCircuitPool",
     "NoveltyAssessmentError",
     "NoveltyAssessmentIncomplete",
@@ -819,7 +933,10 @@ __all__ = [
     "assess_circuit_novelty",
     "collect_prior_circuits",
     "collect_target_circuits",
+    "EMPTY_POOL_ASSESSOR",
+    "LLM_ASSESSOR",
     "existing_assessment_id",
+    "identity_for",
     "parse_novelty_assessment",
     "persist_novelty_assessment",
     "resolve_assessable_run",

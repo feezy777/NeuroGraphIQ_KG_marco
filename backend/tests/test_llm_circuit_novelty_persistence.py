@@ -471,6 +471,10 @@ async def test_J_a_different_view_identifier_is_a_different_prior_pool(h, novelt
 # ===========================================================================
 @case
 async def test_K_an_invalid_model_reply_writes_no_row_at_all(h, novelty):
+    # Prior art is REQUIRED here: with an empty pool the assessor answers
+    # deterministically and never reaches the model, so there would be no
+    # partial reply to refuse.
+    await _completed_run(h, circuit_names=["Prior art"])
     target_id, target_pk, _ = await _completed_run(
         h, circuit_names=["A", "B", "C"])
 
