@@ -53,11 +53,20 @@ from app.schemas.llm_discovery import (
 #           survive contact with a domain that abbreviates constantly. Adds
 #           explicit per-type prefixes, a prohibition on abbreviation, and one
 #           validated format-only example.
+#   1.3.0 — Hemisphere-aware. Regions now carry `hemisphere_context` in a closed
+#           vocabulary, so the prompt states the vocabulary, the rule that a
+#           side is never inferred from the seed, and — for the first time —
+#           tells the model what SEED IS rather than only what it is called.
+#           The seed's own hemisphere was already in the seed block; what was
+#           missing is that a stated side is a property of the SEED alone.
 #
-# The contract's own `schema_version` (1.0) is a SEPARATE thing: the science did
-# not change, only how it is described to the model.
+# The contract's own `schema_version` is a SEPARATE thing: it tracks the SHAPE
+# a response must have (1.1 for hemisphere-aware), not how that shape is
+# described. Prompt text and response shape move together here, so both version
+# markers move together; they stay separate fields because a wording change
+# alone must never invalidate stored payloads.
 PROMPT_KEY = "knowledge_production.llm_discovery"
-PROMPT_VERSION = "1.2.0"
+PROMPT_VERSION = "1.3.0"
 
 _SCALARS = {str: "string", int: "integer", float: "number", bool: "boolean"}
 
@@ -298,18 +307,42 @@ Rules you must obey:
    Use UNKNOWN when the species basis is unclear. Never silently convert
    animal knowledge into HUMAN, and never guess a taxon id.
 
-8. NO EVIDENCE CLAIMS. Do not claim that something is proven, and do not
+8. LATERALITY. Every region carries a `hemisphere_context` saying what you
+   know about THAT structure's side, in exactly one of these values:
+
+     LEFT, RIGHT                 you know the structure's own side
+     BILATERAL                   the structure spans both sides
+     MIDLINE                     the structure is midline / unpaired
+     IPSILATERAL_TO_SEED         the same side as the seed
+     CONTRALATERAL_TO_SEED       the opposite side from the seed
+     UNSPECIFIED                 you do not know, or a side does not apply
+
+   Prefer a RELATIVE value when the relationship is what you actually know:
+   "the contralateral CA3" is CONTRALATERAL_TO_SEED, and it stays correct
+   whichever side the seed is on. Do not convert it into LEFT or RIGHT.
+
+   NEVER infer a side from the seed. A seed on the left does NOT make the
+   structures you propose left, does not make its partners right, and does not
+   make them bilateral. If you do not know a side, write UNSPECIFIED: that is a
+   complete answer, not a missing one, and once stored a guessed side is
+   indistinguishable from a known one.
+
+   A connection, circuit or function does NOT carry a laterality. Their sides
+   follow from the regions they reference, so state the side on the REGION and
+   let it follow.
+
+9. NO EVIDENCE CLAIMS. Do not claim that something is proven, and do not
    fabricate evidence, quotations or citations.
 
-9. ONLY THE FIELDS IN THE SCHEMA. Return exactly the fields defined below and
+10. ONLY THE FIELDS IN THE SCHEMA. Return exactly the fields defined below and
    nothing else. Do NOT add quotations, evidence passages, page numbers,
    offsets, citation blocks, confidence explanations, or any other field of
    your own invention. An undefined field is treated as an error, not ignored.
 
-10. OUTPUT JSON ONLY. Return exactly one JSON object and nothing else: no
+11. OUTPUT JSON ONLY. Return exactly one JSON object and nothing else: no
    markdown, no code fences, no commentary before or after it.
 
-11. RESPONSE ROOT. The answer is ONE JSON object whose first-level keys are
+12. RESPONSE ROOT. The answer is ONE JSON object whose first-level keys are
    exactly: schema_version, seed_entity_id, summary, regions, connections,
    functions, circuits, source_hints, warnings.
 
@@ -319,6 +352,48 @@ Rules you must obey:
    a field reference, or JSON Schema metadata instead of the answer. A field
    reference describes the ITEMS INSIDE the arrays; it is not the response.
 """
+
+
+def build_seed_identity_note(seed: LlmDiscoveryInput) -> str:
+    """State what SEED IS, not only what it is called (§6).
+
+    The seed block is DATA. A model can read `seed_entity_id` as a label and
+    still reason about a CATEGORY — "the hippocampus" rather than the one
+    structure that was asked about — which is how a bilateral claim gets made
+    about a region that was named on one side. Naming the identity in words is
+    what pins the discovery to THIS region, at THIS granularity, on THIS side.
+
+    The hemisphere sentence is deliberately a CONSTRAINED statement: it says the
+    side is a property of the seed alone and is not evidence about anything the
+    model proposes. A prompt that states the seed's side without that limit
+    invites exactly the inference the contract forbids.
+    """
+    name = seed.seed_name_en or seed.seed_name_zh or seed.seed_entity_id
+    hemisphere = (seed.seed_hemisphere or "").strip()
+    granularity = (seed.seed_granularity_level or "").strip()
+
+    lines = [
+        f"SEED is exactly this canonical BrainRegion: {seed.seed_entity_id} "
+        f"({name}). Everything you return is a hypothesis about THAT structure."
+    ]
+    if granularity:
+        lines.append(
+            f"Its granularity is {granularity}: discover that structure at that "
+            "granularity, not a coarser or finer structure that resembles it."
+        )
+    if hemisphere:
+        lines.append(
+            f"Its hemisphere is {hemisphere}. That side belongs to the SEED "
+            "alone (rule 8): it is what makes a relative value resolvable, and "
+            "it is NOT evidence about the side of any region you propose."
+        )
+    else:
+        lines.append(
+            "Its hemisphere is not stated, so no relative laterality can be "
+            "resolved: use LEFT or RIGHT only if you independently know that "
+            "structure's side, otherwise UNSPECIFIED."
+        )
+    return "\n".join(lines)
 
 
 def build_user_prompt(seed: LlmDiscoveryInput) -> str:
@@ -342,6 +417,8 @@ def build_user_prompt(seed: LlmDiscoveryInput) -> str:
             "```json",
             json.dumps(seed_block, ensure_ascii=False, indent=2),
             "```",
+            "",
+            build_seed_identity_note(seed),
             "",
             "Every connection, circuit and function must state its species_context.",
             f"Taxon ids use NCBI taxonomy ({HUMAN_TAXON_ID} = human, 10090 = mouse, "

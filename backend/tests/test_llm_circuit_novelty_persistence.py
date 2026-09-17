@@ -30,6 +30,8 @@ from unittest.mock import patch
 
 import pytest
 
+from app.schemas.llm_discovery import SCHEMA_VERSION
+
 if sys.platform == "win32":  # psycopg async cannot use the Proactor loop
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
@@ -150,7 +152,7 @@ def _response_with_circuits(seed_entity_id: str, names: list[str]) -> dict[str, 
     and resolves every ref it declares.
     """
     return {
-        "schema_version": "1.0",
+        "schema_version": SCHEMA_VERSION,
         "seed_entity_id": seed_entity_id,
         "summary": "novelty persistence fixture",
         "regions": [

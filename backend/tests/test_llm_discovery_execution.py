@@ -21,6 +21,8 @@ from typing import Any
 
 import httpx
 import pytest
+
+from app.schemas.llm_discovery import SCHEMA_VERSION
 from fastapi.testclient import TestClient
 from sqlalchemy.exc import IntegrityError, OperationalError
 
@@ -411,7 +413,7 @@ class _StubProvider:
 def _payload(**overrides: Any) -> dict[str, Any]:
     """A structurally valid Phase 3A discovery response."""
     data: dict[str, Any] = {
-        "schema_version": "1.0",
+        "schema_version": SCHEMA_VERSION,
         "seed_entity_id": SEED_ENTITY,
         "summary": "hypothesis sketch",
         "regions": [
@@ -1036,9 +1038,15 @@ def test_rp_8_metrics_report_the_profile_so_truncation_can_be_read(env):
 
 
 def test_rp_9_run_provenance_names_the_hardened_prompt_version(env):
-    """§25.9: the persisted run must identify the prompt text that produced it."""
+    """§25.9: the persisted run must identify the prompt text that produced it.
+
+    The assertion is against the module's own constant, because what this test
+    proves is the PLUMBING — that the version reaches the persisted run. WHICH
+    version is current is pinned once, in test_llm_discovery_contract; a literal
+    here would go stale at every prompt revision and prove nothing extra.
+    """
     _execute(env)
-    assert env.db.runs[0]["prompt_version"] == "1.2.0"
+    assert env.db.runs[0]["prompt_version"] == PROMPT_VERSION
     assert env.db.runs[0]["prompt_key"] == "knowledge_production.llm_discovery"
 
 

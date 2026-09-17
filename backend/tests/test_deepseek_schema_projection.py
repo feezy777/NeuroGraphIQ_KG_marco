@@ -106,7 +106,7 @@ def test_the_traversal_reaches_nested_definitions(projected):
 # ===========================================================================
 def test_6_a_canonically_nullable_field_keeps_its_null(canonical, projected):
     for name in CANDIDATE_DEFS:
-        for field in ("rationale", "name_en", "hemisphere", "description"):
+        for field in ("rationale", "name_en", "description"):
             canon = canonical["$defs"][name]["properties"].get(field)
             if canon is None:
                 continue

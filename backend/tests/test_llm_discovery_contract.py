@@ -622,8 +622,10 @@ def test_prompt_identity_is_frozen():
     assert prompt_mod.PROMPT_KEY == "knowledge_production.llm_discovery"
     # 1.1.0 — Phase 3B.2 root-shape hardened text. 1.0.0 identified the OLD
     # prompt that embedded the `top_level` schema description.
+    # 1.3.0 — hemisphere-aware: rule 8 states the closed laterality vocabulary
+    # and the no-inference rule, and the seed block now says what SEED IS.
     assert prompt_mod.PROMPT_VERSION != "1.0.0"
-    assert prompt_mod.PROMPT_VERSION == "1.2.0"
+    assert prompt_mod.PROMPT_VERSION == "1.3.0"
 
 
 def test_prompt_parts_and_seed_context():
@@ -1180,7 +1182,10 @@ def test_b14_the_root_skeleton_is_rendered_not_hand_written():
     )
     body = ast.get_source_segment(source, fn) or ""
     assert "model_fields" in body, "the skeleton must be rendered from the contract"
-    for literal in ('"regions"', '"schema_version": "1.0"', '"source_hints"'):
+    # Built from the live constant, not typed as a literal: a hard-coded "1.0"
+    # here stopped matching the moment the contract moved to 1.1, which would
+    # have left the guard passing on a hand-written skeleton.
+    for literal in ('"regions"', f'"schema_version": "{SCHEMA_VERSION}"', '"source_hints"'):
         assert literal not in body, literal
 
 
@@ -1196,9 +1201,11 @@ def _example() -> dict[str, Any]:
 
 
 def test_c1_prompt_version_is_the_local_id_hardened_text():
-    assert prompt_mod.PROMPT_VERSION == "1.2.0"
+    # Carried forward onto the hemisphere-aware revision (1.3.0); the local-id
+    # hardening this test was named for is unchanged and still asserted above.
+    assert prompt_mod.PROMPT_VERSION == "1.3.0"
     built = prompt_mod.build_llm_discovery_prompt(seed())
-    assert built["prompt_version"] == "1.2.0"
+    assert built["prompt_version"] == "1.3.0"
 
 
 def test_c2_every_exact_prefix_is_stated_in_the_prompt():
@@ -2330,7 +2337,7 @@ REGION_DOC = {
     "name": "Dentate gyrus (granule cell layer)",
     "name_en": "Dentate gyrus",
     "name_zh": "齿状回",
-    "hemisphere": "left",
+    "hemisphere_context": "LEFT",
     "species_taxon_id": "9606",
     "relation_to_seed": "AFFERENT",
     "rationale": "Primary afferent source of the dentate-CA3 sub-circuits.",
@@ -2423,33 +2430,34 @@ def test_envelope_h2_ambiguity_is_not_resolved_by_position():
 
 # --- §13 the proven vulnerability: a malformed envelope must not leak a child --
 def test_envelope_l1_a_missing_comma_does_not_leak_the_nested_region():
-    text = ('{"schema_version": "1.0", "seed_entity_id": "%s", "regions": [%s]'
-            ' "connections": [], "circuits": []}' % (SEED_ID, region_doc()))
+    text = ('{"schema_version": "%s", "seed_entity_id": "%s", "regions": [%s]'
+            ' "connections": [], "circuits": []}'
+            % (SCHEMA_VERSION, SEED_ID, region_doc()))
     result = parse_text(text)
     assert not result.ok
     assert result.error.startswith(parser.ERR_ENVELOPE_MISSING), result.error
 
 
 def test_envelope_l2_a_stray_member_does_not_leak_the_nested_region():
-    text = ('{"schema_version": "1.0", "seed_entity_id": "%s", "regions": [%s],'
-            ' "connections": [], "oops": }' % (SEED_ID, region_doc()))
+    text = ('{"schema_version": "%s", "seed_entity_id": "%s", "regions": [%s],'
+            ' "connections": [], "oops": }' % (SCHEMA_VERSION, SEED_ID, region_doc()))
     result = parse_text(text)
     assert not result.ok
     assert result.error.startswith(parser.ERR_ENVELOPE_MISSING), result.error
 
 
 def test_envelope_l3_a_single_quoted_key_does_not_leak_the_nested_region():
-    text = ("{'schema_version': '1.0', 'seed_entity_id': '%s', 'regions': [%s],"
-            " 'connections': []}" % (SEED_ID, region_doc()))
+    text = ("{'schema_version': '%s', 'seed_entity_id': '%s', 'regions': [%s],"
+            " 'connections': []}" % (SCHEMA_VERSION, SEED_ID, region_doc()))
     result = parse_text(text)
     assert not result.ok
     assert result.error.startswith(parser.ERR_ENVELOPE_MISSING), result.error
 
 
 def test_envelope_l4_a_raw_newline_in_a_string_does_not_leak_the_nested_region():
-    text = ('{"schema_version": "1.0", "seed_entity_id": "%s",'
+    text = ('{"schema_version": "%s", "seed_entity_id": "%s",'
             ' "summary": "line one\nline two", "regions": [%s], "connections": []}'
-            % (SEED_ID, region_doc()))
+            % (SCHEMA_VERSION, SEED_ID, region_doc()))
     result = parse_text(text)
     assert not result.ok
     assert result.error.startswith(parser.ERR_ENVELOPE_MISSING), result.error

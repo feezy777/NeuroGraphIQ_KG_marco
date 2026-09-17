@@ -22,7 +22,7 @@ Frozen boundaries:
 from __future__ import annotations
 
 import re
-from typing import Literal
+from typing import Literal, Mapping
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -36,7 +36,26 @@ _STRICT = ConfigDict(extra="forbid")
 # ===========================================================================
 # Frozen contract version
 # ===========================================================================
-SCHEMA_VERSION = "1.0"
+#: 1.1 = hemisphere-aware. `RegionCandidate.hemisphere_context` became a
+#: CLOSED vocabulary with a deterministic resolution seeded by the run's own
+#: seed hemisphere, replacing an unconstrained free-text `hemisphere` string
+#: whose live values were mixed-case and uninterpretable ("left", "LEFT",
+#: "bilateral"). The marker for this contract revision is
+#: ``HEMISPHERE_AWARE_CONTRACT``; the version is validated in-band on every
+#: response, so a model that answers an old contract is refused rather than
+#: silently accepted.
+SCHEMA_VERSION = "1.1"
+
+#: The NAME of the revision above, for code and tests that need to say WHICH
+#: revision a behaviour belongs to without parsing a version number.
+#:
+#: Code-level marker ONLY — nothing persists it. The run row's
+#: ``schema_version`` column exists but is unpopulated for every historical run,
+#: and a stored payload identifies its own contract by SHAPE: a region carrying
+#: `hemisphere_context` was produced by this revision, a region carrying the
+#: free-text `hemisphere` was not. Read it as the name of the change, never as a
+#: stored provenance field.
+HEMISPHERE_AWARE_CONTRACT = "hemisphere-aware-v1"
 
 # The reserved reference for the known seed BrainRegion. Connections/circuits
 # point at it directly instead of inventing a fake RegionCandidate for it.
@@ -87,6 +106,100 @@ RegionRelationToSeed = Literal[
     "FUNCTIONALLY_RELATED",
     "UNKNOWN",
 ]
+
+#: Laterality of a proposed region, as the MODEL stated it. Closed vocabulary.
+#:
+#: Hemisphere is part of BrainRegion IDENTITY, not display metadata:
+#: `CA3 left -> CA1 left` and `CA3 left -> CA1 right` are different scientific
+#: claims, and collapsing both into `CA3 -> CA1` destroys the distinction
+#: before anything downstream can use it.
+#:
+#: Absolute values (LEFT, RIGHT) are used only when the model stated an absolute
+#: side. The two RELATIVE values exist because the natural way to describe a
+#: hippocampal pathway is relative to the seed ("the contralateral CA3"), and a
+#: free-text field had no way to say that at all: the model had to guess a side,
+#: and guessed wrong whenever the seed's own side was not what it assumed.
+#: Keeping the relationship preserves what the model actually claimed.
+#:
+#: UNSPECIFIED is the default and means the model stated NO laterality. It is
+#: never an invitation to infer one from the seed — a seed in the left
+#: hemisphere does NOT make an unspecified partner left, and treating it that
+#: way would manufacture a claim nobody made.
+HemisphereContext = Literal[
+    "LEFT",
+    "RIGHT",
+    "BILATERAL",
+    "MIDLINE",
+    "IPSILATERAL_TO_SEED",
+    "CONTRALATERAL_TO_SEED",
+    "UNSPECIFIED",
+]
+
+HEMISPHERE_CONTEXTS: tuple[str, ...] = (
+    "LEFT",
+    "RIGHT",
+    "BILATERAL",
+    "MIDLINE",
+    "IPSILATERAL_TO_SEED",
+    "CONTRALATERAL_TO_SEED",
+    "UNSPECIFIED",
+)
+
+#: What a hemisphere_context RESOLVES to. Absolute where the model was absolute,
+#: and where it was relative, the seed's own side decides. UNSPECIFIED stays
+#: UNSPECIFIED: resolution interprets, it never invents.
+RESOLVED_HEMISPHERES: tuple[str, ...] = (
+    "LEFT",
+    "RIGHT",
+    "BILATERAL",
+    "MIDLINE",
+    "UNSPECIFIED",
+)
+
+
+def _normalise_side(value: object) -> str:
+    """Upper-cased, stripped text — or "" for anything that is not a string.
+
+    Total on purpose. Both inputs reach this from stored JSON, where a legacy or
+    hand-edited payload can hold a number or a list where the contract expects a
+    string; a resolver that raised on that would turn one odd row into a failed
+    page read, which is a much larger blast radius than the bad value deserves.
+    """
+    if not isinstance(value, str):
+        return ""
+    return value.strip().upper()
+
+
+def resolve_hemisphere(seed_hemisphere: object, hemisphere_context: object) -> str:
+    """Resolve one region candidate's laterality. PURE, TOTAL, DETERMINISTIC.
+
+    Application logic, never a model call: the same (seed, context) pair must
+    give the same answer on every run, and an LLM asked to derive it could
+    disagree with itself between rounds and silently change what a stored
+    candidate means.
+
+    The seed's own value comes from the canonical BrainRegion, whose vocabulary
+    is lowercase ("left"/"right"); it is normalised here and returned in the
+    contract's uppercase form. A seed with no stated side cannot resolve a
+    relative context, and says so rather than guessing.
+
+    Returns a member of RESOLVED_HEMISPHERES. Anything unrecognised — including
+    input that is not text at all — is UNSPECIFIED, never a default side.
+    """
+    seed = _normalise_side(seed_hemisphere)
+    context = _normalise_side(hemisphere_context) or "UNSPECIFIED"
+
+    if context == "IPSILATERAL_TO_SEED":
+        return seed if seed in ("LEFT", "RIGHT") else "UNSPECIFIED"
+    if context == "CONTRALATERAL_TO_SEED":
+        if seed == "LEFT":
+            return "RIGHT"
+        if seed == "RIGHT":
+            return "LEFT"
+        return "UNSPECIFIED"
+    if context in ("LEFT", "RIGHT", "BILATERAL", "MIDLINE"):
+        return context
+    return "UNSPECIFIED"
 
 # A neural circuit is NOT required to be a closed loop. `LOOP` is one shape
 # among many; Gate7B models closed-ness as the boolean property
@@ -338,7 +451,25 @@ class RegionCandidate(_LocalIdMixin):
     name: str
     name_en: str | None = None
     name_zh: str | None = None
-    hemisphere: str | None = None
+    #: Laterality AS THE MODEL STATED IT, in a closed vocabulary. Replaces an
+    #: unconstrained `hemisphere: str | None` whose live values were `None`,
+    #: "left", "LEFT", "right" and "bilateral" — a free-text field cannot
+    #: distinguish an absolute side from a side relative to the seed, so the
+    #: model had to guess a side and guessed wrong whenever the seed's own side
+    #: was not what it assumed. See HemisphereContext for the vocabulary and
+    #: resolve_hemisphere() for how it becomes an absolute side.
+    #:
+    #: Absent in a stored payload (all LEGACY rows) means UNSPECIFIED: the model
+    #: stated no laterality, and that is recorded as "none stated" rather than
+    #: repaired into a side. This default is what keeps every historical payload
+    #: readable — it does NOT reinterpret a legacy `hemisphere` string, which
+    #: stays visible verbatim in the persisted payload for whoever wants to read
+    #: the original wording.
+    #:
+    #: THIS IS THE ONLY TYPE THAT CARRIES IT. A connection's or circuit's
+    #: laterality is a consequence of the regions it references, never an
+    #: independent claim; see resolve_hemisphere()'s caller.
+    hemisphere_context: HemisphereContext = "UNSPECIFIED"
     # The species IDENTITY of the named structure itself. Deliberately kept
     # separate from SpeciesContext (the species basis of a knowledge claim):
     # a region can be a human structure while the claim relating it is rodent
@@ -360,6 +491,57 @@ class ConnectionCandidate(_LocalIdMixin, _ConfidenceMixin, _SpeciesContextMixin)
     connection_type: ConnectionType = "UNKNOWN"
     directionality: ConnectionDirectionality = "UNKNOWN"
     rationale: str | None = None
+
+
+def resolve_connection_sides(
+    seed_hemisphere: object,
+    source_ref: str,
+    target_ref: str,
+    regions_by_local_id: Mapping[str, "RegionCandidate"],
+) -> tuple[str, str]:
+    """Both endpoints of ONE connection as absolute sides. PURE and DETERMINISTIC.
+
+    A connection states no laterality of its own (§11), so this applies the
+    REGION rule to each endpoint and nothing else:
+
+        SEED            -> the seed's own side
+        <a region ref>  -> resolve_hemisphere(seed, that region's context)
+
+    Which is what keeps `Left CA3 -> CA1(ipsilateral)` and
+    `Left CA3 -> CA1(contralateral)` two different claims instead of collapsing
+    into `CA3 -> CA1`.
+
+    An endpoint that is not resolvable says UNSPECIFIED rather than taking a
+    side: a ref this response never declared (the parser already rejects that as
+    a structural error, so this is only reachable for a payload assembled by
+    hand), and a region whose context is UNSPECIFIED, both stay UNSPECIFIED.
+    Inheriting a side from the SEED here would be exactly the inference §7
+    forbids — the bug this contract exists to prevent, reintroduced as a
+    convenience in the one place it would look most reasonable.
+    """
+    return (
+        _endpoint_side(seed_hemisphere, source_ref, regions_by_local_id),
+        _endpoint_side(seed_hemisphere, target_ref, regions_by_local_id),
+    )
+
+
+def _endpoint_side(
+    seed_hemisphere: object,
+    ref: str,
+    regions_by_local_id: Mapping[str, "RegionCandidate"],
+) -> str:
+    """One endpoint's absolute side. See resolve_connection_sides()."""
+    if ref == SEED_REF:
+        # The seed declares its own side and needs no resolution: its vocabulary
+        # is already what a resolved side is. The membership test is against
+        # RESOLVED_HEMISPHERES so a value this contract cannot express becomes
+        # UNSPECIFIED rather than being echoed back as if it were one.
+        seed = _normalise_side(seed_hemisphere)
+        return seed if seed in RESOLVED_HEMISPHERES else "UNSPECIFIED"
+    region = regions_by_local_id.get(ref)
+    if region is None:
+        return "UNSPECIFIED"
+    return resolve_hemisphere(seed_hemisphere, region.hemisphere_context)
 
 
 class FunctionCandidate(_LocalIdMixin, _ConfidenceMixin, _SpeciesContextMixin):

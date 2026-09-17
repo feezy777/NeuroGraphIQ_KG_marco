@@ -39,6 +39,15 @@ E2E_DB = os.environ.get("TEST_E2E_DB", "neurographiq_human_brain_v1_e2e")
 FALLBACK_SEED = "NGIQ-BR-00001169"          # Left Hippocampus
 
 
+def _schema_version() -> str:
+    """The LIVE contract version. These fixtures must survive the real parser,
+    so pinning a literal here only guarantees they go stale at the next contract
+    revision — the version is pinned once, in test_llm_discovery_contract."""
+    from app.schemas.llm_discovery import SCHEMA_VERSION
+
+    return SCHEMA_VERSION
+
+
 def _dsn(async_: bool = True) -> str:
     cfg: dict[str, str] = {}
     env = BACKEND / ".env"
@@ -154,7 +163,7 @@ async def _drive(fn: Callable[[Session, Any], Awaitable[None]]) -> None:
 def _one_of_each(seed_entity_id: str) -> dict[str, Any]:
     """Exactly one candidate of each type, shaped to survive the real parser."""
     return {
-        "schema_version": "1.0",
+        "schema_version": _schema_version(),
         "seed_entity_id": seed_entity_id,
         "summary": "One candidate of each kind.",
         "regions": [
@@ -163,7 +172,9 @@ def _one_of_each(seed_entity_id: str) -> dict[str, Any]:
                 "confidence": 0.72,
                 "name": "CA1 field of the hippocampus",
                 "name_en": "CA1",
-                "hemisphere": "LEFT",
+                # A RELATIVE claim, which is the case this contract was added
+                # for: it resolves to a side only against the run's own seed.
+                "hemisphere_context": "CONTRALATERAL_TO_SEED",
                 "species_taxon_id": "9606",
                 "relation_to_seed": "AFFERENT",
                 "rationale": "Receives the seed's principal output.",
@@ -224,7 +235,7 @@ def _two_of_each(seed_entity_id: str) -> dict[str, Any]:
     type values. The local_id key is what this fixture actually exercises.
     """
     return {
-        "schema_version": "1.0",
+        "schema_version": _schema_version(),
         "seed_entity_id": seed_entity_id,
         "summary": "Two candidates of each kind.",
         "regions": [
@@ -711,6 +722,9 @@ async def test_N_no_internal_primary_key_is_exposed_on_the_dto(h, svc):
     assert fields == {
         "candidate_id", "run_id", "seed_entity_id", "candidate_type", "local_id",
         "name", "payload", "confidence", "status", "created_at", "updated_at",
+        # Public, and DERIVED on read from the seed's own side — not a storage
+        # key. It is an allowlist, so a new field must be added here on purpose.
+        "resolved_hemisphere",
     }
     for internal in ("candidate_pk", "discovery_run_pk", "seed_region_pk"):
         assert internal not in fields, internal

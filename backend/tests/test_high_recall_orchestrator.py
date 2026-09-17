@@ -25,6 +25,8 @@ from unittest.mock import patch
 
 import pytest
 
+from app.schemas.llm_discovery import SCHEMA_VERSION
+
 if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
@@ -1035,7 +1037,7 @@ def test_counter_has_a_single_writer_and_an_exactly_once_guard():
 # LLM_EMPTY_RESPONSE code — not a hand-raised exception standing in for one.
 def _discovery_payload(seed_entity_id: str, names) -> dict:
     return {
-        "schema_version": "1.0",
+        "schema_version": SCHEMA_VERSION,
         "seed_entity_id": seed_entity_id,
         "summary": "retry fixture",
         "regions": [{"local_id": "region_1", "name": "R1", "confidence": 0.5},
@@ -1232,7 +1234,7 @@ async def test_retry_E_a_schema_failure_is_never_retried(h, _):
         async def complete_json(self, **kwargs):
             self.calls += 1
             return _ProviderResponse(json.dumps({
-                "schema_version": "1.0", "seed_entity_id": EMPTY_SEED,
+                "schema_version": SCHEMA_VERSION, "seed_entity_id": EMPTY_SEED,
                 "regions": [], "connections": [], "functions": [],
                 "circuits": [{"local_id": "circuit_1", "name": "X", "confidence": 0.5,
                               "species_context": {"scope": "UNKNOWN", "taxon_ids": []},
@@ -1540,7 +1542,7 @@ async def test_sched_F_an_infrastructure_failure_is_still_fatal(h, _):
         async def complete_json(self, **kwargs):
             self.calls += 1
             return _ProviderResponse(json.dumps({
-                "schema_version": "1.0", "seed_entity_id": EMPTY_SEED,
+                "schema_version": SCHEMA_VERSION, "seed_entity_id": EMPTY_SEED,
                 "regions": [], "connections": [], "functions": [],
                 "circuits": [{"local_id": "circuit_1", "name": "X", "confidence": 0.5,
                               "species_context": {"scope": "UNKNOWN", "taxon_ids": []},

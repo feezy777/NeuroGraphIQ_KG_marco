@@ -29,6 +29,8 @@ from unittest.mock import patch
 
 import pytest
 
+from app.schemas.llm_discovery import SCHEMA_VERSION
+
 if sys.platform == "win32":  # psycopg async cannot use the Proactor loop
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
@@ -150,7 +152,7 @@ async def _drive(fn: Callable[[Session, Any], Awaitable[None]]) -> None:
 # ===========================================================================
 def _one_region(seed_entity_id: str) -> dict[str, Any]:
     return {
-        "schema_version": "1.0",
+        "schema_version": SCHEMA_VERSION,
         "seed_entity_id": seed_entity_id,
         "summary": "One region candidate.",
         "regions": [

@@ -62,9 +62,11 @@ def _try_parse_json(raw: str) -> dict[str, Any] | None:
 
 #: Provider-side schema identifier for the Responses API structured-output
 #: format. Three different version-ish names exist and must not be conflated:
-#:   schema_version 1.0            -> the SCIENTIFIC contract
-#:   PROMPT_VERSION  1.2.0         -> the prompt TEXT
+#:   schema_version   (app.schemas.llm_discovery)  -> the SCIENTIFIC contract
+#:   PROMPT_VERSION   (app.prompts.llm_discovery_prompt) -> the prompt TEXT
 #:   this name                     -> which schema the provider enforces
+#: The two version numbers are deliberately not written here: they move, and a
+#: comment that pins them is wrong between one bump and the next.
 RESPONSES_SCHEMA_NAME = "neurographiq_llm_discovery_v1"
 
 

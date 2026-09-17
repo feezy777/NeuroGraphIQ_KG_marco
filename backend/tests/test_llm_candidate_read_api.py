@@ -31,6 +31,8 @@ from typing import Any, Awaitable, Callable
 
 import pytest
 
+from app.schemas.llm_discovery import SCHEMA_VERSION
+
 if sys.platform == "win32":  # psycopg async cannot use the Proactor loop
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
@@ -187,7 +189,7 @@ async def _drive(fn: Callable[[Session, Api], Awaitable[None]]) -> None:
 # ===========================================================================
 def _one_of_each(seed_entity_id: str) -> dict[str, Any]:
     return {
-        "schema_version": "1.0",
+        "schema_version": SCHEMA_VERSION,
         "seed_entity_id": seed_entity_id,
         "summary": "One candidate of each kind.",
         "regions": [
@@ -452,6 +454,9 @@ async def test_H_no_internal_primary_key_appears_in_the_response(h, api):
         assert item_fields == {
             "candidate_id", "run_id", "seed_entity_id", "candidate_type", "local_id",
             "name", "payload", "confidence", "status", "created_at", "updated_at",
+            # Public and derived on read from the run's own seed. It is an
+            # allowlist, so a new field has to be added here on purpose.
+            "resolved_hemisphere",
         }
         assert set(body) == {"items", "total"}
         assert "candidate_pk" not in json.dumps(body)

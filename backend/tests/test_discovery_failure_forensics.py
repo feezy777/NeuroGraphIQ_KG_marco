@@ -23,6 +23,8 @@ from unittest.mock import patch
 
 import pytest
 
+from app.schemas.llm_discovery import SCHEMA_VERSION
+
 if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
@@ -158,7 +160,7 @@ class _Provider:
 
 def _envelope(**over: Any) -> str:
     body = {
-        "schema_version": "1.0", "seed_entity_id": SEED, "summary": "forensics",
+        "schema_version": SCHEMA_VERSION, "seed_entity_id": SEED, "summary": "forensics",
         "regions": [], "connections": [], "functions": [], "circuits": [],
         "source_hints": [], "warnings": [],
     }
@@ -181,7 +183,7 @@ def _long_failing_response(summary: str) -> str:
 
 BARE_REGION = json.dumps({
     "local_id": "region_1", "confidence": 0.9, "name": "Dentate gyrus (granule cell layer)",
-    "name_en": "Dentate gyrus", "name_zh": "齿状回", "hemisphere": "left",
+    "name_en": "Dentate gyrus", "name_zh": "齿状回", "hemisphere_context": "LEFT",
     "species_taxon_id": "9606", "relation_to_seed": "AFFERENT",
     "rationale": "Primary afferent source of the dentate-CA3 sub-circuits.",
 }, ensure_ascii=False)

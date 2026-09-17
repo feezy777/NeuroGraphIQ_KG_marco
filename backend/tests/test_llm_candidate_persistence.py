@@ -31,6 +31,8 @@ from unittest.mock import patch
 
 import pytest
 
+from app.schemas.llm_discovery import SCHEMA_VERSION
+
 if sys.platform == "win32":  # psycopg async cannot use the Proactor loop
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
@@ -178,7 +180,7 @@ def _response_json(seed_entity_id: str) -> dict[str, Any]:
     rejects a response that does not.
     """
     return {
-        "schema_version": "1.0",
+        "schema_version": SCHEMA_VERSION,
         "seed_entity_id": seed_entity_id,
         "summary": "A high-recall sketch of the seed's neighbourhood.",
         "regions": [
@@ -187,7 +189,7 @@ def _response_json(seed_entity_id: str) -> dict[str, Any]:
                 "confidence": 0.72,
                 "name": "CA1 field of the hippocampus",
                 "name_en": "CA1",
-                "hemisphere": "LEFT",
+                "hemisphere_context": "LEFT",
                 "species_taxon_id": "9606",
                 "relation_to_seed": "AFFERENT",
                 "rationale": "CA1 receives the seed's principal output.",
@@ -331,7 +333,7 @@ async def test_B_every_typed_field_survives_json_persistence(h, p):
     region = payloads["region"]
     assert region["relation_to_seed"] == "AFFERENT"
     assert region["name"] == "CA1 field of the hippocampus"
-    assert region["hemisphere"] == "LEFT"
+    assert region["hemisphere_context"] == "LEFT"
 
     connection = payloads["connection"]
     assert connection["source_ref"] == "region_1"
@@ -521,7 +523,7 @@ async def test_F_a_zero_candidate_response_persists_nothing_and_is_not_an_error(
 
     _, run_pk, seed_pk = await _new_run(h)
     empty = LlmDiscoveryResponse.model_validate(
-        {"schema_version": "1.0", "seed_entity_id": SEED, "summary": "nothing found",
+        {"schema_version": SCHEMA_VERSION, "seed_entity_id": SEED, "summary": "nothing found",
          "regions": [], "connections": [], "circuits": [], "functions": [],
          "source_hints": [], "warnings": []}
     )

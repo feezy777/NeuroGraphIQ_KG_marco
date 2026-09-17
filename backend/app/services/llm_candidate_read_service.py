@@ -43,6 +43,13 @@ from pydantic import BaseModel, ConfigDict
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+# Imported, never restated. The candidate-type vocabulary belongs to the writer
+# and the DB CHECK; and `resolve_hemisphere` is the CONTRACT's one definition of
+# how laterality resolves, so a copy here could disagree with the schema that
+# validated the payload it is being applied to.
+from app.schemas.llm_discovery import resolve_hemisphere
+from app.services.llm_candidate_persistence_service import TYPE_REGION
+
 #: The route this read service serves. Not a general discovery-type vocabulary:
 #: a candidate read is an LLM Discovery read.
 LLM_DISCOVERY = "LLM_DISCOVERY"
@@ -114,8 +121,27 @@ class DiscoveryCandidateReadItem(BaseModel):
     local_id: str
     name: str
     #: The persisted parsed typed candidate, verbatim. Never reconstructed from
-    #: the normalized columns and never canonicalized.
+    #: the normalized columns and never canonicalized. For a region this carries
+    #: `hemisphere_context` exactly as the model stated it — the RAW claim, kept
+    #: readable so a reader can tell "stated LEFT" from "resolved to LEFT".
     payload: dict[str, Any]
+    #: The region's laterality as an ABSOLUTE side, or None when it does not
+    #: apply. Two things it deliberately is NOT:
+    #:
+    #:   * not a second copy of `hemisphere_context`. A relative value
+    #:     (IPSILATERAL_TO_SEED) is a real answer, and collapsing it into the
+    #:     side it happens to resolve to today would lose the relationship the
+    #:     model actually claimed — and silently change meaning if the seed's
+    #:     own side is ever corrected.
+    #:   * not present on a connection, circuit or function. Their laterality
+    #:     FOLLOWS from the regions they reference; a connection between two
+    #:     UNSPECIFIED endpoints is not a left-left connection, and defaulting
+    #:     one is how an unknown becomes a false claim.
+    #:
+    #: Derived on read, never stored: it is a pure function of the seed's side
+    #: and the stated context, so persisting it would create a second copy that
+    #: can disagree with the first.
+    resolved_hemisphere: str | None = None
     confidence: float | None = None
     status: str
     created_at: datetime
@@ -130,7 +156,8 @@ class DiscoveryCandidateReadItem(BaseModel):
 # second round trip.
 _RUN_SCOPE_SQL = text(
     """
-    SELECT r.run_pk, r.discovery_type, e.entity_id AS seed_entity_id
+    SELECT r.run_pk, r.discovery_type, e.entity_id AS seed_entity_id,
+           b.hemisphere AS seed_hemisphere
     FROM knowledge_discovery_runs r
     JOIN brain_regions b ON b.entity_pk = r.seed_region_pk
     JOIN kg_entities e ON e.entity_pk = b.entity_pk
@@ -140,7 +167,7 @@ _RUN_SCOPE_SQL = text(
 
 _SEED_SCOPE_SQL = text(
     """
-    SELECT b.entity_pk, e.entity_id
+    SELECT b.entity_pk, e.entity_id, b.hemisphere AS seed_hemisphere
     FROM brain_regions b
     JOIN kg_entities e ON e.entity_pk = b.entity_pk
     WHERE e.entity_id = :entity_id
@@ -187,8 +214,39 @@ _FOR_SEED_SQL = text(
 )
 
 
-def _row_to_item(row: Mapping[str, Any], seed_entity_id: str) -> DiscoveryCandidateReadItem:
-    """Map one joined row to the public DTO. Pure function (unit-testable)."""
+def _resolved_hemisphere(
+    candidate_type: str, payload: Mapping[str, Any], seed_hemisphere: str | None
+) -> str | None:
+    """The candidate's absolute laterality, or None where it does not apply.
+
+    Only a REGION states a laterality, so only a region resolves: the other
+    three types return None rather than a resolved side, because none of them
+    ever stated one. A payload with no `hemisphere_context` — every LEGACY row,
+    and any row whose model answered UNSPECIFIED — resolves to UNSPECIFIED
+    unless the seed's own side makes a relative value decidable.
+    """
+    if candidate_type != TYPE_REGION:
+        return None
+    # The legacy free-text `hemisphere` key is deliberately NOT read here: its
+    # wording ("left", "LEFT", "bilateral") is what the closed vocabulary
+    # replaced, and reinterpreting it at read time would be a silent backfill of
+    # data this contract cannot vouch for. It stays visible in `payload` for
+    # anyone who wants to read what was actually written. `resolve_hemisphere`
+    # is total, so an absent or malformed context resolves to UNSPECIFIED rather
+    # than defaulting to a side.
+    return resolve_hemisphere(seed_hemisphere, payload.get("hemisphere_context"))
+
+
+def _row_to_item(
+    row: Mapping[str, Any],
+    seed_entity_id: str,
+    seed_hemisphere: str | None = None,
+) -> DiscoveryCandidateReadItem:
+    """Map one joined row to the public DTO. Pure function (unit-testable).
+
+    ``seed_hemisphere`` defaults to None so a caller that has no seed side still
+    gets correct rows: an unresolvable relative context stays UNSPECIFIED.
+    """
     return DiscoveryCandidateReadItem(
         candidate_id=row["candidate_id"],
         run_id=str(row["run_id"]),
@@ -197,6 +255,9 @@ def _row_to_item(row: Mapping[str, Any], seed_entity_id: str) -> DiscoveryCandid
         local_id=row["local_id"],
         name=row["name"],
         payload=row["payload_json"],
+        resolved_hemisphere=_resolved_hemisphere(
+            row["candidate_type"], row["payload_json"], seed_hemisphere
+        ),
         confidence=row["confidence"],
         status=row["status"],
         created_at=row["created_at"],
@@ -246,7 +307,10 @@ async def list_candidates_for_run(
     rows = (
         await session.execute(_FOR_RUN_SQL, {"run_pk": scope["run_pk"]})
     ).mappings().all()
-    return [_row_to_item(row, scope["seed_entity_id"]) for row in rows]
+    return [
+        _row_to_item(row, scope["seed_entity_id"], scope["seed_hemisphere"])
+        for row in rows
+    ]
 
 
 async def list_candidates_for_seed(
@@ -275,4 +339,7 @@ async def list_candidates_for_seed(
             {"seed_pk": scope["entity_pk"], "discovery_type": LLM_DISCOVERY},
         )
     ).mappings().all()
-    return [_row_to_item(row, scope["entity_id"]) for row in rows]
+    return [
+        _row_to_item(row, scope["entity_id"], scope["seed_hemisphere"])
+        for row in rows
+    ]
