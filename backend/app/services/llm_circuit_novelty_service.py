@@ -43,16 +43,22 @@ signal. A structurally incomplete answer FAILS.
 from __future__ import annotations
 
 import json
+import logging
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
 from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.llm_discovery_views import view_of_strategy_identifier
 from app.llm_model_policy import DEEPSEEK_PROVIDER, effective_deepseek_model
-from app.prompts.llm_circuit_novelty_prompt import build_novelty_prompt
+from app.prompts.llm_circuit_novelty_prompt import (
+    PROMPT_KEY,
+    PROMPT_VERSION,
+    build_novelty_prompt,
+)
 from app.schemas.circuit_novelty import (
     NOVELTY_CLASSES_REQUIRING_A_MATCH,
     CircuitNoveltyAssessment,
@@ -60,11 +66,16 @@ from app.schemas.circuit_novelty import (
     ModelNoveltyResponse,
     semantic_new_count_of,
 )
+from app.services.llm_circuit_novelty_read_service import (
+    get_novelty_assessment as read_novelty_assessment,
+)
 from app.services.llm_providers.factory import get_llm_provider
 from app.services.settings_service import get_deepseek_runtime_config
 
 #: The only route assessable. A LITERATURE_DISCOVERY run has no circuits.
 LLM_DISCOVERY = "LLM_DISCOVERY"
+
+logger = logging.getLogger(__name__)
 
 #: Only a completed run has circuits to assess.
 ASSESSABLE_STATUS = "COMPLETED"
@@ -132,8 +143,13 @@ class AssessableCircuit:
 
     Confidence is deliberately absent: it is not novelty evidence, so there is
     nowhere here to read it from even by accident.
+
+    ``candidate_pk`` is the internal key a persisted verdict must point at. A
+    verdict is a relationship between two candidate ROWS, so it is stored
+    relationally; the public ``candidate_id`` is what a caller sees.
     """
 
+    candidate_pk: int
     candidate_id: str
     run_id: str
     local_id: str
@@ -157,8 +173,9 @@ class PriorCircuitPool:
 # ===========================================================================
 _RUN_SQL = text(
     """
-    SELECT r.run_id, r.status, r.discovery_type, r.query_strategy_version,
-           r.created_at, e.entity_id AS seed_entity_id
+    SELECT r.run_pk, r.run_id, r.status, r.discovery_type,
+           r.query_strategy_version, r.seed_region_pk, r.created_at,
+           e.entity_id AS seed_entity_id
     FROM knowledge_discovery_runs r
     JOIN brain_regions b ON b.entity_pk = r.seed_region_pk
     JOIN kg_entities e ON e.entity_pk = b.entity_pk
@@ -168,12 +185,15 @@ _RUN_SQL = text(
 
 #: Circuits of earlier completed runs of the same seed and view.
 #:
-#: The row comparison `(created_at, run_id) < (target_created_at, target_run_id)`
-#: is what makes "earlier" precise and stable: created_at alone could tie, and
-#: run_id alone is not chronological.
+#: The row comparison is what makes "earlier" precise and stable. `created_at`
+#: is the TRANSACTION timestamp, so two runs created in one transaction share it
+#: exactly; the tie-break therefore has to be something that is genuinely
+#: increasing with insertion order. `run_pk` is a BIGSERIAL — the sequence
+#: itself — whereas `run_id` is a UUID, which is unique but has no order at all.
+#: Comparing on (created_at, run_pk) makes "earlier" mean earlier even in a tie.
 _PRIOR_SQL = text(
     """
-    SELECT dc.candidate_id, dc.local_id, dc.name, r.run_id,
+    SELECT dc.candidate_pk, dc.candidate_id, dc.local_id, dc.name, r.run_id,
            dc.payload_json ->> 'description'   AS description,
            dc.payload_json ->> 'rationale'     AS rationale,
            dc.payload_json ->> 'topology_hint' AS topology_hint,
@@ -189,15 +209,15 @@ _PRIOR_SQL = text(
       AND r.status = :status
       AND r.query_strategy_version = :strategy
       AND dc.candidate_type = :candidate_type
-      AND (r.created_at, r.run_id) < (:target_created_at, :target_run_id)
-    ORDER BY r.created_at, r.run_id, dc.candidate_id
+      AND (r.created_at, r.run_pk) < (:target_created_at, :target_run_pk)
+    ORDER BY r.created_at, r.run_pk, dc.candidate_id
     """
 )
 
 #: Circuits of the run being assessed. A run is never its own prior art.
 _TARGET_SQL = text(
     """
-    SELECT dc.candidate_id, dc.local_id, dc.name, r.run_id,
+    SELECT dc.candidate_pk, dc.candidate_id, dc.local_id, dc.name, r.run_id,
            dc.payload_json ->> 'description'   AS description,
            dc.payload_json ->> 'rationale'     AS rationale,
            dc.payload_json ->> 'topology_hint' AS topology_hint,
@@ -223,6 +243,7 @@ def _as_tuple(value: Any) -> tuple[str, ...]:
 
 def _circuit_from_row(row: Any) -> AssessableCircuit:
     return AssessableCircuit(
+        candidate_pk=row["candidate_pk"],
         candidate_id=row["candidate_id"],
         run_id=str(row["run_id"]),
         local_id=row["local_id"],
@@ -241,8 +262,10 @@ def _circuit_from_row(row: Any) -> AssessableCircuit:
 # ===========================================================================
 @dataclass(frozen=True)
 class _RunScope:
+    run_pk: int
     run_id: str
     seed_entity_id: str
+    seed_region_pk: int
     strategy: str
     discovery_view: str | None
     created_at: datetime
@@ -273,8 +296,10 @@ async def resolve_assessable_run(session: AsyncSession, *, run_id: str) -> _RunS
         )
     strategy = row["query_strategy_version"]
     return _RunScope(
+        run_pk=row["run_pk"],
         run_id=str(row["run_id"]),
         seed_entity_id=row["seed_entity_id"],
+        seed_region_pk=row["seed_region_pk"],
         strategy=strategy,
         discovery_view=view_of_strategy_identifier(strategy),
         created_at=row["created_at"],
@@ -295,7 +320,7 @@ async def collect_prior_circuits(
                 "strategy": scope.strategy,
                 "candidate_type": CANDIDATE_TYPE_CIRCUIT,
                 "target_created_at": scope.created_at,
-                "target_run_id": scope.run_id,
+                "target_run_pk": scope.run_pk,
             },
         )
     ).mappings().all()
@@ -468,35 +493,40 @@ def _check_match(verdict: Any, prior_by_id: dict[str, AssessableCircuit]) -> Non
 # ===========================================================================
 # the assessment
 # ===========================================================================
-async def assess_circuit_novelty(
-    session: AsyncSession, *, run_id: str
-) -> CircuitNoveltyAssessment:
-    """Assess one completed discovery run. Reads; writes nothing.
+async def _judge(
+    session: AsyncSession, *, scope: _RunScope
+) -> tuple[CircuitNoveltyAssessment, tuple[AssessableCircuit, ...], PriorCircuitPool]:
+    """The judgement itself: collect, one provider call, validate.
 
-    One provider call. No retry, no loop, no follow-up round — deciding what to
-    do with the number is a later feature with its own design.
+    Returns the assessment AND the two pools it was made from, because the
+    persistence path needs the internal keys of the circuits it just judged.
+    Writes nothing — persistence is a separate, later step that can only run on
+    a result that already passed every check here.
     """
-    scope = await resolve_assessable_run(session, run_id=run_id)
     prior = await collect_prior_circuits(session, scope=scope)
     target = await collect_target_circuits(session, scope=scope)
 
     # A run with no circuits still has a well-defined answer — nothing to
     # assess, zero novelty — and must not cost a provider call to say so.
     if not target:
-        return CircuitNoveltyAssessment(
-            target_run_id=scope.run_id,
-            seed_entity_id=scope.seed_entity_id,
-            discovery_view=scope.discovery_view,
-            strategy_identifier=scope.strategy,
-            raw_circuit_count=0,
-            prior_circuit_count=len(prior.circuits),
-            prior_run_count=prior.run_count,
-            NEW_count=0,
-            ALIAS_count=0,
-            REFORMULATION_count=0,
-            BORDERLINE_count=0,
-            semantic_new_count=0,
-            verdicts=[],
+        return (
+            CircuitNoveltyAssessment(
+                target_run_id=scope.run_id,
+                seed_entity_id=scope.seed_entity_id,
+                discovery_view=scope.discovery_view,
+                strategy_identifier=scope.strategy,
+                raw_circuit_count=0,
+                prior_circuit_count=len(prior.circuits),
+                prior_run_count=prior.run_count,
+                NEW_count=0,
+                ALIAS_count=0,
+                REFORMULATION_count=0,
+                BORDERLINE_count=0,
+                semantic_new_count=0,
+                verdicts=[],
+            ),
+            target,
+            prior,
         )
 
     prompt = build_novelty_prompt(
@@ -538,19 +568,242 @@ async def assess_circuit_novelty(
             f"the provider reported {response.model}"
         )
 
-    return parse_novelty_assessment(
-        # `raw_text`, NOT `parsed_json`. The provider's JSON extraction takes the
-        # first object it finds; for this reply — a {"verdicts": [...]} document
-        # — that is the FIRST VERDICT rather than the document, so trusting it
-        # turned a complete 23-verdict answer into "23 of 23 not assessed".
-        # The discovery parser is handed `raw_text` for the same reason, and the
-        # empty-text guard above already rules out the one case a fallback
-        # would have covered, so there is no fallback to get wrong.
-        response.raw_text,
-        scope=scope,
-        target=target,
-        prior=prior,
+    return (
+        parse_novelty_assessment(
+            # `raw_text`, NOT `parsed_json`. The provider's JSON extraction takes
+            # the first object it finds; for this reply — a {"verdicts": [...]}
+            # document — that is the FIRST VERDICT rather than the document, so
+            # trusting it turned a complete 23-verdict answer into "23 of 23 not
+            # assessed". The discovery parser is handed `raw_text` for the same
+            # reason, and the empty-text guard above already rules out the one
+            # case a fallback would have covered, so there is no fallback to get
+            # wrong.
+            response.raw_text,
+            scope=scope,
+            target=target,
+            prior=prior,
+        ),
+        target,
+        prior,
     )
+
+
+async def assess_circuit_novelty(
+    session: AsyncSession, *, run_id: str
+) -> CircuitNoveltyAssessment:
+    """Assess one completed discovery run. Reads; writes nothing.
+
+    One provider call. No retry, no loop, no follow-up round — deciding what to
+    do with the number is a later feature with its own design.
+
+    This is the EPHEMERAL entry point: it returns a judgement and stores none of
+    it. Use :func:`assess_and_persist_circuit_novelty` when the result must
+    survive the request.
+    """
+    scope = await resolve_assessable_run(session, run_id=run_id)
+    assessment, _, _ = await _judge(session, scope=scope)
+    return assessment
+
+
+# ===========================================================================
+# persistence (append-only, one transaction, after validation only)
+# ===========================================================================
+_INSERT_ASSESSMENT_SQL = text(
+    """
+    INSERT INTO discovery_circuit_novelty_assessments (
+        target_run_pk, seed_region_pk, discovery_view, query_strategy_version,
+        provider, model_name, assessor_prompt_key, assessor_prompt_version,
+        raw_circuit_count, new_count, alias_count, reformulation_count,
+        borderline_count, semantic_new_count,
+        prior_completed_run_count, prior_circuit_count
+    ) VALUES (
+        :target_run_pk, :seed_region_pk, :discovery_view, :query_strategy_version,
+        :provider, :model_name, :prompt_key, :prompt_version,
+        :raw_circuit_count, :new_count, :alias_count, :reformulation_count,
+        :borderline_count, :semantic_new_count,
+        :prior_completed_run_count, :prior_circuit_count
+    )
+    RETURNING assessment_pk, assessment_id
+    """
+)
+
+_INSERT_VERDICT_SQL = text(
+    """
+    INSERT INTO discovery_circuit_novelty_verdicts (
+        assessment_pk, candidate_pk, novelty_class,
+        matched_prior_candidate_pk, short_reason
+    ) VALUES (
+        :assessment_pk, :candidate_pk, :novelty_class,
+        :matched_prior_candidate_pk, :short_reason
+    )
+    """
+)
+
+#: The idempotency lookup. Keyed on exactly the UNIQUE constraint, so "does an
+#: assessment already exist?" and "may I write one?" are the same question.
+_EXISTING_SQL = text(
+    """
+    SELECT assessment_id
+    FROM discovery_circuit_novelty_assessments
+    WHERE target_run_pk = :target_run_pk
+      AND assessor_prompt_version = :prompt_version
+      AND model_name = :model_name
+    ORDER BY created_at DESC
+    LIMIT 1
+    """
+)
+
+
+async def existing_assessment_id(
+    session: AsyncSession, *, scope: _RunScope
+) -> str | None:
+    """The id of the assessment already stored for this run, or None.
+
+    Answers "would a POST spend another provider call?" without spending one.
+    """
+    row = (
+        await session.execute(
+            _EXISTING_SQL,
+            {
+                "target_run_pk": scope.run_pk,
+                "prompt_version": PROMPT_VERSION,
+                "model_name": effective_deepseek_model(None),
+            },
+        )
+    ).scalars().first()
+    return str(row) if row is not None else None
+
+
+async def persist_novelty_assessment(
+    session: AsyncSession,
+    *,
+    scope: _RunScope,
+    assessment: CircuitNoveltyAssessment,
+    target: tuple[AssessableCircuit, ...],
+    prior: PriorCircuitPool,
+) -> str:
+    """Store one validated assessment and all its verdicts. Returns its id.
+
+    Called ONLY with a result that already passed every validation, and written
+    in ONE transaction: the parent and its verdicts become visible together or
+    not at all, so a partially-stored assessment — which would be a judgement
+    with circuits missing from it — cannot exist. Any failure rolls the whole
+    thing back.
+
+    Nothing here touches ``discovery_candidates``. A verdict records what a
+    circuit was judged to be; it does not change what the circuit is.
+    """
+    by_id = {c.candidate_id: c for c in target}
+    prior_pk_by_id = {c.candidate_id: c.candidate_pk for c in prior.circuits}
+    params = {
+        "target_run_pk": scope.run_pk,
+        "seed_region_pk": scope.seed_region_pk,
+        "discovery_view": scope.discovery_view,
+        "query_strategy_version": scope.strategy,
+        "provider": DEEPSEEK_PROVIDER,
+        "model_name": effective_deepseek_model(None),
+        "prompt_key": PROMPT_KEY,
+        "prompt_version": PROMPT_VERSION,
+        "raw_circuit_count": assessment.raw_circuit_count,
+        "new_count": assessment.NEW_count,
+        "alias_count": assessment.ALIAS_count,
+        "reformulation_count": assessment.REFORMULATION_count,
+        "borderline_count": assessment.BORDERLINE_count,
+        "semantic_new_count": assessment.semantic_new_count,
+        "prior_completed_run_count": assessment.prior_run_count,
+        "prior_circuit_count": assessment.prior_circuit_count,
+    }
+
+    try:
+        row = (await session.execute(_INSERT_ASSESSMENT_SQL, params)).mappings().one()
+        assessment_pk, assessment_id = row["assessment_pk"], row["assessment_id"]
+
+        for verdict in assessment.verdicts:
+            circuit = by_id[verdict.candidate_id]
+            matched_id = verdict.matched_prior_candidate_id
+            await session.execute(
+                _INSERT_VERDICT_SQL,
+                {
+                    "assessment_pk": assessment_pk,
+                    "candidate_pk": circuit.candidate_pk,
+                    "novelty_class": verdict.novelty_class,
+                    # Resolved from the PRIOR pool, never re-derived from the
+                    # model's text: a verdict carries a public id, storage holds
+                    # a key, and the mapping is the one the judgement was made
+                    # against.
+                    "matched_prior_candidate_pk": (
+                        prior_pk_by_id[matched_id] if matched_id else None
+                    ),
+                    "short_reason": verdict.short_reason,
+                },
+            )
+        await session.commit()
+    except Exception:
+        await session.rollback()
+        logger.exception(
+            "[circuit-novelty] persistence failed run_id=%s circuits=%s",
+            scope.run_id,
+            assessment.raw_circuit_count,
+        )
+        raise
+
+    return str(assessment_id)
+
+
+async def assess_and_persist_circuit_novelty(
+    session: AsyncSession, *, run_id: str
+) -> "PersistedNoveltyAssessment":
+    """Assess one run and STORE the result. The durable entry point.
+
+    The order is the contract:
+
+        resolve target
+        → already assessed under this prompt version and model?
+              yes → return the STORED assessment, spending NO provider call
+        → collect the prior pool
+        → one provider call
+        → validate completely
+        → persist parent + verdicts in ONE transaction
+        → return what was actually stored (read back, never echoed)
+
+    Every failure before the transaction leaves the database untouched: a
+    rejected model reply writes no parent row and no verdict row, so a run is
+    either assessed or not — never half-assessed.
+    """
+    scope = await resolve_assessable_run(session, run_id=run_id)
+
+    # A row whose view cannot be named could not prove its pool was confined to
+    # one view. Refuse BEFORE spending a provider call on an unpersistable run.
+    if scope.discovery_view is None:
+        raise NoveltyAssessmentInvalid(
+            f"run '{run_id}' carries strategy '{scope.strategy}', which names no "
+            f"known discovery view; such an assessment could not record the view "
+            f"its prior pool was confined to"
+        )
+
+    existing = await existing_assessment_id(session, scope=scope)
+    if existing is not None:
+        logger.info("[circuit-novelty] reusing stored assessment %s", existing)
+        return await read_novelty_assessment(session, assessment_id=existing)
+
+    assessment, target, prior = await _judge(session, scope=scope)
+
+    try:
+        assessment_id = await persist_novelty_assessment(
+            session, scope=scope, assessment=assessment, target=target, prior=prior
+        )
+    except IntegrityError:
+        # A concurrent POST won the race. The UNIQUE constraint is the real
+        # idempotency guard — persist_novelty_assessment has already rolled the
+        # failed write back — so the honest answer is the winner's, not a
+        # conflict for a question that now has an answer.
+        winner = await existing_assessment_id(session, scope=scope)
+        if winner is None:
+            raise
+        logger.info("[circuit-novelty] concurrent POST; reusing %s", winner)
+        return await read_novelty_assessment(session, assessment_id=winner)
+
+    return await read_novelty_assessment(session, assessment_id=assessment_id)
 
 
 __all__ = [
@@ -562,9 +815,12 @@ __all__ = [
     "NoveltyProviderError",
     "NoveltyRunNotAssessable",
     "NoveltyRunNotFound",
+    "assess_and_persist_circuit_novelty",
     "assess_circuit_novelty",
     "collect_prior_circuits",
     "collect_target_circuits",
+    "existing_assessment_id",
     "parse_novelty_assessment",
+    "persist_novelty_assessment",
     "resolve_assessable_run",
 ]

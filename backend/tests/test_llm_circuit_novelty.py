@@ -70,7 +70,7 @@ class _Session:
     async def execute(self, stmt, params=None):
         sql = " ".join(str(stmt).split())
         self.statements.append((sql, dict(params or {})))
-        if "(:target_created_at, :target_run_id)" in sql:
+        if "(:target_created_at, :target_run_pk)" in sql:
             return _Result(self.prior)
         if "r.run_id = :target_run_id" in sql:
             return _Result(self.target)
@@ -85,12 +85,14 @@ class _Session:
 
 def _scope(**over) -> dict[str, Any]:
     row = {
+        "run_pk": 9001,
         "run_id": RUN,
         "status": "COMPLETED",
         "discovery_type": "LLM_DISCOVERY",
         "query_strategy_version": STRATEGY,
         "created_at": T0,
         "seed_entity_id": SEED,
+        "seed_region_pk": SEED_PK,
     }
     row.update(over)
     return row
@@ -98,6 +100,9 @@ def _scope(**over) -> dict[str, Any]:
 
 def _row(candidate_id: str, name: str, run_id: str = PRIOR_RUN, **over) -> dict[str, Any]:
     row = {
+        # The internal key a verdict stores. Unique per row, derived from the
+        # public id so a fixture cannot accidentally collide.
+        "candidate_pk": int(candidate_id.rsplit("-", 1)[-1]),
         "candidate_id": candidate_id,
         "local_id": f"circuit_{candidate_id[-1]}",
         "name": name,
@@ -191,8 +196,10 @@ def test_the_target_run_is_excluded_from_its_own_prior_pool():
     scope = asyncio.run(nov.resolve_assessable_run(session, run_id=RUN))
     asyncio.run(nov.collect_prior_circuits(session, scope=scope))
     sql, params = session.statements[-1]
-    assert "(r.created_at, r.run_id) < (:target_created_at, :target_run_id)" in sql
-    assert params["target_run_id"] == RUN
+    # run_pk, not run_id: created_at is the TRANSACTION timestamp and ties
+    # inside one transaction, and a UUID has no order to break the tie with.
+    assert "(r.created_at, r.run_pk) < (:target_created_at, :target_run_pk)" in sql
+    assert params["target_run_pk"] == 9001
     assert params["target_created_at"] == T0
 
 
@@ -455,6 +462,7 @@ def test_the_prompt_renders_the_vocabulary_from_the_contract():
     from app.prompts import llm_circuit_novelty_prompt as prompt_mod
 
     target = (nov.AssessableCircuit(
+        candidate_pk=1,
         candidate_id="DC-1", run_id=RUN, local_id="circuit_1", name="T",
         description="d", rationale="r", topology_hint="LOOP",
         region_refs=("SEED",), connection_refs=(), function_refs=(),
@@ -470,6 +478,7 @@ def test_the_prompt_renders_the_vocabulary_from_the_contract():
 
 def test_confidence_is_NOT_sent_to_the_model():
     target = (nov.AssessableCircuit(
+        candidate_pk=1,
         candidate_id="DC-1", run_id=RUN, local_id="circuit_1", name="T",
         description="d", rationale="r", topology_hint="LOOP",
         region_refs=("SEED",), connection_refs=(), function_refs=(),

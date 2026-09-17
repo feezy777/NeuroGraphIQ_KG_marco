@@ -79,8 +79,11 @@ from app.services import knowledge_discovery_run_lifecycle_service as lifecycle
 from app.services import knowledge_discovery_run_service as run_svc
 from app.services import knowledge_production_brain_region_service as svc
 from app.services import knowledge_production_literature_service as literature
+from app.services import llm_circuit_novelty_read_service as novelty_read
+from app.services import llm_circuit_novelty_service as novelty
 from app.services import llm_discovery_continuation_service as continuation
 from app.services import llm_discovery_execution_service as execution
+from app.schemas.circuit_novelty import PersistedNoveltyAssessment
 
 router = APIRouter(prefix="/api/knowledge-production", tags=["Knowledge Production"])
 
@@ -502,3 +505,98 @@ async def get_publication(
             detail=_error_detail("PUBLICATION_NOT_FOUND", f"Publication '{entity_id}' not found"),
         )
     return publication
+# ===========================================================================
+# Circuit semantic novelty assessment (durable)
+# ===========================================================================
+@router.post(
+    "/discovery-runs/{run_id}/novelty-assessment",
+    response_model=PersistedNoveltyAssessment,
+)
+async def assess_run_novelty(
+    run_id: str, db: AsyncSession = Depends(get_db)
+) -> PersistedNoveltyAssessment:
+    """Assess one COMPLETED run and STORE the judgement.
+
+    This is the only endpoint here that spends a provider call (one, to
+    DeepSeek `deepseek-flash`). It is idempotent: if this run already has an
+    assessment under the current assessor prompt version and model, the stored
+    one is returned and NO provider call is made. Repeated calls are therefore
+    free, and there is deliberately no `force` flag -- replacing a stored
+    judgement is a versioning decision, not a query parameter.
+
+    404 unknown/never-completed run; 502 the comparison could not be completed;
+    422 the model's reply did not satisfy the verdict contract. A rejected
+    reply writes nothing: no parent row and no verdict row.
+    """
+    try:
+        return await novelty.assess_and_persist_circuit_novelty(db, run_id=run_id)
+    except novelty.NoveltyRunNotFound:
+        raise HTTPException(
+            status_code=404,
+            detail=_error_detail("NOVELTY_RUN_NOT_FOUND", f"Discovery Run '{run_id}' not found"),
+        ) from None
+    except novelty.NoveltyRunNotAssessable as exc:
+        raise HTTPException(
+            status_code=409,
+            detail=_error_detail(exc.code, str(exc)),
+        ) from None
+    except novelty.NoveltyProviderError as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=_error_detail(exc.code, str(exc)),
+        ) from None
+    except (novelty.NoveltyAssessmentInvalid, novelty.NoveltyAssessmentIncomplete) as exc:
+        raise HTTPException(
+            status_code=422,
+            detail=_error_detail(exc.code, str(exc)),
+        ) from None
+
+
+@router.get(
+    "/discovery-runs/{run_id}/novelty-assessment",
+    response_model=PersistedNoveltyAssessment,
+)
+async def get_run_novelty(
+    run_id: str, db: AsyncSession = Depends(get_db)
+) -> PersistedNoveltyAssessment:
+    """The latest stored novelty assessment of one run.
+
+    NEVER calls a provider: this reads stored rows, so it is free and safe to
+    poll. 404 when the run has never been assessed -- which is the normal state
+    of every run before its first POST, not an error condition.
+    """
+    result = await novelty_read.get_latest_novelty_assessment(db, run_id=run_id)
+    if result is None:
+        raise HTTPException(
+            status_code=404,
+            detail=_error_detail(
+                "NOVELTY_ASSESSMENT_NOT_FOUND",
+                f"Discovery Run '{run_id}' has no novelty assessment",
+            ),
+        )
+    return result
+
+
+@router.get(
+    "/novelty-assessments/{assessment_id}",
+    response_model=PersistedNoveltyAssessment,
+)
+async def get_novelty_assessment(
+    assessment_id: str, db: AsyncSession = Depends(get_db)
+) -> PersistedNoveltyAssessment:
+    """One stored assessment by its public id, with every verdict.
+
+    NEVER calls a provider. 404 when no assessment carries that id.
+    """
+    try:
+        return await novelty_read.get_novelty_assessment(
+            db, assessment_id=assessment_id
+        )
+    except novelty_read.NoveltyAssessmentNotFound:
+        raise HTTPException(
+            status_code=404,
+            detail=_error_detail(
+                "NOVELTY_ASSESSMENT_NOT_FOUND",
+                f"Novelty assessment '{assessment_id}' not found",
+            ),
+        ) from None

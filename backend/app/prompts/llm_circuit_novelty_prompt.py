@@ -29,6 +29,13 @@ from typing import Any
 
 from app.schemas.circuit_novelty import NOVELTY_CLASSES
 
+#: Frozen prompt identity, stored on every persisted assessment so a judgement
+#: can always be traced to the exact instructions that produced it. Bump
+#: PROMPT_VERSION whenever the instructions or the class definitions change —
+#: a bumped version is a DIFFERENT assessment, i.e. a new row, never an edit.
+PROMPT_KEY = "knowledge_production.circuit_novelty"
+PROMPT_VERSION = "1.0.0"
+
 SYSTEM_PROMPT = """\
 You compare newly discovered neural CIRCUIT candidates against circuits that were
 already discovered for the same brain region and the same discovery view.
