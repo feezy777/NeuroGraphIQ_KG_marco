@@ -739,6 +739,29 @@ def test_qf_3_a_clean_install_resolves_to_the_full_budget(tmp_path, monkeypatch)
     assert settings_service.get_deepseek_runtime_config().max_tokens == 65536
 
 
+def test_qf_3b_a_clean_install_resolves_to_the_discovery_temperature(tmp_path, monkeypatch):
+    """§6: Discovery generates at a LOW temperature, and that is a decision.
+
+    Same shape as the budget pin above, for the same reason — temperature is a
+    SHARED runtime setting (every DeepSeek flow reads it), so its value is a
+    choice that must not drift silently. Precision and stability are what this
+    path wants: a continuation round that merely re-words a circuit the View
+    already found is not a discovery, it is noise the assessor then has to
+    re-classify.
+    """
+    from app.services import settings_service
+
+    monkeypatch.setattr(
+        settings_service, "RUNTIME_SETTINGS_PATH", tmp_path / "absent.json"
+    )
+    config = settings_service.get_deepseek_runtime_config()
+    assert config.temperature == 0.2
+    # ...and the rest of the frozen Discovery target is unchanged by this pin.
+    assert config.max_tokens == 65536
+    assert config.reasoning_effort == "high"
+    assert config.thinking_enabled is True
+
+
 def test_qf_4_the_execution_path_forwards_the_budget_unclamped(env):
     """The value that reaches the provider is the configured one, untouched."""
     _execute(env)
@@ -873,7 +896,8 @@ def test_qf_8_the_real_http_payload_carries_the_quality_first_budget(monkeypatch
 # ===========================================================================
 # §5 / §6 / §14 — the knowledge-production REASONING profile, at the wire
 # ===========================================================================
-def _capture_payload(monkeypatch, *, thinking, effort, max_tokens=65536, timeout=300):
+def _capture_payload(monkeypatch, *, thinking, effort, max_tokens=65536, timeout=300,
+                     temperature=0.2):
     """Run the REAL provider against a stubbed HTTP boundary; return the body."""
     from app.services.llm_providers import deepseek as deepseek_mod
     from app.services.llm_providers.factory import get_llm_provider
@@ -930,6 +954,7 @@ def _capture_payload(monkeypatch, *, thinking, effort, max_tokens=65536, timeout
             model=effective_deepseek_model(None),
             system_prompt="s",
             user_prompt="u",
+            temperature=temperature,
             max_tokens=max_tokens,
             timeout_seconds=timeout,
             thinking_enabled=thinking,
@@ -954,6 +979,18 @@ def test_rp_3_the_wire_payload_carries_the_64k_budget(monkeypatch):
     assert body["max_tokens"] == 65536
     assert body["model"] == "deepseek-flash"
     assert body["response_format"] == {"type": "json_object"}
+
+
+def test_rp_3b_the_wire_payload_carries_the_generation_temperature(monkeypatch):
+    """The frozen Discovery target, at the wire: 0.2 — not the server default."""
+    body, _ = _capture_payload(monkeypatch, thinking=True, effort="high",
+                               temperature=0.2)
+    assert body["temperature"] == 0.2
+    # stated together, because they are one decision about how this path runs
+    assert body["reasoning_effort"] == "high"
+    assert body["thinking"] == {"type": "enabled"}
+    assert body["max_tokens"] == 65536
+    assert body["model"] == "deepseek-flash"
 
 
 def test_rp_4_no_retired_model_name_reaches_the_wire(monkeypatch):
