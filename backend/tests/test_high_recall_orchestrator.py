@@ -707,3 +707,314 @@ async def test_the_database_allows_only_one_ACTIVE_orchestration_per_seed(h, _):
             "   FROM discovery_orchestrations LIMIT 1"))
         await h.db.flush()
     assert "uq_dco_one_active_per_seed" in str(exc.value) or "duplicate" in str(exc.value).lower()
+
+
+# ===========================================================================
+# successful_round_count — one writer, one boundary, exactly once
+# ===========================================================================
+# The counter means: NEW Discovery runs THIS orchestration successfully
+# COMPLETED for THIS View. It is settled the moment a run completes, not when
+# the View happens to pause — a View that BLOCKS with completed rounds must not
+# lose them, which is exactly how CA3 lost R6.
+async def _count(h: H, orchestration_id: str, view: str = "NAMED_CLASSIC_CIRCUITS") -> int:
+    row = await h.one(
+        "SELECT v.successful_round_count AS n"
+        "  FROM discovery_orchestration_view_states v"
+        "  JOIN discovery_orchestrations o ON o.orchestration_pk = v.orchestration_pk"
+        " WHERE o.orchestration_id = :o AND v.discovery_view = :v",
+        o=orchestration_id, v=view)
+    return int(row["n"])
+
+
+async def _historical_runs(h: H, count: int, *, view: str = "NAMED_CLASSIC_CIRCUITS"):
+    """Pre-existing COMPLETED history the orchestration did not create."""
+    from app.llm_discovery_views import strategy_identifier
+    from app.services import knowledge_discovery_run_lifecycle_service as lifecycle
+
+    ids = []
+    for _ in range(count):
+        run = await lifecycle.create_discovery_run(
+            h.db, entity_id=EMPTY_SEED, discovery_type="LLM_DISCOVERY",
+            query_strategy_version=strategy_identifier(view))
+        await lifecycle.start_discovery_run(h.db, run.run_id)
+        await lifecycle.complete_discovery_run(h.db, run.run_id, "CANDIDATES_FOUND")
+        ids.append(run.run_id)
+    return ids
+
+
+# --- A / B ------------------------------------------------------------------
+@case
+async def test_counter_A_bootstrap_from_history_does_NOT_count_those_runs(h, _):
+    """Five historical rounds + exactly one new round must read 1, not 6 and not
+    2: attaching to a run is not creating one."""
+    history = await _historical_runs(h, 5)
+
+    rec = Recorder([4])
+    result = await _orchestrate(h, rec, budget=1)
+
+    assert await _count(h, result.orchestration_id) == 1, (
+        "one NEW round was created; the five historical rounds were only attached"
+    )
+    # The View IS attached to a run — the point is that attaching did not count.
+    a = await _view(h, result.orchestration_id, "NAMED_CLASSIC_CIRCUITS")
+    assert a["latest_successful_run_pk"] is not None
+    assert len(history) == 5, "and the attached history is real and untouched"
+
+
+@case
+async def test_counter_B_one_new_successful_round_counts_exactly_one(h, _):
+    rec = Recorder([4])
+    result = await _orchestrate(h, rec, budget=1)
+    assert len(rec.discovery_calls) == 1
+    assert await _count(h, result.orchestration_id) == 1
+
+
+# --- C / D ------------------------------------------------------------------
+@case
+async def test_counter_C_a_successful_novelty_does_not_change_the_count(h, _):
+    """The round is counted once — the assessment does not add to it."""
+    rec = Recorder([4])
+    result = await _orchestrate(h, rec, budget=1)
+    assert len(rec.assessment_calls) == 1, "the round WAS assessed"
+    assert await _count(h, result.orchestration_id) == 1
+
+
+@case
+async def test_counter_D_a_FAILED_novelty_does_not_erase_the_completed_round(h, _):
+    """Discovery succeeded, so the round counts even though the judgement died."""
+    from app.services import high_recall_orchestrator_service as orch
+    from app.services import llm_discovery_execution_service as execution
+    from app.schemas.orchestration import OrchestrationStartRequest
+
+    rec = Recorder([0])
+
+    async def _failing_assessment(session, **kwargs):
+        raise RuntimeError("the model reply did not satisfy the verdict contract")
+
+    with patch.object(execution, "execute_llm_discovery",
+                      _stub_discovery(rec, h, EMPTY_SEED)), \
+         patch.object(orch, "_assess_run", _failing_assessment):
+        result = await orch.start_orchestration(
+            h.db, entity_id=EMPTY_SEED,
+            request=OrchestrationStartRequest(max_new_discovery_calls=1))
+
+    assert result.status == "BLOCKED"
+    assert await _count(h, result.orchestration_id) == 1, (
+        "a completed Discovery round counts whether or not its assessment worked"
+    )
+    assert (await _view(h, result.orchestration_id,
+                        "NAMED_CLASSIC_CIRCUITS"))["status"] == "BLOCKED"
+
+
+@case
+async def test_counter_D2_a_failed_Novelty_after_an_earlier_SATURATING_round(h, _):
+    """The counter is not a function of the zero streak."""
+    from app.services import high_recall_orchestrator_service as orch
+    from app.services import llm_discovery_execution_service as execution
+    from app.schemas.orchestration import OrchestrationStartRequest
+
+    rec = Recorder([0])
+    calls = {"n": 0}
+
+    async def _assessment(session, **kw):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return orch._Assessment(assessment_pk=None, semantic_new_count=5,
+                                    provider_calls=0)
+        raise RuntimeError("boom")
+
+    with patch.object(execution, "execute_llm_discovery",
+                      _stub_discovery(rec, h, EMPTY_SEED)), \
+         patch.object(orch, "_assess_run", _assessment):
+        result = await orch.start_orchestration(
+            h.db, entity_id=EMPTY_SEED,
+            request=OrchestrationStartRequest(max_new_discovery_calls=2))
+
+    assert result.status == "BLOCKED"
+    assert await _count(h, result.orchestration_id) == 2, (
+        "two rounds completed before the assessment failed; both count"
+    )
+
+
+# --- E ----------------------------------------------------------------------
+@case
+async def test_counter_E_a_failed_Discovery_contributes_zero(h, _):
+    from app.services import high_recall_orchestrator_service as orch
+    from app.services import llm_discovery_execution_service as execution
+    from app.schemas.orchestration import OrchestrationStartRequest
+
+    rec = Recorder([5])
+
+    async def _failing(session, **kw):
+        raise RuntimeError("provider exploded")
+
+    with patch.object(execution, "execute_llm_discovery", _failing), \
+         patch.object(orch, "_assess_run", _stub_assessment(rec, h)):
+        result = await orch.start_orchestration(
+            h.db, entity_id=EMPTY_SEED,
+            request=OrchestrationStartRequest(max_new_discovery_calls=1))
+
+    assert result.status == "BLOCKED"
+    assert await _count(h, result.orchestration_id) == 0
+
+
+# --- F / G ------------------------------------------------------------------
+@case
+async def test_counter_F_a_successful_round_survives_a_budget_pause(h, _):
+    rec = Recorder([9, 9])
+    result = await _orchestrate(h, rec, budget=2)
+    assert result.status == "PAUSED_BY_BUDGET"
+    assert await _count(h, result.orchestration_id) == 2
+
+
+@case
+async def test_counter_G_a_successful_round_survives_a_later_BLOCK(h, _):
+    """The exact CA3 shape: rounds complete, then something fails later."""
+    from app.services import high_recall_orchestrator_service as orch
+    from app.services import llm_discovery_execution_service as execution
+    from app.schemas.orchestration import OrchestrationStartRequest
+
+    rec = Recorder([5, 5])
+    real = _stub_discovery(rec, h, EMPTY_SEED)
+
+    async def _succeed_then_fail(session, **kw):
+        # The recorder appends INSIDE the real stub, so by the second call the
+        # recorded length is 1 — the first round.
+        if len(rec.discovery_calls) >= 1:
+            raise RuntimeError("second round exploded")
+        return await real(session, **kw)
+
+    with patch.object(execution, "execute_llm_discovery", _succeed_then_fail), \
+         patch.object(orch, "_assess_run", _stub_assessment(rec, h)):
+        result = await orch.start_orchestration(
+            h.db, entity_id=EMPTY_SEED,
+            request=OrchestrationStartRequest(max_new_discovery_calls=5))
+
+    assert result.status == "BLOCKED"
+    assert await _count(h, result.orchestration_id) == 1, (
+        "the first round COMPLETED and must still be counted after the second failed"
+    )
+
+
+# --- H / I / J --------------------------------------------------------------
+@case
+async def test_counter_H_resume_does_not_recount_a_previous_success(h, _):
+    first = Recorder([9])
+    started = await _orchestrate(h, first, budget=1)
+    assert await _count(h, started.orchestration_id) == 1
+
+    # A resume whose own allowance is spent immediately still must not touch the
+    # round that already counted.
+    from app.services import high_recall_orchestrator_service as orch
+    from app.services import llm_discovery_execution_service as execution
+    from app.schemas.orchestration import OrchestrationStartRequest
+
+    rec2 = Recorder([9])
+    with patch.object(execution, "execute_llm_discovery",
+                      _stub_discovery(rec2, h, EMPTY_SEED)), \
+         patch.object(orch, "_assess_run", _stub_assessment(rec2, h)):
+        await orch.resume_orchestration(
+            h.db, orchestration_id=started.orchestration_id,
+            request=OrchestrationStartRequest(max_new_discovery_calls=1))
+
+    assert await _count(h, started.orchestration_id) == 2, (
+        "exactly one more round: the resumed round counts, the earlier one is not recounted"
+    )
+
+
+@case
+async def test_counter_I_resume_increments_by_exactly_one(h, _):
+    from app.services import high_recall_orchestrator_service as orch
+    from app.services import llm_discovery_execution_service as execution
+    from app.schemas.orchestration import OrchestrationStartRequest
+
+    first = Recorder([9, 9])
+    started = await _orchestrate(h, first, budget=2)
+    before = await _count(h, started.orchestration_id)
+    assert before == 2
+
+    rec2 = Recorder([9])
+    with patch.object(execution, "execute_llm_discovery",
+                      _stub_discovery(rec2, h, EMPTY_SEED)), \
+         patch.object(orch, "_assess_run", _stub_assessment(rec2, h)):
+        await orch.resume_orchestration(
+            h.db, orchestration_id=started.orchestration_id,
+            request=OrchestrationStartRequest(max_new_discovery_calls=1))
+
+    assert len(rec2.discovery_calls) == 1, "one new round was created"
+    assert await _count(h, started.orchestration_id) == before + 1
+
+
+@case
+async def test_counter_J_a_failed_attempt_between_two_successes_contributes_zero(h, _):
+    from app.services import high_recall_orchestrator_service as orch
+    from app.services import llm_discovery_execution_service as execution
+    from app.schemas.orchestration import OrchestrationStartRequest
+
+    rec = Recorder([5, 5, 5])
+    real = _stub_discovery(rec, h, EMPTY_SEED)
+
+    async def _fail_on_second(session, **kw):
+        if len(rec.discovery_calls) == 1:
+            raise RuntimeError("the middle attempt failed")
+        return await real(session, **kw)
+
+    # Round 1 succeeds, the continuation FAILS -> BLOCKED with count 1.
+    with patch.object(execution, "execute_llm_discovery", _fail_on_second), \
+         patch.object(orch, "_assess_run", _stub_assessment(rec, h)):
+        blocked = await orch.start_orchestration(
+            h.db, entity_id=EMPTY_SEED,
+            request=OrchestrationStartRequest(max_new_discovery_calls=5))
+    assert blocked.status == "BLOCKED"
+    assert await _count(h, blocked.orchestration_id) == 1
+
+    # Resume: one more success -> exactly 2. The failure contributed nothing.
+    rec2 = Recorder([5])
+    with patch.object(execution, "execute_llm_discovery",
+                      _stub_discovery(rec2, h, EMPTY_SEED)), \
+         patch.object(orch, "_assess_run", _stub_assessment(rec2, h)):
+        await orch.resume_orchestration(
+            h.db, orchestration_id=blocked.orchestration_id,
+            request=OrchestrationStartRequest(max_new_discovery_calls=1))
+    assert await _count(h, blocked.orchestration_id) == 2
+
+
+# --- K / L ------------------------------------------------------------------
+@case
+async def test_counter_K_a_view_switch_does_not_modify_the_finished_view(h, _):
+    """A saturates, then B works: A's count is frozen at what A did."""
+    rec = Recorder([0, 0, 9, 9])
+    result = await _orchestrate(h, rec, budget=4)
+
+    a = await _count(h, result.orchestration_id, "NAMED_CLASSIC_CIRCUITS")
+    assert a == 2, "A created exactly its two saturating rounds"
+    assert (await _view(h, result.orchestration_id,
+                        "NAMED_CLASSIC_CIRCUITS"))["status"] == "SATURATED_BY_ZERO_NOVELTY"
+    assert await _count(h, result.orchestration_id,
+                        "LOCAL_INTRINSIC_CIRCUITS") == 2
+
+
+@case
+async def test_counter_L_the_four_views_keep_independent_counters(h, _):
+    rec = Recorder([0, 0, 0, 0, 0, 0, 0, 0])
+    result = await _orchestrate(h, rec, budget=10)
+    assert result.status == "COMPLETED"
+    for view in ("NAMED_CLASSIC_CIRCUITS", "LOCAL_INTRINSIC_CIRCUITS",
+                 "AFFERENT_CIRCUITS", "EFFERENT_CIRCUITS"):
+        assert await _count(h, result.orchestration_id, view) == 2, view
+
+
+# --- the counter has exactly one writer -------------------------------------
+def test_counter_has_a_single_writer_and_an_exactly_once_guard():
+    """Structural: one statement increments the counter, and it is guarded by the
+    row's own latest_successful_run_pk — so the same run cannot be counted twice
+    no matter how many times that statement is issued."""
+    source = (BACKEND / "app/services/high_recall_orchestrator_service.py").read_text(
+        encoding="utf-8")
+    assert source.count("successful_round_count = successful_round_count + 1") == 1, (
+        "exactly one statement may move the counter"
+    )
+    assert "latest_successful_run_pk IS DISTINCT FROM :run_pk" in source
+    assert "round_delta" not in source, (
+        "the counter must no longer be settled from a local tally at pause time"
+    )

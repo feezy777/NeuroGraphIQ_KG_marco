@@ -30,6 +30,23 @@ The three rules that decide everything
 3. BUDGET IS NOT SATURATION. Exhausting the safety budget pauses; it never
    marks a View exhausted. A pause is resumable and no round is repeated.
 
+What `successful_round_count` means
+-----------------------------------
+    NEW Discovery runs this orchestration SUCCESSFULLY COMPLETED for this View
+
+  * A round the orchestration CREATED and that reached COMPLETED counts — ONCE.
+  * A historical run it merely ATTACHED to during bootstrap does NOT count. The
+    bootstrap resolves pre-existing history; resolving a run is not creating one.
+  * A FAILED run does NOT count, ever.
+  * The novelty outcome does NOT decide it. The counter moves the moment the
+    run completes, BEFORE the assessment, because the Discovery round succeeded
+    whether or not the assessor later agrees — and a failed assessment must not
+    erase a completed round.
+  * It is settled at THAT boundary, not when the View happens to pause or
+    saturate: a View that blocks with completed rounds must not lose them.
+  * `_COUNT_SUCCESSFUL_ROUND_SQL` is its only writer, and the row's own
+    ``latest_successful_run_pk`` is the exactly-once guard.
+
 Bootstrap
 ---------
 A View that already has discovery history is picked up from its LATEST
@@ -216,7 +233,9 @@ _UPDATE_VIEW_SQL = text(
            zero_streak = :zero_streak,
            latest_successful_run_pk = :latest_run_pk,
            latest_novelty_assessment_pk = :latest_assessment_pk,
-           successful_round_count = successful_round_count + :round_delta,
+           -- successful_round_count is deliberately NOT touched here. It has one
+           -- writer, _COUNT_SUCCESSFUL_ROUND_SQL, which settles it the moment a
+           -- new run completes rather than when the View happens to pause.
            failed_attempt_count = failed_attempt_count + :failed_delta,
            semantic_new_count = :semantic_new_count,
            stop_reason = :stop_reason,
@@ -224,6 +243,23 @@ _UPDATE_VIEW_SQL = text(
            completed_at = CASE WHEN :terminal THEN now()
                                ELSE completed_at END
      WHERE orchestration_pk = :orchestration_pk AND discovery_view = :discovery_view
+    """
+)
+
+#: Count one successful Discovery round — EXACTLY ONCE.
+#:
+#: The guard is the row's own stored ``latest_successful_run_pk``: the same run
+#: can never be counted twice, because the first write moves that column to the
+#: run being counted. No new table, no in-memory bookkeeping, and no reliance on
+#: a caller remembering what it already did — the database is the guard.
+_COUNT_SUCCESSFUL_ROUND_SQL = text(
+    """
+    UPDATE discovery_orchestration_view_states
+       SET successful_round_count = successful_round_count + 1,
+           latest_successful_run_pk = :run_pk
+     WHERE orchestration_pk = :orchestration_pk
+       AND discovery_view = :discovery_view
+       AND latest_successful_run_pk IS DISTINCT FROM :run_pk
     """
 )
 
@@ -478,14 +514,13 @@ async def _run_view(
     zero_streak = int(state["zero_streak"])
     latest_run_pk = state["latest_successful_run_pk"]
     latest_assessment_pk = state["latest_novelty_assessment_pk"]
-    rounds = int(state["successful_round_count"])
     failures = int(state["failed_attempt_count"])
 
     await session.execute(_UPDATE_VIEW_SQL, {
         "orchestration_pk": orchestration_pk, "discovery_view": view,
         "status": "RUNNING", "terminal": False, "zero_streak": zero_streak,
         "latest_run_pk": latest_run_pk, "latest_assessment_pk": latest_assessment_pk,
-        "round_delta": 0, "failed_delta": 0,
+        "failed_delta": 0,
         "semantic_new_count": state["semantic_new_count"], "stop_reason": state["stop_reason"],
     })
     await _update_orchestration(
@@ -502,10 +537,10 @@ async def _run_view(
 
     if latest is None:
         # No history at all: this View starts at Round 1.
-        run_id, assess, rounds = await _one_discovery_round(
-            session, orchestration_id=orchestration_id, seed_entity_id=seed_entity_id,
+        run_id, assess = await _one_discovery_round(
+            session, orchestration_pk=orchestration_pk,
+            orchestration_id=orchestration_id, seed_entity_id=seed_entity_id,
             view=view, continuation_from=None, budget=budget, ledger=ledger,
-            rounds=rounds,
         )
     else:
         run_id = latest["run_id"]
@@ -513,7 +548,6 @@ async def _run_view(
             session, orchestration_id=orchestration_id, seed_entity_id=seed_entity_id,
             view=view, run_id=run_id, ledger=ledger,
         )
-        rounds += 1
 
     latest_run_pk = await _run_pk(session, run_id)
 
@@ -525,10 +559,6 @@ async def _run_view(
         "orchestration_pk": orchestration_pk, "discovery_view": view,
         "status": "RUNNING", "terminal": False, "zero_streak": zero_streak,
         "latest_run_pk": latest_run_pk, "latest_assessment_pk": assess.assessment_pk,
-        # round_delta stays 0: the round COUNT is settled once, when the View
-        # pauses or saturates. Applying it here too would count the same round
-        # twice.
-        "round_delta": 0,
         "failed_delta": 0, "semantic_new_count": assess.semantic_new_count,
         "stop_reason": None,
     })
@@ -553,7 +583,6 @@ async def _run_view(
                     "zero_streak": zero_streak,
                     "latest_run_pk": latest_run_pk,
                     "latest_assessment_pk": assess.assessment_pk,
-                    "round_delta": rounds - int(state["successful_round_count"]),
                     "failed_delta": 0, "semantic_new_count": 0,
                     "stop_reason": (
                         f"{zero_streak} consecutive successful rounds produced no "
@@ -575,7 +604,6 @@ async def _run_view(
                 "status": "RUNNING", "terminal": False, "zero_streak": zero_streak,
                 "latest_run_pk": latest_run_pk,
                 "latest_assessment_pk": assess.assessment_pk,
-                "round_delta": rounds - int(state["successful_round_count"]),
                 "failed_delta": 0, "semantic_new_count": semantic_new,
                 "stop_reason": None,
             })
@@ -585,19 +613,19 @@ async def _run_view(
                 f"view {view} still produced novelty"
             )
 
-        run_id, assess, rounds = await _one_discovery_round(
-            session, orchestration_id=orchestration_id, seed_entity_id=seed_entity_id,
+        run_id, assess = await _one_discovery_round(
+            session, orchestration_pk=orchestration_pk,
+            orchestration_id=orchestration_id, seed_entity_id=seed_entity_id,
             view=view, continuation_from=run_id, budget=budget, ledger=ledger,
-            rounds=rounds,
         )
         latest_run_pk = await _run_pk(session, run_id)
 
 
 async def _one_discovery_round(
-    session: AsyncSession, *, orchestration_id: str, seed_entity_id: str, view: str,
-    continuation_from: str | None, budget: int, ledger: _Ledger,
-    rounds: int,
-) -> tuple[str, _Assessment, int]:
+    session: AsyncSession, *, orchestration_pk: int, orchestration_id: str,
+    seed_entity_id: str, view: str, continuation_from: str | None, budget: int,
+    ledger: _Ledger,
+) -> tuple[str, _Assessment]:
     """Execute ONE Discovery round and assess it.
 
     The call is counted BEFORE it is made: a call that fails still cost the
@@ -627,11 +655,21 @@ async def _one_discovery_round(
     _log("discovery", orchestration_id=orchestration_id, seed=seed_entity_id,
          view=view, run_id=run_id, discovery_used=ledger.discovery, discovery_budget=budget)
 
+    # SETTLE THE COUNTER HERE — after the run is COMPLETED and BEFORE the
+    # assessment. The round succeeded; whether the assessor later agrees is a
+    # different question, and a failed assessment must not erase a completed
+    # round. Waiting until the View pauses is what lost R6.
+    run_pk = await _run_pk(session, run_id)
+    await session.execute(_COUNT_SUCCESSFUL_ROUND_SQL, {
+        "orchestration_pk": orchestration_pk, "discovery_view": view, "run_pk": run_pk,
+    })
+    await session.commit()
+
     assess = await _assess_run(
         session, orchestration_id=orchestration_id, seed_entity_id=seed_entity_id,
         view=view, run_id=run_id, ledger=ledger,
     )
-    return run_id, assess, rounds + 1
+    return run_id, assess
 
 
 async def _assess_run(
