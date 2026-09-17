@@ -15,6 +15,7 @@ import asyncio
 import pytest
 
 from app.services import llm_discovery_continuation_service as cont
+from app.prompts.llm_discovery_views import bounded_exclusion_names
 
 SEED = "NGIQ-BR-00001605"
 OTHER_SEED = "NGIQ-BR-00001169"
@@ -244,3 +245,103 @@ def test_the_service_only_ever_SELECTs():
         assert sql.split(" ", 1)[0].upper() == "SELECT", sql
         for forbidden in ("INSERT", "UPDATE", "DELETE", "FOR UPDATE"):
             assert forbidden not in sql, sql
+
+
+# ===========================================================================
+# A bounded prompt must not loosen what the exclusion context IS scoped to
+# ===========================================================================
+# The list shrank; its SCOPE did not. These pin the three bindings that decide
+# whose history a continuation may see — seed, Discovery View and run status —
+# and the count that must keep telling the truth about the whole chain.
+class _RecordingSession(_Session):
+    """The harness session, plus the bind parameters it was called with."""
+
+    def __init__(self, **kw):
+        super().__init__(**kw)
+        self.params: list[dict] = []
+
+    async def execute(self, stmt, params=None):
+        self.params.append(dict(params or {}))
+        return await super().execute(stmt, params)
+
+
+def _large_history(n: int = 431) -> list[dict]:
+    return _circuits(*[f"Circuit {i}" for i in range(1, n + 1)])
+
+
+# --- I / J ------------------------------------------------------------------
+def test_bounded_I_the_true_total_survives_the_bound():
+    """431 rows in, `raw_count` 431 out — even though the prompt shows 120."""
+    s = _RecordingSession(circuits=_large_history(431))
+    got = _collect(s)
+
+    assert got.raw_count == 431, "already_discovered_circuit_count is unchanged"
+    shown, total = bounded_exclusion_names(got.names)
+    assert total == 431
+    assert len(shown) == 120, "and only the prompt is bounded"
+    assert len(got.names) == 431, "the service itself reports the whole context"
+
+
+def test_bounded_J_failed_runs_can_never_enter_the_context():
+    s = _RecordingSession(circuits=_large_history(5))
+    _collect(s)
+    circuit_sql = next(x for x in s.statements if "dc.candidate_type = 'circuit'" in x)
+    assert "r.status = :status" in circuit_sql, "the chain is filtered by status"
+
+    status = next(p["status"] for p in s.params if "status" in p)
+    assert status == cont.CONTINUABLE_STATUS == "COMPLETED", (
+        "only COMPLETED runs contribute names; a FAILED run produced nothing"
+    )
+
+
+# --- G / H ------------------------------------------------------------------
+def test_bounded_G_the_context_is_scoped_to_the_REQUESTED_view():
+    """A continuation of C must be given C's history — never A's or B's."""
+    s = _RecordingSession(circuits=_circuits("Afferent-only circuit"))
+    got = _collect(s, strategy="G4HR1/AFFERENT_CIRCUITS")
+
+    circuit_sql = next(x for x in s.statements if "dc.candidate_type = 'circuit'" in x)
+    assert "r.query_strategy_version = :strategy" in circuit_sql, (
+        "the exclusion query is strategy-scoped, so no other View can leak in"
+    )
+    strategy = next(p["strategy"] for p in s.params if "strategy" in p)
+    assert strategy == "G4HR1/AFFERENT_CIRCUITS", "and it is the requested one"
+    assert got.names == ("Afferent-only circuit",)
+
+
+def test_bounded_H_the_context_is_scoped_to_the_REQUESTED_seed():
+    s = _RecordingSession(circuits=_circuits("CA3 circuit"))
+    _collect(s)
+
+    circuit_sql = next(x for x in s.statements if "dc.candidate_type = 'circuit'" in x)
+    assert "e.entity_id = :entity_id" in circuit_sql, (
+        "another region's circuits are not this region's omissions"
+    )
+    entity = next(p["entity_id"] for p in s.params if "entity_id" in p)
+    assert entity == SEED
+    assert OTHER_SEED != SEED
+
+
+def test_bounded_G_H_the_bound_never_mixes_two_scopes_into_one_list():
+    """Two Views' names handed to one bound stay two Views' names — the bound
+    is applied to whatever the scoped query returned, and to nothing else."""
+    a_names = tuple(f"A circuit {i}" for i in range(1, 200))
+    b_names = tuple(f"B circuit {i}" for i in range(1, 30))
+
+    a_shown, _ = bounded_exclusion_names(a_names)
+    b_shown, _ = bounded_exclusion_names(b_names)
+
+    assert not any(n.startswith("B ") for n in a_shown)
+    assert not any(n.startswith("A ") for n in b_shown)
+    assert b_shown == b_names, "a small View is not sampled at all"
+
+
+# --- K ----------------------------------------------------------------------
+def test_bounded_K_the_round_and_the_parent_are_unaffected_by_the_bound():
+    """Bounding changes what is DISPLAYED, never where the chain continues."""
+    rounds = [{"run_id": f"r{i}", "continuation_round": str(i)} for i in range(2, 30)]
+    s = _RecordingSession(chain=rounds, circuits=_large_history(431))
+    got = _collect(s)
+
+    assert got.next_round == 30, "max(rounds) + 1, from the chain, not the list"
+    assert got.rounds_present == tuple(range(2, 30))

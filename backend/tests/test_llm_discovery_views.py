@@ -35,7 +35,13 @@ from app.llm_discovery_views import (
     view_provenance,
 )
 from app.prompts.llm_discovery_prompt import PROMPT_KEY, PROMPT_VERSION, SYSTEM_PROMPT
-from app.prompts.llm_discovery_views import build_view_instruction, build_view_prompt
+from app.prompts.llm_discovery_views import (
+    bounded_exclusion_names,
+    build_continuation_block,
+    build_view_instruction,
+    build_view_prompt,
+)
+from app.services.llm_discovery_continuation_service import normalize_circuit_name
 from app.schemas.llm_discovery import LlmDiscoveryInput
 
 SEED = LlmDiscoveryInput(
@@ -305,3 +311,137 @@ def test_width_5_the_identifier_is_the_compact_form_of_the_full_semantics():
         assert prov["strategy_version"] == STRATEGY_VERSION
         assert prov["strategy_family"] == "G4_HIGH_RECALL_V1"
         assert prov["discovery_view"] == view
+
+
+# ===========================================================================
+# Bounded exclusion list — the prompt must not grow with the View's history
+# ===========================================================================
+# A 431-name exclusion list made the model perform an exhaustive set-difference
+# in its head: one A round spent its whole 65 536-token output budget on
+# reasoning and returned no content. Recall First does not require perfect
+# global deduplication — novelty assessment and canonicalization resolve
+# overlap — so a representative subset is enough.
+def _history(n: int, *, prefix: str = "Circuit") -> tuple[str, ...]:
+    return tuple(f"{prefix} {i}" for i in range(1, n + 1))
+
+
+# --- A ----------------------------------------------------------------------
+@pytest.mark.parametrize("n", [0, 1, 7, 120])
+def test_bounded_A_a_small_history_is_listed_in_full(n):
+    shown, total = bounded_exclusion_names(_history(n))
+    assert total == n
+    assert shown == _history(n), "nothing is dropped below the bound"
+
+
+def test_bounded_A_a_history_of_exactly_the_bound_is_untouched():
+    """The boundary itself: 120 in, 120 out, in order, no sampling."""
+    shown, total = bounded_exclusion_names(_history(120))
+    assert total == 120 and len(shown) == 120
+    assert shown == _history(120)
+
+
+def test_bounded_A_the_empty_history_renders_an_honest_block():
+    block = build_continuation_block(())
+    assert "0 circuit candidates" in block
+    assert "(none recorded)" in block
+
+
+# --- B / C ------------------------------------------------------------------
+def test_bounded_B_a_large_history_is_capped():
+    shown, total = bounded_exclusion_names(_history(431))
+    assert total == 431, "the TRUE total is preserved"
+    assert len(shown) == 120, "and the prompt shows at most 120"
+
+
+def test_bounded_C_the_most_recent_names_are_always_present():
+    names = _history(431)
+    shown, _ = bounded_exclusion_names(names)
+    assert list(names[-80:]) == sorted(set(names[-80:]) & set(shown),
+                                       key=names.index), "all 80 most recent"
+    for name in names[-80:]:
+        assert name in shown, name
+
+
+# --- D ----------------------------------------------------------------------
+def test_bounded_D_the_older_history_is_sampled_broadly_and_evenly():
+    names = _history(431)
+    shown, _ = bounded_exclusion_names(names)
+    older_shown = [n for n in shown if n in set(names[:-80])]
+
+    assert len(older_shown) == 40, "exactly the sampled share"
+    assert older_shown[0] == names[0], "the OLDEST history is covered, not dropped"
+    assert older_shown[-1] != names[-81], "and it is not simply 'the oldest 40'"
+
+    # even spacing across the older range, by index
+    indices = [names.index(n) for n in older_shown]
+    gaps = [b - a for a, b in zip(indices, indices[1:])]
+    assert max(gaps) - min(gaps) <= 1, f"uneven sampling: {gaps}"
+
+
+def test_bounded_D_a_short_older_range_is_taken_whole():
+    """Boundary: 121 names leaves ONE older name, and it must still appear."""
+    names = _history(121)
+    shown, total = bounded_exclusion_names(names)
+    assert total == 121 and len(shown) == 120
+    assert names[0] in shown, "the single older name is the sample"
+    assert names[-1] in shown, "and the recent 80 are intact"
+
+
+# --- E ----------------------------------------------------------------------
+def test_bounded_E_the_same_history_always_yields_the_same_list():
+    first = bounded_exclusion_names(_history(431))
+    second = bounded_exclusion_names(_history(431))
+    third = bounded_exclusion_names(tuple(_history(431)))
+    assert first == second == third, "no randomness, no set iteration order"
+
+
+def test_bounded_E_the_ordering_is_stable_and_chronological():
+    names = _history(431)
+    shown, _ = bounded_exclusion_names(names)
+    indices = [names.index(n) for n in shown]
+    assert indices == sorted(indices), "oldest-representative first, newest last"
+
+
+# --- F ----------------------------------------------------------------------
+def test_bounded_F_the_bounded_list_holds_no_duplicate_normalized_names():
+    names = ([f"Circuit {i}" for i in range(1, 400)]     # 399 distinct
+             + ["  circuit   1 ", "CIRCUIT 2"])          # normalized duplicates
+    shown, total = bounded_exclusion_names(tuple(names))
+    keys = [normalize_circuit_name(n) for n in shown]
+    assert len(keys) == len(set(keys)), "a normalized duplicate took two slots"
+    assert total == 399, "and the duplicates never counted as history"
+
+
+# --- the block the model actually reads -------------------------------------
+def test_bounded_the_block_states_the_true_total_and_the_shown_count():
+    block = build_continuation_block(_history(431))
+    assert "431 circuit candidates have already been discovered" in block
+    assert "The 120 names below are REPRESENTATIVE, not exhaustive" in block
+    # the NAME lines only: the instruction bullets use the same marker
+    listed = [l for l in block.splitlines() if l.startswith("  * Circuit ")]
+    assert len(listed) == 120
+
+
+def test_bounded_a_small_history_is_not_described_as_a_sample():
+    block = build_continuation_block(_history(5))
+    assert "All of them are listed below" in block
+    assert "REPRESENTATIVE" not in block
+
+
+def test_bounded_the_block_permits_older_overlap_but_not_visible_duplication():
+    block = build_continuation_block(_history(431))
+    assert "overlap with the OLDER history is expected and acceptable" in block
+    assert "avoid obvious duplication with the names ABOVE" in block
+    assert "Do NOT try to prove novelty against history that is not shown" in block
+    assert "ignore" not in block.lower().replace("ignoring", ""), (
+        "the block must not license duplication outright"
+    )
+
+
+def test_bounded_the_circuit_boundary_is_untouched_by_the_bound():
+    """The exclusion list shrank; what counts as a circuit did not."""
+    for view in ("NAMED_CLASSIC_CIRCUITS", "LOCAL_INTRINSIC_CIRCUITS",
+                 "AFFERENT_CIRCUITS", "EFFERENT_CIRCUITS"):
+        prompt = build_view_prompt(SEED, view, _history(431))
+        assert "Projection != Connection != Pathway != Circuit" in prompt["system_prompt"]
+        assert "WHAT COUNTS AS A CIRCUIT" in prompt["system_prompt"]
