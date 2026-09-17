@@ -2433,20 +2433,26 @@ def test_envelope_l1_a_missing_comma_does_not_leak_the_nested_region():
 def test_envelope_l2_a_stray_member_does_not_leak_the_nested_region():
     text = ('{"schema_version": "1.0", "seed_entity_id": "%s", "regions": [%s],'
             ' "connections": [], "oops": }' % (SEED_ID, region_doc()))
-    assert not parse_text(text).ok
+    result = parse_text(text)
+    assert not result.ok
+    assert result.error.startswith(parser.ERR_ENVELOPE_MISSING), result.error
 
 
 def test_envelope_l3_a_single_quoted_key_does_not_leak_the_nested_region():
     text = ("{'schema_version': '1.0', 'seed_entity_id': '%s', 'regions': [%s],"
             " 'connections': []}" % (SEED_ID, region_doc()))
-    assert not parse_text(text).ok
+    result = parse_text(text)
+    assert not result.ok
+    assert result.error.startswith(parser.ERR_ENVELOPE_MISSING), result.error
 
 
 def test_envelope_l4_a_raw_newline_in_a_string_does_not_leak_the_nested_region():
     text = ('{"schema_version": "1.0", "seed_entity_id": "%s",'
             ' "summary": "line one\nline two", "regions": [%s], "connections": []}'
             % (SEED_ID, region_doc()))
-    assert not parse_text(text).ok
+    result = parse_text(text)
+    assert not result.ok
+    assert result.error.startswith(parser.ERR_ENVELOPE_MISSING), result.error
 
 
 def test_envelope_m1_a_balanced_invalid_parent_does_not_leak_its_child():
