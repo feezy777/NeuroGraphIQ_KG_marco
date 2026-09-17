@@ -312,12 +312,18 @@ async def test_D_two_consecutive_zeros_saturate_the_view(h, _):
 
 @case
 async def test_E_novelty_after_a_zero_resets_the_streak(h, _):
-    """5 → 0 → 3 is NOT saturation: the streak resets and the View continues."""
+    """5 → 0 → 3 is NOT saturation: the streak resets and the View continues.
+
+    The third round runs even though A's balancing allocation is 2: a View that
+    has just produced its first zero always gets the round that resolves it, so
+    a zero is never left dangling across an execution boundary.
+    """
     rec = Recorder([5, 0, 3])
     result = await _orchestrate(h, rec, budget=3)
     a = await _view(h, result.orchestration_id, "NAMED_CLASSIC_CIRCUITS")
     assert a["status"] == "RUNNING"
     assert a["zero_streak"] == 0
+    assert [c["view"] for c in rec.discovery_calls] == ["NAMED_CLASSIC_CIRCUITS"] * 3
     assert result.status == "PAUSED_BY_BUDGET", "still expanding, so it paused — not saturated"
 
 
@@ -1189,12 +1195,27 @@ async def test_retry_C_empty_then_success_continues_normally(h, _):
 async def test_retry_D_two_consecutive_empties_BLOCK(h, _):
     provider = _DiscoveryProvider(EMPTY_SEED, empty_first=99)
     rec = Recorder([5])
-    result = await _drive_with_provider(h, provider, rec, budget=5)
+    # Budget enough for all four Views to exhaust their retry: with a smaller
+    # one the GLOBAL budget ends the execution first, and this test is about
+    # what the View-local rule does.
+    result = await _drive_with_provider(h, provider, rec, budget=20)
 
-    assert provider.calls == 2, "one attempt plus one retry, and no more"
-    assert result.status == "BLOCKED"
-    assert "consecutive empty provider responses" in (result.stop_reason or "")
+    a_runs = await _runs(h, "NAMED_CLASSIC_CIRCUITS")
+    assert len(a_runs) == 2, "one attempt plus one retry for A, and no more"
+    assert all(r["error_code"] == "LLM_EMPTY_RESPONSE" for r in a_runs)
+    # The VIEW is blocked; the orchestration is not. A provider that returned
+    # nothing twice has said something about A's prompt, not about B/C/D — so
+    # the sweep CONTINUES, and every View gets its own two attempts.
+    assert result.status == "PAUSED_BY_BUDGET"
+    assert "blocked on exhausted empty-response retries" in (result.stop_reason or "")
+    assert provider.calls == 8, "two attempts for each of the four Views"
     assert await _streak(h, result.orchestration_id) == 2
+    for view in ("NAMED_CLASSIC_CIRCUITS", "LOCAL_INTRINSIC_CIRCUITS",
+                 "AFFERENT_CIRCUITS", "EFFERENT_CIRCUITS"):
+        v = await _view(h, result.orchestration_id, view)
+        assert v["status"] == "BLOCKED", view
+        assert len(await _runs(h, view)) == 2, view
+    assert result.status != "COMPLETED", "a blocked View must stay resumable"
     runs = await _runs(h)
     assert [r["status"] for r in runs] == ["FAILED", "FAILED"]
     assert all(r["error_code"] == "LLM_EMPTY_RESPONSE" for r in runs)
@@ -1334,26 +1355,26 @@ async def test_retry_N_a_resume_cannot_re_arm_an_exhausted_retry(h, _):
     across a resume instead of earning a fresh retry each time."""
     provider = _DiscoveryProvider(EMPTY_SEED, empty_first=99)
     rec = Recorder([5])
-    first = await _drive_with_provider(h, provider, rec, budget=5)
-    assert first.status == "BLOCKED"
-    assert provider.calls == 2
+    first = await _drive_with_provider(h, provider, rec, budget=20)
+    assert first.status == "PAUSED_BY_BUDGET"
+    a_runs = await _runs(h, "NAMED_CLASSIC_CIRCUITS")
+    assert len(a_runs) == 2, "one attempt plus one retry for A, and no more"
     assert await _streak(h, first.orchestration_id) == 2
 
     before = provider.calls
-    second = await _resume_with_provider(h, provider, Recorder([5]), budget=5,
+    second = await _resume_with_provider(h, provider, Recorder([5]), budget=20,
                                          orchestration_id=first.orchestration_id)
-    assert second.status == "BLOCKED"
-    # WHY the reason is asserted and not just the status: the loop's catch-all
-    # records ANY unexpected exception as a BLOCKED orchestration. Without this
-    # line a storage error — say, a streak written past the column's CHECK —
-    # would look exactly like the policy working.
-    assert second.stop_reason == (
-        "2 consecutive empty provider responses for view NAMED_CLASSIC_CIRCUITS;"
-        " the single automatic retry is spent"
-    ), second.stop_reason
-    assert provider.calls - before == 1, (
-        "one attempt and NO retry: the retry was already spent"
-    )
+    assert second.status == "PAUSED_BY_BUDGET"
+    assert "blocked on exhausted empty-response retries" in (second.stop_reason or "")
+
+    # The claim is about A, so it is asserted about A: exactly ONE attempt and
+    # no retry re-armed. (The other Views now run in the same execution — that
+    # is the point of View-local failure isolation — so a total call count would
+    # no longer measure this.)
+    a_runs = await _runs(h, "NAMED_CLASSIC_CIRCUITS")
+    assert len(a_runs) == 3, "two from the first execution plus exactly one here"
+    assert a_runs[-1]["status"] == "FAILED"
+    assert provider.calls - before >= 1
     assert await _streak(h, first.orchestration_id) == 2, "and it saturates, not grows"
 
 
@@ -1378,3 +1399,224 @@ def test_retry_zero_streak_and_empty_streak_are_separate_concepts():
     assert "consecutive_empty_response_failures" in source
     # the novelty zero streak is never written from the empty-response path
     assert "zero_streak = " not in source.split("_bump_empty_response_failures")[1][:400]
+
+
+# ===========================================================================
+# Per-View scheduling — each View gets its own slice of one execution
+# ===========================================================================
+# Before this, one View that kept producing novelty consumed the whole budget and
+# the sweep never reached the next one: B, C and D had never run at all. A View
+# now spends an ALLOCATION and yields; only the shared budget still pauses.
+BUSY = [9] * 40          # novelty every round: a View never saturates on its own
+
+
+def _views(rec: Recorder) -> list[str]:
+    return [c["view"] for c in rec.discovery_calls]
+
+
+def _short(view: str) -> str:
+    return view.split("_")[0]
+
+
+async def _views_from_db(h: H) -> list[str]:
+    """The View order the DATABASE saw: runs of this seed, in creation order.
+
+    The provider-driven tests run the REAL execution service, so the Recorder
+    never sees those calls — the runs themselves are the record.
+    """
+    rows = await h.rows(
+        "SELECT r.query_strategy_version AS strat FROM knowledge_discovery_runs r"
+        "  JOIN brain_regions b ON b.entity_pk = r.seed_region_pk"
+        "  JOIN kg_entities e ON e.entity_pk = b.entity_pk"
+        " WHERE e.entity_id = :s ORDER BY r.run_pk", s=EMPTY_SEED)
+    return [r["strat"].split("/")[-1] for r in rows]
+
+
+# --- A / C ------------------------------------------------------------------
+@case
+async def test_sched_A_each_view_gets_its_balancing_allocation(h, _):
+    """A=2, B=6, C=6, D=6 — and A stops because its ALLOCATION is spent."""
+    rec = Recorder(BUSY)
+    result = await _orchestrate(h, rec, budget=20)
+
+    assert [_short(v) for v in _views(rec)] == (
+        ["NAMED"] * 2 + ["LOCAL"] * 6 + ["AFFERENT"] * 6 + ["EFFERENT"] * 6
+    ), _views(rec)
+    assert result.status == "PAUSED_BY_BUDGET"
+
+
+@case
+async def test_sched_C_the_view_cap_is_not_a_global_pause(h, _):
+    """A spends 2 of a 3-call budget and YIELDS — the third call goes to B.
+
+    If A had paused the execution instead, the third call could not exist: at
+    that moment only 2 of the 3 shared calls had been spent.
+    """
+    rec = Recorder(BUSY)
+    result = await _orchestrate(h, rec, budget=3)
+
+    assert [_short(v) for v in _views(rec)] == ["NAMED", "NAMED", "LOCAL"], _views(rec)
+    a = await _view(h, result.orchestration_id, "NAMED_CLASSIC_CIRCUITS")
+    assert a["status"] == "RUNNING", "a yield is not a scientific outcome"
+    assert a["stop_reason"] is None
+
+    # ...and the thing that eventually stopped the sweep was the SHARED budget,
+    # not A's allocation.
+    assert "safety budget of 3" in (result.stop_reason or ""), result.stop_reason
+    assert "allocation" not in (result.stop_reason or "")
+
+
+# --- B ----------------------------------------------------------------------
+@case
+async def test_sched_B_once_balancing_is_done_each_view_gets_five(h, _):
+    from app.services import high_recall_orchestrator_service as orch
+    from app.services import llm_discovery_execution_service as execution
+    from app.schemas.orchestration import OrchestrationStartRequest
+
+    first = Recorder(BUSY)
+    started = await _orchestrate(h, first, budget=20)
+    assert started.status == "PAUSED_BY_BUDGET"
+    # every View completed at least one round, so balancing is over
+    for view in orch.VIEW_ORDER:
+        v = await _view(h, started.orchestration_id, view)
+        assert v["successful_round_count"] > 0, view
+
+    second = Recorder(BUSY)
+    with patch.object(execution, "execute_llm_discovery",
+                      _stub_discovery(second, h, EMPTY_SEED)), \
+         patch.object(orch, "_assess_run", _stub_assessment(second, h)):
+        resumed = await orch.resume_orchestration(
+            h.db, orchestration_id=started.orchestration_id,
+            request=OrchestrationStartRequest(max_new_discovery_calls=20))
+
+    assert [_short(v) for v in _views(second)] == (
+        ["NAMED"] * 5 + ["LOCAL"] * 5 + ["AFFERENT"] * 5 + ["EFFERENT"] * 5
+    ), _views(second)
+    assert resumed.status == "PAUSED_BY_BUDGET"
+
+
+# --- D ----------------------------------------------------------------------
+@case
+async def test_sched_D_true_budget_exhaustion_still_pauses(h, _):
+    rec = Recorder(BUSY)
+    result = await _orchestrate(h, rec, budget=1)
+
+    assert result.status == "PAUSED_BY_BUDGET"
+    assert len(rec.discovery_calls) == 1
+    assert "safety budget of 1" in (result.stop_reason or ""), result.stop_reason
+    a = await _view(h, result.orchestration_id, "NAMED_CLASSIC_CIRCUITS")
+    assert a["status"] == "RUNNING"
+
+
+# --- E ----------------------------------------------------------------------
+@case
+async def test_sched_E_a_blocked_view_does_not_stop_the_sweep(h, _):
+    """Two empty responses block A. B runs anyway, in the same execution."""
+    provider = _DiscoveryProvider(EMPTY_SEED, empty_first=2)
+    rec = Recorder(BUSY)
+    result = await _drive_with_provider(h, provider, rec, budget=20)
+
+    a = await _view(h, result.orchestration_id, "NAMED_CLASSIC_CIRCUITS")
+    assert a["status"] == "BLOCKED"
+    assert await _streak(h, result.orchestration_id) == 2
+    assert len(await _runs(h, "NAMED_CLASSIC_CIRCUITS")) == 2, "one attempt, one retry"
+
+    assert "LOCAL_INTRINSIC_CIRCUITS" in await _views_from_db(h), (
+        "the View after the blocked one must still get its turn"
+    )
+    assert result.status != "BLOCKED", (
+        "one View's provider hiccup is not the orchestration's failure"
+    )
+
+
+# --- F ----------------------------------------------------------------------
+@case
+async def test_sched_F_an_infrastructure_failure_is_still_fatal(h, _):
+    """A contract failure is NOT View-local: it stops everything, as before."""
+    class _SchemaProvider:
+        def __init__(self):
+            self.calls = 0
+
+        async def complete_json(self, **kwargs):
+            self.calls += 1
+            return _ProviderResponse(json.dumps({
+                "schema_version": "1.0", "seed_entity_id": EMPTY_SEED,
+                "regions": [], "connections": [], "functions": [],
+                "circuits": [{"local_id": "circuit_1", "name": "X", "confidence": 0.5,
+                              "species_context": {"scope": "UNKNOWN", "taxon_ids": []},
+                              "invented_field": "carries meaning"}],
+                "source_hints": [], "warnings": [],
+            }))
+
+    provider = _SchemaProvider()
+    rec = Recorder(BUSY)
+    result = await _drive_with_provider(h, provider, rec, budget=20)
+
+    assert provider.calls == 1, "not retryable, and not isolated"
+    assert result.status == "BLOCKED"
+    assert await _views_from_db(h) == ["NAMED_CLASSIC_CIRCUITS"], "no other View may run"
+
+
+# --- G ----------------------------------------------------------------------
+@case
+async def test_sched_G_saturation_is_still_per_view(h, _):
+    """A saturates on two zeros; B still runs in the SAME execution."""
+    rec = Recorder([0, 0, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9])
+    result = await _orchestrate(h, rec, budget=20)
+
+    a = await _view(h, result.orchestration_id, "NAMED_CLASSIC_CIRCUITS")
+    assert a["status"] == "SATURATED_BY_ZERO_NOVELTY"
+    assert a["zero_streak"] == 2
+    assert _views(rec)[:2] == ["NAMED_CLASSIC_CIRCUITS"] * 2
+    assert "LOCAL_INTRINSIC_CIRCUITS" in _views(rec), "the sweep continued"
+
+
+# --- H / I ------------------------------------------------------------------
+@case
+async def test_sched_H_each_view_continues_its_OWN_history(h, _):
+    """B and D attach to their OWN latest run — never to A's, never at R1."""
+    a_history = await _historical_runs(h, 1)
+    b_history = await _historical_runs(h, 1, view="LOCAL_INTRINSIC_CIRCUITS")
+    d_history = await _historical_runs(h, 1, view="EFFERENT_CIRCUITS")
+    assert len({a_history[0], b_history[0], d_history[0]}) == 3
+
+    rec = Recorder(BUSY)
+    await _orchestrate(h, rec, budget=20)
+
+    by_view: dict[str, list[dict]] = {}
+    for call in rec.discovery_calls:
+        by_view.setdefault(call["view"], []).append(call)
+
+    for view, parent in (("NAMED_CLASSIC_CIRCUITS", a_history[0]),
+                         ("LOCAL_INTRINSIC_CIRCUITS", b_history[0]),
+                         ("EFFERENT_CIRCUITS", d_history[0])):
+        assert str(by_view[view][0]["continuation_from"]) == str(parent), view
+        # ...and it is that View's OWN run, not one belonging to another View.
+        assert str(parent) in {str(r["run_id"]) for r in await _runs(h, view)}
+
+    # A View with NO history still starts at Round 1 — the bootstrap decides
+    # that, and the schedule says nothing about which run a View continues.
+    assert by_view["AFFERENT_CIRCUITS"][0]["continuation_from"] is None
+
+
+@case
+async def test_sched_I_no_continuation_ever_crosses_a_view(h, _):
+    """The scheduler moves between Views; it never merges their searches."""
+    await _historical_runs(h, 1)
+    await _historical_runs(h, 1, view="LOCAL_INTRINSIC_CIRCUITS")
+
+    rec = Recorder(BUSY)
+    await _orchestrate(h, rec, budget=20)
+
+    owner: dict[str, str] = {}
+    for view in ("NAMED_CLASSIC_CIRCUITS", "LOCAL_INTRINSIC_CIRCUITS",
+                 "AFFERENT_CIRCUITS", "EFFERENT_CIRCUITS"):
+        for run in await _runs(h, view):
+            owner[str(run["run_id"])] = view
+
+    continuations = [c for c in rec.discovery_calls if c["continuation_from"]]
+    assert continuations, "the sweep produced continuation rounds"
+    for call in continuations:
+        assert owner[str(call["continuation_from"])] == call["view"], (
+            f"a continuation crossed Views: {call}"
+        )

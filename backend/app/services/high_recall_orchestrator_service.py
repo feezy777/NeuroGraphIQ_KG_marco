@@ -24,11 +24,18 @@ The three rules that decide everything
    number that keeps a View alive. Confidence never appears in a decision: a
    0.20-confidence circuit the assessor calls NEW outvotes a 0.95 one it calls
    an ALIAS.
-2. FAILURE IS NOT ZERO. A failed Discovery round and a failed assessment both
-   STOP the orchestration as BLOCKED. Neither advances the zero streak, because
-   neither is evidence that the View stopped producing novelty.
-3. BUDGET IS NOT SATURATION. Exhausting the safety budget pauses; it never
-   marks a View exhausted. A pause is resumable and no round is repeated.
+2. FAILURE IS NOT ZERO. Neither a failed Discovery round nor a failed
+   assessment ever advances the zero streak, because neither is evidence that
+   the View stopped producing novelty. Their CONSEQUENCE differs by kind:
+   an infrastructure failure (persistence, database, contract, model policy)
+   stops the whole orchestration as BLOCKED; the exhausted
+   LLM_EMPTY_RESPONSE retry blocks ONLY that View, because a provider that
+   returned nothing twice has said something about one View's prompt, not about
+   the other three.
+3. BUDGET IS NOT SATURATION. Exhausting the shared safety budget pauses; it
+   never marks a View exhausted. A pause is resumable and no round is repeated.
+   A View spending its own allocation is neither: it yields and the sweep
+   continues to the next View.
 
 What `successful_round_count` means
 -----------------------------------
@@ -58,7 +65,7 @@ said.
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from sqlalchemy import text
@@ -102,7 +109,25 @@ EMPTY_RESPONSE_CODE = "LLM_EMPTY_RESPONSE"
 MAX_CONSECUTIVE_EMPTY_RESPONSES = 2
 
 #: Non-working states. A View in one of these is done and must be skipped.
+#:
+#: BLOCKED is deliberately NOT here. A blocked View is blocked for THIS
+#: execution, not forever: the provider hiccup that exhausted its retry may not
+#: repeat, and a future resume is allowed to try it again.
 _VIEW_TERMINAL = ("SATURATED_BY_ZERO_NOVELTY", "COMPLETE")
+
+#: Execution-local per-View Discovery allocation, in VIEW_ORDER.
+#:
+#: Why this exists: the budget was global, and one View that keeps producing
+#: novelty consumed all of it, so B/C/D were never reached at all. A View that
+#: spends its allocation now YIELDS — control returns to the scheduler and the
+#: next View runs. That is a scheduling event, not a stop.
+#:
+#: BALANCING is used while some View has never completed a round: A already has
+#: a long history, B/C/D have none, and giving the empty Views a larger share is
+#: what makes the four comparable. NORMAL is the steady state. Both sum to 20,
+#: which is the largest budget ``ck_dco_budget_range`` permits.
+_BALANCING_VIEW_CALLS: tuple[int, ...] = (2, 6, 6, 6)
+_NORMAL_VIEW_CALLS: tuple[int, ...] = (5, 5, 5, 5)
 
 
 # ===========================================================================
@@ -342,10 +367,28 @@ class _Ledger:
     by exception, so an integer returned from a helper would never reach the
     handler and calls that really were spent would be recorded as zero.
     Under-reporting cost is the one error a cost ledger must not make.
+
+    ``view_discovery_calls`` is the same count broken down per View. It is what
+    the per-View allocation is spent against, and it is per EXECUTION: the
+    durable per-View history is ``successful_round_count`` and the continuation
+    chain, not this.
     """
 
     discovery: int = 0
     novelty: int = 0
+    view_discovery_calls: dict[str, int] = field(default_factory=dict)
+
+    def count_view(self, view: str) -> None:
+        """Record ONE Discovery attempt against a View's allocation.
+
+        The GLOBAL count keeps its existing increment at the call site, so the
+        durable accounting this ledger already fed is untouched; this adds only
+        the per-View breakdown the scheduler spends against.
+        """
+        self.view_discovery_calls[view] = self.view_discovery_calls.get(view, 0) + 1
+
+    def spent_on(self, view: str) -> int:
+        return self.view_discovery_calls.get(view, 0)
 
 
 class _Pause(Exception):
@@ -358,6 +401,41 @@ class _Blocked(Exception):
     def __init__(self, reason: str) -> None:
         super().__init__(reason)
         self.reason = reason
+
+
+class _ViewBlocked(Exception):
+    """ONE View is blocked. The orchestration is not.
+
+    Raised by exactly one condition — the frozen LLM_EMPTY_RESPONSE retry being
+    spent, which is a provider hiccup about THIS View and says nothing about
+    B/C/D. The scheduler marks that View and moves on.
+
+    It is a separate type, not a flag on ``_Blocked``, so that no infrastructure
+    failure can drift into View-local treatment by accident: every other fatal
+    path still raises ``_Blocked`` and still stops the whole orchestration.
+    """
+
+    def __init__(self, reason: str) -> None:
+        super().__init__(reason)
+        self.reason = reason
+
+
+def _schedule_for(states: Any) -> tuple[dict[str, int], str]:
+    """The per-View Discovery allocation for ONE execution.
+
+    Derived from stored state and evaluated ONCE, before the pass: re-deriving
+    it mid-pass would let a View's share change after it had already spent
+    against it. A View that is blocked or terminal is not "still waiting to
+    start", so it can never hold the schedule in the balancing phase forever.
+    """
+    balancing = any(
+        state["status"] not in _VIEW_TERMINAL
+        and state["status"] != "BLOCKED"
+        and int(state["successful_round_count"]) == 0
+        for state in states
+    )
+    caps = _BALANCING_VIEW_CALLS if balancing else _NORMAL_VIEW_CALLS
+    return dict(zip(VIEW_ORDER, caps)), ("balancing" if balancing else "normal")
 
 
 # ===========================================================================
@@ -469,20 +547,68 @@ async def _execute(session: AsyncSession, *, orchestration_pk: int) -> Orchestra
         states = (await session.execute(
             _VIEW_STATES_SQL, {"orchestration_pk": orchestration_pk})).mappings().all()
 
+        view_caps, phase = _schedule_for(states)
+        _log("schedule", orchestration_id=orchestration_id, phase=phase,
+             allocation=view_caps, discovery_budget=budget)
+
         worked_any = False
         active_view: str | None = None
+        blocked_views: list[str] = []
         for state in states:
             view = state["discovery_view"]
             if state["status"] in _VIEW_TERMINAL:
+                continue
+            if view_caps.get(view, 0) <= 0:
+                # Defensive: a schedule may not give a View nothing to do and
+                # then treat entering it as free.
                 continue
             worked_any = True
             # Bound BEFORE the call, so the failure handler knows which View
             # blocked without having to read it back from the parent row.
             active_view = view
-            await _run_view(
-                session, orchestration_pk=orchestration_pk,
-                orchestration_id=orchestration_id, seed_entity_id=seed_entity_id,
-                view=view, state=state, budget=budget, ledger=ledger,
+            try:
+                await _run_view(
+                    session, orchestration_pk=orchestration_pk,
+                    orchestration_id=orchestration_id, seed_entity_id=seed_entity_id,
+                    view=view, state=state, budget=budget, ledger=ledger,
+                    view_call_cap=view_caps[view],
+                )
+            except _ViewBlocked as blocked_view:
+                # ONE View is blocked by its own exhausted empty-response retry.
+                # The sweep still has three Views that the provider has said
+                # nothing about, so it continues to them.
+                await _mark_view_blocked(
+                    session, orchestration_pk, orchestration_id, view, blocked_view.reason
+                )
+                blocked_views.append(view)
+                _log("view-blocked", orchestration_id=orchestration_id,
+                     seed=seed_entity_id, view=view, reason=blocked_view.reason,
+                     note="view isolated; the sweep continues")
+
+        # The sweep is COMPLETE only when nothing has further work. Re-read the
+        # rows rather than trusting the pre-pass snapshot: a View that
+        # saturated during this pass still read PENDING/RUNNING in it.
+        after = (await session.execute(
+            _VIEW_STATES_SQL, {"orchestration_pk": orchestration_pk})).mappings().all()
+        remaining = [
+            s["discovery_view"] for s in after
+            if s["status"] not in _VIEW_TERMINAL and s["discovery_view"] not in blocked_views
+        ]
+
+        if remaining or blocked_views:
+            # NOT COMPLETED, and deliberately resumable: a COMPLETED
+            # orchestration returns early from resume, so marking it here would
+            # strand every View that still has an allocation or a blocked View
+            # that a later resume is entitled to retry.
+            detail = []
+            if remaining:
+                detail.append(f"{', '.join(remaining)} still have work")
+            if blocked_views:
+                detail.append(f"blocked on exhausted empty-response retries: "
+                              f"{', '.join(blocked_views)}")
+            raise _Pause(
+                "per-View discovery allocation spent for this execution; "
+                + "; ".join(detail)
             )
 
         # Every View saturated (or was already terminal): the sweep is done.
@@ -550,8 +676,22 @@ async def _execute(session: AsyncSession, *, orchestration_pk: int) -> Orchestra
 async def _run_view(
     session: AsyncSession, *, orchestration_pk: int, orchestration_id: str,
     seed_entity_id: str, view: str, state: Any, budget: int, ledger: _Ledger,
+    view_call_cap: int,
 ) -> None:
-    """Work one View until it saturates or the budget runs out."""
+    """Work one View until it saturates, spends its OWN allocation, or the
+    shared budget runs out.
+
+    Two different stops live here and they must not be confused:
+
+      * the View's own allocation (``view_call_cap``) — YIELD. The View has had
+        its share of this execution; the scheduler moves on to the next one.
+      * the shared budget (``ledger.discovery >= budget``) — ``_Pause``. The
+        execution is over for every View.
+
+    Only the second one is a pause. Expressing the first as a pause is what
+    starved B/C/D: one View producing novelty consumed the whole budget and
+    ended the execution before the loop ever reached the next View.
+    """
     strategy = strategy_identifier(view)
     zero_streak = int(state["zero_streak"])
     latest_run_pk = state["latest_successful_run_pk"]
@@ -655,6 +795,38 @@ async def _run_view(
                 f"view {view} still produced novelty"
             )
 
+        if ledger.spent_on(view) >= view_call_cap and zero_streak == 0:
+            # Restricted to a RESOLVED streak on purpose. A View that has just
+            # produced its first zero gets one more call whatever its allocation
+            # says, for two reasons:
+            #   * the zero is unresolved, and leaving it unresolved would let the
+            #     NEXT execution re-attach to the same run and apply the same
+            #     verdict to the streak a second time — one round counted twice
+            #     can saturate a View that had a single zero;
+            #   * the confirmation round is what makes "two consecutive zeros" a
+            #     statement about the VIEW rather than about where the schedule
+            #     happened to cut it.
+            # The overshoot is bounded by exactly one call per execution.
+            #
+            # This View has used its allocation FOR THIS EXECUTION. It yields:
+            # the state is written so a resume knows where the View stands, and
+            # control returns to the scheduler for the next View. Deliberately
+            # not a _Pause — see the docstring.
+            await session.execute(_UPDATE_VIEW_SQL, {
+                "orchestration_pk": orchestration_pk, "discovery_view": view,
+                "status": "RUNNING", "terminal": False, "zero_streak": zero_streak,
+                "latest_run_pk": latest_run_pk,
+                "latest_assessment_pk": assess.assessment_pk,
+                "failed_delta": 0, "semantic_new_count": semantic_new,
+                "stop_reason": None,
+            })
+            await session.commit()
+            _log("view-yield", orchestration_id=orchestration_id, seed=seed_entity_id,
+                 view=view, view_discovery_calls=ledger.spent_on(view),
+                 view_call_cap=view_call_cap, discovery_used=ledger.discovery,
+                 discovery_budget=budget, note="view allocation spent; next view")
+            return ledger.discovery, ledger.novelty
+
         run_id, assess = await _one_discovery_round(
             session, orchestration_pk=orchestration_pk,
             orchestration_id=orchestration_id, seed_entity_id=seed_entity_id,
@@ -687,6 +859,10 @@ async def _one_discovery_round(
             raise _Pause(
                 f"safety budget of {budget} new discovery call(s) exhausted"
             )
+        # Counted AFTER the budget check, so the per-View count is exactly the
+        # attempts that were really made — a rolled-back increment would make
+        # the allocation look spent when it was not.
+        ledger.count_view(view)
 
         try:
             result = await execution.execute_llm_discovery(
@@ -711,10 +887,12 @@ async def _one_discovery_round(
                 session, orchestration_pk, view
             )
             if streak >= MAX_CONSECUTIVE_EMPTY_RESPONSES:
-                _log("blocked", orchestration_id=orchestration_id,
+                # The ONE View-local stop. A provider that returned nothing twice
+                # has told us about THIS View's prompt, not about B/C/D's.
+                _log("view-blocked", orchestration_id=orchestration_id,
                      seed=seed_entity_id, view=view,
                      reason=f"empty_response_streak={streak}")
-                raise _Blocked(
+                raise _ViewBlocked(
                     f"{streak} consecutive empty provider responses for view "
                     f"{view}; the single automatic retry is spent"
                 ) from None
