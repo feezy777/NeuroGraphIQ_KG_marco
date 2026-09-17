@@ -84,6 +84,23 @@ VIEW_ORDER: tuple[str, ...] = DISCOVERY_VIEWS
 STRATEGY_FAMILY = "G4_HIGH_RECALL_V1"
 STRATEGY_VERSION = "G4HR1"
 
+#: The ONE failure the orchestrator may retry by itself.
+#:
+#: LLM_EMPTY_RESPONSE means the provider returned no content before its output
+#: budget ran out — an OPERATIONAL event, not a statement about the science, and
+#: demonstrably intermittent (the round immediately before the live failure
+#: succeeded with the same model, prompt and contract). Every other failure —
+#: SCHEMA_INVALID, a dangling reference, an unknown non-empty extra, a bad enum,
+#: a database or persistence error, a model-policy violation — is a statement
+#: that something is WRONG, and retrying it would only spend money to be told so
+#: again.
+EMPTY_RESPONSE_CODE = "LLM_EMPTY_RESPONSE"
+
+#: Consecutive empty responses tolerated before stopping. The policy permits
+#: exactly ONE automatic retry, so the loop acts at 1 and stops at 2. Storage
+#: refuses to hold a larger value.
+MAX_CONSECUTIVE_EMPTY_RESPONSES = 2
+
 #: Non-working states. A View in one of these is done and must be skipped.
 _VIEW_TERMINAL = ("SATURATED_BY_ZERO_NOVELTY", "COMPLETE")
 
@@ -260,6 +277,31 @@ _COUNT_SUCCESSFUL_ROUND_SQL = text(
      WHERE orchestration_pk = :orchestration_pk
        AND discovery_view = :discovery_view
        AND latest_successful_run_pk IS DISTINCT FROM :run_pk
+    """
+)
+
+#: Bump the empty-response streak and return the NEW value, so the decision and
+#: the stored state come from the same statement.
+_BUMP_EMPTY_RESPONSE_SQL = text(
+    """
+    UPDATE discovery_orchestration_view_states
+       SET consecutive_empty_response_failures =
+           LEAST(consecutive_empty_response_failures + 1, :max_streak)
+     WHERE orchestration_pk = :orchestration_pk
+       AND discovery_view = :discovery_view
+    RETURNING consecutive_empty_response_failures
+    """
+)
+
+#: Any successful Discovery clears the streak: an isolated hiccup must never
+#: accumulate toward the limit.
+_RESET_EMPTY_RESPONSE_SQL = text(
+    """
+    UPDATE discovery_orchestration_view_states
+       SET consecutive_empty_response_failures = 0
+     WHERE orchestration_pk = :orchestration_pk
+       AND discovery_view = :discovery_view
+       AND consecutive_empty_response_failures <> 0
     """
 )
 
@@ -631,25 +673,60 @@ async def _one_discovery_round(
     The call is counted BEFORE it is made: a call that fails still cost the
     provider, and under-reporting cost is worse than an unflattering number.
     """
-    ledger.discovery += 1
-    if ledger.discovery > budget:
-        ledger.discovery -= 1
-        raise _Pause(f"safety budget of {budget} new discovery call(s) exhausted")
-
     from app.services import llm_discovery_execution_service as execution
 
-    try:
-        result = await execution.execute_llm_discovery(
-            session, entity_id=seed_entity_id, discovery_view=view,
-            continuation_from_run_id=continuation_from,
-        )
-    except Exception as exc:  # noqa: BLE001 — a failed round is NOT a zero
-        await session.rollback()
-        _log("blocked", orchestration_id=orchestration_id, seed=seed_entity_id,
-             view=view, reason=f"discovery failed: {type(exc).__name__}")
-        raise _Blocked(
-            f"discovery failed for view {view}: {type(exc).__name__}: {exc}"
-        ) from None
+    # ONE attempt, plus at most one automatic retry for an empty response. The
+    # retry is a NEW Discovery attempt built from the SAME parent — the failed
+    # attempt keeps its own FAILED run and never enters the successful chain.
+    while True:
+        # Counted BEFORE the call: an attempt that fails still cost the provider,
+        # and the retry is a second call, not a free one.
+        ledger.discovery += 1
+        if ledger.discovery > budget:
+            ledger.discovery -= 1
+            raise _Pause(
+                f"safety budget of {budget} new discovery call(s) exhausted"
+            )
+
+        try:
+            result = await execution.execute_llm_discovery(
+                session, entity_id=seed_entity_id, discovery_view=view,
+                continuation_from_run_id=continuation_from,
+            )
+        except Exception as exc:  # noqa: BLE001 — a failed round is NOT a zero
+            await session.rollback()
+            code = getattr(exc, "code", None)
+            if code != EMPTY_RESPONSE_CODE:
+                # NOT retryable. A schema or reference failure is a statement
+                # that something is wrong, and answering it with another call
+                # would only spend money to hear it again.
+                _log("blocked", orchestration_id=orchestration_id,
+                     seed=seed_entity_id, view=view,
+                     reason=f"discovery failed: {type(exc).__name__}")
+                raise _Blocked(
+                    f"discovery failed for view {view}: {type(exc).__name__}: {exc}"
+                ) from None
+
+            streak = await _bump_empty_response_failures(
+                session, orchestration_pk, view
+            )
+            if streak >= MAX_CONSECUTIVE_EMPTY_RESPONSES:
+                _log("blocked", orchestration_id=orchestration_id,
+                     seed=seed_entity_id, view=view,
+                     reason=f"empty_response_streak={streak}")
+                raise _Blocked(
+                    f"{streak} consecutive empty provider responses for view "
+                    f"{view}; the single automatic retry is spent"
+                ) from None
+            _log("retry", orchestration_id=orchestration_id,
+                 seed=seed_entity_id, view=view,
+                 empty_response_streak=streak, discovery_used=ledger.discovery,
+                 discovery_budget=budget,
+                 note="retrying once, same parent")
+            continue
+
+        await _reset_empty_response_failures(session, orchestration_pk, view)
+        break
 
     run_id = result.run.run_id
     _log("discovery", orchestration_id=orchestration_id, seed=seed_entity_id,
@@ -758,6 +835,28 @@ async def _update_orchestration(
         "current_view": current_view, "zero_streak": zero_streak, "budget": budget,
         "discovery_delta": discovery_delta, "novelty_delta": novelty_delta,
         "stop_reason": stop_reason,
+    })
+    await session.commit()
+
+
+async def _bump_empty_response_failures(
+    session: AsyncSession, orchestration_pk: int, view: str
+) -> int:
+    """Record one more consecutive empty response; return the new streak."""
+    streak = (await session.execute(_BUMP_EMPTY_RESPONSE_SQL, {
+        "orchestration_pk": orchestration_pk, "discovery_view": view,
+        "max_streak": MAX_CONSECUTIVE_EMPTY_RESPONSES,
+    })).scalars().one()
+    await session.commit()
+    return int(streak)
+
+
+async def _reset_empty_response_failures(
+    session: AsyncSession, orchestration_pk: int, view: str
+) -> None:
+    """A successful Discovery clears the streak."""
+    await session.execute(_RESET_EMPTY_RESPONSE_SQL, {
+        "orchestration_pk": orchestration_pk, "discovery_view": view,
     })
     await session.commit()
 

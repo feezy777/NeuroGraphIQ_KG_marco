@@ -15,6 +15,7 @@ stores foreign keys to runs, so a fake id would test nothing.
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import sys
 from dataclasses import dataclass
@@ -1018,3 +1019,362 @@ def test_counter_has_a_single_writer_and_an_exactly_once_guard():
     assert "round_delta" not in source, (
         "the counter must no longer be settled from a local tally at pause time"
     )
+
+
+# ===========================================================================
+# Bounded automatic retry for LLM_EMPTY_RESPONSE
+# ===========================================================================
+# These run the REAL discovery execution service and patch only the PROVIDER, so
+# the failed attempts are genuine runs with genuine FAILED rows and the real
+# LLM_EMPTY_RESPONSE code — not a hand-raised exception standing in for one.
+def _discovery_payload(seed_entity_id: str, names) -> dict:
+    return {
+        "schema_version": "1.0",
+        "seed_entity_id": seed_entity_id,
+        "summary": "retry fixture",
+        "regions": [{"local_id": "region_1", "name": "R1", "confidence": 0.5},
+                    {"local_id": "region_2", "name": "R2", "confidence": 0.5}],
+        "connections": [{"local_id": "connection_1", "confidence": 0.5,
+                         "species_context": {"scope": "UNKNOWN", "taxon_ids": []},
+                         "source_ref": "region_1", "target_ref": "region_2",
+                         "connection_type": "PROJECTION", "directionality": "DIRECTED"}],
+        "functions": [],
+        "circuits": [{"local_id": f"circuit_{i}", "name": n, "confidence": 0.5,
+                      "species_context": {"scope": "UNKNOWN", "taxon_ids": []},
+                      "region_refs": ["region_1", "region_2"],
+                      "connection_refs": ["connection_1"], "topology_hint": "LOOP"}
+                     for i, n in enumerate(names, 1)],
+        "source_hints": [],
+        "warnings": [],
+    }
+
+
+class _Usage:
+    prompt_tokens = 10
+    completion_tokens = 0
+    total_tokens = 10
+    reasoning_tokens = 0
+
+    def as_dict(self):
+        return {}
+
+
+class _ProviderResponse:
+    def __init__(self, text: str):
+        self.raw_text = text
+        self.parsed_json = None
+        self.transport_ok = True
+        self.provider = "deepseek"
+        self.model = "deepseek-flash"
+        self.finish_reason = "length" if not text else "stop"
+        self.error_message = None
+        self.latency_ms = 1
+        self.usage = _Usage()
+        self.response_payload = {}
+        self.request_payload_redacted = {}
+        self.response_format = None
+        self.fallback_raw_response_used = False
+
+
+class _DiscoveryProvider:
+    """Returns empty content for the first `empty_first` calls, then a valid one."""
+
+    def __init__(self, seed_entity_id: str, *, empty_first: int = 0,
+                 circuit_names=("Fixture circuit",)):
+        self.seed = seed_entity_id
+        self.empty_first = empty_first
+        self.circuit_names = list(circuit_names)
+        self.calls = 0
+
+    async def complete_json(self, **kwargs):
+        self.calls += 1
+        if self.calls <= self.empty_first:
+            return _ProviderResponse("")
+        return _ProviderResponse(
+            json.dumps(_discovery_payload(self.seed, self.circuit_names)))
+
+
+async def _drive_with_provider(h: H, provider, recorder, *, budget: int,
+                               entity_id: str = EMPTY_SEED):
+    """Run the orchestrator with the REAL execution service and a fake provider."""
+    from app.services import high_recall_orchestrator_service as orch
+    from app.services import llm_discovery_execution_service as execution
+    from app.schemas.orchestration import OrchestrationStartRequest
+
+    with patch.object(execution, "get_llm_provider", lambda _n: provider), \
+         patch.object(orch, "_assess_run", _stub_assessment(recorder, h)):
+        return await orch.start_orchestration(
+            h.db, entity_id=entity_id,
+            request=OrchestrationStartRequest(max_new_discovery_calls=budget))
+
+
+async def _resume_with_provider(h: H, provider, recorder, *, budget: int,
+                                orchestration_id: str):
+    from app.services import high_recall_orchestrator_service as orch
+    from app.services import llm_discovery_execution_service as execution
+    from app.schemas.orchestration import OrchestrationStartRequest
+
+    with patch.object(execution, "get_llm_provider", lambda _n: provider), \
+         patch.object(orch, "_assess_run", _stub_assessment(recorder, h)):
+        return await orch.resume_orchestration(
+            h.db, orchestration_id=orchestration_id,
+            request=OrchestrationStartRequest(max_new_discovery_calls=budget))
+
+
+async def _streak(h: H, orchestration_id: str, view: str = "NAMED_CLASSIC_CIRCUITS") -> int:
+    row = await h.one(
+        "SELECT v.consecutive_empty_response_failures AS n"
+        "  FROM discovery_orchestration_view_states v"
+        "  JOIN discovery_orchestrations o ON o.orchestration_pk = v.orchestration_pk"
+        " WHERE o.orchestration_id = :o AND v.discovery_view = :v", o=orchestration_id, v=view)
+    return int(row["n"])
+
+
+async def _runs(h: H, view: str = "NAMED_CLASSIC_CIRCUITS", seed: str = EMPTY_SEED):
+    # Ordered by run_pk, not created_at: runs created inside one test can share a
+    # timestamp, and the point of the ordering here is causal, not decorative.
+    return await h.rows(
+        "SELECT r.run_id, r.status, r.error_code,"
+        "       r.provenance_json ->> 'continuation_round' AS cr,"
+        "       r.provenance_json ->> 'continuation_from_run_id' AS parent,"
+        "       r.provenance_json ->> 'already_discovered_circuit_count' AS already,"
+        "       (SELECT count(*) FROM discovery_candidates dc"
+        "         WHERE dc.discovery_run_pk = r.run_pk) AS cands"
+        "  FROM knowledge_discovery_runs r"
+        "  JOIN brain_regions b ON b.entity_pk = r.seed_region_pk"
+        "  JOIN kg_entities e ON e.entity_pk = b.entity_pk"
+        " WHERE e.entity_id = :s AND r.query_strategy_version = :v"
+        " ORDER BY r.run_pk", s=seed, v=f"G4HR1/{view}")
+
+
+# --- A ----------------------------------------------------------------------
+@case
+async def test_retry_A_a_normal_success_never_retries(h, _):
+    provider = _DiscoveryProvider(EMPTY_SEED)
+    rec = Recorder([5])
+    result = await _drive_with_provider(h, provider, rec, budget=1)
+    assert provider.calls == 1, "no retry on success"
+    assert result.discovery_calls_used == 1
+    assert await _streak(h, result.orchestration_id) == 0
+    assert result.status == "PAUSED_BY_BUDGET", result.stop_reason
+
+
+# --- B / C ------------------------------------------------------------------
+@case
+async def test_retry_B_one_empty_response_gets_exactly_one_retry(h, _):
+    provider = _DiscoveryProvider(EMPTY_SEED, empty_first=1)
+    rec = Recorder([5])
+    result = await _drive_with_provider(h, provider, rec, budget=2)
+    assert provider.calls == 2, "exactly one automatic retry"
+    assert result.discovery_calls_used == 2, "the retry is a PAID call, not a free one"
+
+
+@case
+async def test_retry_C_empty_then_success_continues_normally(h, _):
+    provider = _DiscoveryProvider(EMPTY_SEED, empty_first=1)
+    rec = Recorder([5])
+    result = await _drive_with_provider(h, provider, rec, budget=2)
+
+    runs = await _runs(h)
+    assert [r["status"] for r in runs] == ["FAILED", "COMPLETED"]
+    assert runs[0]["error_code"] == "LLM_EMPTY_RESPONSE"
+    assert await _streak(h, result.orchestration_id) == 0, "success RESETS the streak"
+    assert result.status == "PAUSED_BY_BUDGET"
+    a = await _view(h, result.orchestration_id, "NAMED_CLASSIC_CIRCUITS")
+    assert a["status"] == "RUNNING"
+
+
+# --- D ----------------------------------------------------------------------
+@case
+async def test_retry_D_two_consecutive_empties_BLOCK(h, _):
+    provider = _DiscoveryProvider(EMPTY_SEED, empty_first=99)
+    rec = Recorder([5])
+    result = await _drive_with_provider(h, provider, rec, budget=5)
+
+    assert provider.calls == 2, "one attempt plus one retry, and no more"
+    assert result.status == "BLOCKED"
+    assert "consecutive empty provider responses" in (result.stop_reason or "")
+    assert await _streak(h, result.orchestration_id) == 2
+    runs = await _runs(h)
+    assert [r["status"] for r in runs] == ["FAILED", "FAILED"]
+    assert all(r["error_code"] == "LLM_EMPTY_RESPONSE" for r in runs)
+
+
+# --- E / F ------------------------------------------------------------------
+@case
+async def test_retry_E_a_schema_failure_is_never_retried(h, _):
+    """The provider answers, and the answer does not satisfy the contract."""
+    class _SchemaProvider:
+        def __init__(self):
+            self.calls = 0
+
+        async def complete_json(self, **kwargs):
+            self.calls += 1
+            return _ProviderResponse(json.dumps({
+                "schema_version": "1.0", "seed_entity_id": EMPTY_SEED,
+                "regions": [], "connections": [], "functions": [],
+                "circuits": [{"local_id": "circuit_1", "name": "X", "confidence": 0.5,
+                              "species_context": {"scope": "UNKNOWN", "taxon_ids": []},
+                              "region_refs": ["region_1", "region_2"],
+                              "invented_field": "carries meaning"}],
+                "source_hints": [], "warnings": [],
+            }))
+
+    provider = _SchemaProvider()
+    rec = Recorder([5])
+    result = await _drive_with_provider(h, provider, rec, budget=5)
+
+    assert provider.calls == 1, "a contract failure is a statement, not a hiccup"
+    assert result.status == "BLOCKED"
+    assert await _streak(h, result.orchestration_id) == 0, "not an empty response"
+    runs = await _runs(h)
+    assert runs[0]["error_code"] == "LLM_DISCOVERY_PARSE_FAILED"
+
+
+@case
+async def test_retry_F_an_unknown_NON_empty_extra_is_never_retried(h, _):
+    """The exact class the sanitizer refuses to drop — still immediate BLOCKED."""
+    # one connection carries a POPULATED wrong-type field: content, not noise
+    payload = _discovery_payload(EMPTY_SEED, ["X"])
+    payload["connections"][0]["connection_refs"] = ["connection_1"]
+
+    class _WrongTypeProvider:
+        def __init__(self):
+            self.calls = 0
+
+        async def complete_json(self, **kwargs):
+            self.calls += 1
+            return _ProviderResponse(json.dumps(payload))
+
+    p = _WrongTypeProvider()
+    rec = Recorder([5])
+    result = await _drive_with_provider(h, p, rec, budget=5)
+    assert p.calls == 1
+    assert result.status == "BLOCKED"
+
+
+# --- G / H / I / J ----------------------------------------------------------
+@case
+async def test_retry_G_the_failed_empty_attempt_remains_FAILED_with_no_candidates(h, _):
+    provider = _DiscoveryProvider(EMPTY_SEED, empty_first=1)
+    rec = Recorder([5])
+    await _drive_with_provider(h, provider, rec, budget=2)
+
+    runs = await _runs(h)
+    failed = runs[0]
+    assert failed["status"] == "FAILED"
+    assert failed["error_code"] == "LLM_EMPTY_RESPONSE"
+    assert int(failed["cands"]) == 0, "a failed attempt persists nothing"
+
+
+@case
+async def test_retry_H_I_J_the_retry_reuses_the_parent_and_advances_nothing(h, _):
+    """The retry is the SAME logical round: same parent, same round number, same
+    exclusion pool. A failed attempt never enters the successful chain."""
+    await _historical_runs(h, 2)                      # a parent to continue from
+    parent = (await _runs(h))[-1]["run_id"]
+
+    provider = _DiscoveryProvider(EMPTY_SEED, empty_first=1)
+    rec = Recorder([5])
+    result = await _drive_with_provider(h, provider, rec, budget=2)
+
+    runs = await _runs(h)
+    assert [r["status"] for r in runs] == ["COMPLETED", "COMPLETED", "FAILED", "COMPLETED"]
+    failed, retried = runs[2], runs[3]
+
+    # H — same parent as the attempt it replaces
+    assert str(failed["parent"]) == str(parent)
+    assert str(retried["parent"]) == str(parent)
+
+    # I — the failed attempt did NOT advance the round; the retry is the same one
+    assert str(failed["cr"]) == str(retried["cr"])
+
+    # J — and did not enter the exclusion pool
+    assert failed["already"] == retried["already"]
+
+
+# --- K / L ------------------------------------------------------------------
+@case
+async def test_retry_K_both_attempts_are_counted_in_the_ledger(h, _):
+    provider = _DiscoveryProvider(EMPTY_SEED, empty_first=1)
+    rec = Recorder([5])
+    result = await _drive_with_provider(h, provider, rec, budget=2)
+    assert result.discovery_calls_used == 2, "the failed attempt still cost a call"
+
+
+@case
+async def test_retry_L_novelty_runs_only_for_the_successful_attempt(h, _):
+    provider = _DiscoveryProvider(EMPTY_SEED, empty_first=1)
+    rec = Recorder([5])
+    result = await _drive_with_provider(h, provider, rec, budget=2)
+    assert len(rec.assessment_calls) == 1, (
+        "the empty attempt produced no result to assess"
+    )
+    # Not `novelty_calls_used`: the ledger's novelty counter is written by the
+    # real assessor, which this suite replaces. That accounting is asserted by
+    # the durable-assessor suite, against the real thing.
+    assert rec.assessment_calls[0] == (await _runs(h))[1]["run_id"].__str__(), (
+        "and the one assessment is of the SUCCESSFUL run"
+    )
+
+
+# --- M ----------------------------------------------------------------------
+@case
+async def test_retry_M_a_success_resets_a_previous_nonzero_streak(h, _):
+    provider = _DiscoveryProvider(EMPTY_SEED, empty_first=1)
+    rec = Recorder([9, 5])
+    result = await _drive_with_provider(h, provider, rec, budget=3)
+    assert await _streak(h, result.orchestration_id) == 0
+
+
+# --- N ----------------------------------------------------------------------
+@case
+async def test_retry_N_a_resume_cannot_re_arm_an_exhausted_retry(h, _):
+    """The streak is durable, so an unresolved empty-response chain stays blocked
+    across a resume instead of earning a fresh retry each time."""
+    provider = _DiscoveryProvider(EMPTY_SEED, empty_first=99)
+    rec = Recorder([5])
+    first = await _drive_with_provider(h, provider, rec, budget=5)
+    assert first.status == "BLOCKED"
+    assert provider.calls == 2
+    assert await _streak(h, first.orchestration_id) == 2
+
+    before = provider.calls
+    second = await _resume_with_provider(h, provider, Recorder([5]), budget=5,
+                                         orchestration_id=first.orchestration_id)
+    assert second.status == "BLOCKED"
+    # WHY the reason is asserted and not just the status: the loop's catch-all
+    # records ANY unexpected exception as a BLOCKED orchestration. Without this
+    # line a storage error — say, a streak written past the column's CHECK —
+    # would look exactly like the policy working.
+    assert second.stop_reason == (
+        "2 consecutive empty provider responses for view NAMED_CLASSIC_CIRCUITS;"
+        " the single automatic retry is spent"
+    ), second.stop_reason
+    assert provider.calls - before == 1, (
+        "one attempt and NO retry: the retry was already spent"
+    )
+    assert await _streak(h, first.orchestration_id) == 2, "and it saturates, not grows"
+
+
+# --- the policy's shape ------------------------------------------------------
+def test_retry_the_policy_is_one_code_and_one_retry():
+    from app.services import high_recall_orchestrator_service as orch
+
+    assert orch.EMPTY_RESPONSE_CODE == "LLM_EMPTY_RESPONSE"
+    assert orch.MAX_CONSECUTIVE_EMPTY_RESPONSES == 2
+    source = (BACKEND / "app/services/high_recall_orchestrator_service.py").read_text(
+        encoding="utf-8")
+    assert source.count("_bump_empty_response_failures") == 2  # def + one call
+    assert "_reset_empty_response_failures" in source
+
+
+def test_retry_zero_streak_and_empty_streak_are_separate_concepts():
+    """A novelty zero is a scientific result; a provider-empty is an operational
+    event. Overloading one column with both would make a transport hiccup look
+    like saturation."""
+    source = (BACKEND / "app/services/high_recall_orchestrator_service.py").read_text(
+        encoding="utf-8")
+    assert "consecutive_empty_response_failures" in source
+    # the novelty zero streak is never written from the empty-response path
+    assert "zero_streak = " not in source.split("_bump_empty_response_failures")[1][:400]
