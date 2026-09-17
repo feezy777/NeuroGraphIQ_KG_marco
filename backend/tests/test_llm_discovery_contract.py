@@ -1953,3 +1953,142 @@ def test_the_prompt_now_offers_RECURRENT_and_nothing_else_new():
     assert "RECURRENT_LOOP" not in user
     for value in CIRCUIT_TOPOLOGY_HINTS:
         assert value in user, value
+
+
+# ===========================================================================
+# Warning-code aliases: an approved lexical near-miss, mapped — not added
+# ===========================================================================
+# A live Round-7 pass was rejected in full because one warning carried
+# `code: "AMBIGUOUS_DIRECTIONALITY"` where the frozen vocabulary says
+# `AMBIGUOUS_DIRECTION`. Same warning, same meaning, different spelling. Adding
+# the long form as a second enum member would make the vocabulary grow every
+# time a model misspells something; mapping it keeps the vocabulary exactly as
+# it was and confines the tolerance to spellings somebody approved by hand.
+def warning(code: str, message: str = "a warning", local_id: str | None = None):
+    data: dict[str, Any] = {"code": code, "message": message}
+    if local_id is not None:
+        data["local_id"] = local_id
+    return data
+
+
+# --- A / B / C --------------------------------------------------------------
+def test_warning_alias_a_a_canonical_code_is_left_exactly_as_it_was():
+    result = parse(payload(warnings=[warning("AMBIGUOUS_DIRECTION")]))
+    assert result.ok, result.error
+    assert [w.code for w in result.data.warnings] == ["AMBIGUOUS_DIRECTION"]
+
+
+def test_warning_alias_b_the_approved_near_miss_normalizes():
+    result = parse(payload(warnings=[warning("AMBIGUOUS_DIRECTIONALITY")]))
+    assert result.ok, result.error
+    assert [w.code for w in result.data.warnings] == ["AMBIGUOUS_DIRECTION"]
+
+
+def test_warning_alias_c_the_CANONICAL_value_is_what_reaches_the_model_object():
+    """The alias must not survive into the typed response."""
+    result = parse(payload(warnings=[warning("AMBIGUOUS_DIRECTIONALITY")]))
+    assert "AMBIGUOUS_DIRECTIONALITY" not in {
+        w.code for w in result.data.warnings
+    }
+
+
+def test_warning_alias_d_the_typed_model_never_carries_the_alias():
+    """Warnings are not persisted (the candidate writer excludes them), so the
+    validated model is the last place the alias could survive. It does not."""
+    result = parse(payload(warnings=[warning("AMBIGUOUS_DIRECTIONALITY")]))
+    dumped = result.data.model_dump()
+    assert "AMBIGUOUS_DIRECTIONALITY" not in json.dumps(dumped)
+
+
+# --- E ----------------------------------------------------------------------
+@pytest.mark.parametrize("code", [
+    "AMBIGUOUS_DIRECTIONALITY_TYPO",   # a neighbour of a LISTED alias
+    "AMBIGUOUS_DIRECTIONS",
+    "ambiguous_directionality",        # case is not tolerated
+    "AMBIGUOUS DIRECTIONALITY",        # whitespace is not tolerated
+    "DIRECTIONALITY_AMBIGUOUS",
+    "SOME_NEW_UNKNOWN_WARNING",
+    "",
+])
+def test_warning_alias_e_anything_unlisted_still_fails(code):
+    """No prefix, substring, case-insensitive or edit-distance matching exists."""
+    result = parse(payload(warnings=[warning(code)]))
+    assert not result.ok, f"{code!r} must not be accepted"
+    assert "literal_error" in result.error
+
+
+# --- F ----------------------------------------------------------------------
+def test_warning_alias_f_a_mixture_keeps_order_messages_and_local_ids():
+    result = parse(payload(warnings=[
+        warning("UNCERTAIN_REGION_NAME", "first", "region_1"),
+        warning("AMBIGUOUS_DIRECTIONALITY", "second", "connection_1"),
+        warning("OTHER", "third"),
+        warning("AMBIGUOUS_DIRECTION", "fourth", "circuit_1"),
+    ]))
+    assert result.ok, result.error
+    assert [w.code for w in result.data.warnings] == [
+        "UNCERTAIN_REGION_NAME", "AMBIGUOUS_DIRECTION", "OTHER",
+        "AMBIGUOUS_DIRECTION",
+    ]
+    assert [w.message for w in result.data.warnings] == [
+        "first", "second", "third", "fourth",
+    ]
+    assert [w.local_id for w in result.data.warnings] == [
+        "region_1", "connection_1", None, "circuit_1",
+    ]
+
+
+def test_warning_alias_f_two_aliases_in_one_response_are_both_renamed():
+    result = parse(payload(warnings=[
+        warning("AMBIGUOUS_DIRECTIONALITY"), warning("AMBIGUOUS_DIRECTIONALITY"),
+    ]))
+    assert result.ok, result.error
+    assert [w.code for w in result.data.warnings] == [
+        "AMBIGUOUS_DIRECTION", "AMBIGUOUS_DIRECTION",
+    ]
+
+
+# --- G ----------------------------------------------------------------------
+def test_warning_alias_g_nothing_else_in_the_response_is_touched():
+    """The repair is a rename of one field. A circuit, a connection, a region,
+    a function or a topology hint that changed would be a much larger claim."""
+    data = payload(
+        regions=[region("region_1", name="Untouched Region"),
+                 region("region_2", name="Untouched Region 2")],
+        connections=[connection("connection_1", source_ref="region_1",
+                                target_ref="region_2")],
+        functions=[function("function_1")],
+        circuits=[circuit("circuit_1", name="Untouched Circuit",
+                          region_refs=["region_1", "region_2"],
+                          topology_hint="RECURRENT")],
+        warnings=[warning("AMBIGUOUS_DIRECTIONALITY")],
+    )
+    result = parse(data)
+    assert result.ok, result.error
+    out = result.data
+    assert [r.name for r in out.regions] == ["Untouched Region", "Untouched Region 2"]
+    assert [f.label for f in out.functions] == ["Thalamic gating"]
+    assert [c.name for c in out.circuits] == ["Untouched Circuit"]
+    assert [c.topology_hint for c in out.circuits] == ["RECURRENT"]
+    assert out.connections[0].connection_type == "PROJECTION"
+    # ... and the input mapping itself was not mutated in place.
+    assert data["warnings"][0]["code"] == "AMBIGUOUS_DIRECTIONALITY"
+
+
+# --- the map is closed and explicit -----------------------------------------
+def test_warning_alias_the_map_is_exactly_the_approved_entry():
+    assert parser.WARNING_CODE_ALIASES == {"AMBIGUOUS_DIRECTIONALITY": "AMBIGUOUS_DIRECTION"}
+
+
+def test_warning_alias_targets_are_canonical_members():
+    """An alias may only point at a code that actually exists."""
+    for alias, canonical in parser.WARNING_CODE_ALIASES.items():
+        assert canonical in DISCOVERY_WARNING_CODES, canonical
+        assert alias not in DISCOVERY_WARNING_CODES, alias
+
+
+def test_warning_alias_the_canonical_vocabulary_did_NOT_grow():
+    """The whole point: normalize the spelling, do not add a member."""
+    assert len(DISCOVERY_WARNING_CODES) == 7
+    assert "AMBIGUOUS_DIRECTIONALITY" not in DISCOVERY_WARNING_CODES
+    assert "AMBIGUOUS_DIRECTION" in DISCOVERY_WARNING_CODES

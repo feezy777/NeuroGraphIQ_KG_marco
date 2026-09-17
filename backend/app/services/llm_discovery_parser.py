@@ -18,6 +18,10 @@ Repair policy (deliberate and narrow):
     region whose value is null is dropped before validation. The rule is
     Region-only and null-only — see ``_strip_null_region_extras`` — and the
     drop is reported as a warning, never made silently.
+  * ALLOWED, and the second exception: a warning `code` that is an explicitly
+    approved LEXICAL ALIAS of a canonical warning code is renamed to the
+    canonical one — see ``WARNING_CODE_ALIASES``. The map is closed and exact;
+    there is no matching of any kind, so a code nobody approved still fails.
   * FORBIDDEN, because it would manufacture scientific content: inventing a
     missing connection (the legacy `no_connections` injection), inferring
     direction, creating region candidates, replacing missing circuit members,
@@ -28,6 +32,8 @@ the second bullet permits is the removal of a key that says nothing; every key
 that says anything at all is still the model's to get right, and still fails.
 """
 from __future__ import annotations
+
+import logging
 
 from app.schemas.llm_discovery import (
     HUMAN_TAXON_ID,
@@ -40,6 +46,55 @@ from app.schemas.llm_discovery import (
     RegionCandidate,
 )
 from app.services.llm_json_utils import extract_json_object_from_text
+
+logger = logging.getLogger(__name__)
+
+#: Explicit LEXICAL ALIASES of canonical warning codes, and nothing else.
+#:
+#: Each entry is a near-miss a model has actually produced for a code that
+#: already exists. They are the same warning about the same thing, spelled
+#: differently — a spelling difference is not a scientific concept, so the
+#: canonical vocabulary stays exactly as it is and the alias is mapped onto it
+#: rather than added beside it.
+#:
+#: This is a FIXED MAP, deliberately not a matcher. No prefix, substring,
+#: case-insensitive, edit-distance or semantic matching exists or may be added:
+#: every one of those would eventually accept a code nobody approved, and the
+#: strict schema would stop meaning anything. An unlisted code — including a
+#: plausible neighbour of a listed one — still fails validation.
+WARNING_CODE_ALIASES: dict[str, str] = {
+    "AMBIGUOUS_DIRECTIONALITY": "AMBIGUOUS_DIRECTION",
+}
+
+
+def _normalize_warning_code_aliases(parsed: object) -> tuple[object, int]:
+    """Rename approved warning-code aliases to their canonical spelling.
+
+    Returns ``(parsed, renamed_count)``. Only the ``code`` value is touched: a
+    warning's message, local_id and position are the model's words and are left
+    exactly as written. If nothing matched, the ORIGINAL object is returned, so
+    an untouched response is never copied or reshaped by passing through here.
+    """
+    if not isinstance(parsed, dict):
+        return parsed, 0
+    warnings = parsed.get("warnings")
+    if not isinstance(warnings, list):
+        return parsed, 0
+
+    renamed = 0
+    out: list[object] = []
+    for warning in warnings:
+        if isinstance(warning, dict):
+            code = warning.get("code")
+            if isinstance(code, str) and code in WARNING_CODE_ALIASES:
+                warning = {**warning, "code": WARNING_CODE_ALIASES[code]}
+                renamed += 1
+        out.append(warning)
+
+    if not renamed:
+        return parsed, 0
+    return {**parsed, "warnings": out}, renamed
+
 
 # Rejection reasons (machine-readable, stable).
 ERR_INVALID_JSON = "INVALID_JSON"
@@ -283,6 +338,18 @@ def parse_llm_discovery_response(
     # Non-null unknowns survive this and are still rejected by the strict
     # schema below, which remains the authority.
     parsed, null_extra_warnings = _strip_null_region_extras(parsed)
+
+    # Approved warning-code aliases -> canonical spelling. Runs BEFORE the strict
+    # validation for the same reason: the schema stays the authority, and an
+    # unapproved code still fails there.
+    parsed, aliases_renamed = _normalize_warning_code_aliases(parsed)
+    if aliases_renamed:
+        # Logged, not turned into a warning: adding one would alter the model's
+        # own warning list, and a rename inside its vocabulary is not a new
+        # observation about the science.
+        logger.info(
+            "[discovery-parser] normalized %s warning-code alias(es)", aliases_renamed
+        )
 
     try:
         response = LlmDiscoveryResponse.model_validate(parsed)
