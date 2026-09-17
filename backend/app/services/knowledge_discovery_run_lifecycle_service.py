@@ -37,6 +37,10 @@ from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.schemas.discovery_forensics import (
+    FORENSIC_COLUMN_NAMES,
+    DiscoveryResponseForensics,
+)
 from app.schemas.knowledge_production import (
     ACTIVE_DISCOVERY_RUN_STATUSES,
     COMPLETION_OUTCOMES_BY_TYPE,
@@ -144,6 +148,27 @@ _SET_FAIL = (
     " error_code = :error_code, error_message = :error_message"
 )
 _SET_CANCEL = "status = 'CANCELLED', finished_at = now(), updated_at = now()"
+
+
+def _with_forensics(
+    set_sql: str, forensics: DiscoveryResponseForensics | None
+) -> tuple[str, dict[str, Any]]:
+    """Extend a terminal SET clause with the provider-response forensics.
+
+    The columns are appended to the COMPLETING statement rather than written by
+    a second UPDATE, so a run can never be found FAILED with its forensic
+    evidence missing when that evidence was already in memory (§7). Column names
+    come from the record's own tuple — never from request input — so this cannot
+    name a column the migration did not create.
+
+    ``None`` leaves the statement byte-for-byte as it was: a caller with nothing
+    to record does not silently NULL columns written by an earlier transition.
+    """
+    if forensics is None:
+        return set_sql, {}
+    params = {name: getattr(forensics, name) for name in FORENSIC_COLUMN_NAMES}
+    assignments = ", ".join(f"{name} = :{name}" for name in FORENSIC_COLUMN_NAMES)
+    return f"{set_sql}, {assignments}", params
 
 
 # ---------------------------------------------------------------------------
@@ -298,6 +323,7 @@ async def start_discovery_run(session: AsyncSession, run_id: str) -> DiscoveryRu
 async def complete_discovery_run(
     session: AsyncSession, run_id: str, outcome: str, *,
     provenance: Mapping[str, Any] | None = None,
+    forensics: DiscoveryResponseForensics | None = None,
 ) -> DiscoveryRunItem:
     """RUNNING -> COMPLETED with a scientific outcome.
 
@@ -323,13 +349,16 @@ async def complete_discovery_run(
         raise _terminal_conflict(row, "complete")
     if row["status"] == "QUEUED":
         raise DiscoveryRunConflict("RUN_NOT_STARTED", "a run must be started before it can complete")
-    return await _apply(session, row, _SET_COMPLETE, {"outcome": outcome},
+    set_sql, forensic_params = _with_forensics(_SET_COMPLETE, forensics)
+    return await _apply(session, row, set_sql,
+                        {"outcome": outcome, **forensic_params},
                         provenance=provenance)
 
 
 async def fail_discovery_run(
     session: AsyncSession, run_id: str, *, error_code: str | None, error_message: str,
     provenance: Mapping[str, Any] | None = None,
+    forensics: DiscoveryResponseForensics | None = None,
 ) -> DiscoveryRunItem:
     """QUEUED | RUNNING -> FAILED with an explanation.
 
@@ -345,11 +374,12 @@ async def fail_discovery_run(
         )
     if row["status"] in TERMINAL_DISCOVERY_RUN_STATUSES:
         raise _terminal_conflict(row, "fail")
+    set_sql, forensic_params = _with_forensics(_SET_FAIL, forensics)
     return await _apply(
         session,
         row,
-        _SET_FAIL,
-        {"error_code": error_code, "error_message": error_message},
+        set_sql,
+        {"error_code": error_code, "error_message": error_message, **forensic_params},
         provenance=provenance,
     )
 

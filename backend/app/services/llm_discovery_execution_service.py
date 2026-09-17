@@ -48,6 +48,10 @@ from app.prompts.llm_discovery_prompt import (
     PROMPT_VERSION,
 )
 from app.prompts.llm_discovery_views import build_view_prompt
+from app.schemas.discovery_forensics import (
+    RAW_RESPONSE_PREVIEW_MAX_CHARS,
+    DiscoveryResponseForensics,
+)
 from app.schemas.knowledge_production import DiscoveryRunItem
 from app.schemas.llm_discovery import SCHEMA_VERSION, LlmDiscoveryResponse
 from app.schemas.llm_discovery_execution import (
@@ -60,6 +64,7 @@ from app.services import llm_discovery_continuation_service as continuation
 from app.services import llm_discovery_readiness_service as readiness
 from app.services.llm_discovery_parser import parse_llm_discovery_response
 from app.services.llm_discovery_seed_service import build_discovery_input
+from app.services.llm_json_utils import raw_response_preview
 from app.services.llm_providers.base import ProviderNotConfiguredError
 from app.services.llm_providers.factory import get_llm_provider
 from app.services.settings_service import get_deepseek_runtime_config
@@ -111,6 +116,51 @@ class LlmDiscoveryExecutionError(Exception):
 
 def _sha256(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def _has_content(raw: str | None) -> bool:
+    """Whether the provider produced anything at all.
+
+    Whitespace-only is 'nothing': the empty-response check downstream treats it
+    that way, and a preview of blanks would tell an operator less than NULL does.
+    """
+    return bool((raw or "").strip())
+
+
+def forensics_from_response(response: Any) -> DiscoveryResponseForensics:
+    """The bounded, durable evidence for ONE provider response.
+
+    Built the same way on BOTH terminal paths, so the success hash and the
+    failure hash cannot drift apart: a run that succeeded and a run that failed
+    on identical text record an identical ``response_sha256``.
+
+    The hash is taken over the COMPLETE raw text — never the preview — because
+    the whole point of keeping it is to answer "were these two responses
+    byte-identical?" even when their previews are indistinguishable.
+
+    When the provider produced no content, the hash and preview are NULL rather
+    than the hash of the empty string: "the model said nothing" is a fact, and
+    recording it as "the model said ''" would be a different, wrong fact.
+    """
+    raw = response.raw_text
+    has_content = _has_content(raw)
+    preview: str | None = None
+    if has_content:
+        # The shared helper, unchanged: deterministic prefix, Unicode-safe,
+        # bounded, and it records how much was cut.
+        preview = raw_response_preview(raw, limit=RAW_RESPONSE_PREVIEW_MAX_CHARS) or None
+    return DiscoveryResponseForensics(
+        response_sha256=_sha256(raw) if has_content else None,
+        raw_response_preview=preview,
+        finish_reason=response.finish_reason,
+        prompt_tokens=response.usage.prompt_tokens,
+        completion_tokens=response.usage.completion_tokens,
+        total_tokens=response.usage.total_tokens,
+        provider_latency_ms=response.latency_ms,
+        fallback_raw_response_used=bool(
+            (response.response_payload or {}).get("fallback_raw_response_used")
+        ),
+    )
 
 
 def classify_provider_exception(exc: BaseException) -> tuple[str, str]:
@@ -178,18 +228,26 @@ def _candidate_counts(data: LlmDiscoveryResponse) -> dict[str, int]:
 
 
 async def _abort(
-    session: AsyncSession, run_id: str, code: str, message: str
+    session: AsyncSession, run_id: str, code: str, message: str,
+    *, forensics: DiscoveryResponseForensics | None = None,
 ) -> LlmDiscoveryExecutionError:
     """Move the run to FAILED, then hand back the error to raise (§11).
 
     A run must never be left permanently RUNNING, and the lifecycle service is
-    the only sanctioned way to end it. If that transition itself fails we cannot
-    repair it here — but we record it loudly rather than hide it, and the
-    original failure still surfaces to the caller.
+    the only sanctioned way to end it. The forensic record rides IN that same
+    UPDATE, so the terminal transition and the evidence that explains it are one
+    atomic write: a run cannot be left FAILED with its response metadata missing
+    while that metadata was in memory.
+
+    ``forensics=None`` is the honest value when the provider never answered —
+    there is no response to describe, and NULL says so. If the transition itself
+    fails we cannot repair it here, but we record it loudly rather than hide it,
+    and the original failure still surfaces to the caller.
     """
     try:
         await lifecycle.fail_discovery_run(
-            session, run_id, error_code=code, error_message=message[:_ERROR_MESSAGE_MAX]
+            session, run_id, error_code=code,
+            error_message=message[:_ERROR_MESSAGE_MAX], forensics=forensics,
         )
     except Exception:  # noqa: BLE001
         logger.exception("[llm-discovery] could not mark run FAILED run_id=%s", run_id)
@@ -409,9 +467,14 @@ async def execute_llm_discovery(
         code, message = classify_provider_exception(exc)
         raise await _abort(session, run.run_id, code, message) from None
 
+    # The provider answered, so from here on every failure carries the evidence
+    # of WHAT it answered. Built once: the same object feeds the forensic
+    # columns on whichever terminal path this call takes.
+    forensics = forensics_from_response(response)
+
     if not response.transport_ok:
         code, message = classify_transport_failure(response)
-        raise await _abort(session, run.run_id, code, message)
+        raise await _abort(session, run.run_id, code, message, forensics=forensics)
 
     # 4. `content` is the answer; `reasoning_content` is never promoted to it
     #    (see the provider). A response with no content — including one the
@@ -434,6 +497,7 @@ async def execute_llm_discovery(
             run.run_id,
             ERR_EMPTY_RESPONSE,
             "the model returned no content to parse" + detail,
+            forensics=forensics,
         )
 
     # 5. The run records the model that ACTUALLY ran. The provider normalizes,
@@ -446,6 +510,7 @@ async def execute_llm_discovery(
             ERR_PROVIDER_ERROR,
             f"model policy violation: requested {effective_model},"
             f" the provider reported {response.model}",
+            forensics=forensics,
         )
 
     # 6. The Phase 3A parser is the ONLY structural authority (§19).
@@ -458,6 +523,7 @@ async def execute_llm_discovery(
             run.run_id,
             ERR_PARSE_FAILED,
             f"the model response did not satisfy the discovery contract: {parsed.error}",
+            forensics=forensics,
         )
 
     data = parsed.data
@@ -477,6 +543,7 @@ async def execute_llm_discovery(
             run.run_id,
             ERR_CANDIDATE_PERSISTENCE_FAILED,
             "the run's own identity could not be read back",
+            forensics=forensics,
         )
     try:
         summary = await candidate_persistence.persist_discovery_candidates(
@@ -495,6 +562,7 @@ async def execute_llm_discovery(
             run.run_id,
             ERR_CANDIDATE_PERSISTENCE_FAILED,
             "the discovery candidates could not be persisted",
+            forensics=forensics,
         ) from None
 
     # Keyed by run_id (which the persistence layer's own log does not have), so
@@ -505,7 +573,7 @@ async def execute_llm_discovery(
     )
 
     run = await lifecycle.complete_discovery_run(
-        session, run.run_id, resolve_outcome(data)
+        session, run.run_id, resolve_outcome(data), forensics=forensics
     )
 
     metrics = LlmDiscoveryExecutionMetrics(
@@ -524,7 +592,10 @@ async def execute_llm_discovery(
         total_tokens=response.usage.total_tokens,
         reasoning_tokens=response.usage.reasoning_tokens,
         prompt_sha256=_sha256(prompt["system_prompt"] + "\n" + prompt["user_prompt"]),
-        response_sha256=_sha256(response.raw_text),
+        # Taken from the forensic record rather than recomputed, so the hash a
+        # success logs and the hash it stores are the same value by construction
+        # and cannot drift apart.
+        response_sha256=forensics.response_sha256 or _sha256(response.raw_text),
         warning_count=len(parsed.validation_warnings),
         candidate_counts=_candidate_counts(data),
     )
