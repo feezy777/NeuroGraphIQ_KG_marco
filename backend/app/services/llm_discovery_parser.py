@@ -13,7 +13,14 @@ module: it is a pure function over (text, seed id).
 Repair policy (deliberate and narrow):
   * ALLOWED, because it changes formatting only: BOM / control-char cleanup,
     markdown code-fence removal, whitespace, and extracting the single
-    unambiguous top-level JSON object from surrounding prose.
+    unambiguous top-level JSON object from surrounding prose. The DOCUMENT
+    decision is structural, not heuristic — see ``_extract_discovery_document``.
+    A response is a Discovery document only if one object satisfies the envelope
+    identity, and a NESTED object is never a document-level candidate, so it can
+    neither compete with its parent nor be promoted into its place. Nothing is
+    wrapped: a bare RegionCandidate/ConnectionCandidate/FunctionCandidate/
+    CircuitCandidate is refused as ``DISCOVERY_ENVELOPE_MISSING`` rather than
+    dressed up with collections the model never wrote.
   * ALLOWED, and the one exception that is not formatting: an UNKNOWN key whose
     value is structurally EMPTY — null, [], {} — is dropped before validation,
     judged against the field set of the object's OWN type. See
@@ -36,7 +43,9 @@ that says anything at all is still the model's to get right, and still fails.
 """
 from __future__ import annotations
 
+import json
 import logging
+import re
 
 from app.schemas.llm_discovery import (
     HUMAN_TAXON_ID,
@@ -51,7 +60,11 @@ from app.schemas.llm_discovery import (
     FunctionCandidate,
     RegionCandidate,
 )
-from app.services.llm_json_utils import extract_json_object_from_text
+from app.services.llm_json_utils import (
+    _clean_input_text,
+    _close_truncated,
+    _repair_json_text,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -105,6 +118,11 @@ def _normalize_warning_code_aliases(parsed: object) -> tuple[object, int]:
 # Rejection reasons (machine-readable, stable).
 ERR_INVALID_JSON = "INVALID_JSON"
 ERR_SCHEMA_INVALID = "SCHEMA_INVALID"
+#: JSON was found, but nothing in the text identifies itself as the response
+#: document. Distinct from INVALID_JSON (nothing decodable at all) and from
+#: SCHEMA_INVALID (a document that IS the envelope but breaks the contract).
+ERR_ENVELOPE_MISSING = "DISCOVERY_ENVELOPE_MISSING"
+ERR_ENVELOPE_AMBIGUOUS = "AMBIGUOUS_DISCOVERY_ENVELOPE"
 ERR_SEED_MISMATCH = "SEED_MISMATCH"
 ERR_DUPLICATE_LOCAL_ID = "DUPLICATE_LOCAL_ID"
 ERR_DANGLING_REGION_REF = "DANGLING_REGION_REF"
@@ -351,6 +369,198 @@ def validate_cross_references(
     return errors, warnings
 
 
+# ===========================================================================
+# Discovery envelope extraction
+# ===========================================================================
+# A Discovery response is a DOCUMENT: one outer object that says "this is the
+# response". The generic extractor in ``llm_json_utils`` answers a different
+# question — "which JSON object in this text looks most schema-like?" — and it
+# ranks candidates by a heuristic score. A nested object can outrank its own
+# parent under that rule, because a parent carrying only a few schema-hint keys
+# scores below a child carrying many plain ones.
+#
+# For a generic caller that is harmless. For Discovery it is not: a
+# RegionCandidate nested inside a malformed envelope could be returned AS the
+# document, and the parser would then report the envelope's fields as "missing"
+# — a confusing error for a failure that is really about the envelope. The
+# document decision below is therefore STRUCTURAL, never heuristic:
+#
+#   1. the whole text as one JSON document
+#   2. every complete fenced body
+#   3. every TOP-LEVEL SIBLING span — a nested object is not a candidate at all,
+#      so document hierarchy always outranks score
+#
+# Among those document-level candidates exactly ONE must satisfy the envelope
+# identity. None is DISCOVERY_ENVELOPE_MISSING; more than one is
+# AMBIGUOUS_DISCOVERY_ENVELOPE. A bare candidate is never wrapped: inventing
+# ``regions``/``connections``/``functions``/``circuits`` around a fragment would
+# fabricate scientific content.
+#
+# The generic extractor is deliberately NOT modified, so ``parse_llm_json_response``
+# and the connection-completion paths keep the behaviour they have today.
+
+_ENVELOPE_MODE_WHOLE = "WHOLE_DOCUMENT"
+_ENVELOPE_MODE_FENCED = "FENCED_DOCUMENT"
+_ENVELOPE_MODE_SPAN = "TOP_LEVEL_SPAN"
+
+#: Reflected from the contract rather than re-declared: the fields the schema
+#: itself says a response must carry. A hand-written copy here could drift away
+#: from the schema that actually validates.
+_ENVELOPE_REQUIRED = frozenset(
+    name for name, spec in LlmDiscoveryResponse.model_fields.items() if spec.is_required()
+)
+
+#: The collections the document declares — same source as everything else.
+_ENVELOPE_COLLECTIONS = frozenset(_ARRAY_SCHEMAS)
+
+_FENCE_RE = re.compile(r"```(?:json|JSON)?\s*(.*?)```", re.DOTALL)
+
+
+def _looks_like_discovery_envelope(value: object) -> bool:
+    """True only for an object that identifies itself as the response document.
+
+    Required fields alone would accept a degenerate ``{"seed_entity_id": ...}``;
+    a collection alone would accept almost anything. Requiring both is what
+    separates "this is the Discovery document" from "this is some object".
+    """
+    if not isinstance(value, dict):
+        return False
+    keys = set(value)
+    return _ENVELOPE_REQUIRED <= keys and bool(keys & _ENVELOPE_COLLECTIONS)
+
+
+def _top_level_spans(text: str) -> list[str]:
+    """Every OUTERMOST balanced ``{...}`` / ``[...]`` span, in order.
+
+    Only the 0->1 and 1->0 depth transitions emit a span, so a nested object is
+    structurally incapable of becoming a document-level candidate. That is the
+    property the generic extractor does not have, and it is the whole repair.
+    """
+    spans: list[str] = []
+    depth = 0
+    start = -1
+    in_str = False
+    escape = False
+    for i, ch in enumerate(text):
+        if in_str:
+            if escape:
+                escape = False
+            elif ch == "\\":
+                escape = True
+            elif ch == '"':
+                in_str = False
+            continue
+        if ch == '"':
+            in_str = True
+        elif ch in "{[":
+            if depth == 0:
+                start = i
+            depth += 1
+        elif ch in "}]":
+            if depth:
+                depth -= 1
+                if depth == 0:
+                    spans.append(text[start : i + 1])
+    return spans
+
+
+def _load_json_text(text: str) -> object | None:
+    """Decode one document-level candidate, applying the same deterministic
+    formatting repairs the generic extractor applies (full-width punctuation,
+    trailing commas). Repairs change formatting only; they never add a field."""
+    for attempt in (text, _repair_json_text(text)):
+        try:
+            return json.loads(attempt)
+        except ValueError:
+            continue
+    return None
+
+
+def _extract_discovery_document(raw: str) -> tuple[object | None, str | None, str | None]:
+    """Return ``(document, mode, error)`` for one raw provider text.
+
+    ``document`` is None on failure and ``error`` already carries its code.
+    """
+    text = _clean_input_text(raw)
+    if not text:
+        return None, None, f"{ERR_INVALID_JSON}: empty text"
+
+    documents: list[tuple[str, str]] = [(_ENVELOPE_MODE_WHOLE, text.strip())]
+    # ``strip()`` matters: the fence body keeps the newline before the closing
+    # fence, and an unstripped body would not de-duplicate against the identical
+    # top-level span — the same document would then be counted twice and a single
+    # envelope would be reported as an ambiguous pair.
+    documents.extend((_ENVELOPE_MODE_FENCED, body.strip()) for body in _FENCE_RE.findall(text))
+    documents.extend((_ENVELOPE_MODE_SPAN, span) for span in _top_level_spans(text))
+
+    seen: set[str] = set()
+    decoded_any = False
+    envelopes: list[tuple[str, object]] = []
+    for mode, document_text in documents:
+        # The same characters can arrive twice (a fenced body that is also the
+        # only top-level span); the first mode to claim them wins, and the order
+        # above is the order of authority.
+        if not document_text or document_text in seen:
+            continue
+        seen.add(document_text)
+        value = _load_json_text(document_text)
+        if value is None:
+            continue
+        decoded_any = True
+        if _looks_like_discovery_envelope(value):
+            envelopes.append((mode, value))
+
+    # A top-level span that did NOT decode is still a whole JSON document that
+    # went wrong, not prose. That is the difference between "the response is
+    # malformed" and "the model did not answer in JSON at all", and the operator
+    # needs to be told which one happened.
+    saw_document_structure = any(
+        _m == _ENVELOPE_MODE_SPAN for _m, _t in documents
+    ) or decoded_any
+
+    if len(envelopes) == 1:
+        mode, document = envelopes[0]
+        logger.info(
+            "[discovery-parser][envelope] mode=%s document_level_candidates=%s",
+            mode, len(seen),
+        )
+        return document, mode, None
+
+    if len(envelopes) > 1:
+        # Two independent objects both claim to be the response. Choosing one
+        # would be a guess about which the model meant, and a guess here decides
+        # the seed, the exclusions and the whole round.
+        return None, None, (
+            f"{ERR_ENVELOPE_AMBIGUOUS}: {len(envelopes)} independent JSON documents "
+            f"satisfy the discovery envelope identity; refusing to choose one"
+        )
+
+    # LAST RESORT — the only repair that manufactures structure, and it is
+    # bounded on purpose: it closes the OUTER document's own missing brackets,
+    # it never adopts a child, and whatever it produces must still satisfy the
+    # envelope identity. Without it a response cut off by its output budget
+    # would be discarded whole; with it, only the emitted part is kept.
+    for open_ch, close_ch in (("{", "}"), ("[", "]")):
+        salvaged = _close_truncated(text, open_ch, close_ch)
+        if not salvaged:
+            continue
+        value = _load_json_text(salvaged)
+        if value is not None and _looks_like_discovery_envelope(value):
+            logger.info(
+                "[discovery-parser][envelope] mode=%s truncated=True",
+                _ENVELOPE_MODE_SPAN,
+            )
+            return value, _ENVELOPE_MODE_SPAN, None
+
+    if not saw_document_structure:
+        return None, None, f"{ERR_INVALID_JSON}: no JSON object/array found"
+    return None, None, (
+        f"{ERR_ENVELOPE_MISSING}: the text contains JSON, but no decodable object "
+        f"carries the discovery envelope (required {sorted(_ENVELOPE_REQUIRED)} plus "
+        f"one of {sorted(_ENVELOPE_COLLECTIONS)})"
+    )
+
+
 def parse_llm_discovery_response(
     raw: str | dict | list, *, seed_entity_id: str
 ) -> LlmDiscoveryParseResult:
@@ -361,11 +571,13 @@ def parse_llm_discovery_response(
     exactly the prompt/model drift this contract exists to catch.
     """
     if isinstance(raw, (dict, list)):
+        # A programmatic caller already holds a document; extraction is about
+        # recovering one from model TEXT, so this path is unchanged.
         parsed: object = raw
     else:
-        parsed, err = extract_json_object_from_text(raw)
+        parsed, _mode, error = _extract_discovery_document(raw)
         if parsed is None:
-            return LlmDiscoveryParseResult(error=f"{ERR_INVALID_JSON}: {err}")
+            return LlmDiscoveryParseResult(error=error or f"{ERR_INVALID_JSON}: no JSON found")
 
     # Narrow pre-validation normalization: UNKNOWN, structurally EMPTY extras,
     # per object type. Anything with content survives this and is still rejected

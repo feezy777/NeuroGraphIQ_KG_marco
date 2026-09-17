@@ -38,6 +38,7 @@ from app.schemas.llm_discovery import (
     is_local_candidate_id,
 )
 from app.services import llm_discovery_parser as parser
+from app.services.llm_json_utils import extract_json_object_from_text
 
 SEED_ID = "NGIQ-BR-00000247"
 PARSER_PATH = Path(parser.__file__)
@@ -2309,3 +2310,276 @@ def test_benign_empty_means_empty_not_falsy():
         assert parser._is_benign_empty(empty), empty
     for content in ("", 0, 1, False, True, "x", [0], {"a": 1}):
         assert not parser._is_benign_empty(content), content
+
+
+# ===========================================================================
+# §33 — DISCOVERY ENVELOPE EXTRACTION
+# ===========================================================================
+# A Discovery response is a DOCUMENT, and the parser now decides that
+# structurally instead of trusting a heuristic score. The cases below are the
+# read-only diagnosis, made permanent: A–F are the behaviours that were already
+# correct and must stay correct; L1–L4, M1 and M2 are the proven vulnerability.
+#
+# The last test in the vulnerability group asserts that the GENERIC extractor
+# still returns the bare RegionCandidate for the same text. That is deliberate:
+# the generic behaviour is unchanged on purpose (connection completion depends on
+# it), and the point of this layer is that Discovery no longer believes it.
+REGION_DOC = {
+    "local_id": "region_1",
+    "confidence": 0.9,
+    "name": "Dentate gyrus (granule cell layer)",
+    "name_en": "Dentate gyrus",
+    "name_zh": "齿状回",
+    "hemisphere": "left",
+    "species_taxon_id": "9606",
+    "relation_to_seed": "AFFERENT",
+    "rationale": "Primary afferent source of the dentate-CA3 sub-circuits.",
+}
+
+
+def region_doc(**over: Any) -> str:
+    data = dict(REGION_DOC)
+    data.update(over)
+    return json.dumps(data, ensure_ascii=False)
+
+
+def envelope(**over: Any) -> str:
+    return json.dumps(payload(**over), ensure_ascii=False)
+
+
+# --- A–F: the behaviours that were already correct ---------------------------
+def test_envelope_a_a_complete_envelope_parses():
+    result = parse_text(envelope(regions=[region("region_1")]))
+    assert result.ok, result.error
+    assert [r.local_id for r in result.data.regions] == ["region_1"]
+
+
+def test_envelope_b_prose_around_an_envelope_parses():
+    result = parse_text("Here is the analysis:\n" + envelope(regions=[region("region_1")])
+                        + "\nDone.")
+    assert result.ok, result.error
+    assert [r.local_id for r in result.data.regions] == ["region_1"]
+
+
+def test_envelope_c_a_fenced_envelope_parses():
+    result = parse_text(f"```json\n{envelope(regions=[region('region_1')])}\n```")
+    assert result.ok, result.error
+    assert [r.local_id for r in result.data.regions] == ["region_1"]
+
+
+def test_envelope_d_a_bare_object_sibling_does_not_beat_the_envelope():
+    """The envelope is chosen on IDENTITY, not on which object came first."""
+    result = parse_text(region_doc() + "\n" + envelope(regions=[region("region_1")]))
+    assert result.ok, result.error
+    assert result.data.seed_entity_id == SEED_ID
+    assert [r.local_id for r in result.data.regions] == ["region_1"]
+
+
+def test_envelope_e_a_nested_object_never_becomes_the_document():
+    """The envelope contains a region whose keys are all valid region keys."""
+    result = parse_text(envelope(regions=[region("region_1", name="Dentate gyrus")]))
+    assert result.ok, result.error
+    assert result.data.seed_entity_id == SEED_ID
+    assert result.data.regions[0].name == "Dentate gyrus"
+
+
+def test_envelope_f_a_diagnostic_sibling_does_not_beat_the_envelope():
+    result = parse_text(json.dumps({"status": "thinking", "step": 1}) + "\n"
+                        + envelope(regions=[region("region_1")]))
+    assert result.ok, result.error
+    assert result.data.seed_entity_id == SEED_ID
+
+
+# --- G / H: the two new typed refusals --------------------------------------
+def test_envelope_g_a_bare_candidate_is_not_a_document():
+    result = parse_text(region_doc())
+    assert not result.ok
+    assert result.error.startswith(parser.ERR_ENVELOPE_MISSING), result.error
+
+
+def test_envelope_g2_a_bare_candidate_is_never_wrapped():
+    """No envelope is invented. Missing collections must not be fabricated."""
+    result = parse_text(region_doc())
+    assert result.data is None
+    for fabricated in ("regions", "connections", "functions", "circuits"):
+        assert fabricated in result.error or result.data is None
+
+
+def test_envelope_h_two_independent_envelopes_are_refused():
+    first = envelope(seed_entity_id=SEED_ID, summary="one")
+    second = envelope(summary="two")
+    result = parse_text(first + "\n" + second)
+    assert not result.ok
+    assert result.error.startswith(parser.ERR_ENVELOPE_AMBIGUOUS), result.error
+
+
+def test_envelope_h2_ambiguity_is_not_resolved_by_position():
+    """Swapping the two envelopes must not change the outcome."""
+    first = envelope(summary="one")
+    second = envelope(summary="two")
+    assert not parse_text(first + "\n" + second).ok
+    assert not parse_text(second + "\n" + first).ok
+
+
+# --- §13 the proven vulnerability: a malformed envelope must not leak a child --
+def test_envelope_l1_a_missing_comma_does_not_leak_the_nested_region():
+    text = ('{"schema_version": "1.0", "seed_entity_id": "%s", "regions": [%s]'
+            ' "connections": [], "circuits": []}' % (SEED_ID, region_doc()))
+    result = parse_text(text)
+    assert not result.ok
+    assert result.error.startswith(parser.ERR_ENVELOPE_MISSING), result.error
+
+
+def test_envelope_l2_a_stray_member_does_not_leak_the_nested_region():
+    text = ('{"schema_version": "1.0", "seed_entity_id": "%s", "regions": [%s],'
+            ' "connections": [], "oops": }' % (SEED_ID, region_doc()))
+    assert not parse_text(text).ok
+
+
+def test_envelope_l3_a_single_quoted_key_does_not_leak_the_nested_region():
+    text = ("{'schema_version': '1.0', 'seed_entity_id': '%s', 'regions': [%s],"
+            " 'connections': []}" % (SEED_ID, region_doc()))
+    assert not parse_text(text).ok
+
+
+def test_envelope_l4_a_raw_newline_in_a_string_does_not_leak_the_nested_region():
+    text = ('{"schema_version": "1.0", "seed_entity_id": "%s",'
+            ' "summary": "line one\nline two", "regions": [%s], "connections": []}'
+            % (SEED_ID, region_doc()))
+    assert not parse_text(text).ok
+
+
+def test_envelope_m1_a_balanced_invalid_parent_does_not_leak_its_child():
+    text = '{"note": "oops" "inner": %s}' % region_doc()
+    result = parse_text(text)
+    assert not result.ok
+    assert result.error.startswith(parser.ERR_ENVELOPE_MISSING), result.error
+
+
+def test_envelope_m2_a_valid_parent_is_not_outranked_by_its_child():
+    """The scoring inversion, made permanent. The parent here is VALID JSON and
+    the child is richer in plain keys, which is exactly the case the generic
+    score prefers the child."""
+    text = '{"note": "ok", "inner": %s}' % region_doc()
+    result = parse_text(text)
+    assert not result.ok
+    assert result.error.startswith(parser.ERR_ENVELOPE_MISSING), result.error
+
+
+def test_envelope_the_generic_extractor_is_unchanged_and_discovery_no_longer_believes_it():
+    """Both halves of the repair, in one place.
+
+    The generic extractor still answers its own question the way it always did —
+    that behaviour is load-bearing for connection completion. Discovery simply
+    stopped treating that answer as a document.
+    """
+    text = '{"note": "oops" "inner": %s}' % region_doc()
+
+    generic, err = extract_json_object_from_text(text)
+    assert err is None
+    assert generic["local_id"] == "region_1", "the generic behaviour is unchanged"
+
+    result = parse_text(text)
+    assert not result.ok
+    assert result.error.startswith(parser.ERR_ENVELOPE_MISSING)
+
+
+# --- §14 the protection is not Region-specific -------------------------------
+@pytest.mark.parametrize("body", [
+    json.dumps(region("region_1")),
+    json.dumps(connection("connection_1")),
+    json.dumps(function("function_1")),
+    json.dumps(circuit("circuit_1")),
+])
+def test_envelope_every_bare_object_type_is_refused(body):
+    result = parse_text(body)
+    assert not result.ok, body
+    assert result.error.startswith(parser.ERR_ENVELOPE_MISSING), (body, result.error)
+
+
+def test_envelope_an_unknown_NON_empty_extra_still_fails():
+    """The new layer relaxes nothing: an envelope with real extra content is
+    still the strict schema's business."""
+    body = circuit("circuit_1", invented_field="carries meaning")
+    result = parse_text(envelope(circuits=[body]))
+    assert not result.ok
+    assert parser.ERR_SCHEMA_INVALID in result.error
+
+
+def test_envelope_the_benign_empty_sanitizer_still_runs():
+    body = region("region_1")
+    body["relation_note"] = None
+    result = parse_text(envelope(regions=[body]))
+    assert result.ok, result.error
+    assert not hasattr(result.data.regions[0], "relation_note")
+
+
+def test_envelope_the_warning_alias_still_normalizes():
+    result = parse_text(envelope(warnings=[warning("AMBIGUOUS_DIRECTIONALITY")]))
+    assert result.ok, result.error
+    assert [w.code for w in result.data.warnings] == ["AMBIGUOUS_DIRECTION"]
+
+
+def test_envelope_a_schema_violation_inside_a_real_envelope_is_SCHEMA_INVALID():
+    """The envelope decisions must not swallow the contract's own errors."""
+    result = parse_text(envelope(seed_entity_id="NGIQ-BR-00000001"))
+    assert not result.ok
+    assert parser.ERR_SEED_MISMATCH in result.error
+
+
+# --- provenance ---------------------------------------------------------------
+def test_envelope_modes_are_reported():
+    doc, mode, err = parser._extract_discovery_document(envelope())
+    assert err is None and mode == parser._ENVELOPE_MODE_WHOLE
+
+    doc, mode, err = parser._extract_discovery_document(f"```json\n{envelope()}\n```")
+    assert err is None and mode == parser._ENVELOPE_MODE_FENCED
+
+    doc, mode, err = parser._extract_discovery_document("prose\n" + envelope())
+    assert err is None and mode == parser._ENVELOPE_MODE_SPAN
+
+
+def test_envelope_a_truncated_document_is_repaired_but_only_from_the_outside():
+    """A response cut off by its output budget keeps what it emitted.
+
+    The repair closes the OUTER object's own brackets. It is gated by the same
+    envelope identity, so it can never promote a nested object.
+    """
+    whole = envelope(regions=[region("region_1")])
+    truncated = whole[: whole.rindex('"warnings"')].rstrip().rstrip(",")
+    doc, mode, err = parser._extract_discovery_document(truncated)
+    assert err is None, err
+    assert doc["seed_entity_id"] == SEED_ID
+    assert [r["local_id"] for r in doc["regions"]] == ["region_1"]
+
+    # ...and the SAME repair applied to a bare region is still refused. Nothing
+    # decodes and no balanced document exists, so this is not even a document —
+    # it is reported as an unfixable JSON failure rather than as an envelope.
+    broken = region_doc()[: region_doc().rindex('"rationale"')].rstrip().rstrip(",")
+    doc2, _, err2 = parser._extract_discovery_document(broken)
+    assert doc2 is None
+    assert err2.startswith(parser.ERR_INVALID_JSON), err2
+
+
+def test_envelope_identity_comes_from_the_contract():
+    assert parser._ENVELOPE_REQUIRED == frozenset(
+        name for name, spec in LlmDiscoveryResponse.model_fields.items()
+        if spec.is_required()
+    )
+    assert parser._ENVELOPE_REQUIRED == {"seed_entity_id"}
+    assert parser._ENVELOPE_COLLECTIONS == frozenset(
+        {"regions", "connections", "functions", "circuits"})
+
+
+def test_envelope_identity_rejects_every_candidate_type():
+    for bare in (region("region_1"), connection("connection_1"),
+                 function("function_1"), circuit("circuit_1"), [], "text", None):
+        assert not parser._looks_like_discovery_envelope(bare), bare
+    assert parser._looks_like_discovery_envelope(payload())
+
+
+def test_envelope_nothing_decodable_is_still_INVALID_JSON():
+    """The new code must not reclassify a non-JSON answer."""
+    result = parse_text("this is not json at all")
+    assert not result.ok
+    assert result.error.startswith(parser.ERR_INVALID_JSON)
