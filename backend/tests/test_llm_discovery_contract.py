@@ -1568,11 +1568,15 @@ def _live_round_4_payload() -> dict[str, Any]:
     )
 
 
-def _ignored(parsed: parser.LlmDiscoveryParseResult) -> list[Any]:
-    return [
-        w for w in parsed.validation_warnings
-        if "REGION_NULL_EXTRA_IGNORED" in w.message
-    ]
+def _absent(obj: Any, *fields: str) -> bool:
+    """True when none of `fields` survived into the typed object.
+
+    The drop used to be reported through a synthetic warning; under the generic
+    sanitizer it is reported through a LOG, so the observable fact is the one
+    that always mattered — the key is gone from the parsed candidate.
+    """
+    dumped = obj.model_dump()
+    return all(f not in dumped for f in fields)
 
 
 def test_round_4_live_failure_now_parses():
@@ -1596,14 +1600,21 @@ def test_the_ignored_key_is_gone_from_the_parsed_region():
     assert result.data.regions[7].relation_to_seed == "UNKNOWN"
 
 
-def test_the_drop_is_reported_not_silent():
+def test_the_drop_is_reported_not_silent(caplog):
     """Strictness exists to surface drift; a quiet deletion would trade one
-    failure for a worse one."""
-    result = parse(_live_round_4_payload())
-    reported = _ignored(result)
-    assert len(reported) == 1
-    assert reported[0].local_id == "region_8"
-    assert "relation_note" in reported[0].message
+    failure for a worse one. The report is now a structured LOG naming the
+    object and the fields, not a warning injected into the model's own list."""
+    import logging
+
+    with caplog.at_level(logging.INFO, logger="app.services.llm_discovery_parser"):
+        result = parse(_live_round_4_payload())
+    assert result.ok, result.error
+    text = " ".join(r.getMessage() for r in caplog.records)
+    assert "[benign-extra-drop]" in text
+    assert "object_type=region" in text
+    assert "local_id=region_8" in text
+    assert "relation_note" in text
+    assert "total_objects=1" in text
 
 
 def test_the_tolerance_applies_on_the_raw_TEXT_path_too():
@@ -1619,7 +1630,7 @@ def test_tolerance_a_region_unknown_field_null_passes():
     data["relation_note"] = None
     result = parse(payload(regions=[data]))
     assert result.ok, result.error
-    assert not _ignored(result) == [], "the drop must be reported"
+    assert _absent(result.data.regions[0], "relation_note")
 
 
 def test_tolerance_b_two_unknown_null_fields_pass():
@@ -1628,7 +1639,7 @@ def test_tolerance_b_two_unknown_null_fields_pass():
     data["another_invented_field"] = None
     result = parse(payload(regions=[data]))
     assert result.ok, result.error
-    assert len(_ignored(result)) == 2
+    assert _absent(result.data.regions[0], "relation_note", "another_invented_field")
 
 
 # --- C / D / E: content is never silently discarded -------------------------
@@ -1657,38 +1668,41 @@ def test_tolerance_e_region_unknown_field_false_fails():
     assert "extra_forbidden" in result.error
 
 
-@pytest.mark.parametrize("value", [123, "", [], {}, ["x"], {"a": 1}])
+@pytest.mark.parametrize("value", [123, "", ["x"], {"a": 1}, "CA3", True, 0])
 def test_tolerance_no_other_unknown_value_is_dropped(value):
     data = region("region_1")
     data["invented_field"] = value
     assert not parse(payload(regions=[data])).ok, value
 
 
-# --- F / G / H: the tolerance is Region-only --------------------------------
-def test_tolerance_f_circuit_unknown_null_field_still_fails():
+# --- F / G / H: the EMPTY tolerance covers every typed array ----------------
+# It is no longer Region-only. An unknown NULL/[]/{} extra on any of the four
+# types is dropped; anything with content still fails. The old Region-only tests
+# asserted the narrower contract and are replaced, not deleted.
+def test_tolerance_f_circuit_unknown_null_field_is_dropped():
     data = circuit("circuit_1", region_refs=["region_1", "region_2"])
     data["invented_field"] = None
     result = parse(payload(
         regions=[region("region_1"), region("region_2")], circuits=[data]
     ))
-    assert not result.ok
-    assert "extra_forbidden" in result.error
+    assert result.ok, result.error
+    assert _absent(result.data.circuits[0], "invented_field")
 
 
-def test_tolerance_g_connection_unknown_null_field_still_fails():
+def test_tolerance_g_connection_unknown_null_field_is_dropped():
     data = connection("connection_1")
     data["invented_field"] = None
     result = parse(payload(regions=[region("region_1")], connections=[data]))
-    assert not result.ok
-    assert "extra_forbidden" in result.error
+    assert result.ok, result.error
+    assert _absent(result.data.connections[0], "invented_field")
 
 
-def test_tolerance_h_function_unknown_null_field_still_fails():
+def test_tolerance_h_function_unknown_null_field_is_dropped():
     data = function("function_1")
     data["invented_field"] = None
     result = parse(payload(functions=[data]))
-    assert not result.ok
-    assert "extra_forbidden" in result.error
+    assert result.ok, result.error
+    assert _absent(result.data.functions[0], "invented_field")
 
 
 # --- I / J: required region fields are untouched ----------------------------
@@ -1877,8 +1891,10 @@ def test_topology_g_a_circuit_missing_a_required_field_still_fails():
 
 
 def test_topology_h_a_circuit_with_an_unknown_extra_still_fails():
+    """A NON-empty unknown extra. The empty case is now tolerated; content is
+    not, and this is the test that keeps that line drawn."""
     data = circuit("circuit_1", region_refs=["region_1", "region_2"])
-    data["invented_field"] = None
+    data["invented_field"] = "carries meaning"
     result = parse(payload(
         regions=[region("region_1"), region("region_2")], circuits=[data]
     ))
@@ -1887,17 +1903,22 @@ def test_topology_h_a_circuit_with_an_unknown_extra_still_fails():
 
 
 # --- I / J / K: the neighbouring repairs are undisturbed --------------------
-def test_topology_i_the_region_null_extra_tolerance_is_unchanged():
+def test_topology_i_the_empty_extra_tolerance_is_no_longer_Region_only():
+    """The region case is now the special case of a general rule."""
     tolerated = region("region_1")
     tolerated["relation_note"] = None
-    result = parse(payload(regions=[tolerated]))
-    assert result.ok, result.error
-    # ... and it is still Region-only and still null-only.
-    strict = circuit("circuit_1", region_refs=["region_1", "region_2"])
-    strict["relation_note"] = None
-    assert not parse(payload(
-        regions=[region("region_1"), region("region_2")], circuits=[strict]
-    )).ok
+    assert parse(payload(regions=[tolerated])).ok
+    # ... and the same tolerance now covers a circuit, a connection and a function.
+    for kind, builder, extra in (
+        ("circuits", lambda: circuit("circuit_1", region_refs=["region_1", "region_2"]),
+         [region("region_1"), region("region_2")]),
+        ("connections", lambda: connection("connection_1"), [region("region_1")]),
+        ("functions", lambda: function("function_1"), []),
+    ):
+        item = builder()
+        item["relation_note"] = None
+        result = parse(payload(regions=extra, **{kind: [item]}))
+        assert result.ok, (kind, result.error)
 
 
 def test_topology_j_region_missing_confidence_is_still_None():
@@ -2092,3 +2113,199 @@ def test_warning_alias_the_canonical_vocabulary_did_NOT_grow():
     assert len(DISCOVERY_WARNING_CODES) == 7
     assert "AMBIGUOUS_DIRECTIONALITY" not in DISCOVERY_WARNING_CODES
     assert "AMBIGUOUS_DIRECTION" in DISCOVERY_WARNING_CODES
+
+
+# ===========================================================================
+# Benign EMPTY extra fields — generic, per object type
+# ===========================================================================
+# A live Round-12 pass was discarded in full because a CONNECTION carried
+# `connection_refs: []` and `connection_refs_placeholder: null`. Both are
+# unknown on a Connection — the first is a CIRCUIT field, which is exactly why
+# it looked plausible — and both are empty. Under RECALL FIRST an empty
+# auxiliary key must not cost a round.
+#
+# The line this policy draws is between EMPTY and CONTENT, not between known and
+# unknown: an unknown field carrying anything still fails.
+def _with(kind: str, item: dict, **over) -> dict:
+    """One payload containing exactly one object of `kind`, plus whatever
+    supporting objects it needs to be otherwise valid."""
+    extra: dict = {}
+    if kind == "connections":
+        extra["regions"] = [region("region_1")]
+    if kind == "circuits":
+        extra["regions"] = [region("region_1"), region("region_2")]
+    return payload(**extra, **{kind: [item]}, **over)
+
+
+# --- §10 ACCEPTED: unknown + structurally empty ------------------------------
+@pytest.mark.parametrize("kind,item,field", [
+    ("connections", connection("connection_1"), "unknown_null"),
+    ("connections", connection("connection_1"), "connection_refs"),
+    ("connections", connection("connection_1"), "connection_refs_placeholder"),
+    ("regions", region("region_1"), "relation_note"),
+    ("functions", function("function_1"), "some_unknown"),
+    ("circuits", circuit("circuit_1", region_refs=["region_1", "region_2"]),
+     "some_unknown"),
+    ("functions", function("function_1"), "empty_object"),
+])
+def test_benign_a_unknown_empty_extras_are_removed(kind, item, field):
+    """null, [] and {} on ANY of the four types."""
+    item[field] = {"unknown_null": None, "connection_refs": [],
+                   "connection_refs_placeholder": None, "relation_note": None,
+                   "some_unknown": [], "empty_object": {}}[field]
+    result = parse(_with(kind, item))
+    assert result.ok, (kind, field, result.error)
+    assert _absent(getattr(result.data, kind)[0], field)
+
+
+def test_benign_a_the_exact_live_round_12_failure_now_parses():
+    """The recorded failure, reproduced field for field."""
+    item = connection("connection_1")
+    item["connection_refs"] = []
+    item["connection_refs_placeholder"] = None
+    result = parse(_with("connections", item))
+    assert result.ok, result.error
+    assert _absent(result.data.connections[0], "connection_refs",
+                   "connection_refs_placeholder")
+
+
+# --- §4 THE COLLISION: the same key, judged by the declaring type ------------
+def test_benign_the_collision_rule_connection_refs_on_a_CIRCUIT_is_legitimate():
+    """`connection_refs` is DECLARED on CircuitCandidate. On a Circuit it is
+    preserved exactly as written, empty or not."""
+    data = circuit("circuit_1", region_refs=["region_1", "region_2"],
+                   connection_refs=[])
+    result = parse(_with("circuits", data))
+    assert result.ok, result.error
+    assert result.data.circuits[0].connection_refs == []
+
+
+def test_benign_the_collision_rule_connection_refs_on_a_CONNECTION_is_unknown():
+    """On a Connection the SAME key is unknown: empty is dropped, content fails."""
+    empty = connection("connection_1")
+    empty["connection_refs"] = []
+    assert parse(_with("connections", empty)).ok
+
+    populated = connection("connection_1")
+    populated["connection_refs"] = ["connection_1"]
+    result = parse(_with("connections", populated))
+    assert not result.ok, "a populated wrong-type field is content, not noise"
+    assert "extra_forbidden" in result.error
+
+
+# --- §11 REJECTED: unknown + content -----------------------------------------
+@pytest.mark.parametrize("kind,item,field,value", [
+    ("connections", connection("connection_1"), "connection_refs", ["connection_1"]),
+    ("connections", connection("connection_1"), "relation_note", "something"),
+    ("regions", region("region_1"), "relation_note", "semantic content"),
+    ("functions", function("function_1"), "unknown", ["x"]),
+    ("circuits", circuit("circuit_1", region_refs=["region_1", "region_2"]),
+     "unknown", {"x": 1}),
+    ("connections", connection("connection_1"), "unknown", False),
+    ("connections", connection("connection_1"), "unknown", 0),
+    ("connections", connection("connection_1"), "unknown", True),
+    ("connections", connection("connection_1"), "unknown", 1),
+    ("connections", connection("connection_1"), "unknown", ""),
+])
+def test_benign_b_unknown_NON_empty_extras_still_fail(kind, item, field, value):
+    """Content is never silently discarded — including the falsy values that a
+    truthiness test would have swallowed."""
+    item[field] = value
+    result = parse(_with(kind, item))
+    assert not result.ok, (kind, field, value)
+    assert "extra_forbidden" in result.error
+
+
+def test_benign_b_a_region_of_the_same_name_still_carries_content():
+    """The old region-only repair would have dropped this ONLY if it were null;
+    with content it was always fatal, and still is."""
+    data = region("region_1")
+    data["relation_note"] = "projects strongly to CA3"
+    assert not parse(payload(regions=[data])).ok
+
+
+# --- §12 a KNOWN empty field is preserved ------------------------------------
+def test_benign_c_a_DECLARED_empty_field_survives_untouched():
+    """Only UNKNOWN+empty is removed. A declared field that happens to be empty
+    is the model's statement and stays."""
+    data = circuit("circuit_1", region_refs=["region_1", "region_2"],
+                   connection_refs=[], function_refs=[])
+    result = parse(_with("circuits", data))
+    assert result.ok, result.error
+    assert result.data.circuits[0].connection_refs == []
+    assert result.data.circuits[0].function_refs == []
+    # and a declared field that is empty on a connection survives too
+    conn = connection("connection_1")
+    conn["rationale"] = ""
+    result = parse(_with("connections", conn))
+    assert result.ok, result.error
+    assert result.data.connections[0].rationale == ""
+
+
+# --- §13 no other science is touched -----------------------------------------
+def test_benign_d_nothing_else_in_the_response_changes():
+    data = payload(
+        regions=[region("region_1", name="Kept Region"),
+                 region("region_2", name="Kept Region 2")],
+        connections=[connection("connection_1", source_ref="region_1",
+                                target_ref="region_2", confidence=0.42,
+                                connection_type="PROJECTION",
+                                directionality="DIRECTED")],
+        functions=[function("function_1", label="Kept Function")],
+        circuits=[circuit("circuit_1", name="Kept Circuit",
+                          region_refs=["region_1", "region_2"],
+                          connection_refs=["connection_1"],
+                          topology_hint="RECURRENT", confidence=0.33,
+                          description="kept description",
+                          rationale="kept rationale")],
+        warnings=[],
+    )
+    data["connections"][0]["connection_refs"] = []          # benign, dropped
+    data["connections"][0]["connection_refs_placeholder"] = None
+    before = json.dumps(data, sort_keys=True)
+
+    result = parse(data)
+    assert result.ok, result.error
+    out = result.data
+    assert [r.name for r in out.regions] == ["Kept Region", "Kept Region 2"]
+    assert out.connections[0].source_ref == "region_1"
+    assert out.connections[0].target_ref == "region_2"
+    assert out.connections[0].confidence == 0.42
+    assert out.connections[0].connection_type == "PROJECTION"
+    assert out.connections[0].directionality == "DIRECTED"
+    assert out.functions[0].label == "Kept Function"
+    c = out.circuits[0]
+    assert (c.name, c.confidence, c.topology_hint) == (
+        "Kept Circuit", 0.33, "RECURRENT")
+    assert c.description == "kept description"
+    assert c.rationale == "kept rationale"
+    assert c.region_refs == ["region_1", "region_2"]
+    assert c.connection_refs == ["connection_1"]
+    # the input mapping itself is not mutated in place
+    assert json.dumps(data, sort_keys=True) == before
+
+
+# --- the policy is per TYPE, from the contract, not a hand-written list ------
+def test_benign_the_declared_field_sets_come_from_the_schema():
+    assert parser._ARRAY_SCHEMAS == {
+        "regions": RegionCandidate, "connections": ConnectionCandidate,
+        "functions": FunctionCandidate, "circuits": CircuitCandidate,
+    }
+    for name, model in parser._ARRAY_SCHEMAS.items():
+        assert model.model_config["extra"] == "forbid", name
+
+
+def test_benign_the_schema_was_NOT_made_permissive():
+    """extra='forbid' everywhere. The tolerance is a pre-validation boundary,
+    never a schema relaxation."""
+    for model in (LlmDiscoveryResponse, RegionCandidate, ConnectionCandidate,
+                  FunctionCandidate, CircuitCandidate):
+        assert model.model_config["extra"] == "forbid", model.__name__
+
+
+def test_benign_empty_means_empty_not_falsy():
+    """The one function the whole policy rests on."""
+    for empty in (None, [], {}):
+        assert parser._is_benign_empty(empty), empty
+    for content in ("", 0, 1, False, True, "x", [0], {"a": 1}):
+        assert not parser._is_benign_empty(content), content

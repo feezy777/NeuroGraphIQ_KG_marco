@@ -14,10 +14,13 @@ Repair policy (deliberate and narrow):
   * ALLOWED, because it changes formatting only: BOM / control-char cleanup,
     markdown code-fence removal, whitespace, and extracting the single
     unambiguous top-level JSON object from surrounding prose.
-  * ALLOWED, and the one exception that is not formatting: an UNKNOWN key on a
-    region whose value is null is dropped before validation. The rule is
-    Region-only and null-only — see ``_strip_null_region_extras`` — and the
-    drop is reported as a warning, never made silently.
+  * ALLOWED, and the one exception that is not formatting: an UNKNOWN key whose
+    value is structurally EMPTY — null, [], {} — is dropped before validation,
+    judged against the field set of the object's OWN type. See
+    ``_sanitize_benign_empty_extras``. Region-only and null-only was the previous
+    form of this rule; the generic form subsumes it exactly (a region with an
+    unknown null key is the special case), so the region-specific repair was
+    removed rather than kept beside it. Every removal is logged.
   * ALLOWED, and the second exception: a warning `code` that is an explicitly
     approved LEXICAL ALIAS of a canonical warning code is renamed to the
     canonical one — see ``WARNING_CODE_ALIASES``. The map is closed and exact;
@@ -43,6 +46,9 @@ from app.schemas.llm_discovery import (
     DiscoveryWarningCode,
     LlmDiscoveryParseResult,
     LlmDiscoveryResponse,
+    CircuitCandidate,
+    ConnectionCandidate,
+    FunctionCandidate,
     RegionCandidate,
 )
 from app.services.llm_json_utils import extract_json_object_from_text
@@ -114,78 +120,105 @@ def _warn(
     return DiscoveryWarning(code=code, message=message, local_id=local_id)
 
 
-#: The keys a RegionCandidate declares. Read FROM the contract rather than
-#: restated, so the schema stays the single authority for what a region may
-#: carry; this set is used only to decide which keys are UNKNOWN.
-_REGION_FIELDS: frozenset[str] = frozenset(RegionCandidate.model_fields)
+#: The four typed arrays of the response, each mapped to the type that
+#: DECLARES its fields. The field sets are read FROM the contract rather than
+#: restated, so a field added to a candidate is automatically protected here.
+#:
+#: Named for the ARRAYS, not the layer: the parser must not reference the
+#: Candidate/Mirror/Final database layers, and a constant called
+#: `_CANDIDATE_...` would collide with the structural guard that enforces it.
+_ARRAY_SCHEMAS: dict[str, type] = {
+    "regions": RegionCandidate,
+    "connections": ConnectionCandidate,
+    "functions": FunctionCandidate,
+    "circuits": CircuitCandidate,
+}
 
 
-def _strip_null_region_extras(
-    parsed: object,
-) -> tuple[object, list[DiscoveryWarning]]:
-    """Drop UNKNOWN, null-valued keys from ``regions[]`` — and nothing else.
+def _is_benign_empty(value: object) -> bool:
+    """True only for values that carry NO content.
+
+    ``null``, ``[]`` and ``{}`` say nothing, so removing one removes nothing.
+    Everything else is content, and stays where the model put it:
+
+      * ``""`` is excluded because an empty STRING is a stated value that happens
+        to be blank, and V1 of this policy deliberately does not decide which of
+        those are meaningless;
+      * ``0`` and ``false`` are excluded because they are Python-falsy but are
+        real values — a truthiness test here would silently swallow them.
+
+    That is why this is an explicit identity/emptiness check and not ``not value``.
+    """
+    if value is None:
+        return True
+    return isinstance(value, (list, dict)) and not value
+
+
+def _sanitize_benign_empty_extras(parsed: object) -> tuple[object, list[tuple[str, str | None, tuple[str, ...]]]]:
+    """Drop UNKNOWN fields whose value is structurally EMPTY, per object type.
 
     Why this exists
     ---------------
-    Under RECALL FIRST a region is mostly a SUPPORTING REFERENCE: circuits and
-    connections point at regions by local_id, so regions exist to make that
-    topology expressible. A live Round-4 continuation pass was thrown away in
-    full — an otherwise valid response with ~15 circuits — because ONE region
-    carried one unknown key set to null. An empty auxiliary key is not worth a
-    whole round.
+    A live Round-12 pass was discarded in full — every circuit in it — because a
+    CONNECTION carried `connection_refs: []` and `connection_refs_placeholder:
+    null`. Both are unknown on a Connection (the first is a Circuit field, which
+    is exactly why it looked plausible), and both are empty. Under RECALL FIRST,
+    an empty auxiliary key must not cost a round.
 
     Why it is this narrow
     ---------------------
-    A key is dropped only when BOTH hold: it is not a RegionCandidate field,
-    AND its value is None. An unknown key holding any content — a string, 0,
-    false, a list — is left exactly where the model put it and still fails
-    ``extra="forbid"``, because it carries meaning this contract does not
-    understand and silently discarding meaning is precisely what the FORBIDDEN
-    list above rules out. Connections, functions and circuits are not touched
-    at all: only Region was relaxed, and only for null.
+    A field is dropped only when it is BOTH unknown to the object's own type AND
+    structurally empty. An unknown field holding any content — a string, a
+    number, a boolean, a non-empty array or object — is left exactly where the
+    model put it and still fails ``extra="forbid"``, because it carries meaning
+    this contract does not understand. The schema is still the authority; this
+    only removes the cases where there is nothing for it to be authoritative
+    about.
 
-    The drop is reported, not silent. Strictness exists to surface drift, so
-    trading a loud failure for a quiet deletion would be a bad deal; the caller
-    gets a warning naming the region and the field.
+    The collision that motivates the rule is real and tested: `connection_refs`
+    is DECLARED on CircuitCandidate and UNKNOWN on ConnectionCandidate. On a
+    Circuit it is preserved untouched, empty or not. On a Connection, an empty
+    one is dropped and a populated one fails — the same key, judged by the type
+    that actually declares it.
     """
     if not isinstance(parsed, dict):
         return parsed, []
-    regions = parsed.get("regions")
-    if not isinstance(regions, list):
-        return parsed, []
 
-    warnings: list[DiscoveryWarning] = []
-    cleaned: list[object] = []
+    dropped: list[tuple[str, str | None, tuple[str, ...]]] = []
+    out = dict(parsed)
     changed = False
-    for region in regions:
-        if not isinstance(region, dict):
-            cleaned.append(region)
+
+    for array_name, model in _ARRAY_SCHEMAS.items():
+        items = out.get(array_name)
+        if not isinstance(items, list):
             continue
-        dropped = [k for k, v in region.items() if k not in _REGION_FIELDS and v is None]
-        if not dropped:
-            cleaned.append(region)
-            continue
-        cleaned.append({k: v for k, v in region.items() if k not in dropped})
-        changed = True
-        raw_id = region.get("local_id")
-        local_id = raw_id if isinstance(raw_id, str) else None
-        for key in dropped:
-            # `OTHER` because DiscoveryWarningCode is the MODEL's vocabulary and
-            # is rendered into the prompt: a parser-only code would extend a
-            # frozen vocabulary and teach the model to emit it. The stable token
-            # lives in the message instead.
-            warnings.append(
-                _warn(
-                    "OTHER",
-                    f"REGION_NULL_EXTRA_IGNORED: region dropped unknown "
-                    f"null-valued field '{key}'",
-                    local_id,
-                )
+        declared = frozenset(model.model_fields)
+        cleaned: list[object] = []
+        for item in items:
+            if not isinstance(item, dict):
+                cleaned.append(item)
+                continue
+            unknown_empty = [
+                key for key, value in item.items()
+                if key not in declared and _is_benign_empty(value)
+            ]
+            if not unknown_empty:
+                cleaned.append(item)
+                continue
+            cleaned.append(
+                {k: v for k, v in item.items() if k not in unknown_empty}
             )
+            changed = True
+            raw_id = item.get("local_id")
+            dropped.append(
+                (array_name, raw_id if isinstance(raw_id, str) else None,
+                 tuple(unknown_empty))
+            )
+        out[array_name] = cleaned
 
     if not changed:
         return parsed, []
-    return {**parsed, "regions": cleaned}, warnings
+    return out, dropped
 
 
 def _duplicate_local_ids(response: LlmDiscoveryResponse) -> list[str]:
@@ -334,10 +367,21 @@ def parse_llm_discovery_response(
         if parsed is None:
             return LlmDiscoveryParseResult(error=f"{ERR_INVALID_JSON}: {err}")
 
-    # Narrow pre-validation normalization: unknown NULL extras on regions only.
-    # Non-null unknowns survive this and are still rejected by the strict
-    # schema below, which remains the authority.
-    parsed, null_extra_warnings = _strip_null_region_extras(parsed)
+    # Narrow pre-validation normalization: UNKNOWN, structurally EMPTY extras,
+    # per object type. Anything with content survives this and is still rejected
+    # by the strict schema below, which remains the authority.
+    parsed, benign_extras = _sanitize_benign_empty_extras(parsed)
+    for array_name, local_id, fields in benign_extras:
+        logger.info(
+            "[discovery-parser][benign-extra-drop] object_type=%s local_id=%s"
+            " fields=%s",
+            array_name.rstrip("s"), local_id, ",".join(fields),
+        )
+    if benign_extras:
+        logger.info(
+            "[discovery-parser][benign-extra-drop] total_objects=%s total_fields=%s",
+            len(benign_extras), sum(len(f) for _, _, f in benign_extras),
+        )
 
     # Approved warning-code aliases -> canonical spelling. Runs BEFORE the strict
     # validation for the same reason: the schema stays the authority, and an
@@ -372,5 +416,5 @@ def parse_llm_discovery_response(
 
     return LlmDiscoveryParseResult(
         data=response,
-        validation_warnings=[*response.warnings, *null_extra_warnings, *warnings],
+        validation_warnings=[*response.warnings, *warnings],
     )
